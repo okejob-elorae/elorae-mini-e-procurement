@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { nilaiHitunganAwal, untukPenghitung } from "./nilai";
-import type { MenungguGudang } from "@/lib/receivables/pwa-queries";
+import { nilaiHitunganAwal, untukPenghitung, untukPenghitungSusulan } from "./nilai";
+import type { MenungguGudang, MenungguSusulan } from "@/lib/receivables/pwa-queries";
 
 describe("nilaiHitunganAwal", () => {
   it("sums received qty × line price when the lines carry prices (consignment)", () => {
@@ -60,5 +60,39 @@ describe("untukPenghitung — the counting screen never receives the claim", () 
     expect(untukPenghitung(nota, "s1", "s1").milikSendiri).toBe(true);
     expect(untukPenghitung(nota, "gudang1", "s1").milikSendiri).toBe(false);
     expect(untukPenghitung(nota, "gudang1", null).milikSendiri).toBe(false);
+  });
+});
+
+describe("untukPenghitungSusulan — barang susulan juga dihitung buta", () => {
+  const nota: MenungguSusulan = {
+    id: "nrt1",
+    noNrt: "NRT-4471",
+    storeName: "Toko Sinar",
+    tanggal: "2026-10-01T00:00:00.000Z",
+    nilaiKlaim: 400_000,
+    caraKirim: "SALES",
+    adaFoto: true,
+    dariSpg: false,
+    baris: [{ itemId: "i1", variantSku: "K-M", itemName: "Kemeja M", qty: 4, price: 0, condition: "LAYAK" }],
+    chargeId: "c1",
+    dilaporkanDitemukan: true,
+    tidakBolehMenghitung: ["pelapor", "pemegang", "sales-cek", "penanggung"],
+  };
+
+  it("tidak membawa klaim, qty klaim, atau daftar orang yang dikecualikan", () => {
+    const n = untukPenghitungSusulan(nota, "gudang1");
+    const json = JSON.stringify(n);
+    expect(json).not.toContain("nilaiKlaim");
+    expect(json).not.toContain('"qty"');
+    expect(json).not.toContain("400000");
+    expect(json).not.toContain("tidakBolehMenghitung");
+    expect(json).not.toContain("pemegang");
+    expect(n).toMatchObject({ chargeId: "c1", dilaporkanDitemukan: true, milikSendiri: false });
+  });
+
+  it("menandai setiap orang yang dikecualikan aturan dua tangan", () => {
+    for (const orang of nota.tidakBolehMenghitung) {
+      expect(untukPenghitungSusulan(nota, orang).milikSendiri).toBe(true);
+    }
   });
 });

@@ -248,7 +248,8 @@ async function tulisEditPo(
     ) {
       throw new EditPoDitolak({ ok: false, code: 'TERMIN_SUDAH_LUNAS' });
     }
-    const billed = await tx.vendorBillLine.count({ where: { poItem: { poId: id }, bill: { status: { not: 'VOID' } } } });
+    // A bill line names a receipt (GRN_ITEM, `grn.poId`) or, for old lines, a PO item: either one counts.
+    const billed = await tx.vendorBillLine.count({ where: { OR: [{ poItem: { poId: id } }, { grn: { poId: id } }], bill: { status: { not: 'VOID' } } } });
     if (billed > 0) throw new EditPoDitolak({ ok: false, code: 'SUDAH_DITAGIH' });
     const preserveReceived = STATUS_JAGA_DITERIMA.has(existing.status);
 
@@ -984,7 +985,7 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
        */
       if (
         paidAt != null &&
-        (await tx.vendorBillLine.count({ where: { poItem: { poId }, bill: { status: { not: 'VOID' } } } })) > 0
+        (await tx.vendorBillLine.count({ where: { OR: [{ poItem: { poId } }, { grn: { poId } }], bill: { status: { not: 'VOID' } } } })) > 0
       ) {
         return { changed: false, refusal: 'BILLED_VIA_VENDOR_BILL', failure: null };
       }

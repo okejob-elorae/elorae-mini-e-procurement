@@ -175,7 +175,7 @@ d("muatBahanRencana (test bed only)", () => {
     expect(info.get(itemA)?.nama).toBe("Kaos A");
   });
 
-  it("consignment store with a stock book: stock and sales come from the book, and no price is ever computed", async () => {
+  it("consignment store with a stock book: stock and sales come from the book; the planner gets no price, the phone a retail one (P18)", async () => {
     const { bahan, info, dasarLaku } = await muatBahanRencana({
       storeId: konsiId,
       termsType: "KONSI",
@@ -190,8 +190,11 @@ d("muatBahanRencana (test bed only)", () => {
     expect(bahan.stokToko.get(itemA)).toEqual({ sisa: 4, dalamProses: 0, laku: 6 });
     // Ada di buku toko = pernah dikirim.
     expect(bahan.pernahDikirim.has(itemA)).toBe(true);
+    // Penyusun tidak pernah memakai harga konsi (tanpa anggaran)...
     expect(bahan.kandidat.every((k) => k.harga === null)).toBe(true);
-    expect([...info.values()].every((i) => i.harga === null)).toBe(true);
+    // ...tetapi HP salesman menampilkan harga retail toko: 40.000 × (1 + 30%) = 52.000; barang tanpa harga tetap null.
+    expect(info.get(itemA)?.harga).toBe(52_000);
+    expect(info.get(itemB)?.harga).toBeNull();
     // Sumber "laku di toko lain" tidak dicentang: pembandingnya tidak dimuat.
     expect(bahan.jualTokoLain.size).toBe(0);
   });

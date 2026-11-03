@@ -28,6 +28,21 @@ export type BarangUji = {
   /** "terpetakan" (bawaan) = kategori yang dipetakan ke Jubelio; "tidak" = kategori tanpa peta; "kosong" = tanpa kategori. */
   kategori?: "terpetakan" | "tidak" | "kosong";
   isActive?: boolean;
+  /** Saluran jual (P3); bawaan BOTH seperti kolomnya. */
+  salesChannel?: "MARKETPLACE" | "OFFLINE" | "BOTH";
+  /** Yang terakhir terbaca di Jubelio (P1/P2); tanpa `terbacaPada` = belum pernah terbaca. */
+  jubelioTertinggi?: number | null;
+  jubelioTerendah?: number | null;
+  terbacaPada?: Date | null;
+  berubahPada?: Date | null;
+  /** Keputusan harga admin terakhir (P75). */
+  diputuskanPada?: Date | null;
+};
+
+export type KirimanUji = {
+  status: "PENDING" | "PROCESSING" | "DONE" | "SKIPPED" | "DEAD";
+  skipReason?: string | null;
+  createdAt?: Date;
 };
 
 export function buatFixtureHarga() {
@@ -89,6 +104,12 @@ export function buatFixtureHarga() {
         jubelioCreateRequestedAt: isi.jubelioCreateRequestedAt ?? null,
         jubelioCreateRequestedById: isi.jubelioCreateRequestedById ?? null,
         isActive: isi.isActive ?? true,
+        ...(isi.salesChannel ? { salesChannel: isi.salesChannel } : {}),
+        jubelioObservedPriceMax: isi.terbacaPada ? (isi.jubelioTertinggi ?? null) : null,
+        jubelioObservedPriceMin: isi.terbacaPada ? (isi.jubelioTerendah ?? null) : null,
+        jubelioObservedAt: isi.terbacaPada ?? null,
+        jubelioObservedChangedAt: isi.terbacaPada ? (isi.berubahPada ?? isi.terbacaPada) : null,
+        jubelioPriceDecidedAt: isi.diputuskanPada ?? null,
       },
       select: { id: true },
     });
@@ -104,6 +125,22 @@ export function buatFixtureHarga() {
     return item.id;
   }
 
+  /** Satu baris kiriman produk untuk barang ini (keadaan kiriman sebelumnya di outbox). */
+  async function kiriman(itemId: string, isi: KirimanUji): Promise<string> {
+    const r = await prisma.jubelioOutbox.create({
+      data: {
+        entityType: "product_push",
+        entityId: seededId(itemId),
+        payload: {},
+        status: isi.status,
+        skipReason: isi.skipReason ?? null,
+        ...(isi.createdAt ? { createdAt: isi.createdAt } : {}),
+      },
+      select: { id: true },
+    });
+    return r.id;
+  }
+
   /** Keadaan kolom harga Jubelio sebuah barang, dalam angka biasa. */
   async function baca(itemId: string) {
     const b = await prisma.item.findUniqueOrThrow({
@@ -115,9 +152,13 @@ export function buatFixtureHarga() {
         jubelioConfirmedById: true,
         jubelioCreateRequestedAt: true,
         jubelioCreateRequestedById: true,
+        salesChannel: true,
+        jubelioPriceDecidedAt: true,
       },
     });
     return {
+      saluran: b.salesChannel,
+      diputuskanPada: b.jubelioPriceDecidedAt,
       harga: b.sellingPrice == null ? null : Number(b.sellingPrice),
       dikonfirmasi: b.jubelioConfirmedPrice == null ? null : Number(b.jubelioConfirmedPrice),
       dikonfirmasiPada: b.jubelioConfirmedAt,
@@ -139,5 +180,5 @@ export function buatFixtureHarga() {
     await prisma.user.deleteMany({ where: { id: { in: [keadaan.userId, keadaan.userLainId].map(seededId) } } });
   }
 
-  return { keadaan, siapkan, barang, baca, bersihkan };
+  return { keadaan, siapkan, barang, kiriman, baca, bersihkan };
 }

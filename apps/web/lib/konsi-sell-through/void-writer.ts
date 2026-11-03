@@ -1,5 +1,6 @@
 import { runSerializable } from "@/lib/db/tx-retry";
 import { SellThroughError } from "./errors";
+import { penghalangBatalPiutang } from "@/lib/receivables/penghalang-batal";
 
 /* The same bound the screens and `cancelSellThrough` put on a free-text reason; `voidReason` is TEXT. */
 const REASON_MAX_LENGTH = 1000;
@@ -75,6 +76,14 @@ export async function voidSellThrough(input: VoidSellThroughInput): Promise<{ id
         select: { id: true },
       });
       if (submission) throw new SellThroughError("COLLECTION_PENDING");
+      /*
+       * The shared blocker every receivable void reads (`penghalangBatalPiutang`, also the cycle
+       * unlock and the putus "tidak jadi dikirim"): since konsi bills appear in Piutang, the holder
+       * can report a BKM on this receivable, and a live BKM, a running kontrabon or an open
+       * collection task must never end up pointing at a VOIDED bill.
+       */
+      const penghalang = await penghalangBatalPiutang(tx, receivable.id);
+      if (penghalang) throw new SellThroughError(penghalang);
       /* `outstanding` is the receivables module's cache of the same figure; a void owes nothing in either. */
       await tx.receivable.update({ where: { id: receivable.id }, data: { status: "VOIDED", outstandingAmount: 0, outstanding: 0 } });
     }

@@ -19,7 +19,8 @@ vi.mock("@/lib/notifications/kabar-pengguna", () => ({ kabariPengguna: vi.fn() }
 
 import { createFieldSalesOrder, approveFieldSalesOrder } from "./writer";
 import { MinQtyViolationError, NoActiveVisitError } from "./errors";
-import { recordFieldSalesDelivery } from "./delivery/writer";
+// Nota tanpa surat jalan untuk tes ("Catat pengiriman" dihapus, P44a) — sama dengan penulis aslinya.
+import { catatNotaUji as recordFieldSalesDelivery } from "./delivery/uji-nota";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");

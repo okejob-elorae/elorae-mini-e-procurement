@@ -94,7 +94,16 @@ export type DataKesiapan = {
    * tidak menahan "aktif". Tidak ada (undefined) = tidak dibaca.
    */
   statusPkp?: "BELUM_DITETAPKAN" | "PKP" | "NON_PKP";
+  /**
+   * Ada toko KONSINYASI yang aktif (Q26). Bila ya, `INVENTORY_CONSIGNMENT` (`PERAN_WAJIB_KONSI`) ikut
+   * WAJIB: barang konsi pindah ke Gudang Toko saat pengiriman dibuat, dan tanpa peran itu setiap
+   * jurnal pindahnya gagal. Tidak ada (undefined) = tidak dibaca, tidak menahan.
+   */
+  adaTokoKonsiAktif?: boolean;
 };
+
+/** Peran yang wajib dipetakan begitu ada toko konsinyasi yang aktif (Q26). */
+export const PERAN_WAJIB_KONSI: readonly PostingRole[] = ["INVENTORY_CONSIGNMENT"];
 
 /** Peran yang wajib dipetakan begitu perusahaan PKP. */
 export const PERAN_WAJIB_PKP: readonly PostingRole[] = ["PPN_KELUARAN", "PPN_MASUKAN", "PPN_PAYABLE"];
@@ -112,7 +121,11 @@ export type KesiapanBukuBesar = DataKesiapan & {
 export function nilaiKesiapan(data: DataKesiapan): KesiapanBukuBesar {
   const terpetakan = new Set(data.peranTerpetakan);
   const jumlahTerpetakan = POSTING_ROLES.filter((p) => terpetakan.has(p)).length;
-  const wajib = data.statusPkp === "PKP" ? [...PERAN_WAJIB, ...PERAN_WAJIB_PKP] : PERAN_WAJIB;
+  const wajib = [
+    ...PERAN_WAJIB,
+    ...(data.statusPkp === "PKP" ? PERAN_WAJIB_PKP : []),
+    ...(data.adaTokoKonsiAktif ? PERAN_WAJIB_KONSI : []),
+  ];
   const peranWajibBelum = wajib.filter((p) => !terpetakan.has(p));
   const alasan: AlasanBelumAktif[] = [];
   if (peranWajibBelum.length > 0) alasan.push("PEMETAAN");

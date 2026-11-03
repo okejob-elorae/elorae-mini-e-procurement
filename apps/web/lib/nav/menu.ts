@@ -161,11 +161,12 @@ export const navItems: NavItem[] = [
       // Reject dan sisa produksi dari penerimaan barang jadi — tidak masuk stok aktif.
       { labelKey: "navRejectedGoods", href: "/backoffice/inventory/rejected-goods", permission: PERMISSIONS.INVENTORY_VIEW },
       // Pengirim (`deliveries:ship`) mengemas dan mengirim; penutup (`deliveries:pod`)
-      // menutup kiriman lewat bukti terima — halamannya menerima salah satu.
+      // menutup kiriman lewat bukti terima; Admin Penjualan (`deliveries:cancel_nota`) membatalkan
+      // pengiriman putus yang sudah bernota (P41a) — halamannya menerima salah satu dari ketiganya.
       {
         labelKey: "navDeliveries",
         href: "/backoffice/deliveries",
-        permission: [PERMISSIONS.DELIVERIES_SHIP, PERMISSIONS.DELIVERIES_POD],
+        permission: [PERMISSIONS.DELIVERIES_SHIP, PERMISSIONS.DELIVERIES_POD, PERMISSIONS.DELIVERIES_CANCEL_NOTA],
       },
     ],
   },
@@ -246,7 +247,20 @@ export const navItems: NavItem[] = [
       { labelKey: "navPromoKonterSpg", href: "/backoffice/promo-konter", permission: PERMISSIONS.PROMOS_VIEW },
       { labelKey: "navSpgPelanggan", href: "/backoffice/spg-pelanggan", permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: "navJadwalShiftSpg", href: "/backoffice/jadwal-spg", permission: PERMISSIONS.SPG_SALES_VIEW },
-      { labelKey: "navKomisiSpg", href: "/backoffice/komisi-spg", permission: PERMISSIONS.SPG_SALES_VIEW },
+      // Halamannya memagari dirinya sendiri (P28/Q9): pengawas SPG, yang membayar gaji & komisi SPG
+      // (Keuangan "hanya halaman Komisi SPG"), atau pemeriksa pembayaran yang membuka kartu #utang saja.
+      {
+        labelKey: "navKomisiSpg",
+        href: "/backoffice/komisi-spg",
+        permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.SPG_COMMISSION_PAY, PERMISSIONS.PAYMENTS_VERIFY],
+      },
+      // Catatan check-in toko (P7d/P7e/P61a): yang memasukkan, yang memeriksa, atau pengawas SPG
+      // (membaca saja) — sama dengan `bolehMembukaCatatanHadir`, pagar halamannya.
+      {
+        labelKey: "navCatatanHadirSpg",
+        href: "/backoffice/komisi-spg/catatan-hadir",
+        permission: [PERMISSIONS.SPG_ATTENDANCE_RECORD, PERMISSIONS.SPG_ATTENDANCE_VERIFY, PERMISSIONS.SPG_SALES_VIEW],
+      },
       // Rekap komisi SPG per bulan pembayaran — hitungan yang sama dengan Komisi SPG
       // (`lib/spg-commission/payout.ts`), toko putus dan konsinyasi.
       { labelKey: "navSpgCommissionSellThrough", href: "/backoffice/spg-commission", permission: PERMISSIONS.SPG_SALES_VIEW },
@@ -267,6 +281,8 @@ export const navItems: NavItem[] = [
       // Pengawas SPG melihat; mencatat = receivables:manage; memutuskan penanggung =
       // receivables:decide_bearer (keputusan manager). Ketiganya membuka halamannya sendiri — sama dengan
       // pagar `barang-hilang/page.tsx` dan `[id]/page.tsx`, dan `ANTREAN_KANTOR.stockLossOpen.bolehBuka`.
+      // TIDAK payments:verify: P28 "Keuangan hanya halaman Komisi SPG" — pemeriksaan uang klaim
+      // ekspedisi di halaman ini menunggu keputusan pemilik (AGENTS.md "Still open").
       {
         labelKey: "navBarangHilang",
         href: "/backoffice/barang-hilang",
@@ -308,6 +324,10 @@ export const navItems: NavItem[] = [
       { labelKey: "navPembayaranPemasok", href: "/backoffice/supplier-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
       { labelKey: "navUmurHutang", href: "/backoffice/supplier-payments/umur-hutang", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
       { labelKey: "navVendorBills", href: "/backoffice/vendor-bills", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
+      // Penerimaan yang belum ada invoice pemasoknya (P19) dan selisih harga invoice yang menunggu
+      // keputusan (P27). Keduanya di bawah awalan `/backoffice/vendor-bills` di ROUTE_PERMISSIONS.
+      { labelKey: "navInvoiceBelumDitagih", href: "/backoffice/vendor-bills/belum-ditagih", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
+      { labelKey: "navSelisihHargaInvoice", href: "/backoffice/vendor-bills/selisih-harga", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
       // Riwayat saja: Vendor Billing tidak menerima pembayaran baru sejak 2026-11-01 — tagihan
       // vendor dibayar lewat Pembayaran pemasok. Tetap di samping Tagihan vendor untuk dicari.
       { labelKey: "navVendorPayments", href: "/backoffice/vendor-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },

@@ -455,6 +455,48 @@ d("getStoreStockCard", () => {
     expect(m!.qty).toBe(3);
     expect(m!.href).toBeNull();
   });
+
+  /*
+   * Owner answers Q1 + P26 (2026-11-02): a shipment transfer is IN_TRANSIT until the store receipt,
+   * on nobody's StoreStock row — visible on the card, never part of `qty`. Pieces refused at the door
+   * (`returnedQty`) are back in the main warehouse; RECEIVED and CANCELLED transfers contribute nothing.
+   */
+  it("shows IN_TRANSIT transfer pieces net of returns per item × variant, outside the stock book", async () => {
+    let inTransitId = "";
+    let cancelledId = "";
+    try {
+      const inTransit = await prisma.konsiTransfer.create({
+        data: { docNo: `KONSITRF-OTW/TEST-SSC/${token}`, orderId, storeId, transferredById: userId, status: "IN_TRANSIT" },
+      });
+      inTransitId = inTransit.id;
+      await prisma.konsiTransferLine.createMany({
+        data: [
+          { transferId: inTransitId, itemId: itemAId, variantSku: "", productName: "Item A", qty: 5, unitCost: 1000, returnedQty: 1 },
+          { transferId: inTransitId, itemId: itemAId, variantSku: "", productName: "Item A", qty: 3, unitCost: 1000, returnedQty: 3 },
+          { transferId: inTransitId, itemId: itemBId, variantSku: "B-X", productName: "Item B", qty: 2, unitCost: 1000 },
+        ],
+      });
+      const cancelled = await prisma.konsiTransfer.create({
+        data: { docNo: `KONSITRF-BATAL/TEST-SSC/${token}`, orderId, storeId, transferredById: userId, status: "CANCELLED" },
+      });
+      cancelledId = cancelled.id;
+      await prisma.konsiTransferLine.create({
+        data: { transferId: cancelledId, itemId: itemAId, variantSku: "", productName: "Item A", qty: 7, unitCost: 1000 },
+      });
+
+      const card = await getStoreStockCard(storeId);
+      const rowA = card.rows.find((r) => r.itemId === itemAId)!;
+      const rowB = card.rows.find((r) => r.itemId === itemBId)!;
+      expect(rowA.dalamPerjalanan).toBe(4);
+      expect(rowA.qty).toBe(6);
+      expect(rowB.dalamPerjalanan).toBe(0);
+      expect(card.rows).toHaveLength(2);
+      expect(card.dalamPerjalananTanpaStok).toEqual([{ itemId: itemBId, variantSku: "B-X", itemName: "Item B", dalamPerjalanan: 2 }]);
+    } finally {
+      await prisma.konsiTransferLine.deleteMany({ where: { transferId: { in: [inTransitId, cancelledId].map(seededId) } } });
+      await prisma.konsiTransfer.deleteMany({ where: { id: { in: [inTransitId, cancelledId].map(seededId) } } });
+    }
+  });
 });
 
 d("getStoreStockCard — same-item variants", () => {

@@ -288,12 +288,10 @@ d("target rinci — capaian per kategori/barang (test bed only)", () => {
     expect(kat).toMatchObject({ refId: katA, nama: `Kaos ${token}`, measure: "PCS" });
     expect(kat.kemajuan).toMatchObject({ target: 6, capai: 3, kurang: 3, persen: 50 });
     const brg = r.baris.find((b) => b.scope === "BARANG")!;
-    expect(brg).toMatchObject({ refId: i3, nama: "Barang 3", sku: `TEST-TR-3-${token}`, tanpaKonsi: true });
+    expect(brg).toMatchObject({ refId: i3, nama: "Barang 3", sku: `TEST-TR-3-${token}` });
     // Barang 3 terjual Rp 52.999,99 semuanya, Rp 40.000 di antaranya lewat
-    // konsinyasi. Di HP target barang dalam rupiah dihitung TANPA konsinyasi —
-    // nilai konsi satu barang ÷ pcs lakunya = harga satuan konsi.
-    expect(brg.kemajuan).toMatchObject({ target: 100_000, capai: 12_999.99 });
-    expect(kat.tanpaKonsi).toBe(false);
+    // konsinyasi — di HP pun dihitung semuanya (P56).
+    expect(brg.kemajuan).toMatchObject({ target: 100_000, capai: 52_999.99 });
   });
 
   it("layar kantor tetap menghitung semua saluran untuk target yang sama", async () => {

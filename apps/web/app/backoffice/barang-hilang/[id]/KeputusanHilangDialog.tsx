@@ -33,11 +33,14 @@ import {
 import type { RincianHilangKantor } from "@/lib/spg/hilang-queries";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { cn } from "@/lib/utils";
+import { isianAwalUbah } from "./isian-awal-ubah";
 
 type Baris = { k: string; bearer: Penanggung; bearerUserId: string; amount: string };
 type Orang = { spg: { id: string; nama: string; toko: string | null }[]; sales: { id: string; nama: string }[] };
 
 const PRESET: JenisPreset[] = ["ELORAE", "TOKO", "SPG_TOKO", "SALES_TOKO"];
+/** Catatan barang hilang di perjalanan pengiriman lewat ekspedisi: preset klaim ekspedisi di depan. */
+const PRESET_EKSPEDISI: JenisPreset[] = ["EKSPEDISI", ...PRESET];
 
 const keBaris = (b: IsianBagian[]): Baris[] =>
   b.map((x) => ({ k: newLocalId(), bearer: x.bearer, bearerUserId: x.bearerUserId ?? "", amount: tulisIsianRupiah(x.amount) }));
@@ -53,6 +56,11 @@ const keBaris = (b: IsianBagian[]): Baris[] =>
  * yang dikirim tetap pembagian sebelum keringanan + persennya — server yang
  * menghitung ulang. "Ubah keputusan" mulai dari pembagian sebelum keringanan
  * yang tercatat di jejak, supaya keringanan tidak diterapkan dua kali.
+ *
+ * Barang hilang di perjalanan pengiriman lewat EKSPEDISI (P36/P42): "Putuskan" langsung terisi
+ * klaim ekspedisi sebesar nilai jual di nota / surat jalan (`buktiKlaim.nilaiKlaim`) — memakai
+ * nilai bawaan itu tidak butuh alasan, sama dengan penulisnya. Preset lain kembali ke jumlah
+ * nilai barisnya.
  */
 export function KeputusanHilangDialog({
   rincian: r,
@@ -68,30 +76,48 @@ export function KeputusanHilangDialog({
   const router = useRouter();
   const [buka, setBuka] = useState(false);
   const [sibuk, mulai] = useTransition();
-  const [total, setTotal] = useState(() => tulisIsianRupiah(r.total));
+  const adaEkspedisi = r.buktiKlaim?.cara === "EXPEDITION";
+  const nilaiKlaim = adaEkspedisi ? (r.buktiKlaim?.nilaiKlaim ?? null) : null;
+  const spgIds = r.toko?.spg.map((s) => s.id) ?? [];
+  const konteksDengan = (totalRp: number) => ({
+    total: totalRp,
+    adaToko: r.toko !== null,
+    spgIds,
+    salesmanId: r.toko?.pemegang?.id ?? null,
+    adaEkspedisi,
+    nilaiKlaim,
+  });
+  // Klaim ekspedisi terpilih sejak awal untuk barang hilang di perjalanan lewat ekspedisi.
+  const presetAwal = mode === "PUTUSKAN" && adaEkspedisi ? presetBagian("EKSPEDISI", konteksDengan(r.total)) : null;
+  // "Ubah keputusan": total dan bagian bawaan yang sama dengan penulisnya — sesudah klaim ekspedisi
+  // DITOLAK, Σ nilai baris dan tanpa bagian EKSPEDISI yang ditolak (P42/R19).
+  const awalUbah = mode === "UBAH" ? isianAwalUbah(r) : null;
+  const totalAwal = awalUbah?.total ?? r.total;
+  const [total, setTotal] = useState(() => tulisIsianRupiah(presetAwal?.[0]?.amount ?? totalAwal));
   const ringanLama = mode === "UBAH" ? r.keringanan : null;
-  const [baris, setBaris] = useState<Baris[]>(() =>
-    mode !== "UBAH"
-      ? []
-      : ringanLama && ringanLama.sebelum.length > 0
-        ? keBaris(ringanLama.sebelum)
-        : keBaris(r.bagian.map((b) => ({ bearer: b.bearer, bearerUserId: b.orang?.id ?? null, amount: b.nilai }))),
-  );
+  const [baris, setBaris] = useState<Baris[]>(() => (awalUbah ? keBaris(awalUbah.bagian) : presetAwal ? keBaris(presetAwal) : []));
   const [catatan, setCatatan] = useState("");
   const [ringan, setRingan] = useState(ringanLama !== null);
   // Tanpa persen bawaan: pemilik mengetik persennya sendiri setiap kali.
   const [persenRingan, setPersenRingan] = useState(() => (ringanLama ? String(ringanLama.persen) : ""));
 
   const totalAngka = bacaIsianRupiah(total);
-  const totalBerubah = totalAngka !== null && keSen(totalAngka) !== keSen(r.total);
-  const alasanWajib = mode === "UBAH" || totalBerubah;
-  const spgIds = r.toko?.spg.map((s) => s.id) ?? [];
-  const konteks = { total: totalAngka ?? 0, adaToko: r.toko !== null, spgIds, salesmanId: r.toko?.pemegang?.id ?? null };
+  const totalBerubah = totalAngka !== null && keSen(totalAngka) !== keSen(totalAwal);
+  const konteks = konteksDengan(totalAngka ?? 0);
 
   const isian = baris.map((b) => ({ bearer: b.bearer, bearerUserId: penanggungOrang(b.bearer) ? b.bearerUserId || null : null, amount: bacaIsianRupiah(b.amount) ?? NaN }));
+  // Klaim ekspedisi satu-satunya sebesar nilai bawaannya: tanpa alasan ketikan (catatannya otomatis).
+  const klaimBawaan =
+    adaEkspedisi &&
+    nilaiKlaim !== null &&
+    totalAngka !== null &&
+    isian.length === 1 &&
+    isian[0]?.bearer === "EKSPEDISI" &&
+    keSen(totalAngka) === keSen(nilaiKlaim);
+  const alasanWajib = mode === "UBAH" || (totalBerubah && !klaimBawaan);
   const dibagiSen = isian.reduce((n, b) => n + (Number.isFinite(b.amount) ? keSen(b.amount) : 0), 0);
   const sisaSen = totalAngka === null ? 0 : keSen(totalAngka) - dibagiSen;
-  const periksa = totalAngka === null ? null : periksaBagian(isian, totalAngka, r.toko !== null);
+  const periksa = totalAngka === null ? null : periksaBagian(isian, totalAngka, r.toko !== null, adaEkspedisi);
 
   const angkaRingan = persenRingan.trim() === "" ? NaN : Number(persenRingan);
   const persenRinganSah = Number.isInteger(angkaRingan) && angkaRingan >= 1 && angkaRingan <= 100;
@@ -119,6 +145,15 @@ export function KeputusanHilangDialog({
                 : null;
 
   const pakaiPreset = (p: JenisPreset) => {
+    if (adaEkspedisi) {
+      // Klaim ekspedisi memakai nilai klaimnya; preset lain kembali ke jumlah nilai barang.
+      const totalPreset = p === "EKSPEDISI" ? (nilaiKlaim ?? r.nilaiBarang) : r.nilaiBarang;
+      const isi = presetBagian(p, konteksDengan(totalPreset));
+      if (!isi) return;
+      setTotal(tulisIsianRupiah(totalPreset));
+      setBaris(keBaris(isi));
+      return;
+    }
     const isi = presetBagian(p, konteks);
     if (isi) setBaris(keBaris(isi));
   };
@@ -191,20 +226,28 @@ export function KeputusanHilangDialog({
             </div>
             <p className="text-xs text-muted-foreground">
               {t("keputusan.totalIsi", { nilai: formatIDR(r.nilaiBarang) })}
-              {totalBerubah ? ` ${t("keputusan.totalBerubah")}` : ""}
+              {totalBerubah && !klaimBawaan ? ` ${t("keputusan.totalBerubah")}` : ""}
             </p>
+            {adaEkspedisi ? <p className="text-xs text-muted-foreground">{t("keputusan.nilaiKlaimIsi")}</p> : null}
           </div>
 
           <div className="space-y-2">
             <Label id="hilang-preset">{t("keputusan.cepat")}</Label>
             <div aria-labelledby="hilang-preset" className="grid gap-2 sm:grid-cols-2">
-              {PRESET.map((p) => {
+              {(adaEkspedisi ? PRESET_EKSPEDISI : PRESET).map((p) => {
                 const bisa = presetBagian(p, konteks) !== null;
                 return (
                   <Button key={p} type="button" variant="outline" disabled={!bisa} onClick={() => pakaiPreset(p)} className="h-auto flex-col items-start gap-0.5 whitespace-normal py-2.5 text-left">
                     <span className="font-medium">{td(`preset.${p}`)}</span>
                     <span className="text-xs font-normal text-muted-foreground">
-                      {bisa ? td(`presetIsi.${p}`, { n: spgIds.length, nama: r.toko?.pemegang?.nama ?? "" }) : td(`presetTidak.${p}`)}
+                      {bisa
+                        ? td(`presetIsi.${p}`, {
+                            n: spgIds.length,
+                            nama: r.toko?.pemegang?.nama ?? "",
+                            ekspedisi: r.buktiKlaim?.ekspedisi ?? t("keputusan.ekspedisi"),
+                            nilai: formatIDR(nilaiKlaim ?? r.nilaiBarang),
+                          })
+                        : td(`presetTidak.${p}`)}
                     </span>
                   </Button>
                 );
@@ -237,7 +280,7 @@ export function KeputusanHilangDialog({
                       </SelectTrigger>
                       <SelectContent>
                         {PENANGGUNG.map((p) => (
-                          <SelectItem key={p} value={p} disabled={p === "TOKO" && !r.toko}>
+                          <SelectItem key={p} value={p} disabled={(p === "TOKO" && !r.toko) || (p === "EKSPEDISI" && !adaEkspedisi)}>
                             {td(`penanggung.${p}`)}
                           </SelectItem>
                         ))}
@@ -254,7 +297,13 @@ export function KeputusanHilangDialog({
                         triggerClassName="w-56"
                       />
                     ) : (
-                      <span className="w-56 text-sm text-muted-foreground">{b.bearer === "TOKO" ? r.toko?.name : t("keputusan.hapusBuku")}</span>
+                      <span className="w-56 text-sm text-muted-foreground">
+                        {b.bearer === "TOKO"
+                          ? r.toko?.name
+                          : b.bearer === "EKSPEDISI"
+                            ? (r.buktiKlaim?.ekspedisi ?? t("keputusan.ekspedisi"))
+                            : t("keputusan.hapusBuku")}
+                      </span>
                     )}
                     <span className="ml-auto flex items-center gap-1">
                       <span className="text-sm text-muted-foreground">Rp</span>

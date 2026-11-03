@@ -74,10 +74,25 @@ export async function pesananSaya(salesmanId: string, hariIni: Date): Promise<Pe
   const tujuhHari = new Date(hariIni.getTime() - 7 * HARI_MS);
   const [menunggu, siapKirim, terkirimBulanIni, ditolak7Hari] = await Promise.all([
     prisma.fieldSalesOrder.count({ where: { salesmanId, status: 'PENDING_APPROVAL' } }),
+    // Siap dikirim = disetujui dan masih menunggu barang, ATAU barangnya sedang
+    // dikemas / di jalan (surat jalan terbuka) — sama dengan tab "Disetujui".
     prisma.fieldSalesOrder.count({
-      where: { salesmanId, status: 'APPROVED', deliveryStatus: { in: ['PENDING', 'PARTIAL'] } },
+      where: {
+        salesmanId,
+        status: 'APPROVED',
+        OR: [
+          { deliveryStatus: { in: ['PENDING', 'PARTIAL'] } },
+          { shipments: { some: { status: { in: ["PACKED", "IN_TRANSIT"] } } } },
+        ],
+      },
     }),
-    prisma.fieldSalesDelivery.count({ where: { deliveredAt: { gte: awalBulan }, order: { salesmanId } } }),
+    // Pesanan yang masih punya surat jalan terbuka belum selesai dikirim.
+    prisma.fieldSalesDelivery.count({
+      where: {
+        deliveredAt: { gte: awalBulan },
+        order: { salesmanId, shipments: { none: { status: { in: ["PACKED", "IN_TRANSIT"] } } } },
+      },
+    }),
     // Ditolak KANTOR saja — pesanan yang dibatalkan salesman sendiri (cancelledById) bukan penolakan.
     prisma.fieldSalesOrder.count({ where: { salesmanId, status: 'REJECTED', cancelledById: null, rejectedAt: { gte: tujuhHari } } }),
   ]);

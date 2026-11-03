@@ -15,7 +15,12 @@ import { readGlCutover } from "@/lib/finance/sales/sweep";
  * pair (`FIELD_DELIVERY_REVENUE` + `FIELD_DELIVERY_COGS`) for a delivery that has no journal.
  *
  * What they do, decided per delivery under its row lock:
- * - it already has the nota journal, or the half of the old pair asked for → that journal, unchanged;
+ * - it already has the nota journal → the nota journal is RESYNCED through the nota hook
+ *   (`postingNotaKait` → `selaraskanJurnalNota`), which posts the next generation with the
+ *   difference when the nota was corrected at handover or voided ("tidak jadi dikirim"), and changes
+ *   nothing when it already matches. That is what lets the retry button and the shipment hooks post
+ *   a correction or a void, instead of returning the first journal as if nothing had changed;
+ * - it holds the half of the old pair asked for → that journal, unchanged;
  * - it holds the OTHER half of the old pair only → the missing half under the old pair's source
  *   type, so the pair completes (its receivable on AR_STORE or AR by the delivery's date, see
  *   `postLegacyRevenue`). The nota journal would book the posted half a second time, and the nota
@@ -127,11 +132,12 @@ async function postLegacyCogs(
 }
 
 /**
- * The nota journal for a delivery with none, through the same hook the delivery action uses
- * (`postingNotaKait`): it never throws, files its own `JOURNAL_PENDING` (`nota_putus`) for a real
- * failure, and is off under vitest like every post-commit journal hook. Any failure is reported
- * here as NOTHING_TO_POST: passed back as a failure code, `postArJournalSafely` would file a second
- * flag for the same obstacle under the caller's kind.
+ * The nota journal through the same hook the delivery action uses (`postingNotaKait`): its first
+ * generation for a delivery with none, or its resync for one that has it. The hook never throws,
+ * files its own `JOURNAL_PENDING` (`nota_putus`) for a real failure, and is off under vitest like
+ * every post-commit journal hook. Any failure is reported here as NOTHING_TO_POST: passed back as a
+ * failure code, `postArJournalSafely` would file a second flag for the same obstacle under the
+ * caller's kind.
  */
 async function postNotaJournal(deliveryId: string, postedById: string): Promise<GenerateAutoJournalResult> {
   const r = await postingNotaKait(deliveryId, postedById);
@@ -154,7 +160,8 @@ async function postDeliveryJournal(
   const decision = await runSerializable<Decision>(async (tx) => {
     if (!(await lockDelivery(tx, deliveryId))) return { done: { ok: false, code: "NOTHING_TO_POST" } };
     const s = await journalState(tx, deliveryId);
-    if (s.nota) return { done: standing(s.nota) };
+    /* Generation 1 is keyed by the bare delivery id, so it is found here; later generations are the resync's. */
+    if (s.nota) return { postNota: true };
     const own = half === "revenue" ? s.revenue : s.cogs;
     if (own) return { done: standing(own) };
     const other = half === "revenue" ? s.cogs : s.revenue;

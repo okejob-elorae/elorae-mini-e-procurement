@@ -4,15 +4,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * Tes penulis rotasi toko tanpa basis data. Yang dijaga: lingkup kosong tidak
  * pernah memindahkan apa pun, toko yang sudah dipegang tujuan tidak ditulis
  * ulang, dan SETIAP toko yang berpindah meninggalkan jejak sebelum/sesudah —
- * kolomnya hanya menyimpan pemegang terakhir.
+ * kolomnya hanya menyimpan pemegang terakhir. Balapannya dengan formulir toko
+ * (P47) diuji terhadap basis data di `penanggung-jawab-balapan.test.ts`; di sini
+ * cukup dipastikan transaksinya lewat `runSerializable`.
  */
 
 const state = {
-  toko: [] as { id: string; salesmanId: string | null }[],
+  toko: [] as { id: string; salesmanId: string | null; termsType: "PUTUS" | "KONSI" }[],
   salesAda: true,
   diperbarui: [] as { where: unknown; data: unknown }[],
   jejak: [] as Record<string, unknown>[],
   dicari: [] as unknown[],
+  serializable: 0,
 };
 
 const tx = {
@@ -46,7 +49,17 @@ const tx = {
 vi.mock("@elorae/db", () => ({
   prisma: {
     user: { count: vi.fn(async () => (state.salesAda ? 1 : 0)) },
-    $transaction: (cb: (c: unknown) => Promise<unknown>) => cb(tx),
+    /* Transaksi biasa tidak boleh dipakai lagi: penjaga KONSI_WAJIB_PEMEGANG baca-lalu-tulis. */
+    $transaction: () => {
+      throw new Error("pindahkanToko harus lewat runSerializable");
+    },
+  },
+}));
+
+vi.mock("@/lib/db/tx-retry", () => ({
+  runSerializable: (cb: (c: unknown) => Promise<unknown>) => {
+    state.serializable += 1;
+    return cb(tx);
   },
 }));
 
@@ -54,14 +67,15 @@ const { pindahkanToko, gantiPemegangToko, AKSI_PINDAH_TOKO } = await import("./p
 
 beforeEach(() => {
   state.toko = [
-    { id: "s1", salesmanId: "lama" },
-    { id: "s2", salesmanId: null },
-    { id: "s3", salesmanId: "baru" },
+    { id: "s1", salesmanId: "lama", termsType: "PUTUS" },
+    { id: "s2", salesmanId: null, termsType: "PUTUS" },
+    { id: "s3", salesmanId: "baru", termsType: "PUTUS" },
   ];
   state.salesAda = true;
   state.diperbarui = [];
   state.jejak = [];
   state.dicari = [];
+  state.serializable = 0;
 });
 
 describe("pindahkanToko", () => {
@@ -105,8 +119,59 @@ describe("pindahkanToko", () => {
     expect(state.diperbarui[0]).toEqual({ where: { id: { in: ["s1", "s3"] } }, data: { salesmanId: null } });
   });
 
+  it("reads and writes inside runSerializable, never a plain transaction", async () => {
+    await pindahkanToko({ lingkup: { groupId: "g1" }, keSalesmanId: "baru", olehUserId: "admin" });
+    expect(state.serializable).toBe(1);
+    expect(state.diperbarui).toHaveLength(1);
+  });
+
+  it("refuses to clear the holder of a scope holding a KONSI store, and writes nothing (P47)", async () => {
+    state.toko = [
+      { id: "k1", salesmanId: "lama", termsType: "KONSI" },
+      { id: "p1", salesmanId: "lama", termsType: "PUTUS" },
+    ];
+    expect(await pindahkanToko({ lingkup: { dari: "lama" }, keSalesmanId: null, olehUserId: "admin" })).toEqual({
+      ok: false,
+      alasan: "KONSI_WAJIB_PEMEGANG",
+    });
+    expect(state.diperbarui).toHaveLength(0);
+    expect(state.jejak).toHaveLength(0);
+  });
+
+  it("moves a scope holding a KONSI store to another salesperson", async () => {
+    state.toko = [
+      { id: "k1", salesmanId: "lama", termsType: "KONSI" },
+      { id: "p1", salesmanId: "lama", termsType: "PUTUS" },
+    ];
+    expect(await pindahkanToko({ lingkup: { dari: "lama" }, keSalesmanId: "baru", olehUserId: "admin" })).toEqual({
+      ok: true,
+      jumlah: 2,
+    });
+    expect(state.diperbarui[0]).toEqual({ where: { id: { in: ["k1", "p1"] } }, data: { salesmanId: "baru" } });
+  });
+
+  it("still clears the holder of a PUTUS-only scope", async () => {
+    state.toko = [{ id: "p1", salesmanId: "lama", termsType: "PUTUS" }];
+    expect(await pindahkanToko({ lingkup: { dari: "lama" }, keSalesmanId: null, olehUserId: "admin" })).toEqual({
+      ok: true,
+      jumlah: 1,
+    });
+  });
+
+  it("does not refuse a KONSI store that already has no holder when clearing others", async () => {
+    /* Nothing moves for it, so it cannot be "emptied" by this call. */
+    state.toko = [
+      { id: "k0", salesmanId: null, termsType: "KONSI" },
+      { id: "p1", salesmanId: "lama", termsType: "PUTUS" },
+    ];
+    expect(await pindahkanToko({ lingkup: { groupId: "g1" }, keSalesmanId: null, olehUserId: "admin" })).toEqual({
+      ok: true,
+      jumlah: 1,
+    });
+  });
+
   it("reports zero and writes nothing when every store already has that holder", async () => {
-    state.toko = [{ id: "s3", salesmanId: "baru" }];
+    state.toko = [{ id: "s3", salesmanId: "baru", termsType: "PUTUS" }];
     expect(await pindahkanToko({ lingkup: { dari: "baru" }, keSalesmanId: "baru", olehUserId: "admin" })).toEqual({
       ok: true,
       jumlah: 0,

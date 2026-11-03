@@ -10,10 +10,13 @@ import {
   bolehMembacaPelunasan,
   bolehMembacaPiutang,
   bolehMembacaRetur,
+  bolehMembukaKomisiSpg,
   bolehMengelola,
   bolehMemutuskanBeban,
+  bolehMemutuskanSelisihRetur,
   bolehMemverifikasi,
 } from "@/lib/receivables/izin";
+import { bolehMembukaCatatanHadir } from "@/lib/spg/absen-catatan-hadir";
 import { JEJAK } from "@/lib/receivables/jejak";
 import { koreksiTertunda } from "@/lib/receivables/koreksi";
 
@@ -41,17 +44,31 @@ export const KUNCI_ANTREAN = [
   "transfersPendingApproval",
   "transferShortfallsOpen",
   "stockLossOpen",
+  "klaimEkspedisiMenunggu",
+  "klaimEkspedisiCek",
+  "klaimEkspedisiDitolak",
   "spgReturnsPending",
+  "spgReturnGoodsPending",
   "storeProposalsPending",
   "fieldPromisesUnconfirmed",
   "damagedDeliveriesOpen",
   "damagedWarehouseOpen",
   "claimCorrectionsPending",
   "returnCorrectionsPending",
+  "returnShortfallsUndecided",
   "shiftSwapsPending",
+  "spgSchedulesPending",
+  "spgAttendanceToEnter",
+  "spgAttendanceToCheck",
   "stockRequestsUnheld",
   "spgCommissionsUnset",
   "spgCommissionsUnpaidPast",
+  "spgDebtsOpen",
+  "spgDebtPaymentsToCheck",
+  "receiptsWithoutInvoice",
+  "invoiceRequestsOverdue",
+  "vendorBillPriceDifferences",
+  "grnNoPoPending",
   "productionStepsOverdue",
   "productionStepsDueToday",
   "ledgerDocsWithoutJournal",
@@ -59,6 +76,7 @@ export const KUNCI_ANTREAN = [
   "taxOverdue",
   "manualJournalsPendingApproval",
   "jubelioPricesPending",
+  "jubelioPricesDiffer",
 ] as const;
 
 export type KunciAntrean = (typeof KUNCI_ANTREAN)[number];
@@ -82,6 +100,16 @@ const transfersDecideShortfall = izinTunggal(PERMISSIONS.STORE_TRANSFERS_DECIDE_
 const inventoryManage = izinTunggal(PERMISSIONS.INVENTORY_MANAGE);
 const receivablesManage = izinTunggal(PERMISSIONS.RECEIVABLES_MANAGE);
 const productionView = izinTunggal(PERMISSIONS.PRODUCTION_PLANNING_VIEW);
+const vendorBillsView = izinTunggal(PERMISSIONS.VENDOR_BILLS_VIEW);
+const vendorBillsManage = izinTunggal(PERMISSIONS.VENDOR_BILLS_MANAGE);
+const jubelioPricesConfirm = izinTunggal(PERMISSIONS.JUBELIO_PRICES_CONFIRM);
+/** Pagar `barang-hilang/page.tsx` dan `[id]/page.tsx` — juga menu "Barang hilang". */
+const bukaBarangHilang: Pagar = (izin) => bolehMengelola(izin) || bolehMemutuskanBeban(izin) || spgView(izin);
+/**
+ * Pagar `komisi-spg/page.tsx`: halaman penuh untuk `bolehMembukaKomisiSpg`; pemegang
+ * `payments:verify` saja hanya melihat kartu #utang (memeriksa penerimaan utang SPG, keputusan 11).
+ */
+const bukaUtangSpg: Pagar = (izin) => bolehMembukaKomisiSpg(izin) || bolehMemverifikasi(izin);
 
 export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
   // Izin, sakit & cuti tim lapangan (LeaveRequest DIAJUKAN), semua bulan.
@@ -133,7 +161,32 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
   // izin keputusan saja — penerima kabar STOCK_LOSS_OPEN — tetap mendapat barisnya.
   stockLossOpen: {
     href: "/backoffice/barang-hilang?status=TERBUKA",
-    bolehBuka: (izin) => bolehMengelola(izin) || bolehMemutuskanBeban(izin) || spgView(izin),
+    bolehBuka: bukaBarangHilang,
+    bolehBertindak: bolehMemutuskanBeban,
+  },
+  // Klaim ekspedisi atas barang hilang di perjalanan yang penanggungnya Ekspedisi (R31, jawaban
+  // pemilik 2026-11-02). Tiga giliran, masing-masing izin aksinya sendiri (`app/actions/barang-hilang.ts`):
+  //  - DIAJUKAN: mencatat bayar atau tolak dari ekspedisi = receivables:manage;
+  //  - MENUNGGU_CEK: periksa sah / kembalikan = payments:verify (keputusan 11 — yang mencatat tidak
+  //    memeriksa catatannya sendiri; barisnya tetap tampil untuknya, aksinya yang menolak);
+  //  - DITOLAK: tetapkan penanggung lain = receivables:decide_bearer.
+  // Halamannya tetap pagar barang hilang (`bukaBarangHilang`): P28 "Keuangan hanya halaman Komisi
+  // SPG", jadi KEUANGAN yang hanya memegang payments:verify tidak mendapat baris yang memantul.
+  // Tautan membawa `status=DITETAPKAN` juga: hitungannya (`jumlahKlaimEkspedisi`) hanya membaca
+  // catatan yang sudah ditetapkan, jadi angka Beranda = baris yang tampil.
+  klaimEkspedisiMenunggu: {
+    href: "/backoffice/barang-hilang?status=DITETAPKAN&klaim=DIAJUKAN",
+    bolehBuka: bukaBarangHilang,
+    bolehBertindak: bolehMengelola,
+  },
+  klaimEkspedisiCek: {
+    href: "/backoffice/barang-hilang?status=DITETAPKAN&klaim=MENUNGGU_CEK",
+    bolehBuka: bukaBarangHilang,
+    bolehBertindak: bolehMemverifikasi,
+  },
+  klaimEkspedisiDitolak: {
+    href: "/backoffice/barang-hilang?status=DITETAPKAN&klaim=DITOLAK",
+    bolehBuka: bukaBarangHilang,
     bolehBertindak: bolehMemutuskanBeban,
   },
   // Retur pembeli yang dilaporkan SPG dan menunggu keputusan kantor (keputusan pemilik
@@ -141,6 +194,15 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
   // spg_returns:approve (`app/actions/spg-retur.ts`). Daftarnya membaca `?status=MENUNGGU`.
   spgReturnsPending: {
     href: "/backoffice/retur-spg?status=MENUNGGU",
+    bolehBuka: spgView,
+    bolehBertindak: izinTunggal(PERMISSIONS.SPG_RETURNS_APPROVE),
+  },
+  // Retur pembeli yang ditolak sesudah uangnya dikembalikan: beban SPG-nya sudah lunas dan barangnya
+  // menunggu keputusan (kembali ke stok atau dibeli SPG). Membuka = pengawas SPG, memutuskan =
+  // spg_returns:approve (`putuskanBarangReturPembeliAction`). Satu definisi dengan tab
+  // `KEPUTUSAN_BARANG` (`jumlahBebanPerluKeputusanBarang`).
+  spgReturnGoodsPending: {
+    href: "/backoffice/retur-spg?status=KEPUTUSAN_BARANG",
     bolehBuka: spgView,
     bolehBertindak: izinTunggal(PERMISSIONS.SPG_RETURNS_APPROVE),
   },
@@ -179,11 +241,38 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
     bolehBuka: bolehMembacaRetur,
     bolehBertindak: bolehMengelola,
   },
+  // Selisih retur toko yang penanggungnya belum diputuskan. Memutuskan = store_returns:decide_shortfall
+  // (registri izin 2026-11-02 menjawab P22: barang hilang dan selisih retur dua keputusan terpisah),
+  // izin yang sama dengan tombol, aksi, dan lonceng RETUR_SELISIH.
+  returnShortfallsUndecided: {
+    href: "/backoffice/retur-toko?langkah=keputusan",
+    bolehBuka: bolehMembacaRetur,
+    bolehBertindak: bolehMemutuskanSelisihRetur,
+  },
   // Tukar shift SPG yang sudah disetujui rekannya.
   shiftSwapsPending: {
     href: "/backoffice/jadwal-spg?tab=tukar",
     bolehBuka: spgView,
     bolehBertindak: storesManage,
+  },
+  // Jadwal bulanan yang diajukan SPG (P7c) — dasar gaji pokoknya. Menyetujui = spg_schedules:approve.
+  spgSchedulesPending: {
+    href: "/backoffice/jadwal-spg?tab=bulanan",
+    bolehBuka: spgView,
+    bolehBertindak: izinTunggal(PERMISSIONS.SPG_SCHEDULES_APPROVE),
+  },
+  // Catatan check-in toko (P7d/P7e/P61a): kantor diingatkan memasukkannya bila SPG tidak mengisi
+  // jadwalnya (mencatat = spg_attendance:record), lalu Admin Keuangan memeriksanya
+  // (spg_attendance:verify). Halamannya memagari dirinya sendiri (`bolehMembukaCatatanHadir`).
+  spgAttendanceToEnter: {
+    href: "/backoffice/komisi-spg/catatan-hadir?perlu=masukkan",
+    bolehBuka: bolehMembukaCatatanHadir,
+    bolehBertindak: izinTunggal(PERMISSIONS.SPG_ATTENDANCE_RECORD),
+  },
+  spgAttendanceToCheck: {
+    href: "/backoffice/komisi-spg/catatan-hadir?perlu=periksa",
+    bolehBuka: bolehMembukaCatatanHadir,
+    bolehBertindak: izinTunggal(PERMISSIONS.SPG_ATTENDANCE_VERIFY),
   },
   // Permintaan stok SPG untuk toko yang tidak punya pemegang: tidak ada salesman
   // yang menerimanya di HP, jadi kantor yang menanganinya.
@@ -195,21 +284,61 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
   // Komisi SPG toko putus bulan lalu yang belum ditetapkan — baris resminya
   // hanya terbentuk saat keuangan menekan "Tetapkan" per toko. `bulan=lalu`
   // tetap berarti bulan sebelum bulan berjalan, jadi tautannya tidak basi.
+  // Halaman Komisi SPG memagari dirinya sendiri (`bolehMembukaKomisiSpg`, P28/Q9), bukan lewat
+  // ROUTE_PERMISSIONS.
   spgCommissionsUnset: {
     href: "/backoffice/komisi-spg?bulan=lalu",
-    bolehBuka: spgView,
+    bolehBuka: bolehMembukaKomisiSpg,
     bolehBertindak: receivablesManage,
   },
   // Komisi SPG yang bulan pembayarannya sudah lewat dan sudah boleh dibayar, tetapi belum ditandai
   // dibayar — satu definisi dengan bagian pertama kartu #tunggakan (`daftarTunggakanKomisi`);
-  // yang ditahan menunggu keputusan pemilik dan yang lebih tua dari jendela koreksi tidak ikut.
+  // baris yang ditahan (gaji pokok, jadwal, atau catatan check-in belum ada) tidak ikut — ia tampil
+  // di baris tahannya sendiri.
   // Tanpa saringan URL: kartunya tidak bergantung pada bulan yang dibuka, jangkarnya yang membawa.
   // Membayar = spg_commission:pay (`tandaiKomisiSpgDibayarAction` di `app/actions/spg-komisi.ts`;
   // baris konsinyasi juga lewat `bayarKomisiAction` di `app/actions/konsinyasi.ts`).
   spgCommissionsUnpaidPast: {
     href: "/backoffice/komisi-spg#tunggakan",
-    bolehBuka: spgView,
+    bolehBuka: bolehMembukaKomisiSpg,
     bolehBertindak: izinTunggal(PERMISSIONS.SPG_COMMISSION_PAY),
+  },
+  // Utang SPG yang sudah berhenti (pembayaran terakhir tidak menutup potongannya): terbuka, sisa
+  // yang belum dicatat, atau tambahan sesudah pembayaran terakhir. Mencatat = spg_commission:pay.
+  // Pembayaran utang yang dicatat menunggu cek mutasi bank oleh orang lain (keputusan 11) =
+  // payments:verify — pemegangnya membuka kartu #utang saja (`bukaUtangSpg`).
+  spgDebtsOpen: {
+    href: "/backoffice/komisi-spg#utang",
+    bolehBuka: bukaUtangSpg,
+    bolehBertindak: izinTunggal(PERMISSIONS.SPG_COMMISSION_PAY),
+  },
+  spgDebtPaymentsToCheck: {
+    href: "/backoffice/komisi-spg#utang",
+    bolehBuka: bukaUtangSpg,
+    bolehBertindak: bolehMemverifikasi,
+  },
+  // Pembelian (P19, P27, P51a). Halaman Vendor Billing = vendor_bills:view (ROUTE_PERMISSIONS);
+  // meminta dan menindaklanjuti invoice = vendor_bills:manage; memutuskan selisih harga invoice =
+  // vendor_bills:decide_price; mengonfirmasi GRN tanpa PO = goods_receipts:confirm_no_po.
+  receiptsWithoutInvoice: {
+    href: "/backoffice/vendor-bills/belum-ditagih?status=belum",
+    bolehBuka: vendorBillsView,
+    bolehBertindak: vendorBillsManage,
+  },
+  invoiceRequestsOverdue: {
+    href: "/backoffice/vendor-bills/belum-ditagih?tab=permintaan&status=terlambat",
+    bolehBuka: vendorBillsView,
+    bolehBertindak: vendorBillsManage,
+  },
+  vendorBillPriceDifferences: {
+    href: "/backoffice/vendor-bills/selisih-harga?status=MENUNGGU",
+    bolehBuka: vendorBillsView,
+    bolehBertindak: izinTunggal(PERMISSIONS.VENDOR_BILLS_DECIDE_PRICE),
+  },
+  grnNoPoPending: {
+    href: "/backoffice/inventory?tab=grn&konfirmasi=menunggu",
+    bolehBuka: izinTunggal(PERMISSIONS.INVENTORY_VIEW),
+    bolehBertindak: izinTunggal(PERMISSIONS.GOODS_RECEIPTS_CONFIRM_NO_PO),
   },
   // Jadwal produksi per tahap: langkah yang belum selesai padahal targetnya
   // sudah lewat / jatuh hari ini. Tindak lanjutnya menanyai pemasok (WA dari
@@ -257,8 +386,15 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
   // tombol, dan aksinya memakai satu izin: jubelio_prices:confirm.
   jubelioPricesPending: {
     href: "/backoffice/jubelio/harga",
-    bolehBuka: izinTunggal(PERMISSIONS.JUBELIO_PRICES_CONFIRM),
-    bolehBertindak: izinTunggal(PERMISSIONS.JUBELIO_PRICES_CONFIRM),
+    bolehBuka: jubelioPricesConfirm,
+    bolehBertindak: jubelioPricesConfirm,
+  },
+  // Harga di Jubelio yang berbeda dengan harga ERP terkonfirmasi (R27d, P1/P75): satu definisi
+  // dengan daftar `?jenis=BEDA` (fragmen `sumberBeda` yang sama). Kirim ulang memakai izin yang sama.
+  jubelioPricesDiffer: {
+    href: "/backoffice/jubelio/harga?jenis=BEDA",
+    bolehBuka: jubelioPricesConfirm,
+    bolehBertindak: jubelioPricesConfirm,
   },
 };
 
@@ -333,6 +469,20 @@ export async function hitungBarangStokMinus(): Promise<number> {
   return grup.filter((g) => Number(g._sum.qtyOnHand ?? 0) - Number(g._sum.reservedQty ?? 0) < 0).length;
 }
 
+/**
+ * Nota retur toko di langkah "keputusan" — persis baris `?langkah=keputusan` di Retur & pencocokan
+ * (`daftarKerjaRetur` + `saringKerjaRetur`): gudang menghitung kurang dari klaim dan belum ada beban
+ * yang diputuskan. Dihitung dari daftar kerjanya sendiri, bukan dari `ReturnCharge.status`, supaya
+ * nota yang sebagian bebannya sudah diputuskan atau yang selisihnya tertutup barang susulan tidak
+ * terhitung di Beranda padahal tidak tampil di daftarnya. Penerimaan gudang tanpa nota (yatim)
+ * tidak pernah di langkah ini, jadi tidak dimuat.
+ */
+export async function hitungSelisihReturBelumDiputuskan(): Promise<number> {
+  const { daftarKerjaRetur } = await import("@/lib/receivables/return-queries");
+  const baris = await daftarKerjaRetur({ tanpaYatim: true });
+  return baris.filter((b) => b.jenis === "NRT" && b.langkah === "keputusan").length;
+}
+
 const HITUNG_ANTREAN: Readonly<Record<KunciAntrean, () => Promise<number>>> = {
   leavePending: () => prisma.leaveRequest.count({ where: { status: "DIAJUKAN" } }),
   expensesPendingApproval: () => prisma.expenseClaim.count({ where: { status: "DIAJUKAN" } }),
@@ -342,8 +492,13 @@ const HITUNG_ANTREAN: Readonly<Record<KunciAntrean, () => Promise<number>>> = {
   transfersPendingApproval: () => prisma.storeTransfer.count({ where: { status: "DIAJUKAN" } }),
   transferShortfallsOpen: () => prisma.storeTransfer.count({ where: { selisihStatus: "TERBUKA" } }),
   stockLossOpen: () => prisma.stockLoss.count({ where: { status: "TERBUKA" } }),
+  // Satu kueri klaim ekspedisi per baris — sama dengan saringan `?klaim=` daftar barang hilang.
+  klaimEkspedisiMenunggu: async () => (await (await import("@/lib/spg/hilang-queries")).jumlahKlaimEkspedisi()).diajukan,
+  klaimEkspedisiCek: async () => (await (await import("@/lib/spg/hilang-queries")).jumlahKlaimEkspedisi()).menungguCek,
+  klaimEkspedisiDitolak: async () => (await (await import("@/lib/spg/hilang-queries")).jumlahKlaimEkspedisi()).ditolak,
   // Satu definisi dengan tab "Menunggu" retur pembeli SPG (`RETUR_PEMBELI_MENUNGGU`).
   spgReturnsPending: async () => (await import("@/lib/spg/retur-pembeli-queries")).jumlahReturPembeliMenunggu(),
+  spgReturnGoodsPending: async () => (await import("@/lib/spg/beban-spg-queries")).jumlahBebanPerluKeputusanBarang(),
   // Hitungan milik modulnya sendiri, dimuat saat dipakai (rantai impornya berat).
   storeProposalsPending: async () => (await import("@/lib/stores/usulan-queries")).jumlahUsulanMenunggu(),
   // Sama dengan saringan "Belum dikonfirmasi" di Kontrabon: janji lapangan yang
@@ -355,12 +510,24 @@ const HITUNG_ANTREAN: Readonly<Record<KunciAntrean, () => Promise<number>>> = {
   damagedWarehouseOpen: hitungGudangRusakBersaldo,
   claimCorrectionsPending: async () => (await dokumenKoreksiTertunda("bkm")).size,
   returnCorrectionsPending: async () => (await dokumenKoreksiTertunda("retur")).size,
+  returnShortfallsUndecided: hitungSelisihReturBelumDiputuskan,
   shiftSwapsPending: async () => (await import("@/lib/spg/shift-queries")).jumlahTukarMenungguKantor(),
+  spgSchedulesPending: async () => (await import("@/lib/spg/jadwal-bulan-queries")).jumlahJadwalBulanMenunggu(),
+  // Diturunkan dari tahan bayar yang berlaku sekarang (`pasanganPerluCatatan`), bukan dari lonceng.
+  spgAttendanceToEnter: async () => (await import("@/lib/spg/absen-catatan-hadir-queries")).jumlahCatatanHadirPerluDimasukkan(),
+  spgAttendanceToCheck: async () => (await import("@/lib/spg/absen-catatan-hadir-queries")).jumlahCatatanHadirMenungguPeriksa(),
   stockRequestsUnheld: () => prisma.stockRequest.count({ where: { status: "BARU", store: { salesmanId: null } } }),
   // Definisi yang sama dengan "belum ditetapkan" di halaman Komisi SPG.
   spgCommissionsUnset: async () => (await import("@/lib/spg/komisi-queries")).jumlahKomisiPutusBelumDitetapkan(),
   // Bagian pertama kartu #tunggakan Komisi SPG: baris yang boleh dibayar sekarang, di jendela koreksi.
   spgCommissionsUnpaidPast: async () => (await import("@/lib/spg/koreksi-queries")).jumlahKomisiSpgTertunggak(),
+  spgDebtsOpen: async () => (await import("@/lib/spg/utang-queries")).jumlahUtangSpgTerbuka(),
+  spgDebtPaymentsToCheck: async () => (await import("@/lib/spg/utang-queries")).jumlahBayarUtangSpgMenungguCek(),
+  // Satu definisi dengan saringan halaman tujuannya (`belum-ditagih`, `selisih-harga`).
+  receiptsWithoutInvoice: async () => (await import("@/lib/vendor-billing/belum-ditagih-queries")).hitungPenerimaanBelumDiminta(),
+  invoiceRequestsOverdue: async () => (await import("@/lib/vendor-billing/permintaan-invoice-queries")).hitungPermintaanInvoiceTerlambat(),
+  vendorBillPriceDifferences: async () => (await import("@/lib/vendor-billing/koreksi-utang-queries")).hitungSelisihHargaMenunggu(),
+  grnNoPoPending: async () => (await import("@/lib/grn/grn-tanpa-po-writer")).hitungGrnTanpaPoMenunggu(),
   // Satu definisi dengan tab "Terlambat"/"Hari ini" follow-up produksi (`whereFollowUp`).
   productionStepsOverdue: async () => (await import("@/lib/production/jadwal-queries")).hitungLangkahTelat(),
   productionStepsDueToday: async () => (await import("@/lib/production/jadwal-queries")).hitungLangkahHariIni(),
@@ -373,6 +540,8 @@ const HITUNG_ANTREAN: Readonly<Record<KunciAntrean, () => Promise<number>>> = {
   manualJournalsPendingApproval: async () => (await import("@/lib/finance/jurnal-manual/queries")).hitungDrafJurnal(),
   // Satu definisi dengan daftar Jubelio → Konfirmasi harga tanpa saringan.
   jubelioPricesPending: async () => (await import("@/lib/jubelio/harga/queries")).hitungHargaMenungguKonfirmasi(),
+  // Satu definisi dengan daftar `?jenis=BEDA`.
+  jubelioPricesDiffer: async () => (await import("@/lib/jubelio/harga/queries")).hitungHargaBedaDiJubelio(),
 };
 
 export type AngkaAntrean = Partial<Record<KunciAntrean, number>>;

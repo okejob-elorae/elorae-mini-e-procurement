@@ -101,6 +101,8 @@ d("jadwal & tukar shift SPG — penulis (test bed only)", () => {
     await prisma.auditLog.deleteMany({ where: { userId: { in: userIds() } } });
     await prisma.spgShiftSwap.deleteMany({ where: { storeId: { in: tokoIds() } } });
     await prisma.spgShift.deleteMany({ where: { userId: { in: userIds() } } });
+    /* Every saved cell touches its month's schedule header (`sentuhJadwalBulan`). */
+    await prisma.spgMonthSchedule.deleteMany({ where: { userId: { in: userIds() } } });
   });
 
   afterAll(async () => {
@@ -114,6 +116,27 @@ d("jadwal & tukar shift SPG — penulis (test bed only)", () => {
   });
 
   // ─── Simpan jadwal ──────────────────────────────────────────────────────
+
+  it("menyentuh kepala jadwal bulanan: dibuat DRAF, versi naik, bulan DISETUJUI kembali DIAJUKAN tanpa izin menyetujui", async () => {
+    await isiAwal([{ userId: a, day: SEL, isi: { jenis: "KERJA", kode: "PAGI" } }]);
+    const bulan = SEL.slice(0, 7);
+    const kepala = await prisma.spgMonthSchedule.findUniqueOrThrow({ where: { userId_month: { userId: a, month: bulan } } });
+    expect(kepala.status).toBe("DRAF");
+    expect(kepala.storeId).toBe(toko);
+
+    await prisma.spgMonthSchedule.update({ where: { id: kepala.id }, data: { status: "DISETUJUI" } });
+    await isiAwal([{ userId: a, day: SEL, isi: { jenis: "KERJA", kode: "SIANG" } }]);
+    const turun = await prisma.spgMonthSchedule.findUniqueOrThrow({ where: { id: kepala.id } });
+    expect(turun.status).toBe("DIAJUKAN");
+    expect(turun.version).toBe(kepala.version + 1);
+
+    // Pengubah yang memegang spg_schedules:approve: bulan yang disetujui tetap disetujui.
+    await prisma.spgMonthSchedule.update({ where: { id: kepala.id }, data: { status: "DISETUJUI" } });
+    await simpanJadwalSpg({ storeId: toko, olehUserId: kantor, isian: [{ userId: a, day: SEL, isi: { jenis: "LIBUR" } }], bolehSetujui: true, sekarang: SEKARANG });
+    const tetap = await prisma.spgMonthSchedule.findUniqueOrThrow({ where: { id: kepala.id } });
+    expect(tetap.status).toBe("DISETUJUI");
+    expect(tetap.version).toBe(kepala.version + 2);
+  });
 
   it("menyimpan sel dengan jam disalin dari pengaturan, satu jejak, satu kabar per SPG", async () => {
     const r = await isiAwal([

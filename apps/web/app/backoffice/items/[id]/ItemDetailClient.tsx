@@ -35,6 +35,8 @@ import { alamatLabel } from "@/lib/items/label";
 import { GaleriBelumSimpanContext } from '@/components/items/ItemGalleryEditor';
 import type { HppBarang } from "@/lib/items/hpp-barang";
 import type { HppTerbaru, RiwayatHpp } from "@/lib/items/riwayat-hpp";
+import type { AturanHarga } from "@/lib/items/rekomendasi-harga";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 
 type ItemDetailClientProps = {
   initialData: Parameters<typeof ItemForm>[0]['initialData'];
@@ -44,8 +46,8 @@ type ItemDetailClientProps = {
   hppTerbaru?: HppTerbaru | null;
   /** Halaman pertama riwayat HPP; null = penonton tanpa izin lihat barang. */
   riwayatHppAwal?: RiwayatHpp | null;
-  /** Margin dan biaya tambahan bawaan (Pengaturan Jubelio) untuk rekomendasi. */
-  bawaanRekomendasi?: { margin: number | null; biaya: number | null };
+  /** Aturan (persen + dasar) dan bantalan margin bawaan (Pengaturan Jubelio) untuk rekomendasi. */
+  bawaanRekomendasi?: { aturan: AturanHarga | null; biaya: number | null };
   /** Kode satuan barang (mis. PCS, M) untuk judul kolom riwayat HPP. */
   satuan?: string | null;
   itemType: ItemType;
@@ -94,6 +96,8 @@ export function ItemDetailClient({
   // Galeri foto punya tombol simpan sendiri; jumlah perubahannya dilaporkan lewat konteks.
   const [galeriBelumSimpan, setGaleriBelumSimpan] = useState(0);
   const isAdmin = session?.user?.permissions?.includes("*") ?? false;
+  // Simpan formulir = items:edit (P76); centang saluran jual dikunci persis ketika simpan tidak boleh.
+  const bolehSimpan = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.ITEMS_EDIT);
   const showCreateInJubelio =
     (jubelioCreateState === 'eligible' || jubelioCreateState === 'category_unmapped') && !jubelioCreated;
 
@@ -130,6 +134,8 @@ export function ItemDetailClient({
         toast.info(tItems("createInJubelioAlready"));
       } else if (r.reason === "category_unmapped") {
         toast.error(tItems("createInJubelioNeedsCategory"));
+      } else if (r.reason === "offline_channel") {
+        toast.error(tItems("createInJubelioOffline"));
       } else {
         toast.error(tItems("createInJubelioFailed"));
       }
@@ -269,6 +275,7 @@ export function ItemDetailClient({
               hpp={hpp}
               hppTerbaru={hppTerbaru}
               bawaanRekomendasi={bawaanRekomendasi}
+              bolehSimpan={bolehSimpan}
               onSubmit={handleSubmit}
               isLoading={isSaving}
             />

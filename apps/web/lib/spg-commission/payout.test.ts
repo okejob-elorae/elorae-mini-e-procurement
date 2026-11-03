@@ -115,6 +115,69 @@ describe("komisi SPG — satu hitungan (keputusan pemilik 2026-11-01)", () => {
   });
 });
 
+describe("kategori baris penjualan (P8, B4): satu barang × kategori barisnya", () => {
+  it("putus: barang yang kategorinya diganti di tengah bulan menjadi dua baris laporan, masing-masing dengan tarif kategorinya", () => {
+    const laporan = putus({ movements: [jual("dewi", "kaos-1", "kaos", 3), jual("dewi", "kaos-1", "kemeja", 2)] });
+    expect(toCommissionReport(laporan).lines.map((l) => [l.itemId, l.categoryId, l.posQty, l.billedQty])).toEqual([
+      ["kaos-1", "kaos", 3, 3],
+      ["kaos-1", "kemeja", 2, 2],
+    ]);
+    expect(commissionPerSpg(laporan, rates)).toEqual([{ salesmanId: "dewi", pieces: 5, amount: 3 * 2_000 + 2 * 1_000, noRatePieces: 0 }]);
+  });
+
+  it("putus: pengembalian pembeli dikurangkan dari baris kategori nota aslinya, bukan dari baris lain barang itu", () => {
+    const laporan = putus({ movements: [jual("dewi", "kaos-1", "kaos", 3), jual("dewi", "kaos-1", "kemeja", 2), jual("dewi", "kaos-1", "kemeja", -2)] });
+    expect(toCommissionReport(laporan).lines.map((l) => [l.categoryId, l.posQty])).toEqual([["kaos", 3]]);
+    expect(commissionPerSpg(laporan, rates)[0].amount).toBe(3 * 2_000);
+  });
+
+  it("konsi: angka resmi membatasi per BARANG, lalu dibagi ke baris kategorinya menurut sisa terbesar atas potong kasir", () => {
+    // Kasir: 4 potong berkategori kaos + 2 berkategori kemeja = 6; resmi 5. 5 × 4/6 = 3,33 dan 5 × 2/6 = 1,67 → 3 dan 2.
+    const laporan = konsi({
+      official: [{ itemId: "kaos-1", qty: 5 }],
+      movements: [jual("ani", "kaos-1", "kaos", 4), jual("ani", "kaos-1", "kemeja", 2)],
+    });
+    expect(toCommissionReport(laporan).lines.map((l) => [l.categoryId, l.posQty, l.billedQty])).toEqual([
+      ["kaos", 4, 3],
+      ["kemeja", 2, 2],
+    ]);
+    expect(commissionPerSpg(laporan, rates)).toEqual([{ salesmanId: "ani", pieces: 5, amount: 3 * 2_000 + 2 * 1_000, noRatePieces: 0 }]);
+  });
+
+  it("konsi: angka resmi di atas catatan kasir tidak menambah potong — batasnya min(resmi, kasir) per barang, rumus hari ini", () => {
+    const laporan = konsi({
+      official: [{ itemId: "kaos-1", qty: 50 }],
+      movements: [jual("ani", "kaos-1", "kaos", 4), jual("sari", "kaos-1", "kemeja", 2)],
+    });
+    expect(toCommissionReport(laporan).lines.map((l) => [l.categoryId, l.billedQty])).toEqual([
+      ["kaos", 4],
+      ["kemeja", 2],
+    ]);
+  });
+
+  it("konsi: sisa yang seri jatuh ke kategori ber-id lebih kecil, dan \"tanpa kategori\" paling akhir", () => {
+    const seri = konsi({ official: [{ itemId: "kaos-1", qty: 1 }], movements: [jual("ani", "kaos-1", "kemeja", 1), jual("ani", "kaos-1", "kaos", 1)] });
+    expect(toCommissionReport(seri).lines.map((l) => [l.categoryId, l.billedQty])).toEqual([
+      ["kaos", 1],
+      ["kemeja", 0],
+    ]);
+    const tanpa = konsi({ official: [{ itemId: "kaos-1", qty: 1 }], movements: [jual("ani", "kaos-1", null, 1), jual("ani", "kaos-1", "kaos", 1)] });
+    expect(toCommissionReport(tanpa).lines.map((l) => [l.categoryId, l.billedQty])).toEqual([
+      ["kaos", 1],
+      [null, 0],
+    ]);
+  });
+
+  it("konsi: bagian satu baris kategori dibagi ke SPG menurut potong kasir masing-masing", () => {
+    // Baris kaos: Ani 2, Sari 2, resmi 3 → 1,5 dan 1,5; sisa seri ke id lebih kecil (ani).
+    const laporan = konsi({ official: [{ itemId: "kaos-1", qty: 3 }], movements: [jual("ani", "kaos-1", "kaos", 2), jual("sari", "kaos-1", "kaos", 2)] });
+    expect(commissionPerSpg(laporan, rates).map((r) => [r.salesmanId, r.pieces])).toEqual([
+      ["ani", 2],
+      ["sari", 1],
+    ]);
+  });
+});
+
 describe("bulan pembayaran dan catatan bulan penjualan", () => {
   it("penjualan Oktober yang dicek 5 November dibayar November dengan catatan 'Komisi penjualan Oktober 2026'", () => {
     const events = salesReportEvents([konsi()], rates);

@@ -3,6 +3,7 @@ import { hitungSisaPiutang, type StatusKlaim } from "@/lib/receivables/rules";
 import { PILIH_POTONGAN, potonganRetur } from "@/lib/receivables/deductions";
 import { kanalMarketplace, KANAL_MARKETPLACE, type KanalJurnal } from "@/lib/finance/journals/kanal";
 import { readReceivableJournalStates } from "@/lib/finance/ar/store-receivable-role";
+import { SYARAT_GRN_DIPROSES } from "@/lib/grn/grn-tanpa-po";
 import type { EntriHutang, EntriPiutangMarketplace, EntriPiutangToko } from "./jenis";
 import type { BarisStok } from "./persediaan";
 import { dariSen, keSen } from "./jurnal";
@@ -35,8 +36,12 @@ function potong<T>(xs: readonly T[]): T[][] {
  * POSTED dan dibayar SEBELUM tanggal mulai yang mengurangi. Yang sesudahnya
  * urusan jurnal penerimaannya, dan yang dibatalkan tidak pernah mengurangi.
  *
- * Hanya faktur bertanggal sebelum tanggal mulai, dan toko KONSINYASI tidak
- * pernah ikut (sama dengan modul piutang). Faktur yang jurnal fakturnya
+ * Hanya faktur bertanggal sebelum tanggal mulai, bukan tagihan KONSINYASI
+ * (`Receivable.isConsignment` — tanda di fakturnya sendiri, bukan syarat toko
+ * hari ini: faktur putus di toko yang belakangan pindah ke konsinyasi tetap
+ * piutang toko), dan bukan faktur yang DIBATALKAN. Tagihan konsinyasi berdiri
+ * di AR_CONSIGNMENT, akun yang saldo awalnya diketik sendiri di Saldo awal →
+ * Akun; menghitungnya di sini akan membukukannya dua kali. Faktur yang jurnal fakturnya
  * mendebit akun LAIN (bentuk lama di AR, laporan laku konsinyasi di
  * AR_CONSIGNMENT — `readReceivableJournalStates`) juga tidak ikut: piutangnya
  * sudah di buku besar di akun itu, dan setiap pelunasannya dikredit ke sana.
@@ -51,7 +56,8 @@ export async function hitungPiutangTokoAwal(
   const rows = await client.receivable.findMany({
     where: {
       invoiceDate: { lt: tanggalMulai },
-      store: { termsType: { not: "KONSI" } },
+      isConsignment: false,
+      status: { not: "VOIDED" },
       ...(opsi.storeIds ? { storeId: { in: opsi.storeIds } } : {}),
     },
     select: {
@@ -175,9 +181,11 @@ export async function hitungPiutangMarketplaceAwal(
 /**
  * Hutang pemasok per tanggal mulai, per pemasok: penerimaan barang (GRN)
  * sebelum tanggal mulai yang belum dibayar per tanggal itu (PO-nya belum
- * ditandai lunas, atau ditandai lunas pada/sesudah tanggal mulai), tidak
- * ditolak pemilik, dan BELUM punya jurnal GRN (yang sudah berjurnal hutangnya
- * sudah di buku besar). Dikurangi alokasi pembayaran pemasok sebelum tanggal
+ * ditandai lunas, atau ditandai lunas pada/sesudah tanggal mulai), sudah
+ * DIPROSES (`SYARAT_GRN_DIPROSES`: tidak ditolak pemilik, dan GRN tanpa PO
+ * hanya bila sudah dikonfirmasi admin — yang masih menunggu belum menggerakkan
+ * stok dan belum menjadi utang, P51a), dan BELUM punya jurnal GRN (yang sudah
+ * berjurnal hutangnya sudah di buku besar). Dikurangi alokasi pembayaran pemasok sebelum tanggal
  * mulai ke GRN itu. Nilai = `GRN.totalAmount`, dasar yang sama dengan jurnal GRN.
  */
 export async function hitungHutangPemasokAwal(
@@ -188,7 +196,7 @@ export async function hitungHutangPemasokAwal(
   const grn = await client.gRN.findMany({
     where: {
       grnDate: { lt: tanggalMulai },
-      ownerDeclinedAt: null,
+      AND: [SYARAT_GRN_DIPROSES],
       ...(opsi.grnIds ? { id: { in: opsi.grnIds } } : {}),
     },
     select: {

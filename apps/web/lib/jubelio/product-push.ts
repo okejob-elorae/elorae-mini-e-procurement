@@ -14,6 +14,13 @@ import { hasPushableChange, type PushableSnapshot } from "@/lib/items/jubelio-pu
  * Creating a product in Jubelio is a REQUEST, not a push: the item form, a ticked item import, the
  * item page's "Ajukan ke Jubelio" and the bulk migration stamp the request (`lib/jubelio/harga/
  * pengajuan.ts`), and confirming its price creates it. Edits push only items Jubelio already knows.
+ *
+ * "Toko offline saja" is never pushed by an edit (owner answer P3a, 2026-11-02): a product Jubelio
+ * already has is deactivated once when its channel changes (`lib/items/mutations.ts`, P72), and
+ * after that only a price decision ("Kirim ulang harga ERP") or the release of a held push sends
+ * it again. While Jubelio's price differs from the confirmed one with no decision, the apps/api
+ * handler HOLDS every push (P75, `price_differs_held`), and `lib/jubelio/harga/lepas-tahanan.ts`
+ * re-queues one once the difference is settled.
  */
 
 /** Inserts one product_push outbox row. Takes a transaction so a confirmation commits with its push. */
@@ -50,10 +57,11 @@ export async function enqueueProductPushOnUpdate(
 
   const item = await prisma.item.findUnique({
     where: { id: itemId },
-    select: { id: true, type: true },
+    select: { id: true, type: true, salesChannel: true },
   });
   if (!item) return;
   if (item.type !== "FINISHED_GOOD") return;
+  if (item.salesChannel === "OFFLINE") return;
 
   /**
    * Only an item Jubelio already knows is pushed on edit. Creating a product in Jubelio is a
@@ -73,10 +81,11 @@ export async function enqueueProductPushOnUpdate(
 export async function enqueueProductPushOnImageChange(itemId: string, userId: string | null): Promise<void> {
   const item = await prisma.item.findUnique({
     where: { id: itemId },
-    select: { id: true, type: true },
+    select: { id: true, type: true, salesChannel: true },
   });
   if (!item) return;
   if (item.type !== "FINISHED_GOOD") return;
+  if (item.salesChannel === "OFFLINE") return;
 
   /**
    * Only an item Jubelio already knows is pushed on edit. Creating a product in Jubelio is a

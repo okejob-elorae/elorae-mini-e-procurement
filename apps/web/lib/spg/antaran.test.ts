@@ -49,7 +49,8 @@ const info = (pengiriman: PengirimanAntaran | null, belumDikirimGudang = 40): In
 
 describe("sisa pesanan per tempat", () => {
   it("splits what is left into packed, on the road and not yet sent by the warehouse", () => {
-    const s = sisaBarisPesanan({ id: "l1", qty: 100, deliveredQty: 60, cancelledQty: 0 }, [
+    // deliveredQty counts the 60 delivered AND the 35 on open shipments: stock leaves at creation (Q1).
+    const s = sisaBarisPesanan({ id: "l1", qty: 100, deliveredQty: 95, cancelledQty: 0 }, [
       { status: "IN_TRANSIT", lines: [{ orderLineId: "l1", plannedQty: 30 }] },
       { status: "PACKED", lines: [{ orderLineId: "l1", plannedQty: 5 }, { orderLineId: "lain", plannedQty: 9 }] },
       { status: "DELIVERED", lines: [{ orderLineId: "l1", plannedQty: 60 }] },
@@ -66,12 +67,21 @@ describe("sisa pesanan per tempat", () => {
     });
   });
 
-  it("never goes negative when a shipment plans more than is left", () => {
-    const s = sisaBarisPesanan({ id: "l1", qty: 5, deliveredQty: 0, cancelledQty: 0 }, [
+  it("pieces on open shipments are counted on top of what is not yet packed", () => {
+    const s = sisaBarisPesanan({ id: "l1", qty: 5, deliveredQty: 5, cancelledQty: 0 }, [
       { status: "IN_TRANSIT", lines: [{ orderLineId: "l1", plannedQty: 4 }] },
-      { status: "PACKED", lines: [{ orderLineId: "l1", plannedQty: 4 }] },
+      { status: "PACKED", lines: [{ orderLineId: "l1", plannedQty: 1 }] },
     ]);
     expect(s).toEqual({ sisa: 5, dalamPerjalanan: 4, dikemas: 1, belumDikirimGudang: 0 });
+  });
+
+  it("never goes negative when deliveredQty is above the order", () => {
+    expect(sisaBarisPesanan({ id: "l1", qty: 5, deliveredQty: 7, cancelledQty: 0 }, [])).toEqual({
+      sisa: 0,
+      dalamPerjalanan: 0,
+      dikemas: 0,
+      belumDikirimGudang: 0,
+    });
   });
 
   it("a line without an id has no shipments to match — everything left is still at the warehouse", () => {
@@ -86,8 +96,8 @@ describe("sisa pesanan per tempat", () => {
   it("sums over an order's lines", () => {
     const s = sisaPesanan(
       [
-        { id: "a", qty: 10, deliveredQty: 4, cancelledQty: 0 },
-        { id: "b", qty: 6, deliveredQty: 0, cancelledQty: 1 },
+        { id: "a", qty: 10, deliveredQty: 10, cancelledQty: 0 },
+        { id: "b", qty: 6, deliveredQty: 2, cancelledQty: 1 },
       ],
       [{ status: "IN_TRANSIT", lines: [{ orderLineId: "a", plannedQty: 6 }, { orderLineId: "b", plannedQty: 2 }] }],
     );

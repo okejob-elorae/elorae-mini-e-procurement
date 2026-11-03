@@ -1,4 +1,5 @@
-import type { SpgReportCommission } from "@/lib/spg-commission/payout";
+import { confirmsAnyPiece, type SalesReport, type SpgReportCommission } from "@/lib/spg-commission/payout";
+import { detailGajiUntukDisimpan, type DetailGajiTersimpan, type HasilGaji } from "./gaji-pokok";
 
 /**
  * Komisi SPG — murni, tanpa basis data.
@@ -36,29 +37,33 @@ export const JEJAK_KOMISI_SPG = {
 
 export type NamaJejakKomisiSpg = (typeof JEJAK_KOMISI_SPG)[keyof typeof JEJAK_KOMISI_SPG];
 
-/**
- * `SpgCommission.basis` baris yang ditetapkan dengan hitungan tarif kategori. Baris yang
- * ditetapkan sebelum 2026-11-01 memakai `PER_SPG`/`BAGI_RATA` (tarif barang) dan tetap bisa
- * dibaca; menetapkan ulang menggantinya dengan hitungan baru.
- */
+/** `SpgCommission.basis` setiap baris: hitungan tarif kategori (satu-satunya aturan; tidak ada data aturan lama). */
 export const DASAR_TARIF_KATEGORI = "TARIF_KATEGORI";
 
 /**
- * `SpgCommission.basis` baris toko putus yang ditetapkan SEBELUM 2026-11-01 (tarif barang:
- * `PER_SPG` per penjual, `BAGI_RATA` dibagi rata). Hanya dibaca untuk baris lama itu; pengaturan
- * `spg.komisiPutus` yang dulu memilihnya sudah tidak dibaca atau ditulis.
+ * Laporan toko putus × bulan yang perlu dicek kantor (B20): ia mengonfirmasi potong untuk seorang SPG,
+ * ATAU punya peserta gaji (SPG terjadwal yang bulan itu tidak menjual tetap digaji, P63). Satu
+ * definisi untuk "Tandai laporan dicek", antrean "menunggu dicek", dan Beranda.
  */
-export type DasarLama = "BAGI_RATA" | "PER_SPG";
-
-export type DasarResmi = typeof DASAR_TARIF_KATEGORI | DasarLama;
-
-export function bacaDasarResmi(basis: string): DasarResmi {
-  if (basis === DASAR_TARIF_KATEGORI) return DASAR_TARIF_KATEGORI;
-  return basis === "PER_SPG" ? "PER_SPG" : "BAGI_RATA";
+export function laporanPerluDicek(laporan: SalesReport, peserta: readonly string[]): boolean {
+  return peserta.length > 0 || confirmsAnyPiece(laporan);
 }
 
-/** Baris yang ditetapkan dengan aturan lama (tarif barang / dibagi rata). */
-export const aturanLama = (basis: string) => bacaDasarResmi(basis) !== DASAR_TARIF_KATEGORI;
+/** Potong yang terjual tanpa kategori barang: komisinya menyusul begitu kategorinya diisi (P69). */
+export type TanpaKategori = { itemId: string; potong: number };
+
+/**
+ * Potong tanpa kategori per barang dalam satu laporan (dari gerakannya, kategori BARIS nota — P8).
+ * Ditampilkan di "Tandai laporan dicek" dan saat mengunci siklus konsinyasi; tidak pernah menolak.
+ */
+export function potongTanpaKategori(laporan: Pick<SalesReport, "movements">): TanpaKategori[] {
+  const per = new Map<string, number>();
+  for (const m of laporan.movements) if (m.categoryId === null) per.set(m.itemId, (per.get(m.itemId) ?? 0) + m.qty);
+  return [...per]
+    .filter(([, q]) => q > 0)
+    .map(([itemId, potong]) => ({ itemId, potong }))
+    .sort((a, b) => (a.itemId < b.itemId ? -1 : a.itemId > b.itemId ? 1 : 0));
+}
 
 /** Orang yang mungkin menerima: SPG yang bertugas di toko itu, penjual bulan itu, atau pemegang baris resmi. */
 export type OrangKomisi = { userId: string; nama: string; ditugaskan: boolean };
@@ -169,42 +174,64 @@ export type BarisResmiAda = {
   unitsSold: number;
   commission: number;
   basis: string;
+  baseSalary: number;
+  salaryDetail: unknown;
   paidAt: Date | null;
 };
 
 export type IsiResmi = { unitsSold: number; commission: number; basis: string };
 
+export type IsiResmiGaji = IsiResmi & { baseSalary: number; salaryDetail: DetailGajiTersimpan | null };
+
 export type RencanaTetapkan =
-  | { ok: false; code: "SUDAH_DIBAYAR" | "TANPA_SPG" }
+  | { ok: false; code: "SUDAH_DIBAYAR" | "TANPA_PESERTA" }
   | {
       ok: true;
-      tulis: { userId: string; isi: IsiResmi; sebelum: (IsiResmi & { id: string }) | null }[];
-      hapus: { id: string; userId: string; sebelum: IsiResmi }[];
+      tulis: { userId: string; isi: IsiResmiGaji; sebelum: (IsiResmi & { id: string; baseSalary: number }) | null }[];
+      hapus: { id: string; userId: string; sebelum: IsiResmi & { baseSalary: number } }[];
     };
 
-const isiDari = (b: BarisResmiAda): IsiResmi => ({ unitsSold: b.unitsSold, commission: b.commission, basis: b.basis });
+const isiDari = (b: BarisResmiAda): IsiResmi & { baseSalary: number } => ({ unitsSold: b.unitsSold, commission: b.commission, basis: b.basis, baseSalary: b.baseSalary });
 
 /**
- * Apa yang ditulis saat satu toko putus × satu bulan penjualan ditetapkan (ulang).
+ * Apa yang ditulis saat satu toko putus × satu bulan penjualan ditetapkan (ulang): SATU baris untuk
+ * setiap peserta gaji bulan itu (B19) dan setiap penjual yang mengonfirmasi potong — walau komisinya
+ * nol — dengan potret gaji pokoknya (`gaji`, P63). Gaji yang sudah dihitung di baris lain untuk SPG ×
+ * bulan yang sama (toko yang berganti syarat) ditulis Rp 0 dengan penunjuk ke baris itu
+ * (`diBarisLain`), supaya gaji sebulan tidak pernah dibayar dua kali.
  *
- * DITOLAK seluruhnya kalau satu baris saja sudah dibayar: angka toko × bulan itu sudah keluar
- * sebagian, dan menetapkan ulang sebagian lainnya membuat jejaknya tidak lagi menjelaskan satu
- * hitungan. Baris orang yang tidak lagi menerima (potongnya hilang karena pengembalian yang
- * menyusul, atau baris aturan lama) dihapus; jejaknya tetap.
+ * DITOLAK seluruhnya kalau satu baris saja sudah dibayar (`SUDAH_DIBAYAR`), atau tanpa peserta dan
+ * tanpa penjual (`TANPA_PESERTA`). Baris orang yang tidak lagi ikut dihapus; jejaknya tetap.
  */
-export function rencanaTetapkan(hasil: HasilKomisiToko, ada: BarisResmiAda[]): RencanaTetapkan {
+export function rencanaTetapkan(
+  hasil: HasilKomisiToko,
+  ada: BarisResmiAda[],
+  peserta: readonly string[],
+  gaji: ReadonlyMap<string, HasilGaji | null>,
+  diBarisLain: ReadonlyMap<string, { refType: string; refId: string }> = new Map(),
+): RencanaTetapkan {
   if (ada.some((b) => b.paidAt !== null)) return { ok: false, code: "SUDAH_DIBAYAR" };
-  const penerima = hasil.perSpg.filter((p) => p.penerima);
-  if (penerima.length === 0) return { ok: false, code: "TANPA_SPG" };
+  const perSpg = new Map(hasil.perSpg.map((p) => [p.userId, p]));
+  const ikut = [...new Set([...peserta, ...hasil.perSpg.filter((p) => p.penerima).map((p) => p.userId)])].sort();
+  if (ikut.length === 0) return { ok: false, code: "TANPA_PESERTA" };
   const lama = new Map(ada.map((b) => [b.userId, b]));
-  const id = new Set(penerima.map((p) => p.userId));
+  const id = new Set(ikut);
   return {
     ok: true,
-    tulis: penerima.map((p) => {
-      const b = lama.get(p.userId);
+    tulis: ikut.map((userId) => {
+      const p = perSpg.get(userId);
+      const b = lama.get(userId);
+      const lain = diBarisLain.get(userId) ?? null;
+      const g = lain ? null : (gaji.get(userId) ?? null);
       return {
-        userId: p.userId,
-        isi: { unitsSold: p.potong, commission: p.komisi, basis: DASAR_TARIF_KATEGORI },
+        userId,
+        isi: {
+          unitsSold: p?.potong ?? 0,
+          commission: p?.komisi ?? 0,
+          basis: DASAR_TARIF_KATEGORI,
+          baseSalary: !lain && g && g.ok ? g.rincian.gajiPokok : 0,
+          salaryDetail: detailGajiUntukDisimpan(g, lain),
+        },
         sebelum: b ? { id: b.id, ...isiDari(b) } : null,
       };
     }),
@@ -215,19 +242,24 @@ export function rencanaTetapkan(hasil: HasilKomisiToko, ada: BarisResmiAda[]): R
 const samaSen = (a: number, b: number) => Math.round(a * 100) === Math.round(b * 100);
 
 /**
- * Apakah hitungan sekarang masih sama dengan yang sudah ditetapkan. Berbeda kalau ada nota yang
- * masuk dari antrean HP atau pengembalian sesudah ditetapkan, tarifnya diubah sebelum bulan itu
- * selesai, atau barisnya ditetapkan dengan aturan lama — kantor menetapkan ulang selama belum
- * ada yang dibayar.
+ * Apakah hitungan sekarang masih sama dengan yang sudah ditetapkan — komisi, potong, peserta, dan
+ * potret gaji pokoknya. Berbeda kalau ada nota yang masuk dari antrean HP atau pengembalian sesudah
+ * ditetapkan, peserta gajinya berubah, atau dasar gaji bulan itu berubah (catatan check-in yang
+ * diperiksa, jadwal yang disetujui) — kantor menetapkan ulang selama belum ada yang dibayar.
  */
-export function sudahBerbeda(hasil: HasilKomisiToko, ada: BarisResmiAda[]): boolean {
+export function sudahBerbeda(hasil: HasilKomisiToko, ada: BarisResmiAda[], peserta: readonly string[] = [], gaji: ReadonlyMap<string, HasilGaji | null> = new Map()): boolean {
   if (ada.length === 0) return false;
   const lama = new Map(ada.map((b) => [b.userId, b]));
-  const penerima = hasil.perSpg.filter((p) => p.penerima);
-  if (penerima.length !== ada.length) return true;
-  return penerima.some((p) => {
-    const b = lama.get(p.userId);
-    return !b || !samaSen(b.commission, p.komisi) || b.unitsSold !== p.potong || aturanLama(b.basis);
+  const ikut = new Set([...peserta, ...hasil.perSpg.filter((p) => p.penerima).map((p) => p.userId)]);
+  if (ikut.size !== ada.length) return true;
+  const perSpg = new Map(hasil.perSpg.map((p) => [p.userId, p]));
+  return [...ikut].some((userId) => {
+    const b = lama.get(userId);
+    const p = perSpg.get(userId);
+    if (!b || !samaSen(b.commission, p?.komisi ?? 0) || b.unitsSold !== (p?.potong ?? 0)) return true;
+    if (!gaji.has(userId)) return false;
+    const g = gaji.get(userId) ?? null;
+    return !samaSen(b.baseSalary, g && g.ok ? g.rincian.gajiPokok : 0);
   });
 }
 
@@ -243,11 +275,10 @@ export function statusResmi(b: { paidAt: Date | string | null } | null | undefin
 // ---------------------------------------------------------------------------
 
 /**
- * Berapa bulan PENJUALAN ke belakang yang diperiksa untuk koreksi komisi (dan berapa bulan
- * PEMBAYARAN ke belakang sebuah baris yang belum dibayar masih menjadi tempat koreksi ikut dan
- * masuk daftar tunggakan). Keputusan sementara, ditanyakan ke pemilik: selisih yang lebih tua tidak
- * dikoreksi lagi. Menggeser jendela tidak pernah menerapkan dua kali — jumlah yang sudah diterapkan
- * dibaca dari tabelnya.
+ * Berapa bulan PENJUALAN ke belakang yang diperiksa untuk koreksi gaji & komisi — jawaban pemilik
+ * 2026-11-02 (P10: "cukup"). Selisih yang lebih tua tidak dikoreksi lagi. Baris SASARAN koreksi dan
+ * daftar tunggakan tidak dibatasi umur. Menggeser jendela tidak pernah menerapkan dua kali — jumlah
+ * yang sudah diterapkan dibaca dari tabelnya.
  */
 export const KOREKSI_JENDELA_BULAN = 12;
 

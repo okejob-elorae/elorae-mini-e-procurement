@@ -119,13 +119,21 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
               _sum: { qty: true },
             }),
             // Barang konsinyasi yang berpindah ke toko: baris `KonsiTransfer`, bertanggal
-            // transfernya — satu per pengiriman yang selesai, sebesar yang diserahkan.
-            // Transfer lama tanpa pengiriman (stok keluar saat disetujui) ikut juga,
-            // begitu pula konfirmasi sampai pesanan lama (`oldOrderArrival`), yang
-            // tanda terima buku tokonya dibuat bersamanya.
+            // transfernya — satu per surat jalan, dibuat saat pengirimannya dibuat dan
+            // dalam perjalanan sampai diterima toko (dalam proses di bawah). Yang kembali
+            // ke Gudang Utama sebelum akhir bulan — ditolak di pintu, atau tidak jadi
+            // dikirim (`CANCELLED`) — dikurangkan (`diserahkanSampaiAkhir`). Transfer lama
+            // tanpa pengiriman (stok keluar saat disetujui) ikut juga, begitu pula
+            // konfirmasi sampai pesanan lama (`oldOrderArrival`), yang tanda terima buku
+            // tokonya dibuat bersamanya.
             prisma.konsiTransferLine.findMany({
               where: { transfer: { storeId, createdAt: { lt: akhir } } },
-              select: { itemId: true, qty: true, transfer: { select: { id: true, orderId: true, shipmentId: true, createdAt: true } } },
+              select: {
+                itemId: true,
+                qty: true,
+                returnedQty: true,
+                transfer: { select: { id: true, orderId: true, shipmentId: true, createdAt: true, status: true, cancelledAt: true } },
+              },
             }),
             // Pesanan konsi yang disetujui — hanya untuk pesanan LAMA (`bacaPesananKonsiLama`):
             // yang tanpa transfer sama sekali masuk dari barisnya, dan semua yang lama
@@ -341,8 +349,21 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
   const bulanSementara: { periode: string; dasar: DasarTerjual }[] = [];
   if (stokMentah && pertama) {
     const s = stokMentah;
+    const sudah = new Set(s.diterima.map((r) => `${r.sourceType}:${r.sourceId}`));
+    // Antaran konsinyasi sebesar yang masih mengarah ke toko di akhir bulan: yang
+    // diserahkan (`qty`) dikurangi yang sudah kembali ke Gudang Utama SEBELUM akhir
+    // bulan (`returnedQty`) — ditolak di pintu, yang terjadi saat toko menerimanya,
+    // atau tidak jadi dikirim (`CANCELLED`, semuanya kembali). Yang kembali sesudah
+    // akhir bulan masih di perjalanan bulan itu. Yang kurang tiba tetap di sini:
+    // itu barang hilang di jalan, dijelaskan catatan hilang PENERIMAAN-nya.
+    const diserahkanSampaiAkhir = (l: (typeof s.transfer)[number]) => {
+      const kembaliSebelumAkhir =
+        sudah.has(`KONSI_TRANSFER:${l.transfer.id}`) ||
+        (l.transfer.status === "CANCELLED" && l.transfer.cancelledAt !== null && l.transfer.cancelledAt < akhir);
+      return Math.max(0, Number(l.qty) - (kembaliSebelumAkhir ? l.returnedQty : 0));
+    };
     const masuk: JumlahBarang[] = [
-      ...s.transfer.map((l) => ({ kunci: l.itemId, qty: Number(l.qty) })),
+      ...s.transfer.map((l) => ({ kunci: l.itemId, qty: diserahkanSampaiAkhir(l) })),
       ...s.pesanan.filter((l) => s.konsiLama.tanpaTransfer.has(l.order.id)).map((l) => ({ kunci: l.itemId, qty: l.qty - l.cancelledQty })),
       ...s.kiriman.map((l) => ({ kunci: l.itemId as string, qty: l.qty })),
       ...s.terimaMutasi.map((l) => ({ kunci: l.itemId as string, qty: l.qtyReceived })),
@@ -379,12 +400,12 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
     // sampai akhir bulan. Kiriman sebelum buku dimulai masuk lewat opname pembuka.
     // Antaran konsinyasi diterima per transfer; pesanan lama sekali per pesanan.
     // Sisa pesanan yang belum dikirim gudang tidak pernah ada di sini — masih di gudang.
-    const sudah = new Set(s.diterima.map((r) => `${r.sourceType}:${r.sourceId}`));
+    // Antaran yang tidak jadi dikirim sebelum akhir bulan sudah nol (`diserahkanSampaiAkhir`).
     const mulai = pertama.createdAt;
     const kirimanBelum: JumlahBarang[] = [
       ...s.transfer
         .filter((l) => l.transfer.shipmentId !== null && l.transfer.createdAt >= mulai && !sudah.has(`KONSI_TRANSFER:${l.transfer.id}`))
-        .map((l) => ({ kunci: l.itemId, qty: Number(l.qty) })),
+        .map((l) => ({ kunci: l.itemId, qty: diserahkanSampaiAkhir(l) })),
       ...s.pesanan
         .filter(
           (l) =>

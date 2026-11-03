@@ -7,7 +7,7 @@ import { listStoreGapSuggestions, listStoreNeverSentSuggestions } from "@/lib/fi
 import { listSellThroughSalesmanCandidates, defaultSellThroughSalesmanId } from "@/lib/konsi-sell-through/salesman-candidates";
 import { filterStageableSuggestions } from "@/lib/field-sales/stageable-suggestions";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
-import { batasKreditBerlaku } from "@/lib/salesman/kredit";
+import { batasKreditBerlaku, lewatBatasNilai } from "@/lib/salesman/kredit";
 import { bacaAturanKreditDb } from "@/lib/salesman/tagihan-toko";
 import { KonsiPushForm } from "./KonsiPushForm";
 
@@ -47,7 +47,9 @@ export default async function KonsiPushPage({ params }: { params: Promise<{ id: 
    * re-checks live at submit and is the authority. Exposure alone, never the push's own value,
    * matching the konsi approve gate. Degrades to null rather than taking the page down. The limit
    * is the one the gate itself resolves (`batasKreditBerlaku`), so a store ticked "Tanpa batas
-   * kredit" is previewed as ungated.
+   * kredit" is previewed as ungated. Under P21 a konsi limit is only the store's own figure or
+   * none: the Settings default never reaches a KONSI store (`BAWAAN_BERLAKU_UNTUK_KONSI`). The
+   * comparison is in whole sen (`lewatBatasNilai`), exactly as the gate compares.
    */
   let creditCheck: { exposure: number; limit: number; overLimit: boolean } | null = null;
   const limit = batasKreditBerlaku(
@@ -57,7 +59,7 @@ export default async function KonsiPushPage({ params }: { params: Promise<{ id: 
   if (limit !== null) {
     try {
       const exposure = await computeStoreCreditExposure(prisma, store.id);
-      creditCheck = { exposure: exposure.total, limit, overLimit: exposure.total > limit };
+      creditCheck = { exposure: exposure.total, limit, overLimit: lewatBatasNilai(exposure.total, limit) };
     } catch (error) {
       console.error("[konsi-push] credit-limit check failed", { storeId: store.id, error });
     }

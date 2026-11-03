@@ -17,6 +17,7 @@ import {
   KonsiPriceDiscountNotAllowedError,
   SellThroughMethodRequiresKonsiError,
   StoreHasDraftSellThroughError,
+  KonsiTanpaPemegangError,
   type StoreFields,
 } from "@/lib/stores/queries";
 import { lingkupPindah, type LingkupPindah } from "@/lib/stores/penanggung-jawab";
@@ -141,6 +142,13 @@ export async function createStoreAction(input: StoreFields): Promise<ActionResul
         message: "A sell-through method can only be set on a Konsi store.",
       };
     }
+    if (e instanceof KonsiTanpaPemegangError) {
+      return {
+        ok: false,
+        code: "konsi_holder_required",
+        message: "A consignment store must have a holding salesperson.",
+      };
+    }
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       return { ok: false, code: "code_unique", message: "Store code already exists." };
     }
@@ -207,6 +215,13 @@ export async function updateStoreAction(id: string, input: StoreFields): Promise
         ok: false,
         code: "sell_through_method_requires_konsi",
         message: "A sell-through method can only be set on a Konsi store.",
+      };
+    }
+    if (e instanceof KonsiTanpaPemegangError) {
+      return {
+        ok: false,
+        code: "konsi_holder_required",
+        message: "A consignment store must have a holding salesperson.",
       };
     }
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
@@ -299,6 +314,7 @@ export async function pindahkanTokoAction(input: {
   const gate = await requireManage();
   if (!gate.ok) return gate;
   const hasil = await pindahkanToko({ ...input, olehUserId: gate.userId });
+  // KONSI_WAJIB_PEMEGANG (toko konsi tidak boleh dikosongkan pemegangnya, P47) ikut sebagai kode.
   if (!hasil.ok) return { ok: false, code: hasil.alasan, message: hasil.alasan };
   revalidatePath("/backoffice/stores");
   revalidatePath("/backoffice/settings/salesman");
@@ -314,17 +330,22 @@ export async function pindahkanTokoAction(input: {
 export async function pratinjauPindahAction(input: {
   lingkup: LingkupPindah;
   keSalesmanId: string | null;
-}): Promise<ActionResult<{ dalamLingkup: number; akanPindah: number }>> {
+}): Promise<ActionResult<{ dalamLingkup: number; akanPindah: number; konsiAkanKosong: number }>> {
   const gate = await requireManage();
   if (!gate.ok) return gate;
   const l = lingkupPindah(input.lingkup);
   if (!l.ok) return { ok: false, code: l.alasan, message: l.alasan };
-  const toko = await prisma.store.findMany({ where: l.where, select: { salesmanId: true } });
+  const toko = await prisma.store.findMany({ where: l.where, select: { salesmanId: true, termsType: true } });
   return {
     ok: true,
     data: {
       dalamLingkup: toko.length,
       akanPindah: toko.filter((t) => t.salesmanId !== input.keSalesmanId).length,
+      // Toko konsi wajib punya pemegang (P47): mengosongkan pemegangnya ditolak penulis.
+      konsiAkanKosong:
+        input.keSalesmanId === null
+          ? toko.filter((t) => t.termsType === "KONSI" && t.salesmanId !== null).length
+          : 0,
     },
   };
 }

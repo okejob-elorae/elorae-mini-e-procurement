@@ -49,7 +49,6 @@ import { kunciDokumen } from "@/app/backoffice/finance/journals/_sumber/tautan";
 import { sumberSapuanTerdaftar } from "@/lib/finance/sapuan/semua";
 import { JEJAK } from "@/lib/receivables/jejak";
 import type { BarisImpor } from "@/lib/receivables/impor/baris";
-import { penandaBebanRetur } from "@/lib/receivables/penanda-beban";
 import { SUMBER_LAPANGAN } from "./aturan";
 import { selaraskanJurnalFaktur } from "./jurnal";
 import { rekonsiliasiPiutangToko } from "./rekonsiliasi-queries";
@@ -262,14 +261,19 @@ d("jurnal faktur piutang manual & impor (test bed only)", () => {
     expect(info.get(kunciDokumen(SUMBER_LAPANGAN.FAKTUR, satu.id))?.nomor).toBe(`${satu.invoiceNo} (impor dibatalkan)`);
   });
 
-  it("nota pengiriman, faktur beban retur, dan toko konsinyasi tidak dijurnal sebagai faktur; pencari sapuan hanya menemukan yang berhak", async () => {
+  it("nota pengiriman dan tagihan konsinyasi (`isConsignment`) tidak dijurnal sebagai faktur; pencari sapuan hanya menemukan yang berhak", async () => {
     const dasar = { storeId: tokoId, invoiceDate: wib(`${TAHUN}-05-05`), dueDate: wib(`${TAHUN}-06-05`), amount: 300_000, outstanding: 300_000 };
     const nota = await prisma.receivable.create({ data: { ...dasar, invoiceNo: `${tag}/DLV/${urut}`, source: "DELIVERY" }, select: { id: true } });
-    const beban = await prisma.receivable.create({
-      data: { ...dasar, invoiceNo: `${tag}/BEBAN/${urut}`, source: "MANUAL", note: `Selisih retur ditanggung toko. ${penandaBebanRetur(`${tag}-c1`)}` },
+    // Utang konsi kertas yang diketik (P32): berdiri di AR_CONSIGNMENT, tidak pernah STORE_INVOICE.
+    const konsi = await prisma.receivable.create({
+      data: { ...dasar, storeId: tokoKonsiId, invoiceNo: `${tag}/KONSI/${urut}`, source: "MANUAL", isConsignment: true },
       select: { id: true },
     });
-    const konsi = await prisma.receivable.create({ data: { ...dasar, storeId: tokoKonsiId, invoiceNo: `${tag}/KONSI/${urut}`, source: "MANUAL" }, select: { id: true } });
+    // Faktur PUTUS di toko yang belakangan pindah ke konsinyasi: tandanya di faktur, bukan syarat toko hari ini.
+    const putusDiKonsi = await prisma.receivable.create({
+      data: { ...dasar, storeId: tokoKonsiId, invoiceNo: `${tag}/PUTUS-K/${urut}`, source: "MANUAL" },
+      select: { id: true },
+    });
     const lunasSebelumImpor = await prisma.receivable.create({
       data: { ...dasar, invoiceNo: `${tag}/LUNAS/${urut}`, source: "IMPORT", paidBeforeImport: 300_000, outstanding: 0 },
       select: { id: true },
@@ -279,19 +283,21 @@ d("jurnal faktur piutang manual & impor (test bed only)", () => {
       select: { id: true },
     });
     const berhak = await prisma.receivable.create({ data: { ...dasar, invoiceNo: `${tag}/OK/${urut}`, source: "MANUAL" }, select: { id: true } });
-    piutangIds.push(nota.id, beban.id, konsi.id, lunasSebelumImpor.id, sebelumMulai.id, berhak.id);
+    piutangIds.push(nota.id, konsi.id, putusDiKonsi.id, lunasSebelumImpor.id, sebelumMulai.id, berhak.id);
 
     const opsi = { sejak: wib(`${TAHUN - 1}-01-01`), sampai: wib(`${TAHUN}-12-31`), batas: 500 };
     const ditemukan = (await cariFakturTanpaJurnal(opsi)).map((x) => x.id).filter((id) => piutangIds.includes(id));
-    expect(ditemukan).toEqual([berhak.id]);
+    expect([...ditemukan].sort()).toEqual([berhak.id, putusDiKonsi.id].sort());
 
-    for (const id of [nota.id, beban.id, konsi.id, lunasSebelumImpor.id]) {
+    for (const id of [nota.id, konsi.id, lunasSebelumImpor.id]) {
       const r = await selaraskanJurnalFaktur(id, keuanganId);
       // Bukan kegagalan (tidak menulis JOURNAL_PENDING), dan tidak ada jurnal.
       expect(r.ok ? r.journalId : r.code).toSatisfy((v: unknown) => v === null || v === "BELUM_BERLAKU" || v === "NOTHING_TO_POST");
       expect(await jumlahGenerasi(id)).toBe(0);
     }
     expect(await selaraskanJurnalFaktur(berhak.id, keuanganId)).toMatchObject({ ok: true, created: true });
+    expect(await selaraskanJurnalFaktur(putusDiKonsi.id, keuanganId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(putusDiKonsi.id)).toEqual({ AR_STORE: 300_000, SALES_REVENUE: -300_000 });
     expect((await cariFakturTanpaJurnal(opsi)).map((x) => x.id).filter((id) => piutangIds.includes(id))).toEqual([]);
 
     // Tanpa tanggal mulai, pencari tidak menyapu apa pun.

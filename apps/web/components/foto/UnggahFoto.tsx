@@ -30,6 +30,7 @@ export function UnggahFoto({
   wajib = false,
   disabled = false,
   simpanDiHp = false,
+  tundaUnggah = false,
   labelLepas,
 }: {
   label: string;
@@ -43,6 +44,13 @@ export function UnggahFoto({
    * Formulir kantor tidak memakainya — di sana galat unggah harus terlihat.
    */
   simpanDiHp?: boolean;
+  /**
+   * Tidak pernah mengunggah: foto diperkecil lalu disimpan sebagai `berkas` dengan pratinjau
+   * lokal, dan pemanggil yang mengunggahnya (ke R2) saat formulir dikirim atau saat antrean
+   * luring disinkronkan — pola foto bukti terima. Dipakai laporan retur pembeli SPG, yang
+   * kunci R2-nya baru diketahui saat laporannya dikirim.
+   */
+  tundaUnggah?: boolean;
   /**
    * Nama tombol × untuk pembaca layar (dan tooltip). Bawaannya "Hapus foto";
    * pemanggil yang × tidak menghapus apa pun di server — foto lama tetap
@@ -64,6 +72,10 @@ export function UnggahFoto({
     setGalat(null);
     setMengunggah(true);
     try {
+      if (tundaUnggah) {
+        await simpanLokal(file);
+        return;
+      }
       if (simpanDiHp && typeof navigator !== 'undefined' && !navigator.onLine) {
         await simpanLokal(file);
         return;
@@ -112,7 +124,7 @@ export function UnggahFoto({
           {nilai.berkas ? (
             <p className="flex items-center gap-1.5 border-t bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
               <CloudOff className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              {t('savedOnPhone')}
+              {tundaUnggah ? t('akanDiunggah') : t('savedOnPhone')}
             </p>
           ) : null}
         </div>

@@ -340,10 +340,22 @@ d("pesanan konsi lama: konfirmasi sampai dan tidak jadi dikirim (test bed only)"
 
     // Kantor tidak bisa mengemas pengiriman untuk pesanan lama; pesanan baru tetap bisa.
     await expect(
-      createDeliveryShipment({ orderId: lama.orderId, method: "EXPEDITION", lines: [{ orderLineId: lama.lineId, qty: 5 }], packedById: kantorId }),
+      createDeliveryShipment({
+        orderId: lama.orderId,
+        method: "EXPEDITION",
+        lines: [{ orderLineId: lama.lineId, qty: 5 }],
+        packedById: kantorId,
+        idempotencyKey: `klm-${token}-${urut}-lama`,
+      }),
     ).rejects.toMatchObject({ code: "KONSI_PESANAN_LAMA" });
     await expect(
-      createDeliveryShipment({ orderId: baru.orderId, method: "EXPEDITION", lines: [{ orderLineId: baru.lineId, qty: 10 }], packedById: kantorId }),
+      createDeliveryShipment({
+        orderId: baru.orderId,
+        method: "EXPEDITION",
+        lines: [{ orderLineId: baru.lineId, qty: 10 }],
+        packedById: kantorId,
+        idempotencyKey: `klm-${token}-${urut}-baru`,
+      }),
     ).resolves.toMatchObject({ shipmentId: expect.any(String) });
   });
 });

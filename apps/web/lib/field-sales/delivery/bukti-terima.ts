@@ -53,6 +53,10 @@ export type KodeBuktiTerima =
   | "BELUM_DITERIMA"
   | "KONFLIK"
   | "TIDAK_BERUBAH"
+  /** Nota sebuah pengiriman yang barangnya belum berangkat dari gudang (masih dikemas). */
+  | "BELUM_BERANGKAT"
+  /** Nota yang dibatalkan ("tidak jadi dikirim", atau seluruhnya ditolak di pintu). */
+  | "NOTA_DIBATALKAN"
   | "GAGAL";
 
 /**

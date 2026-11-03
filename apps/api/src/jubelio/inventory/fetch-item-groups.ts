@@ -14,11 +14,14 @@ const MAX_PAGES = 100;
  * Pages through `GET /inventory/items/` until a short page, the envelope's `totalCount`, a page
  * that repeats the previous one, or the page ceiling. With `stopWhenSeen`, it also stops as soon
  * as every listed group id has been read, so a single-group caller does not page the catalog.
+ * With `redactResponseBody`, the pages are kept out of the `JubelioApiCall` log (a caller that
+ * lists the whole catalog on a schedule would otherwise add every page's raw body to a table that
+ * is never pruned); a failed call is still logged.
  */
 export async function fetchItemGroups(
   http: Pick<JubelioHttpService, "get">,
   logger: Pick<Logger, "warn">,
-  opts: { stopWhenSeen?: ReadonlySet<number> } = {},
+  opts: { stopWhenSeen?: ReadonlySet<number>; redactResponseBody?: boolean } = {},
 ): Promise<JubelioItemsPayload> {
   const allGroups: JubelioItemGroup[] = [];
   const pending = opts.stopWhenSeen ? new Set(opts.stopWhenSeen) : null;
@@ -28,6 +31,7 @@ export async function fetchItemGroups(
   for (let page = 1; page <= MAX_PAGES; page++) {
     const payload = await http.get<JubelioItemsPayload>("/inventory/items/", {
       query: { page, pageSize: PAGE_SIZE },
+      ...(opts.redactResponseBody ? { redactResponseBody: true } : {}),
     });
     const groups = Array.isArray(payload?.data) ? payload.data : [];
 

@@ -1,4 +1,4 @@
-import type { JubelioProductMapping } from "@elorae/db";
+import { hargaJubelioBerbeda, keputusanHargaBerlaku, type JubelioProductMapping } from "@elorae/db";
 
 export type ItemImageSlice = {
   id: string;
@@ -48,8 +48,44 @@ export type ItemSlice = {
    * push before a payload is built, so 0 or null can no longer be sent.
    */
   jubelioPrice: number;
+  /**
+   * What Jubelio's `is_active` must say: the ERP active flag AND not "Toko offline saja"
+   * (`jubelioAktifUntukKirim`). A product already in Jubelio that becomes offline-only is
+   * DEACTIVATED there, never deleted (owner answer P72, 2026-11-02).
+   */
   isActive: boolean;
 };
+
+/** `is_active` for Jubelio: active in the ERP and sold on the marketplace (P72). */
+export function jubelioAktifUntukKirim(isActive: boolean, salesChannel: string): boolean {
+  return isActive && salesChannel !== "OFFLINE";
+}
+
+/**
+ * Hold the push (owner answer P75, 2026-11-02: "saya tidak setuju jika harga bisa tertimpa").
+ *
+ * While Jubelio shows a price other than the confirmed one and no admin decided it after that
+ * reading changed, NO push may change the Jubelio price. Sending without the price is not a shape
+ * `POST /inventory/catalog/` is known to accept — it is a full upsert that carries `sell_price` on
+ * the group and on every SKU, and it cannot be probed without writing to Jubelio — so the whole
+ * push is held instead: not the price, name, description, variants, images or active state. An
+ * item never observed is not held (no warning exists for it). Same predicates as the web's
+ * "Harga di Jubelio berbeda dengan ERP" (`@elorae/db` `hargaJubelioBerbeda`,
+ * `keputusanHargaBerlaku`).
+ */
+export function tahanKarenaHargaBeda(i: {
+  mapped: boolean;
+  observedAt: Date | null;
+  observedMax: number | null;
+  observedMin: number | null;
+  confirmed: number | null;
+  decidedAt: Date | null;
+  observedChangedAt: Date | null;
+}): boolean {
+  if (!i.mapped || i.observedAt == null) return false;
+  if (!hargaJubelioBerbeda({ tertinggi: i.observedMax, terendah: i.observedMin, terkonfirmasi: i.confirmed })) return false;
+  return !keputusanHargaBerlaku({ diputuskanPada: i.decidedAt, berubahPada: i.observedChangedAt });
+}
 
 export type PushPriceInput = {
   mapped: boolean;

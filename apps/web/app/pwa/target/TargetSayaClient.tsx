@@ -20,10 +20,10 @@ export type DataTargetSaya = {
   spg: boolean;
   /**
    * Target total bulan ini — angka yang sama dengan kartu "Bulan ini" di
-   * beranda: putus + van untuk sales (tanpa konsinyasi), nota bersih untuk SPG.
+   * beranda: omzet resmi putus + konsi + van untuk sales (P56), nota bersih untuk SPG.
    */
   total: { omzet: number; kemajuan: Kemajuan | null };
-  /** Dari `targetSayaHp`: setiap target dalam rupiah dihitung tanpa konsinyasi. */
+  /** Dari `targetSayaHp`: setiap target dalam rupiah memuat konsinyasi (P56). */
   baris: BarisTargetHp[];
 };
 
@@ -81,9 +81,8 @@ export function TargetSayaClient({ data }: { data: DataTargetSaya }) {
         ) : (
           <p className="mt-1 text-sm text-muted-foreground">{t("totalNotSet", { omzet: formatIDR(data.total.omzet) })}</p>
         )}
-        {/* Sales: rupiah putus + van saja. Selalu tampil, bukan hanya saat ada
-            konsinyasi — keterangan bersyarat justru memberi tahu bahwa ada. */}
-        {!data.spg ? <p className="mt-1 text-xs text-muted-foreground">{t("tanpaKonsi")}</p> : null}
+        {/* Sales: dasar angkanya disebut, sama dengan kantor (P56). */}
+        {!data.spg ? <p className="mt-1 text-xs text-muted-foreground">{t("semuaKanal")}</p> : null}
       </section>
 
       {data.baris.length === 0 ? (
@@ -132,9 +131,6 @@ export function TargetSayaClient({ data }: { data: DataTargetSaya }) {
                       <span className="text-muted-foreground"> · {b.persen}%</span>
                     </p>
                     <Batang persen={b.persen} label={b.nama} />
-                    {/* Selalu tampil untuk jenis target ini, bukan hanya saat ada
-                        konsinyasi — keterangan bersyarat justru memberi tahu bahwa ada. */}
-                    {b.tanpaKonsi ? <p className="mt-1 text-xs text-muted-foreground">{t("tanpaKonsi")}</p> : null}
                     <p className="mt-1.5 text-xs font-medium tabular-nums">
                       {b.kurang > 0 ? t("short", { amount: angka(b.kurang, b.measure) }) : t("reached")}
                     </p>

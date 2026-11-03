@@ -22,6 +22,7 @@ import {
 } from "@/lib/delivery/shipment-status-display";
 import { ShipmentTrackingDialog } from "./ShipmentTrackingDialog";
 import { CompleteShipmentDialog } from "./CompleteShipmentDialog";
+import { CancelShipmentDialog } from "./CancelShipmentDialog";
 
 type ShipmentRow = {
   id: string;
@@ -34,6 +35,8 @@ type ShipmentRow = {
   carrierName: string | null;
   resiNumber: string | null;
   packedAt: Date;
+  deliveryId: string | null;
+  shippedAt: Date | null;
 };
 
 type Props = {
@@ -43,7 +46,18 @@ type Props = {
   carriers: { id: string; name: string }[];
   canShip: boolean;
   canPod: boolean;
+  /** `deliveries:cancel_nota` — "Tidak jadi dikirim" on a putus shipment whose nota exists (P41/P41a). */
+  canCancelNota: boolean;
 };
+
+/**
+ * The SAME rule `cancelShipmentAction` enforces: a putus shipment carrying its nota needs
+ * `deliveries:cancel_nota`; a konsi shipment, or one of the old rule without a document, needs
+ * `deliveries:ship`.
+ */
+function bolehBatal(item: Pick<ShipmentRow, "orderType" | "deliveryId">, canShip: boolean, canCancelNota: boolean): boolean {
+  return item.orderType === "PUTUS" && item.deliveryId !== null ? canCancelNota : canShip;
+}
 
 /** Sentinel for "no store filter" — a Select/Combobox cannot carry an empty-string option value. */
 const ALL_STORES = "__ALL__";
@@ -65,6 +79,7 @@ export function DeliveriesPageClient({
   carriers,
   canShip,
   canPod,
+  canCancelNota,
 }: Props) {
   const t = useTranslations("deliveryShipments");
   const [items, setItems] = useState(initialItems);
@@ -74,6 +89,7 @@ export function DeliveriesPageClient({
   const [isPending, startTransition] = useTransition();
   const [trackingShipmentId, setTrackingShipmentId] = useState<string | null>(null);
   const [completingShipmentId, setCompletingShipmentId] = useState<string | null>(null);
+  const [cancellingShipment, setCancellingShipment] = useState<ShipmentRow | null>(null);
 
   const hasFilters =
     !!filters.status || !!filters.method || !!filters.storeId || !!filters.dateFrom || !!filters.dateTo;
@@ -265,6 +281,12 @@ export function DeliveriesPageClient({
                               {t("complete")}
                             </Button>
                           )}
+                          {(item.status === "PACKED" || item.status === "IN_TRANSIT") &&
+                            bolehBatal(item, canShip, canCancelNota) && (
+                              <Button size="sm" variant="destructive" onClick={() => setCancellingShipment(item)}>
+                                {t("cancel")}
+                              </Button>
+                            )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -290,6 +312,17 @@ export function DeliveriesPageClient({
           onOpenChange={(open) => !open && setTrackingShipmentId(null)}
           onDone={() => refetch(page, filters)}
           carriers={carriers}
+        />
+      )}
+      {cancellingShipment && (
+        <CancelShipmentDialog
+          shipmentId={cancellingShipment.id}
+          docNo={cancellingShipment.docNo}
+          orderType={cancellingShipment.orderType}
+          berangkat={cancellingShipment.status === "IN_TRANSIT"}
+          open={!!cancellingShipment}
+          onOpenChange={(open) => !open && setCancellingShipment(null)}
+          onDone={() => refetch(page, filters)}
         />
       )}
       {completingShipmentId && (

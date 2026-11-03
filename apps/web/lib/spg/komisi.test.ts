@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { commissionPerSpg, putusReportKey, type SalesReport } from "@/lib/spg-commission/payout";
+import type { HasilGaji, RincianGaji } from "./gaji-pokok";
 import {
-  aturanLama,
   bacaBulanBayar,
-  bacaDasarResmi,
   BULAN_LALU,
   bulanSebelum,
   bulanSudahSelesai,
   DASAR_TARIF_KATEGORI,
   JEJAK_KOMISI_SPG,
+  laporanPerluDicek,
   periodeSah,
   rencanaTetapkan,
   rentangBulanWib,
@@ -101,6 +101,28 @@ describe("bulan", () => {
   });
 });
 
+const rincianGaji = (gajiPokok: number): RincianGaji => ({
+  bulanKerja: "2026-09",
+  gajiBulanan: gajiPokok,
+  penuh: true,
+  hariAwal: "2026-09-01",
+  hariAkhir: "2026-09-30",
+  sumberPembagi: "JADWAL",
+  pembagi: 26,
+  hariKerjaStandar: [1, 2, 3, 4, 5, 6],
+  tarifHarian: Math.floor(gajiPokok / 26),
+  hariTerjadwal: 26,
+  hariIzin: 0,
+  hariTidakMasuk: 0,
+  tanggalTidakMasuk: [],
+  hariMasukLibur: 0,
+  tanggalMasukLibur: [],
+  tanggalLuarRadius: [],
+  hariDariCatatan: 0,
+  gajiPokok,
+});
+const gajiOk = (n: number): HasilGaji => ({ ok: true, rincian: rincianGaji(n) });
+
 describe("rencanaTetapkan", () => {
   const hasil = susunKomisiToko(
     commissionPerSpg(
@@ -118,12 +140,14 @@ describe("rencanaTetapkan", () => {
     unitsSold: 0,
     commission: 1_500,
     basis: "BAGI_RATA",
+    baseSalary: 0,
+    salaryDetail: null,
     paidAt: null,
     ...ubah,
   });
 
   it("writes one row per seller on the first lock, with the category-rate basis", () => {
-    const r = rencanaTetapkan(hasil, []);
+    const r = rencanaTetapkan(hasil, [], [], new Map());
     expect(r.ok && r.tulis.map((t) => [t.userId, t.isi.commission, t.isi.unitsSold, t.isi.basis, t.sebelum])).toEqual([
       ["u-ani", 3_000, 3, DASAR_TARIF_KATEGORI, null],
       ["u-budi", 1_000, 1, DASAR_TARIF_KATEGORI, null],
@@ -132,36 +156,53 @@ describe("rencanaTetapkan", () => {
   });
 
   it("re-locks with the earlier values as 'before', and drops rows of people who no longer receive", () => {
-    const r = rencanaTetapkan(hasil, [resmi("u-ani", { commission: 900 }), resmi("u-lama", { commission: 300 })]);
+    const r = rencanaTetapkan(hasil, [resmi("u-ani", { commission: 900 }), resmi("u-lama", { commission: 300 })], [], new Map());
     if (!r.ok) throw new Error(r.code);
-    expect(r.tulis[0].sebelum).toEqual({ id: "r-u-ani", unitsSold: 0, commission: 900, basis: "BAGI_RATA" });
+    expect(r.tulis[0].sebelum).toEqual({ id: "r-u-ani", unitsSold: 0, commission: 900, basis: "BAGI_RATA", baseSalary: 0 });
     expect(r.tulis[1].sebelum).toBeNull();
-    expect(r.hapus).toEqual([{ id: "r-u-lama", userId: "u-lama", sebelum: { unitsSold: 0, commission: 300, basis: "BAGI_RATA" } }]);
+    expect(r.hapus).toEqual([{ id: "r-u-lama", userId: "u-lama", sebelum: { unitsSold: 0, commission: 300, basis: "BAGI_RATA", baseSalary: 0 } }]);
   });
 
   it("refuses the whole store once any row is paid", () => {
-    expect(rencanaTetapkan(hasil, [resmi("u-ani"), resmi("u-budi", { paidAt: new Date() })])).toEqual({ ok: false, code: "SUDAH_DIBAYAR" });
+    expect(rencanaTetapkan(hasil, [resmi("u-ani"), resmi("u-budi", { paidAt: new Date() })], [], new Map())).toEqual({ ok: false, code: "SUDAH_DIBAYAR" });
   });
 
-  it("refuses a store with no seller", () => {
-    expect(rencanaTetapkan(susunKomisiToko([], [ani]), [])).toEqual({ ok: false, code: "TANPA_SPG" });
+  it("refuses a store with no seller and no salaried participant", () => {
+    expect(rencanaTetapkan(susunKomisiToko([], [ani]), [], [], new Map())).toEqual({ ok: false, code: "TANPA_PESERTA" });
+  });
+
+  it("a salaried SPG who sold nothing still gets a row, with her base salary snapshot (B19)", () => {
+    const r = rencanaTetapkan(susunKomisiToko([], [ani]), [], ["u-ani"], new Map([["u-ani", gajiOk(3_500_000)]]));
+    if (!r.ok) throw new Error(r.code);
+    expect(r.tulis).toHaveLength(1);
+    expect(r.tulis[0].isi).toMatchObject({ commission: 0, unitsSold: 0, baseSalary: 3_500_000, salaryDetail: { jenis: "RINCIAN" } });
+  });
+
+  it("a held salary is written as 0 with its reason; salary held by another row is written as a pointer", () => {
+    const tahan: HasilGaji = { ok: false, alasan: "JADWAL_MENUNGGU_PERSETUJUAN", hari: ["2026-09-03"] };
+    const r = rencanaTetapkan(hasil, [], ["u-ani", "u-budi"], new Map([["u-ani", tahan]]), new Map([["u-budi", { refType: "ConsignmentCommission", refId: "cc-1" }]]));
+    if (!r.ok) throw new Error(r.code);
+    const per = new Map(r.tulis.map((t) => [t.userId, t.isi]));
+    expect(per.get("u-ani")).toMatchObject({ baseSalary: 0, salaryDetail: { jenis: "TAHAN", alasan: "JADWAL_MENUNGGU_PERSETUJUAN" } });
+    expect(per.get("u-budi")).toMatchObject({ baseSalary: 0, salaryDetail: { jenis: "DI_BARIS_LAIN", refId: "cc-1" } });
   });
 });
 
 describe("sudahBerbeda / statusResmi / dasar", () => {
   const hasil = susunKomisiToko(commissionPerSpg(laporan([{ salesmanId: "u-ani", itemId: "kaos-1", categoryId: "kaos", qty: 2 }]), rates), [ani]);
-  const baris: BarisResmiAda = { id: "r", userId: "u-ani", unitsSold: 2, commission: 2_000, basis: DASAR_TARIF_KATEGORI, paidAt: null };
+  const baris: BarisResmiAda = { id: "r", userId: "u-ani", unitsSold: 2, commission: 2_000, basis: DASAR_TARIF_KATEGORI, baseSalary: 0, salaryDetail: null, paidAt: null };
 
   it("is false before anything is locked and when the locked numbers still match", () => {
     expect(sudahBerbeda(hasil, [])).toBe(false);
     expect(sudahBerbeda(hasil, [baris])).toBe(false);
   });
 
-  it("is true when the amount, pieces or recipients changed, or the row was set with the old rule", () => {
+  it("is true when the amount, pieces, participants or the base salary changed", () => {
     expect(sudahBerbeda(hasil, [{ ...baris, commission: 1_000 }])).toBe(true);
     expect(sudahBerbeda(hasil, [{ ...baris, unitsSold: 3 }])).toBe(true);
-    expect(sudahBerbeda(hasil, [{ ...baris, basis: "PER_SPG" }])).toBe(true);
     expect(sudahBerbeda(hasil, [baris, { ...baris, id: "r2", userId: "u-lain" }])).toBe(true);
+    expect(sudahBerbeda(hasil, [baris], ["u-ani"], new Map([["u-ani", gajiOk(3_000_000)]]))).toBe(true);
+    expect(sudahBerbeda(hasil, [{ ...baris, baseSalary: 3_000_000 }], ["u-ani"], new Map([["u-ani", gajiOk(3_000_000)]]))).toBe(false);
   });
 
   it("names the three states", () => {
@@ -170,12 +211,10 @@ describe("sudahBerbeda / statusResmi / dasar", () => {
     expect(statusResmi({ paidAt: "2026-10-02T00:00:00Z" })).toBe("DIBAYAR");
   });
 
-  it("reads the stored basis; only TARIF_KATEGORI is the current rule", () => {
-    expect(bacaDasarResmi(DASAR_TARIF_KATEGORI)).toBe(DASAR_TARIF_KATEGORI);
-    expect(bacaDasarResmi("PER_SPG")).toBe("PER_SPG");
-    expect(bacaDasarResmi("apa saja")).toBe("BAGI_RATA");
-    expect(aturanLama(DASAR_TARIF_KATEGORI)).toBe(false);
-    expect(aturanLama("PER_SPG")).toBe(true);
+  it("a report needs checking when it has salaried participants, even with no confirmed piece", () => {
+    expect(laporanPerluDicek(laporan([]), [])).toBe(false);
+    expect(laporanPerluDicek(laporan([]), ["u-ani"])).toBe(true);
+    expect(laporanPerluDicek(laporan([{ salesmanId: "u-ani", itemId: "kaos-1", categoryId: "kaos", qty: 1 }]), [])).toBe(true);
   });
 });
 

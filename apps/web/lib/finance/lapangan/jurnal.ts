@@ -1,11 +1,10 @@
 import { prisma, type Prisma, type PrismaClient } from "@elorae/db";
-import { runSerializable } from "@/lib/db/tx-retry";
 import { generateAutoJournal } from "@/lib/finance/journal";
+import { KANAL_JURNAL } from "@/lib/finance/journals/kanal";
 import { bacaPengaturanPpn } from "@/lib/finance/pajak/ppn-pengaturan";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { receivablesBookedOnAr } from "@/lib/finance/ar/store-receivable-role";
-import { potonganRetur } from "@/lib/receivables/deductions";
-import { idBebanDariCatatan, penandaBebanRetur } from "@/lib/receivables/penanda-beban";
+import { nilaiFisikNota, potonganRetur } from "@/lib/receivables/deductions";
 import { hppJualTerakhir } from "@/lib/receivables/hpp-retur";
 import { returTertahan } from "@/lib/receivables/rules";
 import {
@@ -23,14 +22,14 @@ import {
   nilaiFakturDijurnal,
   nilaiReturBukuBesar,
   peranPotongan,
-  SEMUA_SUMBER_JURNAL_NOTA,
   SUMBER_LAPANGAN,
+  SUMBER_NOTA_LAMA,
   tanggalJurnalKlaim,
   type BarisBertanda,
   type NilaiReturBukuBesar,
   type SumberLapangan,
 } from "./aturan";
-import { selaraskanJurnal, type HasilSelaras } from "./selaras";
+import { selaraskanJurnal, type HasilSelaras, type SasaranDokumen } from "./selaras";
 
 /*
  * Penulis jurnal penjualan lapangan & piutang toko — KHUSUS SERVER. Aturannya
@@ -79,7 +78,7 @@ function dariSelaras(r: HasilSelaras, adaCutover: boolean): HasilJurnalLapangan 
   return { ok: false, code: r.code, ...(r.role ? { role: r.role } : {}) };
 }
 
-// ── Nota tagihan putus (sekali posting) ─────────────────────────────────────
+// ── Nota tagihan putus (diselaraskan) ───────────────────────────────────────
 
 // Kunci penyesuaian stok tinggal di `aturan.ts` (murni) — dipakai juga penilai HPP retur.
 export { kunciStokPengiriman, kunciStokPersetujuan };
@@ -91,15 +90,20 @@ export type BahanNota = {
   invoiceDate: Date;
   total: number;
   putus: boolean;
+  /** Nota dibatalkan ("tidak jadi dikirim", P16/P25): jurnalnya bersasaran kosong. */
+  voidedAt: Date | null;
   hpp: { tipeBarang: string | null; nilai: number }[];
   /** Baris yang biaya keluarnya tidak ditemukan. */
   tanpaBiaya: string[];
 };
 
 /**
- * Biaya yang keluar = qty × harga rata-rata yang dipakai penyesuaian stoknya
- * (`prevAvgCost`), persis nilai yang turun di kartu stok. Nota backfill (dari
- * konsumsi saat disetujui) memakai harga per unit penyesuaian persetujuan.
+ * Biaya yang keluar = qty yang DITAGIH di baris nota × harga rata-rata yang dipakai penyesuaian
+ * stok saat surat jalan dibuat (`prevAvgCost`) — nilai yang turun di kartu stok untuk barang yang
+ * tinggal di toko. Barang yang ditolak di pintu atau hilang di jalan sudah tidak di `qty` baris
+ * (`returnedQty`/`lostQty`): yang ditolak kembali ke gudang dengan biaya yang sama
+ * (`reopenFieldSalesLineStock`), yang hilang dijurnal barang hilang. Nota backfill (dari konsumsi
+ * saat disetujui) memakai harga per unit penyesuaian persetujuan.
  */
 export async function bacaBahanNota(client: Klien, deliveryId: string): Promise<BahanNota | null> {
   const d = await client.fieldSalesDelivery.findUnique({
@@ -108,6 +112,7 @@ export async function bacaBahanNota(client: Klien, deliveryId: string): Promise<
       docNo: true,
       invoiceDate: true,
       total: true,
+      voidedAt: true,
       order: { select: { orderNo: true, orderType: true, storeId: true, store: { select: { name: true } } } },
       lines: { select: { orderLineId: true, qty: true, productName: true, item: { select: { type: true } } } },
     },
@@ -118,20 +123,17 @@ export async function bacaBahanNota(client: Klien, deliveryId: string): Promise<
     kunciStokPersetujuan(d.order.orderNo, l.orderLineId),
   ]);
   const penyesuaian = kunci.length
-    ? await client.stockAdjustment.findMany({ where: { idempotencyKey: { in: kunci } }, select: { idempotencyKey: true, qtyChange: true, prevAvgCost: true } })
+    ? await client.stockAdjustment.findMany({ where: { idempotencyKey: { in: kunci } }, select: { idempotencyKey: true, prevAvgCost: true } })
     : [];
   const perKunci = new Map(penyesuaian.map((p) => [p.idempotencyKey!, p]));
   const hpp: BahanNota["hpp"] = [];
   const tanpaBiaya: string[] = [];
   for (const l of d.lines) {
-    const kirim = perKunci.get(kunciStokPengiriman(d.order.orderNo, deliveryId, l.orderLineId));
-    if (kirim) {
-      hpp.push({ tipeBarang: l.item.type, nilai: Math.abs(angka(kirim.qtyChange)) * angka(kirim.prevAvgCost) });
-      continue;
-    }
-    const setuju = perKunci.get(kunciStokPersetujuan(d.order.orderNo, l.orderLineId));
-    if (setuju) {
-      hpp.push({ tipeBarang: l.item.type, nilai: l.qty * angka(setuju.prevAvgCost) });
+    const biaya =
+      perKunci.get(kunciStokPengiriman(d.order.orderNo, deliveryId, l.orderLineId)) ??
+      perKunci.get(kunciStokPersetujuan(d.order.orderNo, l.orderLineId));
+    if (biaya) {
+      hpp.push({ tipeBarang: l.item.type, nilai: l.qty * angka(biaya.prevAvgCost) });
       continue;
     }
     if (l.qty > 0) tanpaBiaya.push(l.productName);
@@ -143,67 +145,99 @@ export async function bacaBahanNota(client: Klien, deliveryId: string): Promise<
     invoiceDate: d.invoiceDate,
     total: angka(d.total),
     putus: d.order.orderType === "PUTUS",
+    voidedAt: d.voidedAt,
     hpp,
     tanpaBiaya,
   };
 }
 
-function klienAkar(client: Klien): client is PrismaClient {
-  return typeof (client as PrismaClient).$transaction === "function";
+/**
+ * Sasaran jurnal nota SEKARANG, atau jawaban tanpa penyelarasan: nota yang memegang pasangan
+ * bentuk lama (`SUMBER_NOTA_LAMA`), yang bukan nota putus, yang dibatalkan sebelum pernah
+ * dijurnal (selaras tanpa jurnal), atau yang biaya keluarnya tidak ditemukan
+ * (`BIAYA_TIDAK_DIKETAHUI`). Satu penyusun untuk penyelarasnya (`selaraskanJurnalNota`) dan
+ * pencari nota yang tertinggal (`cariNotaTertinggal`), jadi keduanya tidak pernah berbeda pendapat.
+ */
+export async function susunJurnalNota(
+  client: Klien,
+  deliveryId: string,
+  mulai: Date | null,
+  terposting: readonly BarisBertanda[],
+): Promise<{ jawab: HasilJurnalLapangan } | SasaranDokumen> {
+  const pasanganLama = await client.journal.count({
+    where: { sourceId: deliveryId, sourceType: { in: [SUMBER_NOTA_LAMA.PENDAPATAN, SUMBER_NOTA_LAMA.HPP] } },
+  });
+  if (pasanganLama > 0) return { jawab: { ok: false, code: "NOTHING_TO_POST" } };
+  const b = await bacaBahanNota(client, deliveryId);
+  if (!b || !b.putus) return { jawab: { ok: false, code: "NOTHING_TO_POST" } };
+  const batal = b.voidedAt !== null;
+  /*
+   * Nota yang dibatalkan sebelum pernah dijurnal: tidak ada yang perlu dibalik, dan jurnalnya
+   * SELARAS dengan keadaannya (kosong = kosong) — dijawab berhasil tanpa jurnal, bukan
+   * `NOTHING_TO_POST`. Tanda `JOURNAL_PENDING` (`nota_putus`) dari percobaan sebelum batal
+   * (peran belum dipetakan, biaya tidak ditemukan) hanya selesai lewat `readAt` penyelarasnya
+   * (`FIELD_DELIVERY` bergenerasi, `jurnal-tertunda.ts`); tanpa jawaban berhasil tandanya
+   * terhitung "Jurnal gagal" selamanya walau tidak ada jurnal yang bisa menutupnya.
+   */
+  if (batal && terposting.length === 0) return { jawab: { ok: true, journalId: null, created: false } };
+  const boleh = !batal && bolehMulai(mulai, b.invoiceDate);
+  if (!batal && b.tanpaBiaya.length > 0 && (boleh || terposting.length > 0)) {
+    return { jawab: { ok: false, code: "BIAYA_TIDAK_DIKETAHUI", detail: b.tanpaBiaya.join(", ") } };
+  }
+  return {
+    sasaran: batal
+      ? []
+      : barisNota({ total: b.total, storeId: b.storeId, tanggal: b.invoiceDate, pengaturanPpn: await bacaPengaturanPpn(client), hpp: b.hpp }),
+    bolehMulai: boleh,
+    tanggal: b.invoiceDate,
+    deskripsi: `Nota tagihan ${b.docNo} — ${b.storeName}${batal ? " (dibatalkan)" : ""}`,
+  };
 }
 
 /**
- * Jurnal nota tagihan satu pengiriman — satu-satunya jurnal piutang, pendapatan,
- * PPN, dan HPP sebuah nota putus.
+ * Jurnal nota tagihan satu pengiriman — satu-satunya jurnal piutang, pendapatan, PPN, dan HPP
+ * sebuah nota putus. BERGENERASI (`<deliveryId>`, `<deliveryId>#2`, …): sasarannya `barisNota`
+ * nota SEKARANG, jadi nota yang dikoreksi (ditolak sebagian di pintu, hilang di jalan) memposting
+ * selisihnya, dan nota yang dibatalkan bersasaran kosong — generasinya membalik seluruhnya.
+ * Generasi pertama hanya sejak tanggal mulai buku besar (tanggal nota); generasi berikutnya
+ * bertanggal saat nota berubah (`voidedAt`/`correctedAt`).
  *
- * Nota yang sudah memegang jurnal bentuk lama (`SUMBER_NOTA_LAMA`) dijawab
- * `NOTHING_TO_POST`: jurnal `FIELD_DELIVERY` di atasnya mengakui nota yang sama
- * dua kali. Pemeriksaannya di sini, bukan di pemanggil, karena pintunya banyak
- * (kait pasca-commit, sapuan harian, "Selaraskan" per toko, posting ulang dari
+ * Nota yang sudah memegang jurnal bentuk lama (`SUMBER_NOTA_LAMA`) dijawab `NOTHING_TO_POST` dan
+ * tidak disentuh: jurnal `FIELD_DELIVERY` di atasnya mengakui nota yang sama dua kali.
+ * Pemeriksaannya di sini, di dalam transaksi penyelaras, bukan di pemanggil, karena pintunya
+ * banyak (kait pasca-commit, sapuan harian, "Selaraskan" per toko, posting ulang dari
  * rekonsiliasi, tombol posting ulang di halaman piutang).
  *
- * Dibaca dan diposting dalam SATU transaksi serializable yang lebih dulu
- * membaca baris pengirimannya. Koreksi tanggal nota (`updateDeliveryDatesAction`)
- * menulis baris yang sama lalu memindahkan tanggal jurnal nota di transaksinya
- * sendiri, jadi keduanya berurutan: jurnal tidak pernah tertinggal di tanggal
- * lama sementara nota dan piutangnya sudah membawa tanggal baru.
+ * Dibaca dan diposting dalam SATU transaksi serializable (`selaraskanJurnal`) yang membaca baris
+ * pengirimannya. Koreksi tanggal nota (`updateDeliveryDatesAction`) menulis baris yang sama lalu
+ * memindahkan tanggal jurnal nota di transaksinya sendiri, jadi keduanya berurutan.
  */
-export async function postJurnalNota(deliveryId: string, postedById: string, client: Klien = prisma): Promise<HasilJurnalLapangan> {
-  if (klienAkar(client)) return runSerializable((tx) => postJurnalNotaDalam(tx, deliveryId, postedById));
-  return postJurnalNotaDalam(client, deliveryId, postedById);
+export async function selaraskanJurnalNota(deliveryId: string, postedById: string): Promise<HasilJurnalLapangan> {
+  const mulai = await readGlCutover();
+  const ubah = await prisma.fieldSalesDelivery.findUnique({ where: { id: deliveryId }, select: { voidedAt: true, correctedAt: true } });
+  /* Jawaban yang bukan hasil penyelarasan; diatur ulang di setiap percobaan transaksinya. */
+  const keadaan: { jawab: HasilJurnalLapangan | null } = { jawab: null };
+  const r = await selaraskanJurnal({
+    sourceType: SUMBER_LAPANGAN.NOTA,
+    entityId: deliveryId,
+    postedById,
+    sekarang: ubah?.voidedAt ?? ubah?.correctedAt ?? undefined,
+    susun: async (tx, terposting) => {
+      keadaan.jawab = null;
+      const hasil = await susunJurnalNota(tx, deliveryId, mulai, terposting);
+      if (!("jawab" in hasil)) return hasil;
+      keadaan.jawab = hasil.jawab;
+      // Tanpa perubahan apa pun: sasaran = yang sudah terposting.
+      return { sasaran: [...terposting], bolehMulai: false, tanggal: new Date(), deskripsi: `Nota tagihan ${deliveryId}` };
+    },
+  });
+  if (keadaan.jawab) return keadaan.jawab;
+  return dariSelaras(r, mulai !== null);
 }
 
-async function postJurnalNotaDalam(client: Prisma.TransactionClient, deliveryId: string, postedById: string): Promise<HasilJurnalLapangan> {
-  const ada = await client.journal.findMany({
-    where: { sourceId: deliveryId, sourceType: { in: [...SEMUA_SUMBER_JURNAL_NOTA] } },
-    select: { id: true, sourceType: true },
-  });
-  const nota = ada.find((j) => j.sourceType === SUMBER_LAPANGAN.NOTA);
-  if (nota) return { ok: true, journalId: nota.id, created: false };
-  if (ada.length > 0) return { ok: false, code: "NOTHING_TO_POST" };
-
-  const b = await bacaBahanNota(client, deliveryId);
-  if (!b || !b.putus) return { ok: false, code: "NOTHING_TO_POST" };
-  const mulai = await readGlCutover();
-  if (!mulai) return { ok: false, code: "GL_CUTOVER_NOT_CONFIGURED" };
-  if (!bolehMulai(mulai, b.invoiceDate)) return { ok: false, code: "BELUM_BERLAKU" };
-  if (b.tanpaBiaya.length > 0) return { ok: false, code: "BIAYA_TIDAK_DIKETAHUI", detail: b.tanpaBiaya.join(", ") };
-
-  const baris = barisNota({
-    total: b.total,
-    storeId: b.storeId,
-    tanggal: b.invoiceDate,
-    pengaturanPpn: await bacaPengaturanPpn(client),
-    hpp: b.hpp,
-  });
-  if (baris.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
-  const r = await generateAutoJournal(client, SUMBER_LAPANGAN.NOTA, deliveryId, keBarisJurnal(baris), {
-    date: b.invoiceDate,
-    description: `Nota tagihan ${b.docNo} — ${b.storeName}`,
-    postedById,
-  });
-  if (r.ok) return { ok: true, journalId: r.journalId, created: r.created };
-  return { ok: false, code: r.code, ...(r.role ? { role: r.role } : {}) };
+/** Nama lama pintu jurnal nota — sekarang penyelaras bergenerasi (`selaraskanJurnalNota`). */
+export function postJurnalNota(deliveryId: string, postedById: string): Promise<HasilJurnalLapangan> {
+  return selaraskanJurnalNota(deliveryId, postedById);
 }
 
 // ── Pelunasan BKM (diselaraskan) ────────────────────────────────────────────
@@ -211,17 +245,23 @@ async function postJurnalNotaDalam(client: Prisma.TransactionClient, deliveryId:
 type TautanFaktur = { receivableId: string; settledAmount: unknown };
 
 /**
- * Bagian nilai faktur sebuah BKM (0–1) yang melunasi piutang berjurnal bentuk
- * lama — piutang yang berdiri di AR, bukan AR_STORE (`receivablesBookedOnAr`).
- * Porsinya sama dengan cara modul piutang membagi satu klaim ke fakturnya
+ * Bagian nilai faktur sebuah BKM (0–1) yang melunasi piutang di `ids` — piutang berjurnal bentuk
+ * lama yang berdiri di AR (`receivablesBookedOnAr`), atau tagihan konsinyasi yang berdiri di
+ * AR_CONSIGNMENT. Porsinya sama dengan cara modul piutang membagi satu klaim ke fakturnya
  * (`hitungSisaPiutang`: dilunasi faktur ini ÷ nilai faktur klaim).
  */
-function porsiPiutangLama(nilaiFaktur: number, tautan: readonly TautanFaktur[], lama: ReadonlySet<string>): number {
-  if (nilaiFaktur <= 0 || lama.size === 0) return 0;
-  const dilunasi = tautan.filter((t) => lama.has(t.receivableId)).reduce((s, t) => s + angka(t.settledAmount), 0);
+function porsiPiutang(nilaiFaktur: number, tautan: readonly TautanFaktur[], ids: ReadonlySet<string>): number {
+  if (nilaiFaktur <= 0 || ids.size === 0) return 0;
+  const dilunasi = tautan.filter((t) => ids.has(t.receivableId)).reduce((s, t) => s + angka(t.settledAmount), 0);
   return dilunasi / nilaiFaktur;
 }
 
+/**
+ * Jurnal pelunasan BKM. Tagihan konsinyasi dilunasi lewat BKM juga (satu-satunya jalan bayar konsi
+ * dari HP, 2026-10-29): bagian yang melunasinya dikredit ke AR_CONSIGNMENT toko itu, bukan
+ * AR_STORE; tandanya `Receivable.isConsignment` di tagihannya, bukan syarat toko hari ini —
+ * pelunasan faktur putus di toko yang belakangan pindah ke konsinyasi tetap ke AR_STORE.
+ */
 export async function selaraskanJurnalKlaim(claimId: string, postedById: string): Promise<HasilJurnalLapangan> {
   const mulai = await readGlCutover();
   const r = await selaraskanJurnal({
@@ -240,7 +280,7 @@ export async function selaraskanJurnalKlaim(claimId: string, postedById: string)
           receivedAmount: true,
           claimedTransferAt: true,
           verifiedAt: true,
-          store: { select: { name: true, termsType: true } },
+          store: { select: { name: true } },
           receivableLinks: { select: { receivableId: true, settledAmount: true } },
           deductions: {
             select: { amount: true, storeReturnId: true, deductionType: { select: { postingRole: true, pkpOnly: true } } },
@@ -248,16 +288,28 @@ export async function selaraskanJurnalKlaim(claimId: string, postedById: string)
         },
       });
       if (!k) return { sasaran: [], bolehMulai: false, tanggal: new Date(), deskripsi: `Pelunasan ${claimId}` };
-      const terverifikasi = k.status === "TERVERIFIKASI" && k.store.termsType !== "KONSI";
+      const terverifikasi = k.status === "TERVERIFIKASI";
       const diverifikasi = k.verifiedAt ?? new Date();
-      const lama = terverifikasi ? await receivablesBookedOnAr(tx, k.receivableLinks.map((t) => t.receivableId)) : new Set<string>();
+      const ids = k.receivableLinks.map((t) => t.receivableId);
+      const lama = terverifikasi ? await receivablesBookedOnAr(tx, ids) : new Set<string>();
+      // Dibaca terpisah, bukan lewat relasi: penunjuk menggantung (tagihannya tidak ada) dibaca bukan
+      // konsinyasi, jadi kreditnya tetap ke AR_STORE seperti sebelumnya, dan tidak menggagalkan jurnalnya.
+      const tagihanKonsi = new Set(
+        terverifikasi && ids.length > 0
+          ? (await tx.receivable.findMany({ where: { id: { in: ids }, isConsignment: true }, select: { id: true } })).map((r) => r.id)
+          : [],
+      );
+      const konsi = new Set(ids.filter((id) => tagihanKonsi.has(id) && !lama.has(id)));
+      const semuaKonsi = ids.length > 0 && ids.every((id) => tagihanKonsi.has(id));
       return {
         sasaran: barisKlaim({
           terverifikasi,
           cara: k.method,
           diterima: angka(k.receivedAmount),
           storeId: k.storeId,
-          porsiAr: porsiPiutangLama(angka(k.invoiceAmount), k.receivableLinks, lama),
+          porsiAr: porsiPiutang(angka(k.invoiceAmount), k.receivableLinks, lama),
+          porsiKonsi: porsiPiutang(angka(k.invoiceAmount), k.receivableLinks, konsi),
+          kanalPotongan: semuaKonsi ? KANAL_JURNAL.KONSINYASI : KANAL_JURNAL.PUTUS,
           potongan: k.deductions.map((p) => ({
             nilai: angka(p.amount),
             // Penunjuk menggantung tetap retur: Aturan 2 menahannya penuh, jadi tidak pernah mengurangi piutang.
@@ -294,7 +346,9 @@ const PILIH_NRI = {
       claimedAmount: true,
       storeId: true,
       store: { select: { name: true, termsType: true } },
-      charges: { select: { id: true, status: true } },
+      // Hitungan SUSULAN yang final menambah fisik nota ini (`nilaiFisikNota`, P22a).
+      followUps: { where: { status: "FINAL" }, select: { physicalAmount: true } },
+      charges: { select: { status: true, bearer: true } },
       deductions: {
         select: {
           amount: true,
@@ -324,22 +378,6 @@ export type NilaiRetur = {
   potonganPiutangLama: number;
 };
 
-/** Faktur beban selisih yang ditetapkan ke toko, per id beban (penanda di catatan faktur). */
-async function fakturBebanPerBeban(client: Klien, chargeIds: string[]): Promise<Map<string, number>> {
-  const hasil = new Map<string, number>();
-  if (chargeIds.length === 0) return hasil;
-  const ids = new Set(chargeIds);
-  const faktur = await client.receivable.findMany({
-    where: { source: "MANUAL", OR: chargeIds.map((id) => ({ note: { contains: penandaBebanRetur(id) } })) },
-    select: { amount: true, note: true },
-  });
-  for (const f of faktur) {
-    const id = idBebanDariCatatan(f.note);
-    if (id && ids.has(id)) hasil.set(id, (hasil.get(id) ?? 0) + angka(f.amount));
-  }
-  return hasil;
-}
-
 /** Piutang yang dilunasi BKM terverifikasi yang memotong nota retur hitungan ini. */
 function piutangDipotongRetur(nri: BarisNri): string[] {
   const nrt = nri.storeReturn && nri.storeReturn.status !== "BATAL" ? nri.storeReturn : null;
@@ -349,31 +387,37 @@ function piutangDipotongRetur(nri: BarisNri): string[] {
 
 /**
  * Nilai jurnal retur satu hitungan gudang. Potongan atas notanya diterjemahkan
- * lewat penerjemah modul piutang (`potonganRetur` + `returTertahan`) — satu
+ * lewat penerjemah modul piutang (`potonganRetur` + `returTertahan`, fisik nota =
+ * `nilaiFisikNota`: hitungan asli + setiap hitungan susulan yang final) — satu
  * penerjemah, bukan salinan. `lama` = piutang berjurnal bentuk lama di antara
- * yang dilunasi BKM-nya (`receivablesBookedOnAr`).
+ * yang dilunasi BKM-nya (`receivablesBookedOnAr`). Hitungan SUSULAN sendiri tidak
+ * punya nota toko (`storeReturn` null), jadi jurnalnya hanya persediaan dan HPP.
  */
-function nilaiDariBaris(nri: BarisNri, fakturBeban: Map<string, number>, lama: ReadonlySet<string> = new Set()): NilaiRetur {
+function nilaiDariBaris(nri: BarisNri, lama: ReadonlySet<string> = new Set()): NilaiRetur {
   const nrt = nri.storeReturn && nri.storeReturn.status !== "BATAL" ? nri.storeReturn : null;
   const toko = nri.store ?? nrt?.store ?? null;
   const final = nri.status === "FINAL";
   let potonganDiakui = 0;
   let potonganPiutangLama = 0;
-  let ditagihKeToko = 0;
+  let nilaiFisik = 0;
   if (nrt && final) {
+    const warehouseReturn = { physicalAmount: nri.physicalAmount, status: nri.status };
     const basis = {
       claimedAmount: nrt.claimedAmount,
       status: nrt.status,
-      warehouseReturn: { physicalAmount: nri.physicalAmount, status: nri.status },
-      charges: nrt.charges.map((c) => ({ status: c.status })),
+      warehouseReturn,
+      followUps: nrt.followUps,
+      charges: nrt.charges.map((c) => ({ status: c.status, bearer: c.bearer })),
     };
+    nilaiFisik = nilaiFisikNota({ warehouseReturn, followUps: nrt.followUps }) ?? 0;
     for (const p of nrt.deductions) {
       if (p.paymentClaim.status !== "TERVERIFIKASI") continue;
       const diakui = angka(p.amount) - returTertahan(potonganRetur([{ amount: p.amount, storeReturnId: nrt.id, storeReturn: basis }]));
       potonganDiakui += diakui;
-      potonganPiutangLama += diakui * porsiPiutangLama(angka(p.paymentClaim.invoiceAmount), p.paymentClaim.receivableLinks, lama);
+      potonganPiutangLama += diakui * porsiPiutang(angka(p.paymentClaim.invoiceAmount), p.paymentClaim.receivableLinks, lama);
     }
-    for (const c of nrt.charges) ditagihKeToko += fakturBeban.get(c.id) ?? 0;
+  } else if (final) {
+    nilaiFisik = angka(nri.physicalAmount);
   }
   return {
     noNri: nri.noNri,
@@ -384,25 +428,20 @@ function nilaiDariBaris(nri: BarisNri, fakturBeban: Map<string, number>, lama: R
     final,
     tanggal: nri.finalisedAt ?? nri.createdAt,
     nilai: nilaiReturBukuBesar({
-      nilaiFisik: final ? angka(nri.physicalAmount) : 0,
+      nilaiFisik,
       nilaiKlaimNota: nrt ? angka(nrt.claimedAmount) : null,
       potonganDiakui,
-      ditagihKeToko,
     }),
     potonganPiutangLama,
   };
 }
 
-/** Nilai jurnal retur banyak hitungan gudang sekaligus (layar rekonsiliasi): dua kueri, bukan dua per dokumen. */
+/** Nilai jurnal retur banyak hitungan gudang sekaligus (layar rekonsiliasi): satu kueri, bukan satu per dokumen. */
 export async function bacaNilaiReturBanyak(client: Klien, nriIds: string[]): Promise<Map<string, NilaiRetur>> {
   const hasil = new Map<string, NilaiRetur>();
   if (nriIds.length === 0) return hasil;
   const rows = await client.warehouseReturn.findMany({ where: { id: { in: nriIds } }, select: PILIH_NRI });
-  const faktur = await fakturBebanPerBeban(
-    client,
-    rows.flatMap((r) => r.storeReturn?.charges.map((c) => c.id) ?? []),
-  );
-  for (const r of rows) hasil.set(r.id, nilaiDariBaris(r, faktur));
+  for (const r of rows) hasil.set(r.id, nilaiDariBaris(r));
   return hasil;
 }
 
@@ -426,11 +465,7 @@ export async function bacaBahanRetur(client: Klien, nriId: string): Promise<Baha
     select: { ...PILIH_NRI, items: { select: { id: true, itemId: true, variantSku: true, qty: true, condition: true } } },
   });
   if (!nri) return null;
-  const nilai = nilaiDariBaris(
-    nri,
-    await fakturBebanPerBeban(client, nri.storeReturn?.charges.map((c) => c.id) ?? []),
-    await receivablesBookedOnAr(client, piutangDipotongRetur(nri)),
-  );
+  const nilai = nilaiDariBaris(nri, await receivablesBookedOnAr(client, piutangDipotongRetur(nri)));
 
   // Barang layak: penyesuaian stok yang ditulis hitungan ini (`masukkanKeStok`).
   const stok = nilai.final
@@ -610,8 +645,8 @@ export async function postJurnalTukar(exchangeId: string, postedById: string, cl
  * saldo awal piutang dan tidak dijurnal di sini.
  *
  * Diselaraskan: faktur yang dihapus (impor dibatalkan) membalik jurnalnya
- * lewat generasi berikutnya; nota pengiriman, faktur beban retur, dan toko
- * konsinyasi bersasaran kosong (`fakturDijurnalSendiri`).
+ * lewat generasi berikutnya; nota pengiriman dan tagihan konsinyasi
+ * (`Receivable.isConsignment`) bersasaran kosong (`fakturDijurnalSendiri`).
  */
 export async function selaraskanJurnalFaktur(receivableId: string, postedById: string): Promise<HasilJurnalLapangan> {
   const mulai = await readGlCutover();
@@ -630,16 +665,15 @@ export async function selaraskanJurnalFaktur(receivableId: string, postedById: s
           paidBeforeImport: true,
           source: true,
           deliveryId: true,
-          note: true,
-          store: { select: { name: true, termsType: true } },
+          isConsignment: true,
+          store: { select: { name: true } },
         },
       });
       if (!f) return { sasaran: [], bolehMulai: false, tanggal: new Date(), deskripsi: `Faktur piutang ${receivableId} (dihapus)` };
       const dijurnal = fakturDijurnalSendiri({
         source: f.source,
         deliveryId: f.deliveryId,
-        note: f.note,
-        konsinyasi: f.store?.termsType === "KONSI",
+        konsinyasi: f.isConsignment,
       });
       const sasaran = dijurnal
         ? barisFaktur({

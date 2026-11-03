@@ -1,13 +1,17 @@
 import { checkInLuringAction, checkOutLuringAction } from "@/app/pwa/stores/actions";
 import { catatOpnameAction, terimaKirimanAction } from "@/app/actions/spg-stok";
-import { catatReturPembeliAction } from "@/app/actions/spg-retur";
+import { catatReturPembeliAction, catatUangDikembalikanAction } from "@/app/actions/spg-retur";
 import { ajukanMutasiAction, kirimMutasiAction } from "@/app/actions/spg-mutasi";
 import { unggahFoto } from "@/lib/foto/unggah";
+import { unggahFotoReturPembeli } from "@/lib/spg/foto-retur-pembeli-klien";
+import type { JenisFotoReturPembeli } from "@/lib/spg/foto-retur-pembeli-kunci";
 import {
   pwaDb,
+  type FotoR2Tertunda,
   type FotoTertunda,
   type PendingMutasiAjuan,
   type PendingMutasiKirim,
+  type PendingSpgRefund,
   type PendingSpgReturn,
   type PendingStoreOpname,
   type PendingStoreReceipt,
@@ -35,6 +39,7 @@ import {
   muatanOpname,
   muatanReturPembeli,
   muatanTerima,
+  muatanUangKembali,
 } from "./luring-muatan";
 import { keadaanAjuanMutasi, keadaanCheckinTertahan } from "./luring-tergantung";
 
@@ -63,6 +68,7 @@ type Tabel =
   | "pendingStoreReceipts"
   | "pendingStoreOpnames"
   | "pendingSpgReturns"
+  | "pendingSpgRefunds"
   | "pendingMutasiAjuan"
   | "pendingMutasiKirim";
 
@@ -135,7 +141,7 @@ function ingatKunjunganTerkirim(c: { clientId: string; storeId: string; storeNam
   if (!lama || c.waktu >= lama.waktu) catatKunjunganTerkirim(c);
 }
 
-// ─── Pekerjaan stok (terima kiriman, opname, barang kembali dari pembeli) ──
+// ─── Pekerjaan stok (terima kiriman, opname, barang kembali dari pembeli dan uang kembalinya) ──
 
 let jalanStok = false;
 
@@ -162,10 +168,40 @@ async function pastikanUrl(foto: FotoTertunda | null | undefined, simpan: (f: Fo
   }
 }
 
+/**
+ * Pastikan foto R2 retur pembeli sudah punya KUNCI; unggah kalau masih berkas di HP. `tujuan` =
+ * kunci formulir laporan (foto barang/struk saat melapor) atau `returnId` (struk saat "uang sudah
+ * dikembalikan"). Kunci yang naik disimpan kembali ke baris antrean, jadi percobaan berikutnya
+ * tidak mengunggahnya lagi. Galat unggah dipilah seperti `nasibUnggah`: `TypeError` (sinyal) dan
+ * `GAGAL` (401/5xx) diulang; kode 4xx lain menghentikan baris itu dengan alasannya.
+ */
+async function pastikanKunciR2(
+  foto: FotoR2Tertunda | null | undefined,
+  tujuan: { jenis: JenisFotoReturPembeli } & ({ kunci: string } | { returnId: string }),
+  simpan: (f: FotoR2Tertunda) => Promise<void>,
+): Promise<string | null> {
+  if (!foto) return null;
+  if (foto.key) return foto.key;
+  if (!foto.blob) return null;
+  try {
+    const berkas = { berkas: foto.blob, nama: foto.nama || `${tujuan.jenis}.jpg`, jenis: tujuan.jenis };
+    const { key } = await unggahFotoReturPembeli(
+      "kunci" in tujuan ? { ...berkas, kunci: tujuan.kunci } : { ...berkas, returnId: tujuan.returnId },
+    );
+    await simpan({ nama: foto.nama, key });
+    return key;
+  } catch (err) {
+    if (err instanceof TypeError) throw new GagalUnggah("retry", "JARINGAN");
+    const kode = err instanceof Error && err.message ? err.message : "GAGAL";
+    throw new GagalUnggah(kode === "GAGAL" ? "retry" : "terminal", kode);
+  }
+}
+
 type BarisStok =
   | { jenis: "terima"; baris: PendingStoreReceipt }
   | { jenis: "opname"; baris: PendingStoreOpname }
   | { jenis: "returPembeli"; baris: PendingSpgReturn }
+  | { jenis: "uangKembali"; baris: PendingSpgRefund }
   | { jenis: "mutasiAjuan"; baris: PendingMutasiAjuan }
   | { jenis: "mutasiKirim"; baris: PendingMutasiKirim };
 
@@ -173,9 +209,41 @@ const TABEL_STOK: Record<BarisStok["jenis"], Tabel> = {
   terima: "pendingStoreReceipts",
   opname: "pendingStoreOpnames",
   returPembeli: "pendingSpgReturns",
+  uangKembali: "pendingSpgRefunds",
   mutasiAjuan: "pendingMutasiAjuan",
   mutasiKirim: "pendingMutasiKirim",
 };
+
+/**
+ * Barang kembali dari pembeli dari antrean: foto barang (dan foto struk bila uangnya sudah
+ * dikembalikan) diunggah dulu ke folder laporan ini (kunci formulir), baru laporannya dikirim.
+ */
+async function kirimReturPembeli(r: PendingSpgReturn): Promise<HasilSatu> {
+  const fotoBarangKey = await pastikanKunciR2(r.fotoBarang, { jenis: "barang", kunci: r.localId }, async (f) => {
+    r.fotoBarang = f;
+    await pwaDb.pendingSpgReturns.update(r.localId, { fotoBarang: f });
+  });
+  const fotoStrukKey = r.uangSudahDikembalikan
+    ? await pastikanKunciR2(r.fotoStruk, { jenis: "struk", kunci: r.localId }, async (f) => {
+        r.fotoStruk = f;
+        await pwaDb.pendingSpgReturns.update(r.localId, { fotoStruk: f });
+      })
+    : null;
+  const res = await catatReturPembeliAction(muatanReturPembeli(r, { fotoBarangKey, fotoStrukKey }));
+  return { nasib: nasibReturPembeli(res), alasan: res.ok ? "" : res.kode };
+}
+
+/** "Uang sudah dikembalikan" dari antrean: foto struk ke folder laporannya, lalu langkahnya. */
+async function kirimUangKembali(r: PendingSpgRefund): Promise<HasilSatu> {
+  const key = await pastikanKunciR2(r.foto, { jenis: "struk", returnId: r.returnId }, async (f) => {
+    r.foto = f;
+    await pwaDb.pendingSpgRefunds.update(r.localId, { foto: f });
+  });
+  /* Fotonya wajib; baris tanpa berkas maupun kunci tidak akan pernah diterima. */
+  if (!key) return { nasib: "terminal", alasan: "FOTO_STRUK_WAJIB" };
+  const res = await catatUangDikembalikanAction(muatanUangKembali(r, key));
+  return { nasib: nasibReturPembeli(res), alasan: res.ok ? "" : res.kode };
+}
 
 type HasilSatu = { nasib: NasibLuring; alasan: string; tambahan?: Record<string, unknown> };
 
@@ -231,10 +299,11 @@ export async function flushStokTertahan(): Promise<HasilKirimLuring> {
   jalanStok = true;
   const hasil: HasilKirimLuring = { terkirim: 0, gagal: 0, sibuk: false };
   try {
-    const [terima, opname, retur, ajuan, kirim] = await Promise.all([
+    const [terima, opname, retur, uangKembali, ajuan, kirim] = await Promise.all([
       pwaDb.pendingStoreReceipts.where("syncState").anyOf([...DIAMBIL]).toArray(),
       pwaDb.pendingStoreOpnames.where("syncState").anyOf([...DIAMBIL]).toArray(),
       pwaDb.pendingSpgReturns.where("syncState").anyOf([...DIAMBIL]).toArray(),
+      pwaDb.pendingSpgRefunds.where("syncState").anyOf([...DIAMBIL]).toArray(),
       pwaDb.pendingMutasiAjuan.where("syncState").anyOf([...DIAMBIL]).toArray(),
       pwaDb.pendingMutasiKirim.where("syncState").anyOf([...DIAMBIL]).toArray(),
     ]);
@@ -246,6 +315,7 @@ export async function flushStokTertahan(): Promise<HasilKirimLuring> {
       ...terima.map((baris) => ({ jenis: "terima" as const, baris })),
       ...opname.map((baris) => ({ jenis: "opname" as const, baris })),
       ...retur.map((baris) => ({ jenis: "returPembeli" as const, baris })),
+      ...uangKembali.map((baris) => ({ jenis: "uangKembali" as const, baris })),
       ...ajuan.map((baris) => ({ jenis: "mutasiAjuan" as const, baris })),
       ...kirim.map((baris) => ({ jenis: "mutasiKirim" as const, baris })),
     ].sort((a, b) => a.baris.waktu - b.baris.waktu);
@@ -269,7 +339,8 @@ export async function flushStokTertahan(): Promise<HasilKirimLuring> {
         }
       }
       // Terikat check-in yang masih di antrean: tunggu; check-in ditolak: berhenti.
-      if (item.jenis !== "returPembeli") {
+      // Retur pembeli dan uang kembalinya tidak butuh check-in.
+      if (item.jenis !== "returPembeli" && item.jenis !== "uangKembali") {
         const ikatan = await keadaanCheckinTertahan(item.baris.visitClientId);
         if (ikatan === "tunggu") {
           await pwaDb[tabel].update(item.baris.localId, { syncState: "pending" });
@@ -299,10 +370,14 @@ export async function flushStokTertahan(): Promise<HasilKirimLuring> {
           nasib = k.nasib;
           alasan = k.alasan;
           tambahan = k.tambahan ?? {};
+        } else if (item.jenis === "uangKembali") {
+          const k = await kirimUangKembali(item.baris);
+          nasib = k.nasib;
+          alasan = k.alasan;
         } else {
-          const res = await catatReturPembeliAction(muatanReturPembeli(item.baris));
-          nasib = nasibReturPembeli(res);
-          if (!res.ok) alasan = res.kode;
+          const k = await kirimReturPembeli(item.baris);
+          nasib = k.nasib;
+          alasan = k.alasan;
         }
       } catch (err) {
         nasib = err instanceof GagalUnggah ? err.nasib : "retry";

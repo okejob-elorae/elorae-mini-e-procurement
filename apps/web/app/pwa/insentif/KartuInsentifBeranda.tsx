@@ -13,8 +13,6 @@ export type DataInsentifBeranda = {
   dasarNilai: number;
   tarifDipakai: number;
   tingkatBerikut: { tarifPersen: number; kurangNilai: number } | null;
-  /** Bulan ini ada konsinyasi: perkiraan di HP (putus + van) bisa lebih rendah dari angka final kantor. */
-  konsiBelumDihitung: boolean;
 };
 
 /**
@@ -22,8 +20,8 @@ export type DataInsentifBeranda = {
  * tarif berikutnya. Satu ketukan membuka rinciannya di `/pwa/insentif`.
  * Tidak dirender sama sekali saat kantor mematikan komisi (data `null`).
  *
- * Angkanya dihitung atas putus + van (`komisiUntukHp`): rupiah konsinyasi tidak
- * pernah sampai ke HP, juga tidak lewat komisi ÷ tarif.
+ * Angkanya `komisiSalesman` atas omzet resmi putus + konsi + van — sama dengan
+ * laporan komisi kantor (pemilik P56, 2026-11-02).
  */
 export function KartuInsentifBeranda({ data }: { data: DataInsentifBeranda }) {
   const t = useTranslations("pwa.insentif");
@@ -38,12 +36,11 @@ export function KartuInsentifBeranda({ data }: { data: DataInsentifBeranda }) {
       </div>
       <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{formatIDR(data.komisi)}</p>
       <p className="text-xs text-muted-foreground tabular-nums">
-        {tDinamis(data.dasar === "PENJUALAN" ? "homeFormulaPENJUALANPutusVan" : "homeFormulaTERTAGIH", {
+        {tDinamis(data.dasar === "PENJUALAN" ? "homeFormulaPENJUALAN" : "homeFormulaTERTAGIH", {
           rate: formatPersen(data.tarifDipakai, locale),
           amount: formatIDR(data.dasarNilai),
         })}
       </p>
-      {data.konsiBelumDihitung ? <p className="text-xs text-muted-foreground">{t("konsiBelumDihitung")}</p> : null}
       {data.tingkatBerikut ? (
         <p className="mt-2 flex items-start gap-1.5 text-xs font-medium tabular-nums">
           <TrendingUp className="mt-px h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />

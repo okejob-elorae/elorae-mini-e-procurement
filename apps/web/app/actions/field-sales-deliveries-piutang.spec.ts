@@ -18,7 +18,9 @@ vi.mock("./audit", () => ({ logPrint: vi.fn() }));
 // JOURNAL_PENDING untuk nota uji yang dihapus teardown (pemetaan dev belum lengkap).
 vi.mock("@/lib/finance/lapangan/kait", () => ({ kaitNotaTerbit: vi.fn(async () => undefined) }));
 
-import { recordDeliveryAction, updateDeliveryDatesAction } from "./field-sales-deliveries";
+import { updateDeliveryDatesAction } from "./field-sales-deliveries";
+import { catatNotaUji } from "@/lib/field-sales/delivery/uji-nota";
+import { parseDateOnly } from "@/lib/date-only";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -99,15 +101,16 @@ d("aksi pengiriman ↔ piutang nota (basis data uji)", () => {
     await prisma.user.deleteMany({ where: { id: { in: [seededId(salesmanId), seededId(adminId)] } } });
   });
 
-  it("pengiriman lewat aksi melahirkan piutang; koreksi tanggal nota ikut memindahkan tanggal piutangnya", async () => {
-    const r = await recordDeliveryAction({
+  it("nota yang terbit melahirkan piutang; koreksi tanggal nota ikut memindahkan tanggal piutangnya", async () => {
+    // Nota hanya terbit lewat pengiriman (P44/P44a); tes memakai pembantu tesnya.
+    await catatNotaUji({
       orderId,
+      deliveredById: adminId,
       lines: [{ orderLineId: lineId, qty: 4 }],
-      invoiceDate: "2026-10-05",
-      dueDate: "2026-11-04",
+      invoiceDate: parseDateOnly("2026-10-05")!,
+      dueDate: parseDateOnly("2026-11-04")!,
       idempotencyKey: `apn-${token}`,
     });
-    expect(r).toEqual({ ok: true });
 
     const nota = await prisma.fieldSalesDelivery.findFirstOrThrow({ where: { orderId: seededId(orderId) } });
     const piutang = await prisma.receivable.findUniqueOrThrow({ where: { deliveryId: nota.id } });

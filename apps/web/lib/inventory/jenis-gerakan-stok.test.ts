@@ -26,6 +26,13 @@ describe("sumber penyesuaian", () => {
     for (const s of SUMBER_MANUAL) expect(SUMBER_OTOMATIS).not.toContain(s);
   });
 
+  it("barang kiriman yang kembali ke gudang (ditolak toko / tidak jadi dikirim) adalah sumber otomatis", () => {
+    for (const s of ["KONSI_TRANSFER_RETURN", "FIELD_SALES_CONSUME_RETURN"]) {
+      expect(SUMBER_PENYESUAIAN).toContain(s);
+      expect(SUMBER_OTOMATIS).toContain(s);
+    }
+  });
+
   it("saringan bawaan menyembunyikan sumber otomatis (daftar hitam, sumber baru tetap tampil)", () => {
     expect(whereSaringanSumber()).toEqual({ source: { notIn: [...SUMBER_OTOMATIS] } });
     expect(whereSaringanSumber("manual")).toEqual(whereSaringanSumber());

@@ -129,9 +129,12 @@ describe("rencanaPasangTemplat", () => {
     expect(r.konflik).toEqual([
       { kode: "5", nama: "HPP", sebab: "TIPE_BERBEDA", peran: [] },
       { kode: "5101", nama: "HPP barang terjual", sebab: "INDUK_GAGAL", peran: ["COGS"] },
+      { kode: "5102", nama: "Selisih harga beli", sebab: "INDUK_GAGAL", peran: ["PURCHASE_PRICE_VARIANCE"] },
     ]);
     expect(r.akunBaru.map((a) => a.kode)).not.toContain("5101");
+    expect(r.akunBaru.map((a) => a.kode)).not.toContain("5102");
     expect(r.pemetaanBaru.map((p) => p.peran)).not.toContain("COGS");
+    expect(r.pemetaanBaru.map((p) => p.peran)).not.toContain("PURCHASE_PRICE_VARIANCE");
   });
 
   it("anak tidak dibuat di bawah akun daun yang sudah dipakai jurnal/peran (akun itu akan berhenti bisa diposting)", () => {

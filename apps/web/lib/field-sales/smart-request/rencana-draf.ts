@@ -2,12 +2,15 @@ import { labelVarian } from "@/lib/konsinyasi/stok-di-toko";
 import type { AlasanRencana, HasilRencana, KurangUkuran, SebabDilewati } from "./rencana";
 
 /**
- * Bentuk draf rencana kirim yang dikirim ke HP.
+ * Bentuk draf rencana kirim yang dikirim ke HP SALESMAN.
  *
- * Dua bentuk, bukan satu dengan harga yang dikosongkan: draf toko KONSI tidak
- * punya kunci harga SAMA SEKALI — tidak ada `hargaSatuan`, tidak ada total,
- * tidak ada sebab "anggaran" atau "harga". Dibuktikan dengan tes atas JSON
- * terserialisasinya.
+ * Dua bentuk. Draf toko PUTUS membawa harga toko per baris (`hargaSatuan`),
+ * yang juga dipakai anggaran. Draf toko KONSI membawa harga retail konsi per
+ * baris hanya untuk tampilan (pemilik P18 "berikan selengkapnya saja": HP
+ * salesman menampilkan konsi lengkap) — `null` bila barang belum berharga atau
+ * markup toko belum sah; penyusun tidak pernah memakainya, dan tidak ada sebab
+ * "anggaran" atau "harga" untuk konsi. Draf ini tidak pernah sampai ke HP SPG
+ * atau portal toko (P18a).
  */
 
 type InfoBarang = { sku: string; nama: string; kategoriId: string; variantsMentah: unknown; harga: number | null };
@@ -21,6 +24,8 @@ export type BarisDrafKonsi = {
   qty: number;
   /** Stok gudang yang boleh dipesan — batas atas tombol tambah. */
   tersedia: number;
+  /** Harga retail konsi per potong, hanya untuk tampilan (P18); null bila tidak terhitung. */
+  hargaSatuan?: number | null;
 };
 export type BarisDrafPutus = BarisDrafKonsi & { hargaSatuan: number };
 
@@ -76,7 +81,17 @@ export function susunDraf(input: {
     };
   });
 
-  if (input.konsi) return { konsi: true, artikel: artikelKonsi, dilewati, lebih: hasil.lebih };
+  if (input.konsi) {
+    return {
+      konsi: true,
+      artikel: artikelKonsi.map((a) => {
+        const harga = ambil(a.itemId).harga ?? null;
+        return { ...a, baris: a.baris.map((b) => ({ ...b, hargaSatuan: harga })) };
+      }),
+      dilewati,
+      lebih: hasil.lebih,
+    };
+  }
 
   return {
     konsi: false,

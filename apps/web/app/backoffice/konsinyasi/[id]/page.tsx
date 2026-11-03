@@ -3,7 +3,6 @@ import { auth } from "@/lib/auth";
 import {
   bolehMembayarKomisiSpg,
   bolehMembukaKonsi,
-  bolehMemverifikasi,
   bolehMencatatNomorKonsi,
   bolehMengelolaKonsi,
   bolehMengunciKonsi,
@@ -29,7 +28,7 @@ export default async function RincianSiklusPage({
   // Setiap tombol memakai izin yang SAMA dengan aksi servernya (app/actions/konsinyasi.ts):
   // laporan = consignment:manage, kunci/buka kunci = consignment:lock, nomor nota =
   // consignment:note_number, nomor faktur pajak = consignment:tax_number, gaji SPG =
-  // spg_commission:pay. Pembayaran toko dicatat keuangan — izin memverifikasi BKM.
+  // spg_commission:pay. Uang toko masuk lewat BKM di Piutang (tagihan siklus lahir saat dikunci).
   const kelola = bolehMengelolaKonsi(izin);
   const kunci = bolehMengunciKonsi(izin);
   const [data, katalog] = await Promise.all([
@@ -48,7 +47,6 @@ export default async function RincianSiklusPage({
       bolehCatatNota={bolehMencatatNomorKonsi(izin, "NOTA")}
       bolehCatatPajak={bolehMencatatNomorKonsi(izin, "PAJAK")}
       bolehBayarGaji={bolehMembayarKomisiSpg(izin)}
-      bolehCatatBayar={bolehMemverifikasi(izin)}
     />
   );
 }

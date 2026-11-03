@@ -15,6 +15,7 @@ import {
   KonsiPriceDiscountNotAllowedError,
   SellThroughMethodRequiresKonsiError,
   StoreHasDraftSellThroughError,
+  KonsiTanpaPemegangError,
   type StoreFields,
   type StoreLocationFilter,
   type StoreNpwpFilter,
@@ -32,6 +33,14 @@ const d = isProd ? describe.skip : describe;
  * deletes the audit rows of its own stores.
  */
 const STORE_EDITOR_ID = "TEST-SQ-EDITOR";
+
+/*
+ * A KONSI store must have a holding salesperson (owner P47), so every spec that saves a KONSI
+ * store through `createStore`/`updateStore` names one. `Store.salesmanId` carries no foreign key
+ * (relationMode = "prisma"), so a fixed string serves. Paired PUTUS builders in the same spec name
+ * it too: a holder change would write an audit row the teardown does not delete.
+ */
+const STORE_HOLDER_ID = "TEST-SQ-HOLDER";
 
 d("updateStore KONSI → PUTUS guard (test bed only)", () => {
   const token = Math.random().toString(36).slice(2, 10);
@@ -62,7 +71,7 @@ d("updateStore KONSI → PUTUS guard (test bed only)", () => {
     sellThroughMethod: null,
     isPkp: false,
     groupId: null,
-    salesmanId: null,
+    salesmanId: STORE_HOLDER_ID,
   });
 
   beforeEach(async () => {
@@ -80,13 +89,13 @@ d("updateStore KONSI → PUTUS guard (test bed only)", () => {
     itemId = item.id;
 
     const laggingStore = await prisma.store.create({
-      data: { code: `TEST-SQ-LAG-${token}`, name: "Lagging konsi store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
+      data: { code: `TEST-SQ-LAG-${token}`, name: "Lagging konsi store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true, salesmanId: STORE_HOLDER_ID },
     });
     laggingStoreId = laggingStore.id;
     await prisma.storeStock.create({ data: { storeId: laggingStoreId, itemId, variantSku: "", qty: 4, avgCost: 1000 } });
 
     const clearedStore = await prisma.store.create({
-      data: { code: `TEST-SQ-CLR-${token}`, name: "Cleared konsi store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
+      data: { code: `TEST-SQ-CLR-${token}`, name: "Cleared konsi store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true, salesmanId: STORE_HOLDER_ID },
     });
     clearedStoreId = clearedStore.id;
     await prisma.storeStock.create({ data: { storeId: clearedStoreId, itemId, variantSku: "", qty: 0, avgCost: 1000 } });
@@ -185,6 +194,8 @@ d("updateStore KONSI → PUTUS guard over undelivered konsi orders (test bed onl
   });
 
   afterEach(async () => {
+    await prisma.konsiTransferLine.deleteMany({ where: { transfer: { orderId: seededId(orderId) } } });
+    await prisma.konsiTransfer.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
@@ -224,6 +235,100 @@ d("updateStore KONSI → PUTUS guard over undelivered konsi orders (test bed onl
     await seedKonsiOrder("PENDING_APPROVAL");
     await expect(updateStore(storeId, putusFields(), STORE_EDITOR_ID)).rejects.toBeInstanceOf(StoreHasConsignmentStockError);
   });
+
+  it("refuses the switch while a konsi transfer to the store is still in transit, and allows it once received", async () => {
+    await seedKonsiOrder("APPROVED");
+    /* The shipment was created: the line counts as delivered, the goods are on the road, on no StoreStock row. */
+    await prisma.fieldSalesOrderLine.updateMany({ where: { orderId: seededId(orderId) }, data: { deliveredQty: 3 } });
+    await prisma.fieldSalesOrder.update({ where: { id: seededId(orderId) }, data: { deliveryStatus: "DELIVERED" } });
+    const transfer = await prisma.konsiTransfer.create({
+      data: {
+        docNo: `KONSITRF/TEST-SQO-${token}`,
+        orderId,
+        storeId,
+        transferredById: userId,
+        status: "IN_TRANSIT",
+        lines: { create: [{ itemId, variantSku: "", productName: "Open konsi item", qty: 3, unitCost: 1000 }] },
+      },
+      select: { id: true },
+    });
+
+    await expect(updateStore(storeId, putusFields(), STORE_EDITOR_ID)).rejects.toBeInstanceOf(StoreHasConsignmentStockError);
+    const stillKonsi = await prisma.store.findUnique({ where: { id: seededId(storeId) }, select: { termsType: true } });
+    expect(stillKonsi?.termsType).toBe("KONSI");
+
+    /* Received with no StoreStock row left behind (the test seeds none), so nothing else holds the store on KONSI. */
+    await prisma.konsiTransfer.update({ where: { id: transfer.id }, data: { status: "RECEIVED", receivedAt: new Date(), receivedById: userId } });
+    const result = await updateStore(storeId, putusFields(), STORE_EDITOR_ID);
+    expect(result.termsType).toBe("PUTUS");
+  });
+});
+
+d("KONSI store holding salesperson required (P47, test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let createdIds: string[] = [];
+
+  const fields = (code: string, termsType: "PUTUS" | "KONSI", salesmanId: string | null): StoreFields => ({
+    code,
+    name: "Holder guard store",
+    address: "Test address",
+    phone: null,
+    contactName: null,
+    termsType,
+    paymentTempo: 0,
+    markupPercent: 20,
+    priceDiscountPercent: null,
+    creditLimit: null,
+    npwp: null,
+    lat: null,
+    lng: null,
+    checkinRadiusMeters: null,
+    sellThroughMethod: null,
+    isPkp: false,
+    groupId: null,
+    salesmanId,
+  });
+
+  beforeEach(() => {
+    createdIds = [];
+  });
+
+  afterEach(async () => {
+    await prisma.auditLog.deleteMany({ where: { entityType: "Store", entityId: { in: createdIds.map((id) => seededId(id)) } } });
+    await prisma.store.deleteMany({ where: { id: { in: createdIds.map((id) => seededId(id)) } } });
+  });
+
+  it("refuses to create a KONSI store with no holder, and writes no row", async () => {
+    const code = `TEST-SQ-HOLD-C-${token}`;
+    await expect(createStore(fields(code, "KONSI", null))).rejects.toBeInstanceOf(KonsiTanpaPemegangError);
+    expect(await prisma.store.count({ where: { code } })).toBe(0);
+  });
+
+  it("refuses a PUTUS → KONSI edit with no holder, leaving the store and its audit trail untouched", async () => {
+    const code = `TEST-SQ-HOLD-U-${token}`;
+    const created = await createStore(fields(code, "PUTUS", null));
+    createdIds.push(created.id);
+
+    await expect(updateStore(created.id, fields(code, "KONSI", null), STORE_EDITOR_ID)).rejects.toBeInstanceOf(KonsiTanpaPemegangError);
+    const still = await prisma.store.findUniqueOrThrow({ where: { id: seededId(created.id) }, select: { termsType: true, salesmanId: true } });
+    expect(still).toEqual({ termsType: "PUTUS", salesmanId: null });
+    expect(
+      await prisma.auditLog.count({ where: { entityType: "Store", entityId: seededId(created.id), action: "STORE_SALESMAN_CHANGED" } }),
+    ).toBe(0);
+  });
+
+  it("saves a KONSI store that has a holder", async () => {
+    const created = await createStore(fields(`TEST-SQ-HOLD-OK-${token}`, "KONSI", STORE_HOLDER_ID));
+    createdIds.push(created.id);
+    expect(created.termsType).toBe("KONSI");
+    expect(created.salesmanId).toBe(STORE_HOLDER_ID);
+  });
+
+  it("still saves a PUTUS store with no holder", async () => {
+    const created = await createStore(fields(`TEST-SQ-HOLD-P-${token}`, "PUTUS", null));
+    createdIds.push(created.id);
+    expect(created.salesmanId).toBeNull();
+  });
 });
 
 d("store price discount guard (test bed only)", () => {
@@ -248,7 +353,7 @@ d("store price discount guard (test bed only)", () => {
     sellThroughMethod: null,
     isPkp: false,
     groupId: null,
-    salesmanId: null,
+    salesmanId: STORE_HOLDER_ID,
   });
 
   const konsiFields = (code: string, priceDiscountPercent: number | null): StoreFields => ({
@@ -269,7 +374,7 @@ d("store price discount guard (test bed only)", () => {
     sellThroughMethod: null,
     isPkp: false,
     groupId: null,
-    salesmanId: null,
+    salesmanId: STORE_HOLDER_ID,
   });
 
   beforeEach(() => {
@@ -394,7 +499,7 @@ d("store sell-through method guard (test bed only)", () => {
     sellThroughMethod,
     isPkp: false,
     groupId: null,
-    salesmanId: null,
+    salesmanId: STORE_HOLDER_ID,
   });
 
   const putusFields = (code: string, sellThroughMethod: StoreFields["sellThroughMethod"]): StoreFields => ({
@@ -415,7 +520,7 @@ d("store sell-through method guard (test bed only)", () => {
     sellThroughMethod,
     isPkp: false,
     groupId: null,
-    salesmanId: null,
+    salesmanId: STORE_HOLDER_ID,
   });
 
   beforeEach(() => {
@@ -481,7 +586,7 @@ d("updateStore KONSI → PUTUS guard over a draft sell-through report (test bed 
     sellThroughMethod: termsType === "KONSI" ? "SHELF_COUNT" : null,
     isPkp: false,
     groupId: null,
-    salesmanId: null,
+    salesmanId: STORE_HOLDER_ID,
   });
 
   beforeEach(async () => {
@@ -541,7 +646,7 @@ d("store markup guard (test bed only)", () => {
     sellThroughMethod: null,
     isPkp: false,
     groupId: null,
-    salesmanId: null,
+    salesmanId: STORE_HOLDER_ID,
   });
 
   beforeEach(() => {

@@ -13,6 +13,7 @@ import { MinQtyViolationError, NoActiveVisitError } from "./errors";
 import { KreditDiblokirError } from "./kredit-pesanan";
 import { JarakJauhDitolakError, SALURAN_PORTAL } from "./jarak-jauh";
 import { BarangTanpaHargaError, hargaSah } from "./harga-wajib";
+import { tahapPengirimanPesanan } from "@/lib/delivery/tahap-pesanan";
 import { keadaanPesanan, type KeadaanPesanan } from "./pwa-queries";
 import { capTautanDipakai, type AksesPortal } from "./portal-toko";
 import { batasPesanPortal, emberBarang, emberKetersediaan, emberPortal, type Ketersediaan } from "./portal-toko-aturan";
@@ -510,11 +511,20 @@ export async function pesananTokoPortal(akses: AksesPortal, batas = 20): Promise
       createdAt: true,
       remoteChannel: true,
       lines: { select: { productName: true, qty: true, isBonus: true }, orderBy: { id: "asc" } },
+      shipments: { where: { status: { in: ["PACKED", "IN_TRANSIT"] } }, select: { status: true } },
     },
   });
   const tokoPutus = akses.toko.termsType === "PUTUS";
   return rows.map((r) => {
-    const keadaan = keadaanPesanan({ status: r.status, orderType: r.orderType, deliveryStatus: r.deliveryStatus });
+    // Barang yang sedang dikemas atau di jalan dibaca dengan tahap itu, sama seperti di HP salesman
+    // — "Belum dikirim" padahal barangnya sudah berangkat membuat toko menanyakan ulang. Harga dan
+    // total konsi tetap tidak pernah sampai ke portal (P18a).
+    const keadaan = keadaanPesanan({
+      status: r.status,
+      orderType: r.orderType,
+      deliveryStatus: r.deliveryStatus,
+      pengirimanTerbuka: tahapPengirimanPesanan(r.shipments),
+    });
     const dasar: PesananTokoPortal = {
       orderNo: r.orderNo,
       tanggal: formatDisplayDateTime(r.createdAt),

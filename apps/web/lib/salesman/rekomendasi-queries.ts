@@ -29,9 +29,9 @@ export { bacaFilterRekomendasi, type FilterRekomendasi } from "./rekomendasi-atu
  * untuk salesman pembuatnya, dan daftar dan rincian untuk SPG toko tujuannya.
  *
  * TIDAK ADA HARGA di bentuk mana pun di sini — rekomendasi hanya barang,
- * ukuran, jumlah, dan alasan. Untuk toko konsinyasi itu aturan tetap (harga
- * konsinyasi tidak pernah sampai ke HP); SPG tidak butuh harga untuk menjawab
- * saran. Tes memeriksa JSON-nya.
+ * ukuran, jumlah, dan alasan. Untuk toko konsinyasi teks yang dikirim ke toko
+ * tetap tanpa harga (P58); SPG tidak butuh harga untuk menjawab saran. Tes
+ * memeriksa JSON-nya.
  */
 
 // ─── Bahan formulir ──────────────────────────────────────────────────────────

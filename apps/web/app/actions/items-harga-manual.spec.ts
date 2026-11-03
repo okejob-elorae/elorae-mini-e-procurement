@@ -75,7 +75,14 @@ d("harga jual manual di formulir barang (test bed only)", () => {
     // Setiap tes mulai dari keadaan yang sama, apa pun yang disimpan tes sebelumnya.
     await prisma.item.update({
       where: { id: seededId(itemId) },
-      data: { nameId: "Kaos uji", sellingPrice: 50_000, jubelioConfirmedPrice: 50_000, targetMarginPercent: 40, additionalCost: 1_000 },
+      data: {
+        nameId: "Kaos uji",
+        sellingPrice: 50_000,
+        jubelioConfirmedPrice: 50_000,
+        targetMarginPercent: 40,
+        priceRuleBasis: "MARKUP",
+        additionalCost: 1_000,
+      },
     });
   });
 
@@ -181,6 +188,20 @@ d("harga jual manual di formulir barang (test bed only)", () => {
     ]);
     await new Promise((r) => setTimeout(r, 300));
     expect(await antrean()).toBe(0);
+  });
+
+  it("aturan sebagai MARGIN (P4) tersimpan dengan dasarnya; harga jual dan riwayat harga TIDAK berubah", async () => {
+    await updateItem(itemId, isian({ targetMarginPercent: 40, priceRuleBasis: "MARGIN" }));
+    expect(await barang()).toEqual({ harga: 50_000, margin: 40, biaya: 1_000 });
+    const b = await prisma.item.findUniqueOrThrow({ where: { id: seededId(itemId) }, select: { priceRuleBasis: true } });
+    expect(b.priceRuleBasis).toBe("MARGIN");
+    expect(await prisma.itemPriceChangeLog.count({ where: { itemId: seededId(itemId) } })).toBe(0);
+  });
+
+  it("batas per dasar: margin 100 ditolak, markup 999,99 diterima; harga tetap", async () => {
+    await expect(updateItem(itemId, isian({ targetMarginPercent: 100, priceRuleBasis: "MARGIN" }))).rejects.toThrow(/Margin harus/);
+    await updateItem(itemId, isian({ targetMarginPercent: 999.99, priceRuleBasis: "MARKUP" }));
+    expect(await barang()).toEqual({ harga: 50_000, margin: 999.99, biaya: 1_000 });
   });
 
   it("margin yang bukan angka ditolak, harga dan margin lama tetap", async () => {

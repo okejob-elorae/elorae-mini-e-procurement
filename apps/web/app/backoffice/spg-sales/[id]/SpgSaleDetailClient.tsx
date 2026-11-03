@@ -7,6 +7,7 @@ import type { SpgSaleDetail } from "@/lib/spg/sale-queries";
 import { roundCents } from "@elorae/db/pricing";
 import type { KembaliPerNota, ReturPembeliRingkas } from "@/lib/spg/retur-pembeli";
 import type { StatusReturPembeli } from "@/lib/spg/retur-pembeli-status";
+import { NADA_UANG_RETUR_PEMBELI } from "@/app/backoffice/retur-spg/tampilan";
 import { dinamis, type TerjemahDinamis } from "@/lib/i18n/dinamis";
 import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
 import { rincianNotaSpg, spgSaleNotaHtml } from "@/lib/print/spg-sale-nota-html";
@@ -70,6 +71,18 @@ function Uang({ label, nilai, potongan = false, kuat = false }: { label: string;
   );
 }
 
+type KategoriBaris = NonNullable<SpgSaleDetail["lines"][number]["kategori"]>;
+
+/**
+ * Kategori yang tersimpan di baris nota — dasar komisinya (P8), dengan tanggal kategori itu dicatat.
+ * Barang yang terjual tanpa kategori mendapat kategori pertamanya kemudian, lalu membeku (P69).
+ */
+function teksKategori(k: KategoriBaris, t: TerjemahDinamis): string {
+  if (k.diisiKemudian) return t("kategoriDiisiKemudian", { nama: k.nama ?? "—", tanggal: k.tanggal });
+  if (k.nama === null) return t("kategoriBelumAda", { tanggal: k.tanggal });
+  return t("kategoriSaatTerjual", { nama: k.nama, tanggal: k.tanggal });
+}
+
 /** "62812…" (bentuk tersimpan) → "0812…" untuk dibaca orang. */
 function tampilHp(hp: string): string {
   return hp.startsWith("62") ? `0${hp.slice(2)}` : hp;
@@ -84,11 +97,10 @@ const NADA_RETUR_PEMBELI: Record<StatusReturPembeli, StatusTone> = {
 };
 
 /**
- * Baris keputusan di bawah satu laporan. Laporan lama (dicatat sebelum ada persetujuan kantor)
- * berlaku saat dicatat dan tidak punya pemutus; laporan MENUNGGU belum berpengaruh apa pun.
+ * Baris keputusan di bawah satu laporan. Setiap laporan menunggu kantor (tidak ada lagi laporan
+ * yang "berlaku langsung"); laporan MENUNGGU belum berpengaruh apa pun.
  */
 function teksKeputusan(r: ReturPembeliRingkas, tk: TerjemahDinamis, locale: string): string | null {
-  if (r.langsungBerlaku) return tk("berlakuLangsung");
   if (r.status === "MENUNGGU") return tk("belumBerpengaruh");
   if (!r.diputuskanOleh && !r.diputuskanPada) return null;
   return tk(`putusan${r.status}`, {
@@ -99,10 +111,12 @@ function teksKeputusan(r: ReturPembeliRingkas, tk: TerjemahDinamis, locale: stri
 
 export function SpgSaleDetailClient({ sale, kembali }: Props) {
   const t = useTranslations("spgSale.backoffice.detail");
+  const tDetail = dinamis(t);
   const tSpgSale = useTranslations("spgSale");
   const tk = useTranslations("spgRetur.kantor");
   const tkd = dinamis(tk);
   const tKondisi = dinamis(useTranslations("spgRetur"));
+  const tUang = dinamis(useTranslations("spgReturPembeli"));
   const locale = useLocale();
   // Riwayat memuat SEMUA laporan (juga yang menunggu, ditolak, atau ditarik); hanya yang disetujui
   // masuk kolom "Kembali" dan mengurangi "Bersih".
@@ -241,7 +255,12 @@ export function SpgSaleDetailClient({ sale, kembali }: Props) {
             <TableBody>
               {sale.lines.map((line, i) => (
                 <TableRow key={i}>
-                  <TableCell className="min-w-[12rem] whitespace-normal">{line.productName}</TableCell>
+                  <TableCell className="min-w-[12rem] whitespace-normal">
+                    {line.productName}
+                    {line.kategori && (
+                      <span className="block text-xs text-muted-foreground">{teksKategori(line.kategori, tDetail)}</span>
+                    )}
+                  </TableCell>
                   <TableCell className="font-mono text-sm">{line.variantSku || "—"}</TableCell>
                   <TableCell className="text-right">{line.qty}</TableCell>
                   <TableCell className="text-right">{formatRupiah(line.unitPrice)}</TableCell>
@@ -295,6 +314,8 @@ export function SpgSaleDetailClient({ sale, kembali }: Props) {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusPill tone={NADA_RETUR_PEMBELI[r.status]}>{tkd(`status${r.status}`)}</StatusPill>
+                      {/* Uang pembeli laporan ini: boleh dikembalikan hanya sesudah kantor setuju (P13). */}
+                      <StatusPill tone={NADA_UANG_RETUR_PEMBELI[r.uang]}>{tUang(`uang.${r.uang}`)}</StatusPill>
                       <span className="font-medium">
                         {tk("dilaporkan", { oleh: r.oleh, waktu: formatDisplayDateTime(r.waktu, locale) })}
                       </span>

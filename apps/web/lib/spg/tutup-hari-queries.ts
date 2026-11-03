@@ -19,7 +19,7 @@ import {
   type ReturTutup,
   type RingkasanTutupHari,
 } from "./tutup-hari";
-import { RETUR_PEMBELI_MENUNGGU, returPembeliBerlaku } from "./retur-pembeli-berlaku";
+import { RETUR_PEMBELI_UANG_KEMBALI_BELUM_BERLAKU, returPembeliBerlaku } from "./retur-pembeli-berlaku";
 
 /**
  * Kueri laporan tutup hari SPG (server saja — mengimpor Prisma; klien hanya
@@ -27,10 +27,12 @@ import { RETUR_PEMBELI_MENUNGGU, returPembeliBerlaku } from "./retur-pembeli-ber
  * sungguhan lewat pembangun murni di `tutup-hari.ts`, jadi HP, laporan yang
  * disimpan, dan layar kantor membaca definisi yang sama.
  *
- * Retur pembeli dihitung pada HARI DILAPORKAN (hari kasir mengembalikan uang)
- * dan hanya bila sudah disetujui kantor (`returPembeliBerlaku`). Yang masih
- * menunggu tidak mengurangi penjualan bersih; HP menuliskannya terpisah
- * (`potongReturMenunggu`) supaya SPG bisa menjelaskan selisih kasir.
+ * Retur pembeli dihitung pada HARI UANGNYA DIKEMBALIKAN kasir (`refundedAt` —
+ * pemilik P13a: uang kembali hanya sesudah kantor menyetujui, jadi uang itu
+ * keluar dari kasir pada hari itu) dan hanya bila sudah disetujui kantor
+ * (`returPembeliBerlaku`). Uang yang dikembalikan hari itu untuk laporan yang
+ * belum/tidak disetujui tidak mengurangi penjualan bersih; HP menuliskannya
+ * terpisah (`potongUangKembaliBelumBerlaku`) supaya SPG bisa menjelaskan selisih kasir.
  */
 
 const angka = (v: unknown) => Number(v ?? 0);
@@ -64,7 +66,7 @@ export async function bahanTutupHari(storeId: string, day: string): Promise<Baha
       },
     }),
     prisma.spgSaleReturnLine.findMany({
-      where: { saleReturn: returPembeliBerlaku({ storeId, createdAt: rentang }) },
+      where: { saleReturn: returPembeliBerlaku({ storeId, refundedAt: rentang }) },
       select: { qty: true, saleLine: { select: { qty: true, lineTotal: true, unitPrice: true } } },
     }),
     prisma.storeReceipt.findMany({
@@ -84,9 +86,9 @@ export async function bahanTutupHari(storeId: string, day: string): Promise<Baha
       select: { description: true, qty: true },
     }),
     prisma.user.findMany({ where: { assignedStoreId: storeId }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" } }),
-    // Retur pembeli hari itu yang masih menunggu kantor — hanya untuk diterangkan di HP.
+    // Uang dikembalikan kasir hari itu untuk laporan yang belum/tidak disetujui — hanya keterangan di HP.
     prisma.spgSaleReturnLine.aggregate({
-      where: { saleReturn: { storeId, createdAt: rentang, ...RETUR_PEMBELI_MENUNGGU } },
+      where: { saleReturn: { storeId, refundedAt: rentang, ...RETUR_PEMBELI_UANG_KEMBALI_BELUM_BERLAKU } },
       _sum: { qty: true },
     }),
   ]);
@@ -119,7 +121,7 @@ export async function bahanTutupHari(storeId: string, day: string): Promise<Baha
     dicari: dicari.map((d) => ({ description: d.description, qty: d.qty })),
     spg: spg.map((u) => ({ id: u.id, nama: namaOrang(u) })),
     namaPengguna: nama,
-    potongReturMenunggu: menunggu._sum.qty ?? 0,
+    potongUangKembaliBelumBerlaku: menunggu._sum.qty ?? 0,
   };
 }
 
@@ -240,7 +242,7 @@ async function angkaPerToko(storeIds: string[], awal: Date, akhir: Date) {
       select: { storeId: true, createdAt: true, subtotal: true, discountTotal: true, total: true, lines: { select: { qty: true } } },
     }),
     prisma.spgSaleReturnLine.findMany({
-      where: { saleReturn: returPembeliBerlaku({ storeId: { in: storeIds }, createdAt: rentang }) },
+      where: { saleReturn: returPembeliBerlaku({ storeId: { in: storeIds }, refundedAt: rentang }) },
       select: { qty: true, saleReturn: { select: { storeId: true } }, saleLine: { select: { qty: true, lineTotal: true, unitPrice: true } } },
     }),
   ]);

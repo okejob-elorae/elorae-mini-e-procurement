@@ -4,6 +4,7 @@ import { formatDisplayDateTime } from "@/lib/date-only";
 import { bacaHariKerjaSpg, KUNCI_HARI_KERJA_SPG } from "@/lib/salesman/izin";
 import { izinDisetujuiRentang } from "@/lib/salesman/izin-queries";
 import { bacaAturanShift, KUNCI_SHIFT, type AturanShift } from "./pengaturan";
+import type { StatusJadwalBulan } from "./jadwal-bulan";
 import {
   checkinPertama,
   geserHari,
@@ -33,6 +34,26 @@ import {
 
 const PILIH_BARIS = { userId: true, day: true, kind: true, shiftCode: true, startTime: true, endTime: true, storeId: true } as const;
 const awalHari = (day: string) => new Date(`${day}T00:00:00+07:00`);
+
+/**
+ * Hari terakhir SPG yang sudah ditandai berhenti (`User.spgEndedOn`, pemilik P66), per orang.
+ * Sel jadwalnya sesudah hari itu dibiarkan tersimpan oleh penanda berhenti, jadi SETIAP pembaca
+ * di sini mengabaikannya (`bertugasPada`).
+ */
+async function hariTerakhirSpg(userIds: readonly string[]): Promise<Map<string, string>> {
+  const ids = [...new Set(userIds.filter(Boolean))];
+  if (ids.length === 0) return new Map();
+  const rows = await prisma.user.findMany({ where: { id: { in: ids }, spgEndedOn: { not: null } }, select: { id: true, spgEndedOn: true } });
+  const hasil = new Map<string, string>();
+  for (const r of rows) if (r.spgEndedOn) hasil.set(r.id, r.spgEndedOn);
+  return hasil;
+}
+
+/** Sel orang ini di hari ini masih berlaku: ia belum berhenti, atau hari itu paling lambat hari terakhirnya. */
+const bertugasPada = (akhir: ReadonlyMap<string, string>, userId: string, day: string) => {
+  const a = akhir.get(userId);
+  return !a || day <= a;
+};
 
 export async function aturanShift(): Promise<AturanShift> {
   const r = await prisma.systemSetting.findUnique({ where: { key: KUNCI_SHIFT }, select: { value: true } });
@@ -74,8 +95,11 @@ export async function shiftHariIni(
 ): Promise<{ jenis: "KERJA"; label: string; mulai: string; selesai: string } | { jenis: "LIBUR" } | null> {
   if (!userId) return null;
   const day = typeof hariIni === "string" ? hariIni : kunciHariWib(hariIni);
-  const b = await prisma.spgShift.findUnique({ where: { userId_day: { userId, day } }, select: PILIH_BARIS });
-  if (!b) return null;
+  const [b, akhir] = await Promise.all([
+    prisma.spgShift.findUnique({ where: { userId_day: { userId, day } }, select: PILIH_BARIS }),
+    hariTerakhirSpg([userId]),
+  ]);
+  if (!b || !bertugasPada(akhir, userId, day)) return null;
   if (b.kind === "LIBUR") return { jenis: "LIBUR" };
   if (b.kind !== "KERJA" || !b.startTime || !b.endTime) return null;
   const aturan = await aturanShift();
@@ -129,6 +153,12 @@ export type DataJadwalSpgKantor = {
   aturan: AturanShift;
   /** Hari kerja SPG (0 = Minggu) — bahan "Isi semua hari kerja". */
   hariKerja: number[];
+  /**
+   * `kunciSel(userId, "YYYY-MM")` → status kepala jadwal bulanan orang itu, untuk setiap bulan
+   * yang tersentuh minggu ini (minggu bisa melintasi dua bulan). Tanpa entri = bulan itu belum
+   * punya kepala (belum pernah diisi).
+   */
+  statusBulan: Record<string, StatusJadwalBulan>;
 };
 
 /**
@@ -146,10 +176,13 @@ export async function jadwalSpgMingguKantor(input: { storeId: string; senin: str
     prisma.user.findMany({ where: { assignedStoreId: input.storeId }, select: { id: true, name: true, email: true } }),
   ]);
   const idSpg = spg.map((u) => u.id);
-  const rows = await prisma.spgShift.findMany({
+  const semuaBaris = await prisma.spgShift.findMany({
     where: { day: { in: hari }, OR: [{ storeId: input.storeId }, ...(idSpg.length ? [{ userId: { in: idSpg } }] : [])] },
     select: PILIH_BARIS,
   });
+  // Sel sesudah hari terakhir SPG yang berhenti tidak dibaca (P66).
+  const akhir = await hariTerakhirSpg(semuaBaris.map((r) => r.userId));
+  const rows = semuaBaris.filter((r) => bertugasPada(akhir, r.userId, r.day));
   const pindahan = [...new Set(rows.map((r) => r.userId))].filter((id) => !idSpg.includes(id));
   const namaPindahan = await namaPengguna(pindahan);
   const orang: OrangJadwalSpg[] = [
@@ -159,7 +192,8 @@ export async function jadwalSpgMingguKantor(input: { storeId: string; senin: str
   const semuaId = orang.map((o) => o.id);
 
   const akhirKenyataan = hari[6] < hariIni ? hari[6] : hariIni;
-  const [kunjungan, izin, lalu] = await Promise.all([
+  const bulanMinggu = [...new Set(hari.map((d) => d.slice(0, 7)))];
+  const [kunjungan, izin, lalu, kepala] = await Promise.all([
     semuaId.length && hari[0] <= hariIni
       ? prisma.storeVisit.findMany({
           where: { storeId: input.storeId, userId: { in: semuaId }, checkinAt: { gte: awalHari(hari[0]), lt: awalHari(geserHari(akhirKenyataan, 1)) } },
@@ -173,7 +207,15 @@ export async function jadwalSpgMingguKantor(input: { storeId: string; senin: str
           select: { userId: true, day: true, kind: true, shiftCode: true, startTime: true, endTime: true },
         })
       : Promise.resolve([]),
+    semuaId.length
+      ? prisma.spgMonthSchedule.findMany({
+          where: { userId: { in: semuaId }, month: { in: bulanMinggu } },
+          select: { userId: true, month: true, status: true },
+        })
+      : Promise.resolve([]),
   ]);
+  const statusBulan: Record<string, StatusJadwalBulan> = {};
+  for (const k of kepala) statusBulan[kunciSel(k.userId, k.month)] = k.status as StatusJadwalBulan;
 
   const sel: Record<string, SelKantor> = {};
   const barisPer = new Map<string, (typeof rows)[number]>();
@@ -204,7 +246,20 @@ export async function jadwalSpgMingguKantor(input: { storeId: string; senin: str
     }
   }
 
-  return { storeId: input.storeId, senin: input.senin, hari, hariIni, orang, sel, kenyataan, izin: izinPeta, mingguLalu: lalu, aturan, hariKerja };
+  return {
+    storeId: input.storeId,
+    senin: input.senin,
+    hari,
+    hariIni,
+    orang,
+    sel,
+    kenyataan,
+    izin: izinPeta,
+    mingguLalu: lalu,
+    aturan,
+    hariKerja,
+    statusBulan,
+  };
 }
 
 // ─── Kantor: tab tukar shift ─────────────────────────────────────────────────
@@ -264,19 +319,21 @@ type BarisTukarDb = {
 
 async function susunTukar(rows: readonly BarisTukarDb[], aturan: AturanShift): Promise<BarisTukarKantor[]> {
   if (rows.length === 0) return [];
-  const [nama, toko, sel] = await Promise.all([
+  const orangTukar = [...new Set(rows.flatMap((r) => [r.requesterId, r.partnerId]))];
+  const [nama, toko, sel, akhir] = await Promise.all([
     namaPengguna(rows.flatMap((r) => [r.requesterId, r.partnerId, r.decidedById ?? ""])),
     prisma.store.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.storeId))] } }, select: { id: true, name: true } }),
     prisma.spgShift.findMany({
       where: {
-        userId: { in: [...new Set(rows.flatMap((r) => [r.requesterId, r.partnerId]))] },
+        userId: { in: orangTukar },
         day: { in: [...new Set(rows.flatMap((r) => hariTukar(r)))] },
       },
       select: PILIH_BARIS,
     }),
+    hariTerakhirSpg(orangTukar),
   ]);
   const namaToko = new Map(toko.map((t) => [t.id, t.name]));
-  const selPer = new Map(sel.map((s) => [kunciSel(s.userId, s.day), s]));
+  const selPer = new Map(sel.filter((s) => bertugasPada(akhir, s.userId, s.day)).map((s) => [kunciSel(s.userId, s.day), s]));
   return rows.map((r) => ({
     id: r.id,
     storeId: r.storeId,
@@ -394,7 +451,7 @@ export async function jadwalSpgHp(input: { userId: string; storeId: string; seka
     .sort((a, b) => a.nama.localeCompare(b.nama, "id"));
   const semuaId = [input.userId, ...rekan.map((r) => r.id)];
 
-  const [rows, izin, tukar] = await Promise.all([
+  const [semuaBaris, izin, tukar, akhir] = await Promise.all([
     prisma.spgShift.findMany({ where: { userId: { in: semuaId }, day: { in: hari } }, select: PILIH_BARIS }),
     izinDisetujuiRentang(semuaId, hari[0], hari[hari.length - 1]),
     prisma.spgShiftSwap.findMany({
@@ -403,7 +460,9 @@ export async function jadwalSpgHp(input: { userId: string; storeId: string; seka
       orderBy: { createdAt: "desc" },
       take: 40,
     }),
+    hariTerakhirSpg(semuaId),
   ]);
+  const rows = semuaBaris.filter((r) => bertugasPada(akhir, r.userId, r.day));
   const selPer = new Map(rows.map((r) => [kunciSel(r.userId, r.day), r]));
 
   const hariHp: HariHp[] = hari.map((day) => ({

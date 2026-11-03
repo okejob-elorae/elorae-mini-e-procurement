@@ -1,7 +1,7 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { formatDisplayDate } from "@/lib/date-only";
-import { batasPotongSen, dariSen, keSen } from "./hilang";
-import { bacaAturanHilang, lepasDeduksi, potongBagianOrang, sisaBebanOrangSen } from "./hilang-db";
+import { batasPotongSen, dariSen, desimal, JEJAK_HILANG, keSen } from "./hilang";
+import { bacaAturanHilang, jejakHilang, lepasDeduksi, potongBagianOrang, potonganUntukRefSen, segarkanStatusHilang, sisaBebanOrangSen } from "./hilang-db";
 
 /**
  * Potongan beban barang hilang dari gaji/komisi SPG (dan sales).
@@ -19,7 +19,9 @@ import { bacaAturanHilang, lepasDeduksi, potongBagianOrang, sisaBebanOrangSen } 
 type Tx = Prisma.TransactionClient;
 
 /**
- * Potong beban barang hilang dari SATU pembayaran gaji/komisi orang ini.
+ * Potong beban barang hilang dari SATU pembayaran gaji/komisi orang ini — kini hanya jalur SALES
+ * (`maksPotongPersen` berlaku untuk potongan beban SALES saja); SPG dipotong penuh lewat
+ * `potongBebanHilangPenuh` (P11a).
  * Dipanggil DI DALAM transaksi pembayaran: mengambil bagian beban (SPG/SALES)
  * milik `userId` yang belum lunas, terlama dulu, sampai batas
  * `spg.barangHilang.maksPotongPersen` × `bruto`; menulis `StockLossDeduction`
@@ -108,4 +110,84 @@ export async function bebanTerbukaOrang(userId: string): Promise<{ sisa: number;
     };
   });
   return { sisa: dariSen(bagian.reduce((n, b) => n + keSen(b.sisa), 0)), maksPotongPersen: aturan.maksPotongPersen, bagian };
+}
+
+/**
+ * Potongan beban barang hilang SPG yang SUDAH DIRENCANAKAN (P11a: dipotong seluruhnya, tanpa batas
+ * persen) — persis per bagian yang direncanakan pembayarnya, di DALAM transaksi pembayaran (atau
+ * pengalihan ke utang SPG, `refType` `SpgDebt`). Setiap potongan: satu `StockLossDeduction`,
+ * `settledAmount` naik, bagian yang habis ditandai lunas, jejak `STOCK_LOSS_DEDUCTED` per catatan,
+ * status catatan disegarkan. Hanya bagian bearer SPG milik `userId` yang belum lunas; potongan tidak
+ * pernah melebihi sisanya. Idempoten per `refType`/`refId`: dokumen yang sudah punya potongan
+ * mengembalikan jumlah itu tanpa memotong lagi. Mengembalikan jumlah yang dipotong (rupiah).
+ */
+export async function potongBebanHilangPenuh(
+  tx: Tx,
+  input: {
+    userId: string;
+    potong: ReadonlyArray<{ shareId: string; sen: number }>;
+    refType: string;
+    refId: string;
+    createdById: string;
+    note?: string | null;
+    sekarang?: Date;
+  },
+): Promise<number> {
+  if (!input.userId || !input.refType || !input.refId) return 0;
+  const sudah = await potonganUntukRefSen(tx, input.refType, input.refId);
+  if (sudah > 0) return dariSen(sudah);
+  const sekarang = input.sekarang ?? new Date();
+  const catatan = input.note?.trim() || null;
+  const perLoss = new Map<string, { shareId: string; sebelum: number; sesudah: number; lunas: boolean }[]>();
+  let total = 0;
+  for (const p of input.potong) {
+    if (!Number.isInteger(p.sen) || p.sen <= 0) continue;
+    const s = await tx.stockLossShare.findFirst({
+      where: { id: p.shareId, bearer: "SPG", bearerUserId: input.userId, settledAt: null, loss: { status: "DITETAPKAN" } },
+      select: { id: true, lossId: true, amount: true, settledAmount: true },
+    });
+    if (!s) continue;
+    const sebelumSen = keSen(Number(s.settledAmount));
+    const potongSen = Math.min(p.sen, Math.max(0, keSen(Number(s.amount)) - sebelumSen));
+    if (potongSen <= 0) continue;
+    const sesudahSen = sebelumSen + potongSen;
+    const lunas = sesudahSen >= keSen(Number(s.amount));
+    await tx.stockLossDeduction.create({
+      data: {
+        shareId: s.id,
+        amount: desimal(potongSen),
+        refType: input.refType,
+        refId: input.refId,
+        note: catatan,
+        createdById: input.createdById,
+        createdAt: sekarang,
+      },
+    });
+    await tx.stockLossShare.update({
+      where: { id: s.id },
+      data: {
+        settledAmount: desimal(sesudahSen),
+        ...(lunas ? { settledAt: sekarang, settledById: input.createdById, settleNote: catatan ?? `Dipotong (${input.refType})` } : {}),
+      },
+    });
+    total += potongSen;
+    const daftar = perLoss.get(s.lossId) ?? [];
+    daftar.push({ shareId: s.id, sebelum: sebelumSen / 100, sesudah: sesudahSen / 100, lunas });
+    perLoss.set(s.lossId, daftar);
+  }
+  for (const [lossId, bagian] of perLoss) {
+    await jejakHilang(tx, {
+      userId: input.createdById,
+      action: JEJAK_HILANG.DIPOTONG,
+      lossId,
+      changes: {
+        before: { bagian: bagian.map((b) => ({ shareId: b.shareId, settledAmount: b.sebelum })) },
+        after: { bagian: bagian.map((b) => ({ shareId: b.shareId, settledAmount: b.sesudah, lunas: b.lunas })) },
+      },
+      metadata: { refType: input.refType, refId: input.refId, bearerUserId: input.userId, penuh: true },
+      reason: catatan,
+    });
+  }
+  await segarkanStatusHilang(tx, [...perLoss.keys()]);
+  return dariSen(total);
 }

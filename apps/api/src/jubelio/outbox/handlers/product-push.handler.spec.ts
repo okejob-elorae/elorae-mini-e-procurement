@@ -1,5 +1,5 @@
 import { Test } from "@nestjs/testing";
-import { markJubelioCreateRequested } from "@elorae/db";
+import { markJubelioCreateRequested, recordJubelioObservedPrice } from "@elorae/db";
 import { ProductPushHandler } from "./product-push.handler";
 import { PRISMA } from "../../../db/prisma.module";
 import { JubelioHttpService } from "../../http.service";
@@ -9,6 +9,7 @@ import { OUTBOX_SKIP_REASONS } from "../outbox-status";
 jest.mock("@elorae/db", () => ({
   ...jest.requireActual("@elorae/db"),
   markJubelioCreateRequested: jest.fn().mockResolvedValue(true),
+  recordJubelioObservedPrice: jest.fn().mockResolvedValue(true),
 }));
 
 function row(overrides: any = {}) {
@@ -44,6 +45,7 @@ const baseItem = {
   jubelioConfirmedPrice: 100000,
   jubelioCreateRequestedAt: null,
   isActive: true,
+  salesChannel: "BOTH",
 };
 
 const baseDefaults = {
@@ -58,7 +60,7 @@ const baseDefaults = {
 describe("ProductPushHandler", () => {
   let handler: ProductPushHandler;
   let prisma: any;
-  let http: { post: jest.Mock; delete: jest.Mock };
+  let http: { post: jest.Mock; delete: jest.Mock; get: jest.Mock };
   let imageUpload: { ensureUploaded: jest.Mock };
 
   beforeEach(async () => {
@@ -70,9 +72,11 @@ describe("ProductPushHandler", () => {
       itemImage: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn(async (ops: Promise<any>[]) => Promise.all(ops)),
     };
-    http = { post: jest.fn(), delete: jest.fn() };
+    // The read-before-write of a mapped item (P75): no group listed = nothing recorded.
+    http = { post: jest.fn(), delete: jest.fn(), get: jest.fn().mockResolvedValue({ data: [], totalCount: 0 }) };
     imageUpload = { ensureUploaded: jest.fn().mockResolvedValue(undefined) };
     jest.mocked(markJubelioCreateRequested).mockClear();
+    jest.mocked(recordJubelioObservedPrice).mockReset().mockResolvedValue(true);
     const mod = await Test.createTestingModule({
       providers: [
         ProductPushHandler,
@@ -475,6 +479,199 @@ describe("ProductPushHandler", () => {
       expect(http.post.mock.calls[0][1].product_skus[0].sell_price).toBe(150000);
       expect(prisma.jubelioProductMapping.upsert).toHaveBeenCalledTimes(1);
       expect(markJubelioCreateRequested).not.toHaveBeenCalled();
+    });
+  });
+  /*
+   * Owner answers 2026-11-02: P3a ("Toko offline saja" is never sent to Jubelio), P72 (a product
+   * already in Jubelio that becomes offline-only is deactivated, not deleted) and P75 (while Jubelio
+   * shows a price other than the confirmed one and nobody decided it, nothing is sent).
+   */
+  describe("sales channel and the price-difference hold", () => {
+    const mapped = [{ id: "m1", erpVariantSku: "", jubelioItemId: 11, jubelioItemGroupId: 7, jubelioItemCode: "SKU-1" }];
+    const t = (iso: string) => new Date(iso);
+
+    beforeEach(() => {
+      prisma.jubelioPushDefaults.findFirst.mockResolvedValue(baseDefaults);
+      prisma.jubelioCategoryMapping.findFirst.mockResolvedValue({ jubelioCategoryId: 454 });
+      http.post.mockResolvedValue({ status: "ok", id: 7, item_ids: [11] });
+    });
+
+    function jubelioShows(prices: number[]) {
+      http.get.mockResolvedValue({
+        data: [
+          {
+            item_group_id: 7,
+            item_name: "Shirt",
+            variants: prices.map((p, i) => ({ item_group_id: 7, item_id: 11 + i, item_code: `SKU-1-${i}`, sell_price: p })),
+          },
+        ],
+        totalCount: 1,
+      });
+    }
+
+    it("SKIPs an unmapped Toko offline saja item before any price check: no request stamped, nothing sent", async () => {
+      prisma.item.findUnique.mockResolvedValue({ ...baseItem, salesChannel: "OFFLINE", jubelioConfirmedPrice: null });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue([]);
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "skipped", reason: OUTBOX_SKIP_REASONS.SALES_CHANNEL_OFFLINE });
+      expect(markJubelioCreateRequested).not.toHaveBeenCalled();
+      expect(http.get).not.toHaveBeenCalled();
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it("deactivates a mapped Toko offline saja item in Jubelio with the confirmed price, deleting nothing", async () => {
+      prisma.item.findUnique.mockResolvedValue({ ...baseItem, salesChannel: "OFFLINE", jubelioConfirmedPrice: 150000 });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue(mapped);
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "processed" });
+      const body = http.post.mock.calls[0][1];
+      expect(body.is_active).toBe(false);
+      expect(body.sell_price).toBe(150000);
+      expect(http.delete).not.toHaveBeenCalled();
+    });
+
+    it("HOLDS a mapped item whose Jubelio price differs with no decision: no upload, no POST", async () => {
+      prisma.item.findUnique.mockResolvedValue({
+        ...baseItem,
+        jubelioConfirmedPrice: 150000,
+        jubelioObservedAt: t("2026-11-03T01:00:00Z"),
+        jubelioObservedChangedAt: t("2026-11-03T01:00:00Z"),
+        jubelioObservedPriceMax: 175000,
+        jubelioObservedPriceMin: 175000,
+        jubelioPriceDecidedAt: null,
+      });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue(mapped);
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "skipped", reason: OUTBOX_SKIP_REASONS.PRICE_DIFFERS_HELD });
+      expect(imageUpload.ensureUploaded).not.toHaveBeenCalled();
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it("pushes when an admin decided the price after Jubelio's reading changed", async () => {
+      prisma.item.findUnique.mockResolvedValue({
+        ...baseItem,
+        jubelioConfirmedPrice: 150000,
+        jubelioObservedAt: t("2026-11-03T01:00:00Z"),
+        jubelioObservedChangedAt: t("2026-11-03T01:00:00Z"),
+        jubelioObservedPriceMax: 175000,
+        jubelioObservedPriceMin: 175000,
+        jubelioPriceDecidedAt: t("2026-11-03T02:00:00Z"),
+      });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue(mapped);
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "processed" });
+      expect(http.post.mock.calls[0][1].sell_price).toBe(150000);
+    });
+
+    it("HOLDS when Jubelio changed again after the decision", async () => {
+      prisma.item.findUnique.mockResolvedValue({
+        ...baseItem,
+        jubelioConfirmedPrice: 150000,
+        jubelioObservedAt: t("2026-11-03T03:00:00Z"),
+        jubelioObservedChangedAt: t("2026-11-03T03:00:00Z"),
+        jubelioObservedPriceMax: 180000,
+        jubelioObservedPriceMin: 180000,
+        jubelioPriceDecidedAt: t("2026-11-03T02:00:00Z"),
+      });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue(mapped);
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "skipped", reason: OUTBOX_SKIP_REASONS.PRICE_DIFFERS_HELD });
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it("reads Jubelio BEFORE writing and records what it shows, so an edit made since the last reading holds the push", async () => {
+      jubelioShows([175000, 175000]);
+      const fresh = {
+        ...baseItem,
+        jubelioConfirmedPrice: 150000,
+        jubelioObservedAt: t("2026-11-03T04:00:00Z"),
+        jubelioObservedChangedAt: t("2026-11-03T04:00:00Z"),
+        jubelioObservedPriceMax: 175000,
+        jubelioObservedPriceMin: 175000,
+        jubelioPriceDecidedAt: t("2026-11-03T02:00:00Z"),
+      };
+      // First read: last known reading agreed with the ERP; the re-read after recording sees the edit.
+      prisma.item.findUnique
+        .mockResolvedValueOnce({ ...baseItem, jubelioConfirmedPrice: 150000 })
+        .mockResolvedValueOnce(fresh);
+      prisma.jubelioProductMapping.findMany.mockResolvedValue(mapped);
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "skipped", reason: OUTBOX_SKIP_REASONS.PRICE_DIFFERS_HELD });
+      expect(http.get).toHaveBeenCalledWith("/inventory/items/", expect.objectContaining({ redactResponseBody: true }));
+      expect(recordJubelioObservedPrice).toHaveBeenCalledWith(prisma, "item_1", { highest: "175000", lowest: "175000" }, expect.any(Date));
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    /*
+     * The same variants the ingest and the observer read (summarizeGroupsPrice): a bundle variant
+     * or an unreadable item code never enters the reading, so the push records exactly what the
+     * other two record and its own read never moves jubelioObservedChangedAt past a decision.
+     */
+    it("reads Jubelio through the ingest's variant rule: bundles and unreadable item codes are not part of the price", async () => {
+      http.get.mockResolvedValue({
+        data: [
+          {
+            item_group_id: 7,
+            item_name: "Shirt",
+            sell_price: "90000",
+            variants: [
+              { item_group_id: 7, item_id: 11, item_code: "SKU-1", sell_price: 150000 },
+              { item_group_id: 7, item_id: 12, item_code: "SKU-1-PAKET", is_bundle: true, sell_price: 400000 },
+              { item_group_id: 7, item_id: 13, item_code: " ", sell_price: 1 },
+            ],
+          },
+          // The list repeating a row: counted once, its last listing winning (as the ingest keeps it).
+          { item_group_id: 7, item_name: "Shirt", sell_price: "90000", variants: [{ item_group_id: 7, item_id: 11, item_code: "SKU-1", sell_price: 150000 }] },
+        ],
+        totalCount: 2,
+      });
+      prisma.item.findUnique.mockResolvedValue({ ...baseItem, jubelioConfirmedPrice: 150000 });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue(mapped);
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "processed" });
+      expect(jest.mocked(recordJubelioObservedPrice).mock.calls[0]).toEqual([prisma, "item_1", { highest: "150000", lowest: "150000" }, expect.any(Date)]);
+    });
+
+    it("a never-observed item is not held, and its successful push records the confirmed price as what Jubelio shows", async () => {
+      prisma.item.findUnique.mockResolvedValue({ ...baseItem, jubelioConfirmedPrice: 150000 });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue(mapped);
+      let lastPostAt = 0;
+      http.post.mockImplementation(async () => {
+        lastPostAt = Date.now();
+        return { status: "ok", id: 7, item_ids: [11] };
+      });
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "processed" });
+      expect(recordJubelioObservedPrice).toHaveBeenLastCalledWith(prisma, "item_1", { highest: 150000, lowest: 150000 }, expect.any(Date));
+      const calls = jest.mocked(recordJubelioObservedPrice).mock.calls;
+      const sentAt = calls[calls.length - 1][3] as Date;
+      expect(sentAt.getTime()).toBeLessThanOrEqual(lastPostAt);
+    });
+
+    it("a failing record after a successful push is logged and the row still counts as processed", async () => {
+      prisma.item.findUnique.mockResolvedValue({ ...baseItem, jubelioConfirmedPrice: 150000 });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue(mapped);
+      jest.mocked(recordJubelioObservedPrice).mockRejectedValue(new Error("db down"));
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "processed" });
     });
   });
 });

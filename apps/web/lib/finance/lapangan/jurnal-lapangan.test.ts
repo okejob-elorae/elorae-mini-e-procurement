@@ -42,12 +42,13 @@ import { buatKlaimPembayaran } from "@/lib/receivables/claim-writer";
 import { batalkanKlaim, putuskanKlaim } from "@/lib/receivables/writer";
 import { catatHitunganGudang, putuskanBeban } from "@/lib/receivables/return-writer";
 import { SUMBER_LAPANGAN, SUMBER_NOTA_LAMA } from "./aturan";
-import { kunciStokPengiriman, postJurnalNota, postJurnalTukar, selaraskanJurnalKlaim, selaraskanJurnalRetur } from "./jurnal";
+import { kunciStokPengiriman, postJurnalNota, postJurnalTukar, selaraskanJurnalKlaim, selaraskanJurnalNota, selaraskanJurnalRetur } from "./jurnal";
 import { kaitKlaimBerubah, kaitReturBerubah } from "./kait";
 import { postingJurnalLapanganAman } from "./tertunda";
+import { hitungJurnalTertunda } from "@/lib/finance/jurnal-tertunda";
 import { rekonsiliasiPiutangToko } from "./rekonsiliasi-queries";
 import { selaraskanJurnalToko } from "./selaraskan-toko";
-import { cariKlaimTanpaJurnal, cariNotaTanpaJurnal, cariReturTanpaJurnal, cariTukarTanpaJurnal } from "./sapuan";
+import { cariKlaimTanpaJurnal, cariNotaTanpaJurnal, cariNotaTertinggal, cariReturTanpaJurnal, cariTukarTanpaJurnal } from "./sapuan";
 
 // Kait pasca-commit dimatikan di bawah vitest kecuali dinyalakan (lihat `kait.ts`); tes ini memang menguji kaitnya.
 process.env.JURNAL_LAPANGAN_KAIT_UJI = "1";
@@ -60,6 +61,7 @@ const PKP: PengaturanPpn = { ...PPN_BAWAAN, statusPkp: "PKP", tarifPersen: 12, p
 const PERAN_UJI: Array<[string, "ASET" | "LIABILITAS" | "PENDAPATAN" | "HPP" | "BEBAN"]> = [
   ["AR_STORE", "ASET"],
   ["AR", "ASET"],
+  ["AR_CONSIGNMENT", "ASET"],
   ["SALES_REVENUE", "PENDAPATAN"],
   ["PPN_KELUARAN", "LIABILITAS"],
   ["COGS", "HPP"],
@@ -148,12 +150,16 @@ afterEach(async () => {
   const semuaNri = [...new Set([...nriIds, ...nriToko.map((n) => n.id)])];
   const beban = nrtIds.length ? await prisma.returnCharge.findMany({ where: { storeReturnId: { in: seededIds(nrtIds) } }, select: { id: true } }) : [];
   const entitas = [...klaim.map((k) => k.id), ...piutang.map((p) => p.id), ...semuaNri, ...nrtIds, ...beban.map((b) => b.id), ...deliveryIds, ...tukarIds];
-  // Notifikasi JOURNAL_PENDING yang ditulis tes ini (dicocokkan di JS, seperti penulisnya).
+  // Notifikasi yang ditulis tes ini — JOURNAL_PENDING, dan lonceng selisih retur yang ditulis hitungan
+  // gudang — dicocokkan di JS lewat id dokumen milik tes di metadata-nya, seperti penulisnya.
   const notif = await prisma.adminNotification.findMany({
-    where: { category: "JOURNAL_PENDING", createdAt: { gte: mulaiTes } },
+    where: { createdAt: { gte: mulaiTes } },
     select: { id: true, metadata: true },
   });
-  const milik = notif.filter((n) => entitas.includes(String((n.metadata as Record<string, unknown> | null)?.docId ?? "")));
+  const milik = notif.filter((n) => {
+    const m = n.metadata as Record<string, unknown> | null;
+    return m !== null && typeof m === "object" && Object.values(m).some((v) => typeof v === "string" && entitas.includes(v));
+  });
   if (milik.length) await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(milik.map((n) => n.id)) } } });
   if (entitas.length) await prisma.auditLog.deleteMany({ where: { entityId: { in: seededIds(entitas) } } });
   if (beban.length) await prisma.returnCharge.deleteMany({ where: { id: { in: seededIds(beban.map((b) => b.id)) } } });
@@ -376,6 +382,111 @@ describe("nota tagihan putus", () => {
   });
 });
 
+/*
+ * Nota bergenerasi (rancangan pengiriman gudang–toko, R16): toko menolak sebagian di pintu ("retur
+ * langsung", P24) mengoreksi nota — qty ditagih turun, totalnya dihitung ulang — dan "tidak jadi
+ * dikirim" (P16/P25) membatalkannya. Nota diubah langsung di tabel, seperti `buatNota`: yang diuji di
+ * sini mesin jurnalnya, bukan penulis koreksinya.
+ */
+describe("nota tagihan putus — dikoreksi dan dibatalkan (bergenerasi)", () => {
+  /** Koreksi nota seperti `koreksiNotaDiterimaInTx`: qty ditagih, retur langsung, total baru. */
+  async function koreksi(deliveryId: string, o: { qty: number; kembali: number; total: number; harga: number; pada: Date }) {
+    await prisma.fieldSalesDeliveryLine.updateMany({
+      where: { deliveryId: seededId(deliveryId) },
+      data: { qty: o.qty, returnedQty: o.kembali, lineTotal: o.qty * o.harga },
+    });
+    await prisma.fieldSalesDelivery.update({ where: { id: deliveryId }, data: { subtotal: o.qty * o.harga, total: o.total, correctedAt: o.pada } });
+  }
+
+  // Jauh sesudah jurnal generasi pertama, supaya jam basis data dan jam tes tidak pernah membalik urutannya.
+  const nanti = () => new Date(Date.now() + 60_000);
+  const opsi = () => ({ sejak: new Date(Date.now() - 3_600_000), sampai: new Date(Date.now() + 3_600_000), batas: 1000 });
+
+  it("koreksi retur langsung memposting generasi #2 yang menurunkan piutang, pendapatan, PPN, dan HPP; pencari menemukannya lalu tidak lagi", async () => {
+    h.ppn = PKP;
+    const { deliveryId } = await buatNota({ total: 1_110_000, qty: 2, harga: 555_000, biaya: 400_000 });
+    expect(await selaraskanJurnalNota(deliveryId, keuanganId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_LAPANGAN.NOTA, deliveryId)).toEqual({
+      AR_STORE: 1_110_000,
+      SALES_REVENUE: -1_000_000,
+      PPN_KELUARAN: -110_000,
+      COGS: 800_000,
+      INVENTORY_FG: -800_000,
+    });
+
+    // Toko menerima 1 dari 2: nota ditagih 1, satu kembali ke gudang dengan biaya keluarnya sendiri.
+    await koreksi(deliveryId, { qty: 1, kembali: 1, total: 555_000, harga: 555_000, pada: nanti() });
+    expect((await cariNotaTertinggal({ ...opsi(), ids: [deliveryId] })).map((d) => d.id)).toEqual([deliveryId]);
+    expect(await postingJurnalLapanganAman(SUMBER_LAPANGAN.NOTA, deliveryId, keuanganId)).toMatchObject({ ok: true, created: true });
+    expect(await jumlahGenerasi(SUMBER_LAPANGAN.NOTA, deliveryId)).toBe(2);
+    expect(await saldoPeran(SUMBER_LAPANGAN.NOTA, deliveryId)).toEqual({
+      AR_STORE: 555_000,
+      SALES_REVENUE: -500_000,
+      PPN_KELUARAN: -55_000,
+      COGS: 400_000,
+      INVENTORY_FG: -400_000,
+    });
+    // Sudah selaras: pencari tidak menemukannya lagi, diulang tidak menulis apa pun.
+    expect(await cariNotaTertinggal({ ...opsi(), ids: [deliveryId] })).toEqual([]);
+    expect(await selaraskanJurnalNota(deliveryId, keuanganId)).toMatchObject({ ok: true, created: false });
+    expect(await jumlahGenerasi(SUMBER_LAPANGAN.NOTA, deliveryId)).toBe(2);
+  });
+
+  it("nota dibatalkan sesudah dijurnal: generasi berikutnya membalik seluruhnya", async () => {
+    const { deliveryId } = await buatNota({ total: 1_000_000, qty: 4, harga: 250_000, biaya: 120_000 });
+    await selaraskanJurnalNota(deliveryId, keuanganId);
+    await prisma.fieldSalesDelivery.update({ where: { id: deliveryId }, data: { voidedAt: nanti(), voidReason: "uji tidak jadi dikirim" } });
+    expect((await cariNotaTertinggal({ ...opsi(), ids: [deliveryId] })).map((d) => d.id)).toEqual([deliveryId]);
+    expect(await selaraskanJurnalNota(deliveryId, keuanganId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_LAPANGAN.NOTA, deliveryId)).toEqual({});
+    expect(await jumlahGenerasi(SUMBER_LAPANGAN.NOTA, deliveryId)).toBe(2);
+    expect(await cariNotaTertinggal({ ...opsi(), ids: [deliveryId] })).toEqual([]);
+  });
+
+  it("nota yang dibatalkan sebelum pernah dijurnal tidak memposting apa pun, menutup tanda gagalnya, dan tidak dicari sapuan", async () => {
+    // Percobaan sebelum batal gagal (biaya stok tidak ditemukan) → tanda JOURNAL_PENDING `nota_putus`.
+    const { deliveryId } = await buatNota({ total: 500_000, qty: 2, harga: 250_000, biaya: 100_000, stok: false });
+    expect(await postingJurnalLapanganAman(SUMBER_LAPANGAN.NOTA, deliveryId, keuanganId)).toMatchObject({ ok: false, code: "BIAYA_TIDAK_DIKETAHUI" });
+    const tanda = (
+      await prisma.adminNotification.findMany({ where: { category: "JOURNAL_PENDING", createdAt: { gte: mulaiTes } }, select: { id: true, metadata: true } })
+    ).filter((n) => (n.metadata as Record<string, unknown>)?.docId === deliveryId);
+    expect(tanda).toHaveLength(1);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [tanda[0].id] })).toBe(1);
+
+    await prisma.fieldSalesDelivery.update({ where: { id: deliveryId }, data: { voidedAt: new Date(), voidReason: "uji" } });
+    // Selaras tanpa jurnal (kosong = kosong): berhasil, jadi tandanya selesai — bukan NOTHING_TO_POST yang membiarkannya.
+    expect(await postingJurnalLapanganAman(SUMBER_LAPANGAN.NOTA, deliveryId, keuanganId)).toEqual({ ok: true, journalId: null, created: false });
+    expect((await prisma.adminNotification.findUnique({ where: { id: tanda[0].id }, select: { readAt: true } }))?.readAt).not.toBeNull();
+    expect(await hitungJurnalTertunda({ notifikasiIds: [tanda[0].id] })).toBe(0);
+    expect(await selaraskanJurnalNota(deliveryId, keuanganId)).toEqual({ ok: true, journalId: null, created: false });
+    expect(await jumlahGenerasi(SUMBER_LAPANGAN.NOTA, deliveryId)).toBe(0);
+    expect((await cariNotaTanpaJurnal(opsi())).map((d) => d.id)).not.toContain(deliveryId);
+    expect(await cariNotaTertinggal({ ...opsi(), ids: [deliveryId] })).toEqual([]);
+  });
+
+  it("nota berpasangan bentuk lama tetap NOTHING_TO_POST walau dikoreksi atau dibatalkan", async () => {
+    const { deliveryId } = await buatNota({ total: 600_000, qty: 2, harga: 300_000, biaya: 100_000 });
+    await prisma.journal.create({
+      data: {
+        date: new Date(),
+        description: `${tag} jurnal nota lama`,
+        sourceType: SUMBER_NOTA_LAMA.PENDAPATAN,
+        sourceId: deliveryId,
+        postedById: keuanganId,
+        lines: {
+          create: [
+            { chartAccountId: h.akun.get("AR_STORE")!, debit: 600_000, credit: 0 },
+            { chartAccountId: h.akun.get("SALES_REVENUE")!, debit: 0, credit: 600_000 },
+          ],
+        },
+      },
+    });
+    await prisma.fieldSalesDelivery.update({ where: { id: deliveryId }, data: { voidedAt: new Date(), voidReason: "uji" } });
+    expect(await selaraskanJurnalNota(deliveryId, keuanganId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+    expect(await jumlahGenerasi(SUMBER_LAPANGAN.NOTA, deliveryId)).toBe(0);
+  });
+});
+
 describe("pelunasan BKM dan retur toko — buku besar mengikuti modul piutang", () => {
   async function lapor(nilai: number, potongan: { nilai: number; nrtId?: string }[], method = "transfer") {
     const r = await buatKlaimPembayaran({
@@ -460,7 +571,7 @@ describe("pelunasan BKM dan retur toko — buku besar mengikuti modul piutang", 
     expect(await jumlahGenerasi(SUMBER_LAPANGAN.BKM, k)).toBe(2);
   });
 
-  it("beban selisih ke TOKO: faktur bebannya tidak dijurnal lagi — buku besar = modul", async () => {
+  it("beban selisih ke TOKO: tetap terbuka di nota asal, tanpa faktur baru — buku besar = modul", async () => {
     const { deliveryId } = await buatNota({ total: 1_000_000, qty: 4, harga: 250_000, biaya: 100_000 });
     await postJurnalNota(deliveryId, keuanganId);
     const n = await nrt(300_000);
@@ -469,10 +580,140 @@ describe("pelunasan BKM dan retur toko — buku besar mengikuti modul piutang", 
     expect(await saldoPeran(SUMBER_LAPANGAN.BKM, k)).toEqual({ CASH: 700_000, AR_STORE: -700_000 });
     const nri = await hitung(n, 100_000);
     await beban(n, "TOKO");
-    // Faktur beban 200 rb lahir di modul; buku besar tetap mengkredit 100 rb (fisik).
+    // Keputusan pemilik 1 (2026-10-29): selisih 200 rb tetap ditahan di nota asalnya; buku besar mengkredit 100 rb (fisik).
     expect(await saldoPeran(SUMBER_LAPANGAN.RETUR, nri)).toEqual({ SALES_RETURN: 100_000, AR_STORE: -100_000 });
+    expect(await prisma.receivable.count({ where: { storeId: seededId(tokoId) } })).toBe(1);
     const b = await rekon();
     expect(b).toMatchObject({ modul: 200_000, bukuBesar: 200_000, kreditRetur: 0, selisih: 0 });
+  });
+
+  /*
+   * Selisih retur yang barangnya KETEMU di toko lalu dikirim balik (P22a) dihitung gudang sebagai
+   * hitungan SUSULAN: fisiknya menambah fisik nota asal (`nilaiFisikNota`), jadi jurnal hitungan ASLI
+   * membalik pendapatan lebih banyak dan rugi lebih sedikit; jurnal susulan sendiri hanya persediaan
+   * dan HPP. Beban dan susulan ditulis langsung di tabel: yang diuji mesin jurnalnya.
+   */
+  it("hitungan susulan: retur penjualan hitungan asli naik, rugi turun; jurnal susulan hanya persediaan & HPP", async () => {
+    const { deliveryId } = await buatNota({ total: 1_000_000, qty: 4, harga: 250_000, biaya: 100_000 });
+    await postJurnalNota(deliveryId, keuanganId);
+    const n = await nrt(300_000);
+    const k = await lapor(1_000_000, [{ nilai: 300_000, nrtId: n }]);
+    await verifikasi(k);
+    const nri = await hitung(n, 100_000);
+    const c = await prisma.returnCharge.findFirstOrThrow({ where: { storeReturnId: n, status: "TERBUKA" }, select: { id: true } });
+    await prisma.returnCharge.update({ where: { id: c.id }, data: { status: "DITETAPKAN", bearer: "SALES", bearerUserId: salesId, decidedById: keuanganId, decidedAt: new Date() } });
+    await kaitReturBerubah({ chargeIds: [c.id] }, keuanganId);
+    expect(await saldoPeran(SUMBER_LAPANGAN.RETUR, nri)).toEqual({ SALES_RETURN: 100_000, LOSS_EXPENSE: 200_000, AR_STORE: -300_000 });
+
+    // Barang 150 rb ketemu di toko dan dihitung gudang sebagai susulan nota yang sama.
+    const susulan = await prisma.warehouseReturn.create({
+      data: {
+        noNri: `${tag}-NRI-S-${++urut}`,
+        storeId: tokoId,
+        followUpOfStoreReturnId: n,
+        warehouseUserId: gudangId,
+        receivedAt: new Date(),
+        physicalAmount: 150_000,
+        status: "FINAL",
+        finalisedAt: new Date(),
+        items: { create: [{ itemId: barangId, itemName: "Kaos", qty: 1, price: 150_000, amount: 150_000, condition: "LAYAK" }] },
+      },
+      select: { id: true, noNri: true },
+    });
+    nriIds.push(susulan.id);
+    const a = await prisma.stockAdjustment.create({
+      data: {
+        docNumber: `${tag}-ADJ-${++urut}`,
+        itemId: barangId,
+        type: "POSITIVE",
+        qtyChange: 1,
+        reason: `Retur toko ${susulan.noNri} — Kaos`,
+        prevQty: 5,
+        newQty: 6,
+        prevAvgCost: 30_000,
+        newAvgCost: 30_000,
+        source: "STORE_RETURN_RECEIVE",
+      },
+    });
+    adjIds.push(a.id);
+    await kaitReturBerubah({ nrtIds: [n] }, gudangId);
+
+    expect(await saldoPeran(SUMBER_LAPANGAN.RETUR, nri)).toEqual({ SALES_RETURN: 250_000, LOSS_EXPENSE: 50_000, AR_STORE: -300_000 });
+    expect(await saldoPeran(SUMBER_LAPANGAN.RETUR, susulan.id)).toEqual({ INVENTORY_FG: 30_000, COGS: -30_000 });
+    expect((await rekon()).selisih).toBe(0);
+  });
+
+  /*
+   * Tagihan konsinyasi (siklus yang dikunci, atau utang konsi kertas yang diketik, P32) dilunasi lewat
+   * BKM — satu-satunya jalan bayar konsi dari HP (2026-10-29). Tandanya `Receivable.isConsignment`.
+   */
+  it("BKM yang melunasi tagihan konsinyasi mengkredit AR_CONSIGNMENT toko itu, tanpa baris AR_STORE; sapuan menemukannya", async () => {
+    await prisma.store.update({ where: { id: tokoId }, data: { termsType: "KONSI" } });
+    const tagihan = await prisma.receivable.create({
+      data: {
+        invoiceNo: `${tag}-KONSI-${++urut}`,
+        storeId: tokoId,
+        invoiceDate: new Date(),
+        dueDate: new Date(),
+        amount: 500_000,
+        outstanding: 500_000,
+        source: "MANUAL",
+        isConsignment: true,
+      },
+      select: { id: true },
+    });
+    const k = await buatKlaimPembayaran({
+      storeId: tokoId,
+      salesmanId: salesId,
+      createdById: salesId,
+      claimedTransferAt: new Date(),
+      method: "transfer",
+      pelunasan: [{ receivableId: tagihan.id, nilai: 500_000 }],
+      transferPhotoUrl: "/api/foto/uji",
+    });
+    if (!k.ok) throw new Error(`BKM gagal: ${k.alasan}`);
+    const v = await putuskanKlaim({ paymentClaimId: k.id, keputusan: "TERVERIFIKASI", olehUserId: keuanganId });
+    expect(v.ok).toBe(true);
+    const opsi = { sejak: new Date(Date.now() - 3_600_000), sampai: new Date(Date.now() + 3_600_000), batas: 1000, ids: [k.id] };
+    expect((await cariKlaimTanpaJurnal(opsi)).map((d) => d.id)).toEqual([k.id]);
+
+    await kaitKlaimBerubah([k.id], keuanganId);
+    expect(await saldoPeran(SUMBER_LAPANGAN.BKM, k.id)).toEqual({ BANK: 500_000, AR_CONSIGNMENT: -500_000 });
+    const kredit = await prisma.journalLine.findFirstOrThrow({
+      where: { journal: { sourceType: SUMBER_LAPANGAN.BKM, sourceId: k.id }, chartAccountId: h.akun.get("AR_CONSIGNMENT") },
+      select: { storeId: true },
+    });
+    expect(kredit.storeId).toBe(tokoId);
+    expect(await cariKlaimTanpaJurnal(opsi)).toEqual([]);
+  });
+
+  it("BKM faktur putus di toko yang belakangan pindah ke konsinyasi tetap di AR_STORE", async () => {
+    const { deliveryId } = await buatNota({ total: 400_000, qty: 1, harga: 400_000, biaya: 100_000 });
+    await postJurnalNota(deliveryId, keuanganId);
+    const k = await lapor(400_000, []);
+    await verifikasi(k);
+    expect(await saldoPeran(SUMBER_LAPANGAN.BKM, k)).toEqual({ BANK: 400_000, AR_STORE: -400_000 });
+    await prisma.store.update({ where: { id: tokoId }, data: { termsType: "KONSI" } });
+    expect(await selaraskanJurnalKlaim(k, keuanganId)).toMatchObject({ ok: true, created: false });
+    expect(await saldoPeran(SUMBER_LAPANGAN.BKM, k)).toEqual({ BANK: 400_000, AR_STORE: -400_000 });
+  });
+
+  it("rekonsiliasi AR_STORE tidak menghitung tagihan konsinyasi, berjurnal atau belum", async () => {
+    const { deliveryId } = await buatNota({ total: 400_000, qty: 1, harga: 400_000, biaya: 100_000 });
+    await postJurnalNota(deliveryId, keuanganId);
+    await prisma.receivable.create({
+      data: {
+        invoiceNo: `${tag}-KONSI-${++urut}`,
+        storeId: tokoId,
+        invoiceDate: new Date(),
+        dueDate: new Date(),
+        amount: 250_000,
+        outstanding: 250_000,
+        source: "MANUAL",
+        isConsignment: true,
+      },
+    });
+    expect(await rekon()).toMatchObject({ modul: 400_000, bukuBesar: 400_000, diLuarJurnal: 0, jumlahPiutang: 1, selisih: 0 });
   });
 
   it("retur dihitung sebelum dipotong: kredit retur belum dipakai menjelaskan selisihnya", async () => {

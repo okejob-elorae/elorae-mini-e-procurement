@@ -207,7 +207,7 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
   async function loadCatalog(): Promise<void> {
     setCatalog({ status: "loading" });
     try {
-      const items = await getItems({ isActive: true, type: "FINISHED_GOOD" });
+      const items = await getItems({ isActive: true, type: "FINISHED_GOOD", dijualOffline: true });
       const list = Array.isArray(items) ? items : [];
       const options: SearchableComboboxOption[] = [];
       const metaByKey = new Map<string, CatalogMeta>();

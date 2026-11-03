@@ -40,6 +40,8 @@ import { formatDisplayDateTime } from "@/lib/date-only";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import type { GagalJubelio } from "../galat-jubelio";
 import { RincianGalat, usePesanGalatJubelio } from "../RincianGalat";
+import { IsianMarkupMargin, type NilaiMarkupMargin } from "@/components/forms/ItemFormIsianMarkupMargin";
+import { aturanHargaSah, bacaAngkaOpsional } from "@/lib/items/rekomendasi-harga";
 
 export default function JubelioSettingsPage() {
   const t = useTranslations("jubelio.settings");
@@ -65,6 +67,8 @@ export default function JubelioSettingsPage() {
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [defaults, setDefaults] = useState<JubelioPushDefaultsState | null>(null);
   const [defaultsDraft, setDefaultsDraft] = useState<JubelioPushDefaultsInput | null>(null);
+  // Pasangan markup/margin bawaan (jawaban pemilik P4): teks ketikan + dasarnya; disimpan sebagai angka + dasar.
+  const [aturanBawaanIsi, setAturanBawaanIsi] = useState<NilaiMarkupMargin>({ dasar: "MARKUP", teks: "" });
   const [isLoadingDefaults, setIsLoadingDefaults] = useState(true);
   const [defaultsGagal, setDefaultsGagal] = useState<GagalJubelio | null>(null);
   const [isSavingDefaults, setIsSavingDefaults] = useState(false);
@@ -109,6 +113,10 @@ export default function JubelioSettingsPage() {
         const { id: _id, updatedAt: _u, updatedById: _b, ...input } = r.data;
         void _id; void _u; void _b;
         setDefaultsDraft(input);
+        setAturanBawaanIsi({
+          dasar: r.data.defaultPriceRuleBasis,
+          teks: r.data.defaultMarginPercent != null ? String(r.data.defaultMarginPercent) : "",
+        });
         setDefaultsGagal(null);
       })
       .finally(() => {
@@ -166,9 +174,18 @@ export default function JubelioSettingsPage() {
   // bahan rekomendasi harga di halaman barang; harga jual tetap diketik sendiri.
   const handleSaveDefaults = async () => {
     if (!defaultsDraft) return;
+    const persen = bacaAngkaOpsional(aturanBawaanIsi.teks);
+    if (persen != null && !aturanHargaSah({ dasar: aturanBawaanIsi.dasar, persen })) {
+      toast.error(t(aturanBawaanIsi.dasar === "MARGIN" ? "defaults.marginTidakSah" : "defaults.markupTidakSah"));
+      return;
+    }
     setIsSavingDefaults(true);
     try {
-      const r = await saveJubelioPushDefaults(defaultsDraft);
+      const r = await saveJubelioPushDefaults({
+        ...defaultsDraft,
+        defaultMarginPercent: persen,
+        defaultPriceRuleBasis: aturanBawaanIsi.dasar,
+      });
       if (r.ok) {
         setDefaults(r.data);
         toast.success(t("defaults.saved"));
@@ -371,14 +388,16 @@ export default function JubelioSettingsPage() {
                   <p className="text-sm font-medium">{t("defaults.rekomendasiJudul")}</p>
                   <p className="text-xs text-muted-foreground">{t("defaults.rekomendasiKeterangan")}</p>
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  <NumField
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">{t("defaults.field.defaultMarginPercent")}</p>
+                  <IsianMarkupMargin
+                    idAwalan="bawaanAturanHarga"
+                    nilai={aturanBawaanIsi}
+                    onUbah={setAturanBawaanIsi}
                     disabled={!bolehUbah}
-                    label={t("defaults.field.defaultMarginPercent")}
-                    value={defaultsDraft.defaultMarginPercent}
-                    onChange={(v) => setDefaultsDraft({ ...defaultsDraft, defaultMarginPercent: v })}
-                    nullable
                   />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   <NumField
                     disabled={!bolehUbah}
                     label={t("defaults.field.defaultAdditionalCost")}

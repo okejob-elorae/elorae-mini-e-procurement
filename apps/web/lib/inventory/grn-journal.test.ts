@@ -142,6 +142,22 @@ d("GRN auto-journal (test bed only)", () => {
     expect(r).toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
   });
 
+  /*
+   * P51a: GRN tanpa PO yang masih menunggu konfirmasi admin belum menjadi hutang. Sapuan harian
+   * dan posting ulang memanggil penulis ini juga, jadi penolakannya harus ada DI SINI, bukan
+   * hanya di `createGRN` dan tombolnya.
+   */
+  it("no-PO GRN awaiting admin confirmation → NOTHING_TO_POST and no journal; posts once confirmed", async () => {
+    await prisma.gRN.update({ where: { id: grnId }, data: { requiresNoPoConfirmation: true, noPoConfirmedAt: null } });
+    expect(await postGrnJournal(grnId, userId, prisma)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+    expect(await prisma.journal.findUnique({ where: { sourceType_sourceId: { sourceType: "GRN", sourceId: grnId } } })).toBeNull();
+
+    await prisma.gRN.update({ where: { id: grnId }, data: { noPoConfirmedAt: new Date("2026-01-16"), noPoConfirmedById: userId } });
+    expect(await postGrnJournal(grnId, userId, prisma)).toMatchObject({ ok: true, created: true });
+    const j = await prisma.journal.findUnique({ where: { sourceType_sourceId: { sourceType: "GRN", sourceId: grnId } }, include: { lines: true } });
+    expect(Number(j!.lines.find((l) => l.chartAccountId === apId)!.credit)).toBe(500);
+  });
+
   it("unmapped AP → UNMAPPED_ROLE", async () => {
     await prisma.journalAccountMapping.deleteMany({ where: { role: "AP" } });
     const r = await postGrnJournal(grnId, userId, prisma);

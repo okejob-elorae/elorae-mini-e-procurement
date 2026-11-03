@@ -199,3 +199,41 @@ describe('tautanRetur', () => {
     expect(tautanRetur({ langkah: 'cek' })).toBe('/backoffice/retur-toko?langkah=cek');
   });
 });
+
+describe("faktur tertahan — Q15 (bagian menunggu, tetap, dan lewat tempo)", () => {
+  const tertahan = (alasan: BahanTindakan["piutang"][number]["alasan"]) =>
+    faktur("INV/2026/0120", { keadaan: "tertahan", keadaanTampil: "tertahan", outstanding: 700_000, alasan });
+
+  it("sebagian ditahan dan bagian bebasnya lewat tempo: nilai = bagian bebas, naik menurut hari", () => {
+    const [t] = susunTindakan(
+      bahan({
+        piutang: [
+          tertahan({
+            nilaiTertahan: 300_000,
+            ditahanRetur: 300_000,
+            sebabDitahan: "BELUM_DIHITUNG",
+            lewatTempoDiLuarTahanan: { hari: 30, nilai: 400_000 },
+          }),
+        ],
+      }),
+    );
+    expect(t.jenis).toBe("tertahan");
+    expect(t.nilai).toBe(400_000);
+    expect(t.risiko).toBeCloseTo(850 + 300 + Math.log10(400_000));
+    expect(t.konteks.tahanan?.tunggu?.sebab).toBe("BELUM_DIHITUNG");
+  });
+
+  it("tahanan tetap saja dan belum lewat tempo: nilai = yang tetap", () => {
+    const [t] = susunTindakan(bahan({ piutang: [tertahan({ nilaiTertahan: 250_000 })] }));
+    expect(t.nilai).toBe(250_000);
+    expect(t.risiko).toBeCloseTo(800 + Math.log10(250_000));
+  });
+
+  it("menunggu beban tanpa lewat tempo: nilai = yang menunggu", () => {
+    const [t] = susunTindakan(
+      bahan({ piutang: [tertahan({ nilaiTertahan: 300_000, ditahanRetur: 300_000, sebabDitahan: "MENUNGGU_BEBAN" })] }),
+    );
+    expect(t.nilai).toBe(300_000);
+    expect(t.konteks.tahanan?.tunggu).toEqual({ nilai: 300_000, sebab: "MENUNGGU_BEBAN" });
+  });
+});

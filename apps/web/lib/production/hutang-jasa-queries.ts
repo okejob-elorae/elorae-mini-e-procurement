@@ -7,6 +7,9 @@ import { prisma, type Prisma } from "@elorae/db";
 import { bacaPengaturanPpn } from "@/lib/finance/pajak/ppn-pengaturan";
 import { billBookedByWoStep, vendorPaidBySource } from "@/lib/vendor-billing/billable";
 import { bagiHutangJasaPerLangkah, nilaiJasaKumulatif, type LangkahJasa } from "./biaya-jasa";
+import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mapping";
+import { apKoreksiPerPenerimaan } from "@/lib/vendor-billing/koreksi-utang-queries";
+import { kunciDokumenHutang } from "@/lib/purchasing/pembayaran-aturan";
 
 type Klien = Prisma.TransactionClient | typeof prisma;
 
@@ -26,8 +29,13 @@ export type BarisHutangJasa = {
   hargaTermasukPpn: boolean;
   /** Pcs lolos yang jasanya SUDAH dijurnal ke hutang usaha (di penerimaan barang jadi atau di tagihan vendor). */
   qtyTerhutang: number;
-  /** Tagihan jasa (DPP + PPN pemasok) yang sudah dikredit ke hutang usaha. */
+  /** Tagihan jasa (DPP + PPN pemasok) yang sudah dikredit ke hutang usaha, koreksi selisih harga yang diterima termasuk. */
   hutang: number;
+  /**
+   * `hutang` TANPA koreksi selisih harga invoice: yang dibukukan penerimaan barang jadi dan tagihan
+   * vendor lama saja — dasar utang tercatat per potong (`hutangTanpaKoreksi ÷ qtyTerhutang`).
+   */
+  hutangTanpaKoreksi: number;
   /** Nilai jasa tanpa PPN — dasar pemotongan PPh 23 (badan) / PPh 21 (perorangan). */
   dasarPotong: number;
   /** PPN yang dipungut pemasok = hutang − dasarPotong. */
@@ -87,6 +95,10 @@ const rp = (d: Decimal) => d.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(
  * tagihannya (`vendorPaidBySource`; jurnal `VENDOR_PAYMENT`-nya mendebit hutang
  * usaha sebesar itu juga). Jumlah alokasi dibaca sebagai bagian BRUTO hutang
  * yang diselesaikan (sebelum PPh dipotong).
+ *
+ * Koreksi selisih harga invoice yang diterima (keputusan pemilik 2026-11-02, P27/P49/P53) menambah
+ * hutang dan DPP-nya ke langkahnya (`apKoreksiPerPenerimaan`, dari jurnal koreksinya sendiri), jadi
+ * buku pembantu tetap sama dengan buku besar; PPN = hutang − DPP ikut bergerak.
  *
  * Satu baris per langkah, apa pun jumlah tagihannya: hutang yang dijurnal
  * penerimaan dan yang dijurnal tagihan dijumlahkan di baris yang sama, jadi
@@ -160,6 +172,7 @@ export async function daftarHutangJasa(opsi: OpsiHutangJasa = {}, klien: Klien =
         hargaTermasukPpn: s.servicePpnIncluded,
         qtyTerhutang: qtySemua.minus(qtyLama).toNumber(),
         hutang: rp(hutang),
+        hutangTanpaKoreksi: rp(hutang),
         dasarPotong: rp(dasarPotong),
         ppn: rp(hutang.minus(dasarPotong)),
         dibayar: 0,
@@ -182,8 +195,28 @@ export async function daftarHutangJasa(opsi: OpsiHutangJasa = {}, klien: Klien =
     const dasarPotong = new Decimal(b.dasarPotong).plus(dasar).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     b.qtyTerhutang = new Decimal(b.qtyTerhutang).plus(t.qty).toNumber();
     b.hutang = rp(hutang);
+    b.hutangTanpaKoreksi = rp(hutang);
     b.dasarPotong = rp(dasarPotong);
     b.ppn = rp(hutang.minus(dasarPotong));
+  }
+
+  let apAkunId: string | null = null;
+  try {
+    apAkunId = await resolveAccount("AP", klien);
+  } catch (e) {
+    if (!(e instanceof UnmappedRoleError)) throw e;
+  }
+  if (apAkunId) {
+    const koreksi = await apKoreksiPerPenerimaan(klien, { woStepIds: stepIds }, apAkunId);
+    for (const b of baris) {
+      const k = koreksi.get(kunciDokumenHutang(TARGET_ALOKASI_LANGKAH_WO, b.stepId));
+      if (!k || (k.apSen === 0 && k.dppSen === 0)) continue;
+      const hutang = new Decimal(b.hutang).plus(new Decimal(k.apSen).div(100));
+      const dasarPotong = new Decimal(b.dasarPotong).plus(new Decimal(k.dppSen).div(100));
+      b.hutang = rp(hutang);
+      b.dasarPotong = rp(dasarPotong);
+      b.ppn = rp(hutang.minus(dasarPotong));
+    }
   }
 
   const alokasi = await klien.supplierPaymentAllocation.findMany({

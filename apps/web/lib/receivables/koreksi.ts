@@ -318,6 +318,8 @@ export async function pindahkanReturKeToko(input: {
           status: true,
           store: { select: { name: true } },
           warehouseReturn: { select: { id: true, noNri: true, receivedAt: true } },
+          // Hitungan susulan (barang selisih yang datang belakangan) ikut notanya.
+          followUps: { select: { id: true, noNri: true, receivedAt: true } },
           items: { select: { storeReceiptLineId: true, spgSaleReturnLineId: true } },
           deductions: {
             where: { paymentClaim: { status: { in: [...KLAIM_HIDUP] } } },
@@ -365,10 +367,19 @@ export async function pindahkanReturKeToko(input: {
       });
       if (bentrok) return gagal("NOMOR_DIPAKAI_DI_TUJUAN");
 
-      // Nota yang belum dihitung gudang tidak menyentuh stok titipan.
-      const terkunci = nota.warehouseReturn
-        ? await siklusTerkunci(tx, nota.warehouseReturn.receivedAt, [nota.storeId, tujuan.id])
-        : [];
+      // Nota yang belum dihitung gudang tidak menyentuh stok titipan. Setiap
+      // hitungan (asli dan susulan) menyentuh siklus bulan ia diterima.
+      const terkunci = [
+        ...new Set(
+          (
+            await Promise.all(
+              [...(nota.warehouseReturn ? [nota.warehouseReturn] : []), ...nota.followUps].map((h) =>
+                siklusTerkunci(tx, h.receivedAt, [nota.storeId, tujuan.id]),
+              ),
+            )
+          ).flat(),
+        ),
+      ];
       if (terkunci.length > 0 && !input.setujuSiklusTerkunci) {
         return { ok: false as const, alasan: "SIKLUS_TERKUNCI" as const, noKonsi: terkunci };
       }
@@ -378,6 +389,12 @@ export async function pindahkanReturKeToko(input: {
       if (catatLepas) await catatLepas(nota.id, input.olehUserId);
       if (nota.warehouseReturn) {
         await tx.warehouseReturn.update({ where: { id: nota.warehouseReturn.id }, data: { storeId: tujuan.id } });
+      }
+      if (nota.followUps.length > 0) {
+        await tx.warehouseReturn.updateMany({
+          where: { id: { in: nota.followUps.map((f) => f.id) } },
+          data: { storeId: tujuan.id },
+        });
       }
       const beban = await tx.returnCharge.updateMany({
         where: { OR: milikPasangan, status: "TERBUKA" },
@@ -393,6 +410,7 @@ export async function pindahkanReturKeToko(input: {
         metadata: {
           noNrt: nota.noNrt,
           noNri: nota.warehouseReturn?.noNri ?? null,
+          ...(nota.followUps.length > 0 ? { susulan: nota.followUps.map((f) => f.noNri) } : {}),
           tokoAsal: nota.store.name,
           tokoTujuan: tujuan.name,
           bebanIkutPindah: beban.count,
@@ -428,10 +446,19 @@ export async function pindahkanNriKeToko(input: {
   return runSerializable(async (tx) => {
     const nri = await tx.warehouseReturn.findUnique({
       where: { id: input.warehouseReturnId },
-      select: { id: true, noNri: true, storeId: true, storeReturnId: true, receivedAt: true, store: { select: { name: true } } },
+      select: {
+        id: true,
+        noNri: true,
+        storeId: true,
+        storeReturnId: true,
+        followUpOfStoreReturnId: true,
+        receivedAt: true,
+        store: { select: { name: true } },
+      },
     });
     if (!nri) return gagal("TIDAK_DITEMUKAN");
-    if (nri.storeReturnId) return gagal("SUDAH_BERPASANGAN");
+    // Hitungan susulan dipindah lewat nota yang disusulnya, sama seperti pasangan aslinya.
+    if (nri.storeReturnId || nri.followUpOfStoreReturnId) return gagal("SUDAH_BERPASANGAN");
 
     const tujuan = await periksaTokoTujuan(tx, input.tokoTujuanId, nri.storeId);
     if (!bukanGagal(tujuan)) return tujuan;

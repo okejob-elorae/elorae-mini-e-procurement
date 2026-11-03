@@ -21,7 +21,8 @@ import {
 import { cn } from '@/lib/utils';
 import { formatDisplayDate } from '@/lib/date-only';
 import type { BarisPiutang, RingkasanPiutang } from '@/lib/receivables/queries';
-import { URUT_KEADAAN_TAMPIL, type KeadaanTampil } from '@/lib/receivables/jatuh-tempo';
+import { bagianKalimatTertahan, URUT_KEADAAN_TAMPIL, type BagianTertahan, type KeadaanTampil } from '@/lib/receivables/jatuh-tempo';
+import type { JenisTagihan } from "@/lib/receivables/jenis-tagihan";
 import { KotakCari } from './_daftar/KotakCari';
 import { HalamanDaftar } from './_daftar/HalamanDaftar';
 import { denganParam } from './_daftar/halaman';
@@ -57,6 +58,13 @@ const KUNCI_LABEL: Record<KeadaanTampil, string> = {
 
 const JALUR = '/backoffice/piutang';
 
+/** Pilihan saringan jenis tagihan (keputusan 2026-10-29): semua, konsinyasi, non-konsinyasi. */
+const PILIHAN_JENIS: { jenis: JenisTagihan | null; kunci: string }[] = [
+  { jenis: null, kunci: "jenisSemua" },
+  { jenis: "konsi", kunci: "jenisKonsi" },
+  { jenis: "nonkonsi", kunci: "jenisNonKonsi" },
+];
+
 export function PiutangClient({
   baris,
   halaman,
@@ -68,6 +76,7 @@ export function PiutangClient({
   bolehMengelola,
   saring = null,
   cari = '',
+  jenis = null,
 }: {
   /** Satu halaman yang sudah disaring di server. */
   baris: BarisPiutang[];
@@ -85,6 +94,8 @@ export function PiutangClient({
   saring?: KeadaanTampil | null;
   /** Dari `?cari=`. */
   cari?: string;
+  /** Dari `?jenis=`; `null` = semua jenis tagihan. */
+  jenis?: JenisTagihan | null;
 }) {
   const t = useTranslations('receivables');
   const tTugas = useTranslations('tugasTagih');
@@ -95,8 +106,52 @@ export function PiutangClient({
   const label = (k: KeadaanTampil) => t(KUNCI_LABEL[k] as never);
   // Saringan menulis ke alamat (replace) dan membawa kata kuncinya; halaman
   // kembali ke 1 karena isi daftarnya berganti.
-  const hrefSaring = (k: KeadaanTampil | null) => denganParam(JALUR, { cari }, { keadaan: k });
-  const disaring = saring !== null || cari !== '';
+  const hrefSaring = (k: KeadaanTampil | null) => denganParam(JALUR, { cari, jenis: jenis ?? undefined }, { keadaan: k });
+  const hrefJenis = (j: JenisTagihan | null) =>
+    denganParam(JALUR, { cari, keadaan: saring ?? undefined }, { jenis: j });
+  const disaring = saring !== null || cari !== '' || jenis !== null;
+
+  /**
+   * Kalimat "tertahan" (Q15/P46). Susunannya dari `bagianKalimatTertahan` — aturan yang sama
+   * dengan kalimat di HP — di sini hanya kata untuk tiap bagian.
+   */
+  const alasanTertahan = (b: BarisPiutang): string => {
+    const bagian = bagianKalimatTertahan(b.alasan);
+    const tunggu = bagian.find((x): x is Extract<BagianTertahan, { jenis: "TUNGGU" }> => x.jenis === "TUNGGU");
+    return bagian
+      .map((x) => {
+        switch (x.jenis) {
+          case "TUNGGU":
+            return x.sebab === "BELUM_DIHITUNG"
+              ? t("reasonTertahanHitung", { nilai: rupiah(x.nilai) })
+              : x.sebab === "CAMPURAN"
+                ? t("reasonTertahanCampur", { nilai: rupiah(x.nilai) })
+                : t("reasonTertahan", { nilai: rupiah(x.nilai) });
+          case "TETAP":
+            return t("reasonTertahanTetap", { nilai: rupiah(x.nilai) });
+          case "LEWAT_TEMPO":
+            return x.adaTunggu
+              ? t("reasonTertahanLewatTempo", {
+                  // Nilai yang menunggu ikut dikirim untuk kalimat yang menyebutnya kembali.
+                  ditahan: rupiah(tunggu?.nilai ?? 0),
+                  nilai: rupiah(x.nilai),
+                  hari: x.hari,
+                })
+              : t("reasonTertahanLewatTempoSemua", { nilai: rupiah(x.nilai), hari: x.hari });
+          case "TAGIH_BKM":
+            return t("reasonTertahanTagihBkm");
+          case "UMUM":
+            return t("reasonTertahan", { nilai: rupiah(x.nilai) });
+        }
+      })
+      .join(" ");
+  };
+
+  /** Asal faktur, ditambah nomor nota admin penjualan untuk tagihan siklus konsinyasi. */
+  const asal = (b: BarisPiutang): string =>
+    [t(`source${b.asal ?? b.source}` as never), b.nomorNotaKonsi ? t("notaKonsi", { no: b.nomorNotaKonsi }) : null]
+      .filter(Boolean)
+      .join(" · ");
 
   /** Kalimat alasan — inti programnya. Tanpa ini halaman ini cuma tabel angka. */
   const alasan = (b: BarisPiutang): string => {
@@ -118,7 +173,7 @@ export function PiutangClient({
           hari: b.alasan.hariLewatJatuhTempo ?? 0,
         });
       case 'tertahan':
-        return t('reasonTertahan', { nilai: rupiah(b.alasan.nilaiTertahan ?? 0) });
+        return alasanTertahan(b);
       case 'lewat':
         return t('reasonLewat', {
           tgl: b.alasan.janjiBayar ? tanggal(b.alasan.janjiBayar) : '—',
@@ -190,6 +245,25 @@ export function PiutangClient({
       {adaFaktur && (
         <div className="space-y-3">
           <KotakCari nilai={cari} placeholder={t('searchPlaceholder')} label={t('searchPlaceholder')} />
+          <div className="flex flex-wrap gap-2" role="group" aria-label={t("filterJenisLabel")}>
+            {PILIHAN_JENIS.map((p) => {
+              const aktif = jenis === p.jenis;
+              return (
+                <Link
+                  key={p.kunci}
+                  href={hrefJenis(p.jenis)}
+                  replace
+                  aria-current={aktif ? "true" : undefined}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-sm transition-colors",
+                    aktif ? "border-primary font-medium ring-1 ring-primary/40" : "border-border hover:bg-muted/60",
+                  )}
+                >
+                  {t(p.kunci as never)}
+                </Link>
+              );
+            })}
+          </div>
           <div className="anim-stagger flex flex-wrap gap-2" role="group" aria-label={t('filterLabel')}>
             <Link
               href={hrefSaring(null)}
@@ -269,7 +343,7 @@ export function PiutangClient({
                         <p className="font-medium">{b.invoiceNo}</p>
                         <p className="text-sm">{b.storeName}</p>
                         <p className="text-xs text-muted-foreground">
-                          {[b.salesmanName, t(`source${b.source}` as never)].filter(Boolean).join(' · ')}
+                          {[b.salesmanName, asal(b)].filter(Boolean).join(' · ')}
                         </p>
                       </div>
                       <div className="shrink-0 text-right">
@@ -315,7 +389,7 @@ export function PiutangClient({
                           {/* Asal faktur sebagai teks redup, bukan lencana warna: lencana
                               kategori di baris berlatar merah tipis turun ke ±4,3:1. */}
                           <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                            {t(`source${b.source}` as never)}
+                            {asal(b)}
                           </span>
                         </TableCell>
                         <TableCell className="whitespace-normal min-w-[140px] max-w-[220px]">

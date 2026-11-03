@@ -7,12 +7,14 @@ import type { HasilPostingLapangan } from "./tertunda";
  * `JOURNAL_PENDING`, tidak pernah menggagalkan aksinya.
  *
  * Yang menyentuh apa:
- * - nota terbit → jurnal nota;
+ * - nota terbit, dikoreksi (ditolak sebagian di pintu, hilang di jalan), atau
+ *   dibatalkan ("tidak jadi dikirim") → jurnal nota (diselaraskan, bergenerasi);
  * - BKM diverifikasi/ditolak/dibatalkan/giro cair, potongan ditautkan ulang →
  *   jurnal BKM itu + jurnal retur setiap nota retur yang dipotongnya (yang sudah
  *   dipakai toko ikut menentukan jurnal retur);
- * - hitungan gudang dicatat/dijodohkan/dilepas/dipindah toko, beban selisih
- *   diputuskan/dialihkan → jurnal retur hitungan itu;
+ * - hitungan gudang dicatat/dijodohkan/dilepas/dipindah toko, hitungan susulan
+ *   dicatat/dijadikan/dilepas, beban selisih diputuskan/dialihkan → jurnal retur
+ *   hitungan itu, hitungan asli notanya, dan setiap hitungan susulannya;
  * - tukar barang selesai → jurnal tukar;
  * - faktur piutang manual/impor dibuat, atau impornya dibatalkan → jurnal faktur.
  *
@@ -76,8 +78,9 @@ export function kaitTukarSelesai(exchangeId: string, userId: string): Promise<vo
 /**
  * Faktur piutang manual/impor dibuat atau dihapus (impor dibatalkan) →
  * selaraskan jurnal `STORE_INVOICE` setiap faktur. Faktur yang tidak dijurnal
- * sendiri (sebelum tanggal mulai, nota, beban retur, konsinyasi) tidak menulis
- * apa pun; yang sudah dihapus dibalik jurnalnya.
+ * sendiri (sebelum tanggal mulai, nota, tagihan konsinyasi) tidak menulis apa
+ * pun; yang sudah dihapus dibalik jurnalnya. Selisih retur tidak pernah menjadi
+ * faktur baru (keputusan pemilik 1, 2026-10-29).
  */
 export function kaitFakturPiutang(receivableIds: string[], userId: string): Promise<void> {
   return aman("faktur", async () => {
@@ -85,7 +88,12 @@ export function kaitFakturPiutang(receivableIds: string[], userId: string): Prom
   });
 }
 
-/** Hitungan gudang (NRI) dari nota retur, beban, atau id hitungan langsung. */
+/**
+ * Hitungan gudang (NRI) dari nota retur, beban, atau id hitungan langsung. Sebuah nota retur
+ * menyentuh hitungan ASLINYA dan setiap hitungan SUSULANNYA (`followUpOfStoreReturnId`): fisik
+ * susulan mengubah jurnal hitungan asli (`nilaiFisikNota`), dan jurnal susulan sendiri membawa
+ * persediaannya.
+ */
 export async function nriTersentuh(ref: { nriIds?: string[]; nrtIds?: string[]; chargeIds?: string[] }): Promise<string[]> {
   const { prisma } = await import("@elorae/db");
   const nri = new Set((ref.nriIds ?? []).filter(Boolean));
@@ -98,8 +106,20 @@ export async function nriTersentuh(ref: { nriIds?: string[]; nrtIds?: string[]; 
       if (r.storeReturnId) nrt.add(r.storeReturnId);
     }
   }
+  // Hitungan susulan yang disebut langsung: nota retur asalnya ikut (fisik hitungan aslinya berubah).
+  if (nri.size > 0) {
+    const susulan = await prisma.warehouseReturn.findMany({
+      where: { id: { in: [...nri] }, followUpOfStoreReturnId: { not: null } },
+      select: { followUpOfStoreReturnId: true },
+    });
+    for (const r of susulan) if (r.followUpOfStoreReturnId) nrt.add(r.followUpOfStoreReturnId);
+  }
   if (nrt.size > 0) {
-    const rows = await prisma.warehouseReturn.findMany({ where: { storeReturnId: { in: [...nrt] } }, select: { id: true } });
+    const ids = [...nrt];
+    const rows = await prisma.warehouseReturn.findMany({
+      where: { OR: [{ storeReturnId: { in: ids } }, { followUpOfStoreReturnId: { in: ids } }] },
+      select: { id: true },
+    });
     for (const r of rows) nri.add(r.id);
   }
   return [...nri];

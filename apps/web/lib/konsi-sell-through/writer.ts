@@ -442,10 +442,18 @@ async function writeSpgSplitSnapshot(
  */
 export type ApproveSellThroughInput =
   | { id: string; approvedById: string; mode: "INVOICE"; invoiceDate: Date; salesmanId: string | null; expectedTotal?: number }
-  | { id: string; approvedById: string; mode: "BASELINE"; reason: string };
+  | { id: string; approvedById: string; mode: "BASELINE"; reason: string }
+  | { id: string; approvedById: string; mode: "RECORD" };
 
 /**
- * Freezes a DRAFT report — and approving IS invoicing. INVOICE mode prices every line at the
+ * Freezes a DRAFT report. Since the owner chose Max's consignment cycle for konsi invoicing
+ * (decision 2026-10-29, "tagihan konsinyasi MASUK Piutang setelah angka terjual dikunci"), a
+ * sell-through report BILLS NOTHING: the app approves it in RECORD mode, which runs every re-check
+ * below, freezes the figures, prices each line (null for an unpriced line, never refused, so the
+ * forecast keeps konsi revenue), stores `surplusQty` and the SPG split — and creates no receivable,
+ * no faktur and no journal. The approve action refuses INVOICE (`INVOICING_RETIRED`); the INVOICE
+ * branch below stays only for legacy callers and fixtures until the follow-up deletion, and the
+ * receivable it creates is marked `isConsignment`. INVOICE mode prices every line at the
  * item's catalog selling price (the store keeps its markup), stamps the invoice date, the due date, the total and the salesman, and creates
  * the receivable and faktur when the total is above zero. It also stores each line's `surplusQty`
  * (`unabsorbedSurplusQty`), which the surplus journal values. BASELINE mode is for a store's first
@@ -588,6 +596,36 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
       return { ok: true as const, invoiced: false };
     }
 
+    if (input.mode === "RECORD") {
+      const flipped = await tx.konsiSellThrough.updateMany({
+        where: { id: doc.id, status: "DRAFT" },
+        data: { status: "APPROVED", approvedById: input.approvedById, approvedAt, spgSplitSnapshotAt: approvedAt },
+      });
+      if (flipped.count === 0) throw new SellThroughError("INVALID_STATE");
+      await writeSpgSplitSnapshot(tx, { sellThroughId: doc.id, previousId: doc.previousId, lines: doc.lines, ownRows: inputs.rows, carry });
+      const harga = priceSellThroughLines({
+        lines: doc.lines.map((l) => ({
+          key: lineKey(l.itemId, l.variantSku),
+          billedQty: roundQty(l.billedQty.toNumber()),
+          sellingPrice: l.item.sellingPrice === null ? null : Number(l.item.sellingPrice),
+        })),
+      });
+      for (const [i, l] of doc.lines.entries()) {
+        const surplusQty = unabsorbedSurplusQty({
+          posSoldQty: roundQty(l.posSoldQty.toNumber()),
+          gapQty: roundQty(l.gapQty.toNumber()),
+          billedQty: roundQty(l.billedQty.toNumber()),
+          shrinkageQty: roundQty(l.shrinkageQty.toNumber()),
+        });
+        const unitPrice = harga.lines[i].unitPrice;
+        await tx.konsiSellThroughLine.update({
+          where: { id: l.id },
+          data: { unitPrice, lineTotal: unitPrice === null ? null : harga.lines[i].lineTotal, surplusQty },
+        });
+      }
+      return { ok: true as const, invoiced: false };
+    }
+
     const pricing = priceSellThroughLines({
       lines: doc.lines.map((l) => ({
         key: lineKey(l.itemId, l.variantSku),
@@ -663,6 +701,7 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
           outstanding: pricing.total,
           originalAmount: pricing.total,
           outstandingAmount: pricing.total,
+          isConsignment: true,
         },
       });
       await tx.taxInvoice.create({ data: { sellThroughId: doc.id } });

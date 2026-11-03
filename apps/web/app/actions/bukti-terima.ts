@@ -17,6 +17,11 @@ import {
  * Tidak pernah melempar: aksi yang melempar disamarkan Next di produksi, dan
  * antrean HP harus bisa membedakan "ditolak" (berhenti) dari "galat server"
  * (`GAGAL`, coba lagi).
+ *
+ * Penolakan penulis diteruskan apa adanya, termasuk nota yang barangnya belum
+ * berangkat dari gudang (`BELUM_BERANGKAT`) dan nota yang dibatalkan — "tidak jadi
+ * dikirim" atau seluruhnya ditolak di pintu (`NOTA_DIBATALKAN`); keduanya punya
+ * kalimat di `buktiTerima.err.*`.
  */
 
 export type HasilAksiBuktiTerima = { ok: true; ulangan: boolean } | { ok: false; kode: KodeBuktiTerima };

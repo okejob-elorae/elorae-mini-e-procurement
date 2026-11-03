@@ -3,15 +3,22 @@ import {
   hitungSisaPiutang,
   keadaanPiutang,
   nilaiDiakui,
-  returTertahan,
+  pisahTahananRetur,
   selisihHari,
-  sisaBolehDilunasi,
-  tertahanPiutang,
+  tertahanPiutangRinci,
+  type JenisTahanan,
   type KeadaanPiutang,
   type StatusKlaim,
 } from './rules';
 import { PILIH_POTONGAN, potonganRetur } from './deductions';
-import { hariLewatJatuhTempo, keadaanTampil, type KeadaanTampil } from './jatuh-tempo';
+import {
+  hariLewatJatuhTempo,
+  keadaanTampil,
+  lewatTempoDiLuarTahanan,
+  nilaiLewatJatuhTempo,
+  type KeadaanTampil,
+} from './jatuh-tempo';
+import { asalTagihan, type AsalTagihan } from "./jenis-tagihan";
 
 /**
  * Baris piutang siap tampil, lengkap dengan keadaannya dan bahan untuk
@@ -37,6 +44,18 @@ export type BarisPiutang = {
    */
   bolehDilunasi: number;
   source: string;
+  /**
+   * Tagihan konsinyasi (`Receivable.isConsignment`, diisi saat dibuat). Sejak
+   * keputusan 2026-10-29 tagihan konsinyasi ikut di Piutang; di HP ia hanya
+   * sampai ke pemegang toko sekarang (P31).
+   */
+  konsi: boolean;
+  /** Asal tagihan untuk label sumbernya (`asalTagihan`). */
+  asal: AsalTagihan;
+  /** Siklus konsinyasi asal tagihan, kalau lahir dari kunci siklus. */
+  siklusId: string | null;
+  /** Nomor nota admin penjualan siklusnya, kalau sudah dicatat. */
+  nomorNotaKonsi: string | null;
   keadaan: KeadaanPiutang;
   /**
    * Keadaan untuk layar kantor: enam keadaan uang ditambah `jatuh_tempo` —
@@ -52,7 +71,18 @@ export type BarisPiutang = {
      * lapangan, pencatatnya kalau dicatat kantor atas nama sales.
      */
     pelaporKlaim?: string | null;
+    /**
+     * Bagian prorata FAKTUR INI dari potongan retur yang ditahan — yang menunggu
+     * returnya beres ditambah tahanan tetap (`pisahTahananRetur`). BKM gabungan
+     * tidak lagi menghitung seluruh potongannya di setiap faktur.
+     */
     nilaiTertahan?: number;
+    /** Q15: bagian faktur ini yang menunggu returnya beres (tidak boleh dilunasi BKM lain). */
+    ditahanRetur?: number;
+    /** Mengapa bagian itu menunggu. */
+    sebabDitahan?: JenisTahanan;
+    /** P46: bagian bebas faktur yang sebagian ditahan, yang jatuh temponya sudah lewat. */
+    lewatTempoDiLuarTahanan?: { hari: number; nilai: number };
     noKontrabon?: string;
     janjiBayar?: string;
     hariTerlambat?: number;
@@ -83,6 +113,9 @@ export type LingkupPiutang = {
    * memakai ini, bukan `salesmanId`. Aturannya (murni, dites):
    * `penagihPiutang` di `lib/stores/penanggung-jawab.ts`. DITAMBAH faktur di tugas
    * tagih TERBUKA yang ditugaskan kantor ke orang ini (`fakturTugasTagihTerbuka`).
+   *
+   * Tagihan KONSINYASI hanya lewat pemegang toko sekarang (P31, "pemegang
+   * toko"): jalur penjual-tanpa-pemegang dan jalur tugas tagih tidak membukanya.
    */
   penagihId?: string;
   /** Hanya piutang tertentu — dipakai layar yang menampilkan satu dokumen. */
@@ -127,24 +160,24 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
   const fakturTugas = opts?.penagihId ? await fakturTugasTagihTerbuka(opts.penagihId) : [];
   const rows = await prisma.receivable.findMany({
     /*
-     * Toko konsinyasi TIDAK PERNAH muncul di sini. Barang di toko konsi masih
-     * milik kita sampai terjual — mengirimnya bukan penjualan, jadi tidak ada
-     * piutang yang lahir dari sana. Kalau toko konsi ikut terdaftar, sales
-     * menagih uang untuk barang yang belum laku, dan angkanya ikut menaikkan
-     * total piutang perusahaan yang sebenarnya tidak ada.
+     * Tagihan konsinyasi IKUT di sini (keputusan pemilik 2026-10-29 mencabut
+     * "toko konsinyasi tidak pernah muncul di piutang"): tagihan siklus lahir
+     * saat angka terjualnya dikunci, dan utang konsi di kertas masuk lewat impor
+     * atau faktur manual (P32). Penandanya `isConsignment`.
      *
-     * Disaring di kueri, bukan di layar: setiap pemanggil `daftarPiutang`
-     * mendapat aturan ini tanpa harus mengingatnya.
+     * VOIDED bukan piutang: nota yang tidak jadi dikirim, atau tagihan siklus
+     * yang kuncinya dibuka. Disaring di kueri supaya setiap pemanggil — layar,
+     * dasbor, pengingat — mendapat aturan yang sama tanpa harus mengingatnya.
      */
     where: {
-      store: { termsType: { not: 'KONSI' } },
+      status: { not: "VOIDED" },
       ...(opts?.salesmanId ? { salesmanId: opts.salesmanId } : {}),
       ...(opts?.penagihId
         ? {
             OR: [
               { store: { salesmanId: opts.penagihId } },
-              { salesmanId: opts.penagihId, store: { salesmanId: null } },
-              ...(fakturTugas.length > 0 ? [{ id: { in: fakturTugas } }] : []),
+              { salesmanId: opts.penagihId, store: { salesmanId: null }, isConsignment: false },
+              ...(fakturTugas.length > 0 ? [{ id: { in: fakturTugas }, isConsignment: false }] : []),
             ],
           }
         : {}),
@@ -163,6 +196,10 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
       paidBeforeImport: true,
       paidAmount: true,
       source: true,
+      isConsignment: true,
+      consignmentCycleId: true,
+      sellThroughId: true,
+      consignmentCycle: { select: { noNota: true } },
       storeId: true,
       store: { select: { name: true } },
       salesman: { select: { name: true } },
@@ -213,9 +250,10 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
         ? (klaimMenunggu.paymentClaim.salesman?.name ?? null)
         : (klaimMenunggu.paymentClaim.createdBy?.name ?? null)
       : undefined;
-    const tertahan = r.claimLinks
-      .filter((l) => l.paymentClaim.status === 'TERVERIFIKASI')
-      .reduce((sum, l) => sum + returTertahan(potonganRetur(l.paymentClaim.deductions)), 0);
+    // Q15: SATU pembagian sisa — yang boleh ditagih, yang menunggu returnya
+    // beres, dan angka tahanan faktur ini (prorata per faktur, bukan seluruh
+    // potongan BKM gabungan di setiap fakturnya).
+    const pisah = pisahTahananRetur(sisa, tertahanPiutangRinci(klaimList));
 
     const kontrabonAktif = r.collectionLinks
       .map((l) => l.collectionNote)
@@ -224,13 +262,21 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
     const keadaan = keadaanPiutang({
       sisa,
       klaimMenunggu: klaimMenunggu ? { docNo: klaimMenunggu.paymentClaim.docNo } : null,
-      nilaiTertahan: tertahan,
+      nilaiTertahan: pisah.nilaiTertahan,
       kontrabon: kontrabonAktif
         ? { docNo: kontrabonAktif.docNo, janjiBayar: kontrabonAktif.promisedDate }
         : null,
       hariIni,
     });
     const hariJatuhTempo = hariLewatJatuhTempo({ keadaan, dueDate: r.dueDate, hariIni });
+    const lewatSebagian = lewatTempoDiLuarTahanan({
+      keadaan,
+      bebas: pisah.bebas,
+      adaKontrabon: Boolean(kontrabonAktif),
+      dueDate: r.dueDate,
+      hariIni,
+    });
+    const menunggu = keadaan === "tertahan" && pisah.ditahan > 0;
 
     return {
       id: r.id,
@@ -242,15 +288,22 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
       dueDate: r.dueDate.toISOString(),
       amount: angka(r.amount),
       outstanding: sisa,
-      bolehDilunasi: sisaBolehDilunasi(sisa, tertahanPiutang(klaimList)),
+      bolehDilunasi: pisah.bebas,
       source: r.source,
+      konsi: r.isConsignment,
+      asal: asalTagihan(r),
+      siklusId: r.consignmentCycleId,
+      nomorNotaKonsi: r.consignmentCycle?.noNota ?? null,
       keadaan,
       keadaanTampil: keadaanTampil({ keadaan, hariLewatJatuhTempo: hariJatuhTempo }),
       alasan: {
         noKlaim: klaimMenunggu?.paymentClaim.docNo,
         klaimMenunggu: semuaMenunggu.length > 0 ? semuaMenunggu.map((l) => l.paymentClaim.docNo) : undefined,
         pelaporKlaim,
-        nilaiTertahan: tertahan > 0 ? tertahan : undefined,
+        nilaiTertahan: pisah.nilaiTertahan > 0 ? pisah.nilaiTertahan : undefined,
+        ditahanRetur: menunggu ? pisah.ditahan : undefined,
+        sebabDitahan: menunggu ? (pisah.sebab ?? undefined) : undefined,
+        lewatTempoDiLuarTahanan: lewatSebagian ?? undefined,
         hariLewatJatuhTempo: hariJatuhTempo ?? undefined,
         noKontrabon: kontrabonAktif?.docNo,
         janjiBayar: kontrabonAktif?.promisedDate.toISOString(),
@@ -267,7 +320,12 @@ export type RingkasanPiutang = {
   /** Faktur yang sisanya masih di atas nol. Yang lunas bukan piutang lagi. */
   jumlahPiutang: number;
   perKeadaan: Record<KeadaanPiutang, { jumlah: number; nilai: number }>;
-  /** Sama, tetapi `belum` yang lewat jatuh tempo dipisah ke `jatuh_tempo`. */
+  /**
+   * Sama, tetapi `belum` yang lewat jatuh tempo dipisah ke `jatuh_tempo`.
+   * BUKAN partisi lagi (P46): nota yang sebagian ditahan dan bagian bebasnya
+   * lewat tempo dihitung di `tertahan` (seluruh sisanya) DAN di `jatuh_tempo`
+   * (bagian bebasnya saja).
+   */
   perKeadaanTampil: Record<KeadaanTampil, { jumlah: number; nilai: number }>;
 };
 
@@ -291,8 +349,15 @@ export function ringkasPiutang(baris: BarisPiutang[]): RingkasanPiutang {
   for (const b of baris) {
     perKeadaan[b.keadaan].jumlah += 1;
     perKeadaan[b.keadaan].nilai += b.outstanding;
-    perKeadaanTampil[b.keadaanTampil].jumlah += 1;
-    perKeadaanTampil[b.keadaanTampil].nilai += b.outstanding;
+    if (b.keadaanTampil !== "jatuh_tempo") {
+      perKeadaanTampil[b.keadaanTampil].jumlah += 1;
+      perKeadaanTampil[b.keadaanTampil].nilai += b.outstanding;
+    }
+    const lewat = nilaiLewatJatuhTempo(b);
+    if (lewat !== null) {
+      perKeadaanTampil.jatuh_tempo.jumlah += 1;
+      perKeadaanTampil.jatuh_tempo.nilai += lewat;
+    }
     total += b.outstanding;
     if (b.outstanding > 0) terbuka += 1;
   }

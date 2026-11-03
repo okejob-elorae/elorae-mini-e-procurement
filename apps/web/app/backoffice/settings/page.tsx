@@ -28,7 +28,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { AlarmClock, BellRing, Building2, Coins, Loader2, Palette } from 'lucide-react';
-import { KELOMPOK_PENGATURAN, kunciIsiKartu, kunciJudulKartu, type KartuPengaturan } from "./kartu-pengaturan";
+import {
+  IZIN_KARTU_PENGATURAN,
+  KELOMPOK_PENGATURAN,
+  kunciIsiKartu,
+  kunciJudulKartu,
+  type KartuPengaturan,
+} from "./kartu-pengaturan";
 import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
 import { UIThemePicker } from '@/components/settings/UIThemePicker';
 import { WarnaGrafikCard } from '@/components/settings/WarnaGrafikCard';
@@ -60,11 +66,6 @@ const KARTU_TAMBAHAN: Record<string, KartuPengaturan[]> = {
   ],
 };
 
-/** Kartu yang hanya tampil bagi pemegang salah satu izin ini; kartu lain selalu tampil. */
-const IZIN_KARTU: Record<string, string[]> = {
-  "/backoffice/settings/pack-ratio": [PERMISSIONS.SETTINGS_PACK_RATIO_VIEW, PERMISSIONS.SETTINGS_PACK_RATIO_MANAGE],
-  "/backoffice/settings/spg-commission": [PERMISSIONS.SPG_COMMISSION_MANAGE],
-};
 
 type ThemeDraft = {
   pantoneTcx: string | null;
@@ -97,7 +98,7 @@ export default function SettingsPage() {
   const kelompok = KELOMPOK_PENGATURAN.map((k) => ({
     ...k,
     items: [...k.items, ...(KARTU_TAMBAHAN[k.judulKey] ?? [])].filter((item) => {
-      const izin = IZIN_KARTU[item.href];
+      const izin = IZIN_KARTU_PENGATURAN[item.href];
       return izin === undefined || izin.some((code) => hasPermission(izinSaya, code));
     }),
   })).filter((k) => k.items.length > 0);

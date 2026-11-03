@@ -2,21 +2,19 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { SKEMA_KOMISI_BAWAAN, type SkemaKomisi } from "./komisi";
 import { komisiSalesman } from "./komisi-queries";
-import { berandaPenjualanHp, insentifHp, komisiUntukHp, pcsKonsiSalesman } from "./penjualan-hp-queries";
+import { berandaPenjualanHp, insentifHp, pcsKonsiSalesman } from "./penjualan-hp-queries";
 import { riwayatPenjualan } from "./riwayat-penjualan-queries";
 
 /*
  * Payload penjualan untuk HP salesman terhadap basis data sungguhan: beranda
- * ("Bulan ini" + grafik 30 hari), riwayat penjualan, dan insentif.
+ * ("Bulan ini" + grafik), riwayat penjualan, dan insentif.
  *
- * Aturan mutlak: rupiah konsinyasi tidak pernah sampai ke HP — tidak sebagai
- * kanal, tidak di dalam total, dan tidak lewat angka turunan (capaian, komisi,
- * kekurangan ke tingkat berikut) yang memungkinkan total − putus − van = konsi.
- * Omzet konsi = barang LAKU di toko konsinyasi yang ia pegang, pada harga
- * Elorae (`penjualan-konsi.ts`): 4 pcs bersih × 10.309,25 (harga di toko
- * 12.886,56 dibagi markup 25%) = 41.237 — sengaja angka yang bisa dicari di
- * JSON. Transfer konsi yang disetujui (6 pcs) bukan omzet. Total resmi dengan
- * konsi = 49.500 + 41.237 + 10.000 = 100.737.
+ * Jawaban pemilik 2026-11-02 (P56 "tampilkan semuanya saja"): angka di HP
+ * salesman = angka kantor, rupiah konsinyasi ikut. Omzet konsi = barang LAKU di
+ * toko konsinyasi yang ia pegang, pada harga Elorae (`penjualan-konsi.ts`):
+ * 4 pcs bersih × 10.309,25 (harga di toko 12.886,56 dibagi markup 25%) = 41.237.
+ * Transfer konsi yang disetujui (6 pcs) bukan omzet. Total resmi dengan konsi =
+ * 49.500 + 41.237 + 10.000 = 100.737.
  *
  * Bulan acak jauh di masa lalu; pengaturan bersama (`SystemSetting`) tidak
  * pernah ditulis — skema dan target lewat `opsi`. Teardown hanya lewat id yang
@@ -37,16 +35,8 @@ const tgl = (hari: number, jam = "10:00") => new Date(`${BULAN}-${pad(hari)}T${j
 /** Dilihat pertengahan Desember tahun itu: BULAN ada di daftar 12 bulan. */
 const NANTI = new Date(`${TAHUN}-12-15T10:00:00+07:00`);
 
-const KONSI = "41237";
-const TOTAL_RESMI = "100737";
-
-/** Payload yang sampai ke HP tidak boleh memuat rupiah konsi atau total yang memuatnya. */
-function bersih(payload: unknown) {
-  const json = JSON.stringify(payload);
-  expect(json).not.toContain(KONSI);
-  expect(json).not.toContain(TOTAL_RESMI);
-  expect(json).not.toMatch(/"konsi":/);
-}
+const KONSI = 41_237;
+const TOTAL_RESMI = 100_737;
 
 const skemaJual = (): SkemaKomisi => ({
   ...SKEMA_KOMISI_BAWAAN,
@@ -56,7 +46,7 @@ const skemaJual = (): SkemaKomisi => ({
   tingkat: [{ capaianPersen: 100, tarifPersen: 3 }],
 });
 
-d("payload penjualan HP salesman tanpa rupiah konsinyasi (test bed only)", () => {
+d("payload penjualan HP salesman = angka kantor, konsinyasi ikut (test bed only)", () => {
   let uomId = "";
   let salesId = "";
   let tokoA = "";
@@ -192,50 +182,44 @@ d("payload penjualan HP salesman tanpa rupiah konsinyasi (test bed only)", () =>
     expect(await pcsKonsiSalesman(salesId, tgl(1, "00:00"), tgl(11, "00:00"))).toEqual([{ tanggal: tgl(10), pcs: 4 }]);
   });
 
-  it("beranda: 'Bulan ini' = putus + van dalam rupiah, konsinyasi 4 pcs", async () => {
+  it("beranda: 'Bulan ini' = putus + konsi + van dalam rupiah, konsinyasi 4 pcs (P56)", async () => {
     const r = await berandaPenjualanHp(salesId, tgl(20, "18:00"));
-    expect(r.bulanIni).toEqual({ putus: 49_500, van: 10_000, total: 59_500, pcsKonsi: 4 });
-    // Grafik 30 hari: putus + van saja.
+    expect(r.bulanIni).toEqual({ putus: 49_500, konsi: KONSI, van: 10_000, total: TOTAL_RESMI, pcsKonsi: 4 });
     expect(r.tren).toHaveLength(60);
-    expect(r.tren.reduce((n, x) => n + x.nilai, 0)).toBe(59_500);
-    bersih(r);
+    expect(r.tren.reduce((n, x) => n + x.nilai, 0)).toBe(TOTAL_RESMI);
   });
 
-  it("riwayat penjualan: total, kanal, grafik, pembanding, dan target tanpa rupiah konsi", async () => {
+  it("riwayat penjualan: total, kanal, grafik, dan toko teratas memuat rupiah konsi", async () => {
     const r = await riwayatPenjualan(salesId, BULAN, NANTI);
-    expect(r.ringkas.jumlah).toEqual({ putus: 49_500, van: 10_000, total: 59_500, pcsKonsi: 4 });
-    expect(r.seri.find((s) => s.bulan === BULAN)).toEqual({ bulan: BULAN, putus: 49_500, van: 10_000, total: 59_500, pcsKonsi: 4 });
-    // Toko konsi tetap muncul, tapi hanya pcs.
-    expect(r.toko.find((t) => t.storeId === tokoB)).toMatchObject({ pcs: 4, pcsKonsi: 4, nilaiTanpaKonsi: 0 });
-    bersih(r);
+    expect(r.ringkas.jumlah).toEqual({ putus: 49_500, konsi: KONSI, van: 10_000, total: TOTAL_RESMI, pcsKonsi: 4 });
+    expect(r.seri.find((s) => s.bulan === BULAN)).toEqual({
+      bulan: BULAN,
+      putus: 49_500,
+      konsi: KONSI,
+      van: 10_000,
+      total: TOTAL_RESMI,
+      pcsKonsi: 4,
+    });
+    expect(r.toko.find((t) => t.storeId === tokoB)).toMatchObject({ pcs: 4, pcsKonsi: 4, nilai: KONSI });
   });
 
-  it("komisi untuk HP dihitung atas putus + van; perhitungan resmi kantor tidak berubah", async () => {
+  it("insentif HP = perhitungan resmi kantor (P56)", async () => {
     const skema = skemaJual();
     // Resmi (kantor): omzet 100.737 ≥ target 100.000 → tarif 3%, komisi 3.022.
     const resmi = await komisiSalesman(salesId, BULAN, { skema, target: 100_000 });
-    expect(resmi.omzet.total).toBe(100_737);
+    expect(resmi.omzet.total).toBe(TOTAL_RESMI);
     expect(resmi.hasil).toMatchObject({ tarifDipakai: 3, komisi: 3_022 });
 
-    // HP: omzet 59.500 → 59,5% → tarif 2%, komisi 1.190, kurang 40.500 ke tarif 3%.
-    const hp = await komisiUntukHp(salesId, BULAN, { skema, target: 100_000 });
-    expect(hp.omzet).toEqual({ putus: 49_500, konsi: 0, van: 10_000, total: 59_500 });
-    expect(hp.hasil).toMatchObject({
-      dasarNilai: 59_500,
-      capaianPersen: 59.5,
-      tarifDipakai: 2,
-      komisi: 1_190,
-      tingkatBerikut: { capaianPersen: 100, tarifPersen: 3, kurangNilai: 40_500 },
-    });
-  });
-
-  it("insentif: payload HP tanpa rupiah konsi, komisi resmi, atau omzet resmi", async () => {
-    const skema = skemaJual();
     const r = await insentifHp(salesId, BULAN, { skema, target: 100_000, hariIni: NANTI });
-    expect(r.omzet).toEqual({ putus: 49_500, van: 10_000, total: 59_500, pcsKonsi: 4 });
-    expect(r).toMatchObject({ dasar: "PENJUALAN", dasarNilai: 59_500, komisi: 1_190, capaianPersen: 59.5, target: 100_000 });
-    bersih(r);
-    // Komisi resmi (3.022) ÷ 3% = omzet resmi — tidak boleh ikut.
-    expect(JSON.stringify(r)).not.toContain("3022");
+    expect(r.omzet).toEqual({ putus: 49_500, konsi: KONSI, van: 10_000, total: TOTAL_RESMI, pcsKonsi: 4 });
+    expect(r).toMatchObject({
+      dasar: "PENJUALAN",
+      dasarNilai: resmi.hasil.dasarNilai,
+      komisi: resmi.hasil.komisi,
+      capaianPersen: resmi.hasil.capaianPersen,
+      target: 100_000,
+    });
+    // Rupiah konsi ada di payload yang dikirim ke HP.
+    expect(JSON.stringify(r)).toContain(String(KONSI));
   });
 });

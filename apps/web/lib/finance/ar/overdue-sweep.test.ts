@@ -11,13 +11,19 @@ vi.mock("@/lib/notifications/recipients", async (importOriginal) => {
   return { ...actual, sendNotificationToUsers: vi.fn(actual.sendNotificationToUsers) };
 });
 import { sendNotificationToUsers } from "@/lib/notifications/recipients";
-import { konsiInterimState, overduePhoneText, overdueRecipient, overdueSkipReason, runOverdueSweep } from "./overdue-sweep";
+import { KALIMAT_TAHANAN_PENGINGAT, overduePhoneText, overdueRecipient, overdueSkipReason, runOverdueSweep } from "./overdue-sweep";
 import { OVERDUE_THRESHOLD_SETTING_KEY } from "./overdue-thresholds";
 
 const actualRecipients = await vi.importActual<typeof import("@/lib/notifications/recipients")>("@/lib/notifications/recipients");
 
 describe("overdueSkipReason (pure)", () => {
-  const row = (keadaan: KeadaanPiutang, outstanding = 1000) => ({ keadaan, outstanding });
+  const row = (keadaan: KeadaanPiutang, outstanding = 1000, extra: { bolehDilunasi?: number; adaKontrabon?: boolean } = {}) => ({
+    keadaan,
+    outstanding,
+    bolehDilunasi: outstanding,
+    adaKontrabon: false,
+    ...extra,
+  });
 
   it("announces only an open invoice with nothing hanging on it", () => {
     expect(overdueSkipReason({ row: row("belum"), teamReportPending: false })).toBeNull();
@@ -32,8 +38,20 @@ describe("overdueSkipReason (pure)", () => {
     expect(overdueSkipReason({ row: row("lewat"), teamReportPending: false })).toBe("KONTRABON");
   });
 
-  it("skips an invoice whose return deduction is still held", () => {
-    expect(overdueSkipReason({ row: row("tertahan"), teamReportPending: false })).toBe("RETURN_HELD");
+  it("skips an invoice whose WHOLE balance waits for a return deduction", () => {
+    expect(overdueSkipReason({ row: row("tertahan", 1000, { bolehDilunasi: 0 }), teamReportPending: false })).toBe("RETURN_HELD");
+  });
+
+  it("Q15: announces a partly held invoice for the part outside the hold", () => {
+    expect(overdueSkipReason({ row: row("tertahan", 700, { bolehDilunasi: 400 }), teamReportPending: false })).toBeNull();
+  });
+
+  it("a partly held invoice in a running kontrabon is chased by the kontrabon, not by the due date", () => {
+    expect(overdueSkipReason({ row: row("tertahan", 700, { bolehDilunasi: 400, adaKontrabon: true }), teamReportPending: false })).toBe("KONTRABON");
+  });
+
+  it("a held invoice with no collectable part known reads as wholly held", () => {
+    expect(overdueSkipReason({ row: { keadaan: "tertahan", outstanding: 700 }, teamReportPending: false })).toBe("RETURN_HELD");
   });
 
   it("skips a settled invoice, by its money state or by a zero recomputed balance", () => {
@@ -45,9 +63,10 @@ describe("overdueSkipReason (pure)", () => {
     expect(overdueSkipReason({ row: row("belum"), teamReportPending: true })).toBe("PAYMENT_REPORT_PENDING");
   });
 
-  it("settled wins over a pending team report, and a pending report wins over a held return", () => {
+  it("settled wins over a pending team report, and a pending report wins over a held return, partly held included", () => {
     expect(overdueSkipReason({ row: row("lunas", 0), teamReportPending: true })).toBe("SETTLED");
-    expect(overdueSkipReason({ row: row("tertahan"), teamReportPending: true })).toBe("PAYMENT_REPORT_PENDING");
+    expect(overdueSkipReason({ row: row("tertahan", 1000, { bolehDilunasi: 0 }), teamReportPending: true })).toBe("PAYMENT_REPORT_PENDING");
+    expect(overdueSkipReason({ row: row("tertahan", 700, { bolehDilunasi: 400 }), teamReportPending: true })).toBe("PAYMENT_REPORT_PENDING");
   });
 
   it("skips a receivable the receivables module does not list", () => {
@@ -55,85 +74,82 @@ describe("overdueSkipReason (pure)", () => {
   });
 });
 
-describe("konsiInterimState (pure, until daftarPiutang lists konsi bills)", () => {
-  const asOf = new Date("2026-11-01T05:00:00Z");
-  const base = {
-    invoiceNo: "KST/2026/10/0001",
-    storedOutstanding: 500,
-    pendingClaimDocNo: null,
-    heldReturn: 0,
-    runningKontrabon: null,
-    asOf,
-  };
-  const skip = (over: Partial<Parameters<typeof konsiInterimState>[0]>) =>
-    overdueSkipReason({ row: konsiInterimState({ ...base, ...over }), teamReportPending: false });
-
-  it("carries the stored balance and is open when nothing hangs on it", () => {
-    expect(konsiInterimState(base)).toEqual({ invoiceNo: "KST/2026/10/0001", outstanding: 500, keadaan: "belum" });
-    expect(skip({})).toBeNull();
-  });
-
-  it("skips a settled konsi bill, even with a report still waiting", () => {
-    expect(skip({ storedOutstanding: 0, pendingClaimDocNo: "BKM-1" })).toBe("SETTLED");
-  });
-
-  it("applies the owner's skip rules in the receivables module's order", () => {
-    expect(skip({ pendingClaimDocNo: "BKM-1", heldReturn: 200 })).toBe("PAYMENT_REPORT_PENDING");
-    expect(skip({ heldReturn: 200, runningKontrabon: { docNo: "TT-1", promisedDate: new Date("2026-11-10T00:00:00Z") } })).toBe("RETURN_HELD");
-  });
-
-  it("skips a konsi bill in a running kontrabon, before and after its promised date", () => {
-    expect(skip({ runningKontrabon: { docNo: "TT-1", promisedDate: new Date("2026-11-10T00:00:00Z") } })).toBe("KONTRABON");
-    expect(skip({ runningKontrabon: { docNo: "TT-1", promisedDate: new Date("2026-10-20T00:00:00Z") } })).toBe("KONTRABON");
-  });
-});
-
 describe("overdueRecipient (pure)", () => {
   it("is the store's current holder, even when another salesman sold the invoice", () => {
-    expect(overdueRecipient({ storeHolderId: "baru", sellerId: "lama" })).toEqual({ userId: "baru", basis: "STORE_HOLDER" });
+    expect(overdueRecipient({ storeHolderId: "baru", sellerId: "lama", konsi: false })).toEqual({ userId: "baru", basis: "STORE_HOLDER" });
   });
 
   it("is the holder when the holder also sold it", () => {
-    expect(overdueRecipient({ storeHolderId: "sama", sellerId: "sama" })).toEqual({ userId: "sama", basis: "STORE_HOLDER" });
+    expect(overdueRecipient({ storeHolderId: "sama", sellerId: "sama", konsi: false })).toEqual({ userId: "sama", basis: "STORE_HOLDER" });
   });
 
   it("falls back to the invoice's seller while the store has no holder", () => {
-    expect(overdueRecipient({ storeHolderId: null, sellerId: "lama" })).toEqual({ userId: "lama", basis: "SELLER" });
+    expect(overdueRecipient({ storeHolderId: null, sellerId: "lama", konsi: false })).toEqual({ userId: "lama", basis: "SELLER" });
   });
 
   it("is the holder for an imported or manual invoice with no seller", () => {
-    expect(overdueRecipient({ storeHolderId: "baru", sellerId: null })).toEqual({ userId: "baru", basis: "STORE_HOLDER" });
+    expect(overdueRecipient({ storeHolderId: "baru", sellerId: null, konsi: false })).toEqual({ userId: "baru", basis: "STORE_HOLDER" });
   });
 
   it("is nobody when there is neither a holder nor a seller", () => {
-    expect(overdueRecipient({ storeHolderId: null, sellerId: null })).toBeNull();
+    expect(overdueRecipient({ storeHolderId: null, sellerId: null, konsi: false })).toBeNull();
   });
 
   it("treats an empty id as absent, never as a person", () => {
-    expect(overdueRecipient({ storeHolderId: "", sellerId: "lama" })).toEqual({ userId: "lama", basis: "SELLER" });
-    expect(overdueRecipient({ storeHolderId: "", sellerId: "" })).toBeNull();
+    expect(overdueRecipient({ storeHolderId: "", sellerId: "lama", konsi: false })).toEqual({ userId: "lama", basis: "SELLER" });
+    expect(overdueRecipient({ storeHolderId: "", sellerId: "", konsi: false })).toBeNull();
+  });
+
+  it("P31: a konsi bill goes to the store's holder only — never to its seller", () => {
+    expect(overdueRecipient({ storeHolderId: "pemegang", sellerId: "lama", konsi: true })).toEqual({ userId: "pemegang", basis: "STORE_HOLDER" });
+    expect(overdueRecipient({ storeHolderId: null, sellerId: "lama", konsi: true })).toBeNull();
+    expect(overdueRecipient({ storeHolderId: "", sellerId: "lama", konsi: true })).toBeNull();
   });
 });
 
 describe("overduePhoneText (pure)", () => {
   const base = { docNo: "DLV/2026/10/0001", storeName: "Toko Maju", outstanding: 3_000_000 };
 
-  it("names the invoice, the store and the amount for a putus store", () => {
-    const text = overduePhoneText({ ...base, termsType: "PUTUS", days: 7 });
+  it("names the invoice, the store and the amount", () => {
+    const text = overduePhoneText({ ...base, days: 7 });
     expect(text.title).toBe("Tagihan lewat jatuh tempo 7 hari");
     expect(text.body).toMatch(/^Nota DLV\/2026\/10\/0001 di Toko Maju sebesar Rp\s?3\.000\.000(,00)? sudah lewat 7 hari dari jatuh tempo\. Mohon ditagih\.$/);
   });
 
   it("says due today on the due date itself (threshold 0)", () => {
-    const text = overduePhoneText({ ...base, termsType: "PUTUS", days: 0 });
+    const text = overduePhoneText({ ...base, days: 0 });
     expect(text.title).toBe("Tagihan jatuh tempo hari ini");
     expect(text.body).toContain("jatuh tempo hari ini");
   });
 
-  it("never carries a konsi store's amount to the phone", () => {
-    const text = overduePhoneText({ ...base, termsType: "KONSI", days: 30 });
-    expect(JSON.stringify(text)).not.toMatch(/Rp|3\.000\.000|sebesar/);
-    expect(text.body).toBe("Nota DLV/2026/10/0001 di Toko Maju sudah lewat 30 hari dari jatuh tempo. Mohon ditagih.");
+  it("Q15: names the reminded part and the held part, by why the held part waits", () => {
+    const bagian = { ...base, outstanding: 400_000, days: 30 };
+    expect(overduePhoneText({ ...bagian, held: { nilai: 300_000, sebab: "BELUM_DIHITUNG" } }).body).toMatch(
+      /sebesar Rp\s?400\.000(,00)? sudah lewat 30 hari dari jatuh tempo; Rp\s?300\.000(,00)? lagi menunggu hitungan retur\. Mohon ditagih\.$/,
+    );
+    expect(overduePhoneText({ ...bagian, held: { nilai: 300_000, sebab: "MENUNGGU_BEBAN" } }).body).toContain("lagi menunggu keputusan selisih retur.");
+    expect(overduePhoneText({ ...bagian, held: { nilai: 300_000, sebab: "CAMPURAN" } }).body).toContain("lagi ditahan potongan retur.");
+    expect(overduePhoneText({ ...bagian, held: { nilai: 300_000, sebab: null } }).body).toContain("lagi ditahan potongan retur.");
+    // A held part of zero is no held part.
+    expect(overduePhoneText({ ...bagian, held: { nilai: 0, sebab: "BELUM_DIHITUNG" } }).body).not.toContain("retur");
+  });
+
+  it("every cause has its wording", () => {
+    expect(Object.keys(KALIMAT_TAHANAN_PENGINGAT).sort()).toEqual(["BELUM_DIHITUNG", "CAMPURAN", "MENUNGGU_BEBAN"]);
+  });
+
+  it("fits a long store name into 191 code points without losing an amount or the held clause", () => {
+    const text = overduePhoneText({
+      docNo: "DLV/2026/10/0001",
+      storeName: "Toko ".padEnd(120, "x"),
+      outstanding: 400_000,
+      days: 30,
+      held: { nilai: 300_000, sebab: "BELUM_DIHITUNG" },
+    });
+    expect(Array.from(text.body).length).toBeLessThanOrEqual(191);
+    expect(text.body).toMatch(/Rp\s?400\.000/);
+    expect(text.body).toMatch(/Rp\s?300\.000/);
+    expect(text.body).toContain("lagi menunggu hitungan retur");
   });
 });
 
@@ -159,7 +175,14 @@ async function notificationsFor(receivableId: string) {
   return rows.filter((r) => (r.metadata as { receivableId?: string } | null)?.receivableId === receivableId);
 }
 
-type Meta = { thresholdDays: number; collectorId: string; collectorBasis: string; outstandingAmount: number };
+type Meta = {
+  thresholdDays: number;
+  collectorId: string;
+  collectorBasis: string;
+  outstandingAmount: number;
+  overdueAmount: number;
+  heldAmount: number;
+};
 
 d("runOverdueSweep (test bed only)", () => {
   let token = "";
@@ -176,6 +199,8 @@ d("runOverdueSweep (test bed only)", () => {
   let submissionIds: string[] = [];
   let settlementIds: string[] = [];
   let returnIds: string[] = [];
+  let countIds: string[] = [];
+  let chargeIds: string[] = [];
   let konsiStoreIds: string[] = [];
   let seq = 0;
   /**
@@ -193,6 +218,7 @@ d("runOverdueSweep (test bed only)", () => {
     token = Math.random().toString(36).slice(2, 10);
     storeId = ""; holderId = ""; sellerId = ""; orderId = ""; deliveryId = ""; receivableId = "";
     extraDeliveryId = ""; extraReceivableIds = []; claimIds = []; noteIds = []; submissionIds = []; settlementIds = []; returnIds = [];
+    countIds = []; chargeIds = [];
     konsiStoreIds = [];
     seq = 0;
     vi.mocked(sendNotificationToUsers).mockReset();
@@ -243,6 +269,8 @@ d("runOverdueSweep (test bed only)", () => {
       await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: seededIds(settlementIds) } } });
       await prisma.storeSettlement.deleteMany({ where: { id: { in: seededIds(settlementIds) } } });
     }
+    if (chargeIds.length) await prisma.returnCharge.deleteMany({ where: { id: { in: seededIds(chargeIds) } } });
+    if (countIds.length) await prisma.warehouseReturn.deleteMany({ where: { id: { in: seededIds(countIds) } } });
     if (returnIds.length) await prisma.storeReturn.deleteMany({ where: { id: { in: seededIds(returnIds) } } });
     await prisma.receivable.deleteMany({ where: { id: { in: [seededId(receivableId), ...seededIds(extraReceivableIds)] } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: [seededId(deliveryId), seededId(extraDeliveryId)] } } });
@@ -261,13 +289,22 @@ d("runOverdueSweep (test bed only)", () => {
     }
   });
 
-  /** A BKM over the fixture's invoice (or `on`'s), written directly so its status is exactly the one under test. */
+  /**
+   * A BKM over the fixture's invoice (or `on`'s), written directly so its status is exactly the one
+   * under test. `invoiceAmount` (default 1000) is both the BKM's invoice amount and what it settles
+   * on this invoice.
+   */
   async function bkm(
     status: "DIKIRIM" | "TERVERIFIKASI" | "DITOLAK",
-    opts?: { returnDeduction?: { storeReturnId: string; amount: number }; on?: { storeId: string; receivableId: string } },
+    opts?: {
+      returnDeduction?: { storeReturnId: string; amount: number };
+      on?: { storeId: string; receivableId: string };
+      invoiceAmount?: number;
+    },
   ) {
     seq += 1;
     const deduction = opts?.returnDeduction?.amount ?? 0;
+    const invoiceAmount = opts?.invoiceAmount ?? 1000;
     const claim = await prisma.paymentClaim.create({
       data: {
         docNo: `TEST-OSW-BKM-${token}-${seq}`,
@@ -275,11 +312,11 @@ d("runOverdueSweep (test bed only)", () => {
         salesmanId: holderId,
         createdById: holderId,
         claimedTransferAt: new Date(),
-        invoiceAmount: 1000,
+        invoiceAmount,
         deductionTotal: deduction,
-        receivedAmount: 1000 - deduction,
+        receivedAmount: invoiceAmount - deduction,
         status,
-        receivableLinks: { create: [{ receivableId: opts?.on?.receivableId ?? receivableId, settledAmount: 1000 }] },
+        receivableLinks: { create: [{ receivableId: opts?.on?.receivableId ?? receivableId, settledAmount: invoiceAmount }] },
         ...(opts?.returnDeduction
           ? { deductions: { create: [{ name: "Retur", amount: deduction, storeReturnId: opts.returnDeduction.storeReturnId }] } }
           : {}),
@@ -307,21 +344,29 @@ d("runOverdueSweep (test bed only)", () => {
   }
 
   /**
-   * A konsi bill at a konsi store held by the fixture's holder. Seeded as MANUAL only because a
-   * sell-through report is heavy to seed: the interim rule keys on the store's terms, never on the
-   * source. `paidAmount` is set with the team balance to match, so the expected figures hold both
-   * through `konsiInterimState` today and through `daftarPiutang` once it lists konsi bills.
+   * A konsi bill (`isConsignment`) at a konsi store, sold by the fixture's seller and — unless
+   * `holderless` — held by the fixture's holder. Seeded as a MANUAL konsi invoice only because a
+   * cycle or sell-through bill is heavy to seed: `daftarPiutang` and the recipient rule key on
+   * `isConsignment`, never on the source. `paidAmount` is set with the team balance to match.
    */
-  async function konsiBill(paid = 0) {
+  async function konsiBill(paid = 0, holderless = false) {
     seq += 1;
     const store = await prisma.store.create({
-      data: { code: `TEST-OSW-K-${token}-${seq}`, name: "test konsi", address: "test", termsType: "KONSI", markupPercent: 25, salesmanId: holderId },
+      data: {
+        code: `TEST-OSW-K-${token}-${seq}`,
+        name: "test konsi",
+        address: "test",
+        termsType: "KONSI",
+        markupPercent: 25,
+        salesmanId: holderless ? null : holderId,
+      },
     });
     konsiStoreIds.push(store.id);
     const r = await prisma.receivable.create({
       data: {
         invoiceNo: `TEST-OSW-KST-${token}-${seq}`,
         source: "MANUAL",
+        isConsignment: true,
         storeId: store.id,
         salesmanId: sellerId,
         invoiceDate: new Date(),
@@ -348,6 +393,7 @@ d("runOverdueSweep (test bed only)", () => {
     await runOverdueSweep({ receivableIds: [receivableId] });
     const [notif] = await notificationsFor(receivableId);
     expect((notif.metadata as Meta).outstandingAmount).toBe(1000);
+    expect(notif.metadata as Meta).toMatchObject({ overdueAmount: 1000, heldAmount: 0 });
     expect(notif.message).toMatch(/Rp\s?1\.000/);
   });
 
@@ -513,8 +559,8 @@ d("runOverdueSweep (test bed only)", () => {
     });
   });
 
-  describe("konsi bills (interim, while daftarPiutang does not list them)", () => {
-    it("still reminds the office and the store's holder, with no amount on the phone", async () => {
+  describe("konsi bills (listed by daftarPiutang like every other bill)", () => {
+    it("reminds the office and the store's holder, with the amount and the store's Tagihan link on the phone", async () => {
       const k = await konsiBill(300);
       const result = await runOverdueSweep({ receivableIds: [k.receivableId] });
       expect(result).toMatchObject({ scanned: 1, announced: 1, collectorNotified: 1, skipped: { NOT_LISTED: 0 } });
@@ -525,13 +571,18 @@ d("runOverdueSweep (test bed only)", () => {
 
       const [users, payload] = vi.mocked(sendNotificationToUsers).mock.calls[0];
       expect(users).toEqual([{ id: holderId, fcmToken: null }]);
-      expect(JSON.stringify(payload)).not.toMatch(/Rp|sebesar/);
-      /*
-       * Interim only — flips to `{ receivableId, storeId }` once `daftarPiutang` lists konsi bills:
-       * the store's Tagihan screen 404s today for a store it lists nothing for, so the push opens
-       * the Tagihan list instead.
-       */
-      expect(payload.data).toEqual({ thresholdDays: "30", daysOverdue: "45" });
+      expect(payload.body).toMatch(/sebesar Rp\s?700/);
+      expect(payload.data).toEqual({ receivableId: k.receivableId, storeId: k.storeId, thresholdDays: "30", daysOverdue: "45" });
+    });
+
+    it("P31: a konsi store without a holder tells nobody's phone — never the seller — and the office keeps the amount", async () => {
+      const k = await konsiBill(0, true);
+      const result = await runOverdueSweep({ receivableIds: [k.receivableId] });
+      expect(result).toMatchObject({ announced: 1, collectorNotified: 0, unassigned: 1 });
+      expect(vi.mocked(sendNotificationToUsers)).not.toHaveBeenCalled();
+      const [notif] = await notificationsFor(k.receivableId);
+      expect(notif.metadata as Meta).toMatchObject({ outstandingAmount: 1000, collectorId: "" });
+      expect(notif.message).toMatch(/Rp\s?1\.000/);
     });
 
     it("skips a konsi bill whose BKM waits for its check", async () => {
@@ -541,17 +592,95 @@ d("runOverdueSweep (test bed only)", () => {
       expect(result).toMatchObject({ announced: 0, skipped: { PAYMENT_REPORT_PENDING: 1, NOT_LISTED: 0 } });
       expect(vi.mocked(sendNotificationToUsers)).not.toHaveBeenCalled();
     });
+  });
 
-    it("skips a konsi bill whose return deduction is still held", async () => {
-      const k = await konsiBill();
+  /*
+   * Q15 (2026-11-02, "Ya, diingatkan"): the part of a nota outside a return hold is reminded, and
+   * the reminder names the waiting part and why it waits.
+   */
+  describe("partly held notas", () => {
+    /** An uncounted NRT for `nilai` on the fixture's store. */
+    async function nrt(nilai: number) {
       seq += 1;
-      const nrt = await prisma.storeReturn.create({
-        data: { noNrt: `TEST-OSW-NRT-${token}-${seq}`, storeId: k.storeId, salesmanId: holderId, claimDate: daysAgoWib(10), claimedAmount: 300 },
+      const r = await prisma.storeReturn.create({
+        data: { noNrt: `TEST-OSW-NRT-${token}-${seq}`, storeId, salesmanId: holderId, claimDate: daysAgoWib(10), claimedAmount: nilai },
       });
-      returnIds.push(nrt.id);
-      await bkm("TERVERIFIKASI", { returnDeduction: { storeReturnId: nrt.id, amount: 300 }, on: k });
-      const result = await runOverdueSweep({ receivableIds: [k.receivableId] });
-      expect(result).toMatchObject({ announced: 0, skipped: { RETURN_HELD: 1 } });
+      returnIds.push(r.id);
+      return r.id;
+    }
+
+    it("BKM 600 with an uncounted 300 deduction: 400 is reminded, 300 is named as waiting for the count", async () => {
+      const storeReturnId = await nrt(300);
+      await bkm("TERVERIFIKASI", { invoiceAmount: 600, returnDeduction: { storeReturnId, amount: 300 } });
+      const result = await runOverdueSweep({ receivableIds: [receivableId] });
+      expect(result).toMatchObject({ announced: 1, partlyHeld: 1, skipped: { RETURN_HELD: 0 } });
+
+      const [notif] = await notificationsFor(receivableId);
+      expect(notif.metadata as Meta).toMatchObject({ outstandingAmount: 700, overdueAmount: 400, heldAmount: 300 });
+      expect(notif.message).toMatch(/sebesar Rp\s?400(,00)? sudah lewat 45 hari dari jatuh tempo; Rp\s?300(,00)? lagi menunggu hitungan retur\./);
+
+      const [, payload] = vi.mocked(sendNotificationToUsers).mock.calls[0];
+      expect(payload.body).toMatch(/sebesar Rp\s?400(,00)?.*; Rp\s?300(,00)? lagi menunggu hitungan retur\./);
+
+      const again = await runOverdueSweep({ receivableIds: [receivableId] });
+      expect(again.announced).toBe(0);
+      expect(await notificationsFor(receivableId)).toHaveLength(1);
+    });
+
+    it("a counted shortfall nobody has borne yet is named as waiting for the shortfall decision", async () => {
+      const storeReturnId = await nrt(300);
+      seq += 1;
+      const nri = await prisma.warehouseReturn.create({
+        data: {
+          noNri: `TEST-OSW-NRI-${token}-${seq}`,
+          storeId,
+          storeReturnId,
+          warehouseUserId: holderId,
+          receivedAt: daysAgoWib(5),
+          physicalAmount: 0,
+          claimedAmount: 300,
+          status: "FINAL",
+          finalisedAt: daysAgoWib(5),
+        },
+      });
+      countIds.push(nri.id);
+      const charge = await prisma.returnCharge.create({ data: { storeReturnId, warehouseReturnId: nri.id, storeId, amount: 300 } });
+      chargeIds.push(charge.id);
+      await bkm("TERVERIFIKASI", { invoiceAmount: 600, returnDeduction: { storeReturnId, amount: 300 } });
+
+      const result = await runOverdueSweep({ receivableIds: [receivableId] });
+      expect(result).toMatchObject({ announced: 1, partlyHeld: 1 });
+      const [notif] = await notificationsFor(receivableId);
+      expect(notif.message).toContain("lagi menunggu keputusan selisih retur.");
+      expect(notif.message).not.toContain("menunggu hitungan retur");
+    });
+
+    it("a partly held nota in a running kontrabon is still chased by the kontrabon", async () => {
+      const storeReturnId = await nrt(300);
+      await bkm("TERVERIFIKASI", { invoiceAmount: 600, returnDeduction: { storeReturnId, amount: 300 } });
+      seq += 1;
+      const note = await prisma.collectionNote.create({
+        data: {
+          docNo: `TEST-OSW-TT-${token}-${seq}`,
+          storeId,
+          salesmanId: holderId,
+          handoverDate: daysAgoWib(20),
+          promisedDate: daysAgoWib(3),
+          receivableLinks: { create: [{ receivableId, amount: 700 }] },
+        },
+      });
+      noteIds.push(note.id);
+      const result = await runOverdueSweep({ receivableIds: [receivableId] });
+      expect(result).toMatchObject({ announced: 0, skipped: { KONTRABON: 1 } });
+    });
+
+    it("a deduction whose return note is missing is owed: reminded in full, nothing named as waiting", async () => {
+      await bkm("TERVERIFIKASI", { invoiceAmount: 600, returnDeduction: { storeReturnId: `TEST-OSW-MISSING-${token}`, amount: 300 } });
+      const result = await runOverdueSweep({ receivableIds: [receivableId] });
+      expect(result).toMatchObject({ announced: 1, partlyHeld: 0 });
+      const [notif] = await notificationsFor(receivableId);
+      expect(notif.metadata as Meta).toMatchObject({ outstandingAmount: 700, overdueAmount: 700, heldAmount: 0 });
+      expect(notif.message).not.toContain("menunggu");
     });
   });
 

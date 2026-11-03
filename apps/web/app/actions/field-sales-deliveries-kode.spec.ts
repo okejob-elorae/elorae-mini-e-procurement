@@ -1,17 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /*
- * Unit: penulis ditirukan. Kode alasan yang sampai ke layar harus jujur:
- * - isian rusak (baris bukan bentuknya, alasan kosong) = INVALID_REQUEST, bukan
- *   "melebihi sisa" atau "tidak bisa dikirim dalam keadaan ini";
- * - cadangan yang sudah habis dikonsumsi = RESERVATION_MISMATCH, kode sendiri.
+ * Unit: penulis ditirukan. Kode alasan yang sampai ke layar harus jujur: alasan kosong =
+ * INVALID_REQUEST, bukan "tidak bisa dikirim dalam keadaan ini". ("Catat pengiriman" dihapus,
+ * P44/P44a — nota hanya terbit saat pengiriman dibuat, jadi aksinya tidak ada lagi.)
  */
-const { mockAuth, mockRecord, mockClose } = vi.hoisted(() => ({ mockAuth: vi.fn(), mockRecord: vi.fn(), mockClose: vi.fn() }));
+const { mockAuth, mockClose } = vi.hoisted(() => ({ mockAuth: vi.fn(), mockClose: vi.fn() }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 // Tiruan modul penulis tidak membawa kelas galatnya — aksi mengenali galat dari namanya.
-vi.mock("@/lib/field-sales/delivery/writer", () => ({ recordFieldSalesDelivery: mockRecord, closeFieldSalesOrderRemainder: mockClose }));
+vi.mock("@/lib/field-sales/delivery/writer", () => ({ closeFieldSalesOrderRemainder: mockClose }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 vi.mock("@/lib/notifications/kabar-pengguna", () => ({ JENIS_KABAR: {}, kabariPengguna: vi.fn() }));
 vi.mock("@/lib/spg/pesanan-menuju-toko", () => ({ kabarkanKirimanBerangkat: vi.fn() }));
@@ -24,49 +23,11 @@ vi.mock("@elorae/db", async (importOriginal) => ({
   },
 }));
 
-import { closeRemainderAction, recordDeliveryAction } from "./field-sales-deliveries";
-
-const isian = {
-  orderId: "o1",
-  lines: [{ orderLineId: "l1", qty: 1 }],
-  invoiceDate: "2026-10-06",
-  dueDate: "2026-11-05",
-  idempotencyKey: "kunci-1",
-};
+import { closeRemainderAction } from "./field-sales-deliveries";
 
 beforeEach(() => {
   mockAuth.mockReset().mockResolvedValue({ user: { id: "u1", permissions: ["field_sales_orders:deliver"] } });
-  mockRecord.mockReset().mockResolvedValue({ deliveryId: "d1", docNo: "DLV/2026/10/0001" });
   mockClose.mockReset().mockResolvedValue({ ok: true });
-});
-
-describe("recordDeliveryAction — isian rusak", () => {
-  it.each([
-    ["qty pecahan", [{ orderLineId: "l1", qty: 1.5 }]],
-    ["qty nol", [{ orderLineId: "l1", qty: 0 }]],
-    ["qty minus", [{ orderLineId: "l1", qty: -2 }]],
-    ["orderLineId bukan teks", [{ orderLineId: 7, qty: 1 }]],
-    ["baris bukan objek", [null]],
-  ])("%s → INVALID_REQUEST, penulis tidak dipanggil", async (_n, lines) => {
-    const r = await recordDeliveryAction({ ...isian, lines: lines as never });
-    expect(r).toEqual({ ok: false, reason: "INVALID_REQUEST" });
-    expect(mockRecord).not.toHaveBeenCalled();
-  });
-
-  it("lines bukan larik → INVALID_REQUEST", async () => {
-    expect(await recordDeliveryAction({ ...isian, lines: "x" as never })).toEqual({ ok: false, reason: "INVALID_REQUEST" });
-  });
-
-  it("orderId kosong → INVALID_REQUEST", async () => {
-    expect(await recordDeliveryAction({ ...isian, orderId: "" })).toEqual({ ok: false, reason: "INVALID_REQUEST" });
-  });
-});
-
-describe("recordDeliveryAction — cadangan tidak cocok", () => {
-  it("CadanganTidakCocokError → RESERVATION_MISMATCH", async () => {
-    mockRecord.mockRejectedValueOnce(Object.assign(new Error("x"), { name: "CadanganTidakCocokError", code: "RESERVATION_MISMATCH" }));
-    expect(await recordDeliveryAction(isian)).toEqual({ ok: false, reason: "RESERVATION_MISMATCH" });
-  });
 });
 
 describe("closeRemainderAction — alasan", () => {

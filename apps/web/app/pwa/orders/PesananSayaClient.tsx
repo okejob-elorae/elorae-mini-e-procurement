@@ -20,6 +20,8 @@ export type BarisDaftarPesanan = {
   keadaan: KeadaanPesanan;
   /** null = nilai konsinyasi yang belum disetujui. */
   total: number | null;
+  /** Pesanan konsinyasi yang menunggu persetujuan: perkiraan nilai retailnya (P18). */
+  perkiraan?: { nilai: number; lengkap: boolean } | null;
   /** Sudah diformat di server. */
   tanggal: string;
   jumlahBaris: number;
@@ -49,6 +51,8 @@ export const NADA_KEADAAN: Record<KeadaanPesanan, string> = {
   TERKIRIM: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
   DITUTUP: "bg-muted text-muted-foreground",
   KONSI_DISETUJUI: "bg-primary/15 text-foreground",
+  DIKEMAS: "bg-primary/15 text-foreground",
+  DALAM_PERJALANAN: "bg-primary/15 text-foreground",
 };
 
 export function PesananSayaClient({
@@ -180,8 +184,15 @@ export function PesananSayaClient({
                         b.ditolak && "text-muted-foreground line-through",
                       )}
                     >
-                      {/* Konsi ditolak tidak akan pernah bernilai — "menyusul" di sana keliru. */}
-                      {b.total !== null ? formatIDR(b.total) : b.ditolak ? "—" : t("priceHidden")}
+                      {/* Konsi ditolak tidak akan pernah bernilai — "menyusul" di sana keliru.
+                          Konsi menunggu persetujuan: perkiraan dari harga retail toko (P18). */}
+                      {b.total !== null
+                        ? formatIDR(b.total)
+                        : b.ditolak
+                          ? "—"
+                          : b.perkiraan
+                            ? t("perkiraan", { value: formatIDR(b.perkiraan.nilai) })
+                            : t("priceHidden")}
                     </span>
                     <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />
                   </span>

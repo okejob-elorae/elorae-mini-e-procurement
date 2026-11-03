@@ -29,6 +29,8 @@ export type PengirimanAntaran = {
   resi: string | null;
   /** Foto barang / nota bertanda tangan saat serah terima tersimpan di pengiriman itu. */
   adaBuktiSerahTerima: boolean;
+  /** Berat kiriman (kg) yang dicatat gudang sebelum berangkat (ekspedisi, P35). */
+  beratKg?: number | null;
 };
 
 export type InfoAntaran = {
@@ -46,7 +48,7 @@ export type BarisSisaPesanan = { id?: string; qty: number; deliveredQty: number;
 export type BarisPengirimanBerjalan = { status: string; lines: { orderLineId: string; plannedQty: number }[] };
 
 export type SisaPesanan = {
-  /** Belum sampai toko: dipesan − terkirim − dibatalkan. */
+  /** Belum sampai toko: belum dikirim gudang + dikemas + di jalan. */
   sisa: number;
   /** Sudah dikemas gudang, belum berangkat. */
   dikemas: number;
@@ -65,7 +67,13 @@ export function sisaBarisPesanan(
   baris: BarisSisaPesanan,
   pengiriman: readonly BarisPengirimanBerjalan[],
 ): SisaPesanan {
-  const sisa = Math.max(0, baris.qty - baris.deliveredQty - baris.cancelledQty);
+  /*
+   * Barang keluar gudang saat pengiriman DIBUAT (Q1), jadi `deliveredQty` sudah
+   * menghitung yang dikemas dan yang sedang di jalan. Yang belum masuk pengiriman
+   * mana pun = dipesan − deliveredQty − dibatalkan; yang dikemas/di jalan dibaca
+   * dari pengiriman berjalan dan DITAMBAHKAN di atasnya.
+   */
+  const belumDikirimGudang = Math.max(0, baris.qty - baris.deliveredQty - baris.cancelledQty);
   let dikemas = 0;
   let dalamPerjalanan = 0;
   if (baris.id) {
@@ -75,9 +83,7 @@ export function sisaBarisPesanan(
       else if (p.status === "IN_TRANSIT") dalamPerjalanan += rencana;
     }
   }
-  dalamPerjalanan = Math.min(dalamPerjalanan, sisa);
-  dikemas = Math.min(dikemas, sisa - dalamPerjalanan);
-  return { sisa, dikemas, dalamPerjalanan, belumDikirimGudang: sisa - dikemas - dalamPerjalanan };
+  return { sisa: belumDikirimGudang + dikemas + dalamPerjalanan, dikemas, dalamPerjalanan, belumDikirimGudang };
 }
 
 /** Jumlah `sisaBarisPesanan` atas semua baris pesanan. */
@@ -140,9 +146,10 @@ export function bagianKurangPerjalanan(
   if (!(s.kurang > 0)) return null;
   const p = info?.pengiriman ?? null;
   if (!p) return null;
+  const berat = p.beratKg !== null && p.beratKg !== undefined && p.beratKg > 0 ? ` (berat ${p.beratKg.toLocaleString("id-ID")} kg)` : "";
   return {
     cek: `Kurang di perjalanan — cek ke ${teksYangDicek(p)}.`,
-    rincian: `Gudang mengirim ${s.dikirim} pcs di ${p.docNo}, tiba ${s.diterima}.`,
+    rincian: `Gudang mengirim ${s.dikirim} pcs di ${p.docNo}${berat}, tiba ${s.diterima}.`,
     bukti: p.adaBuktiSerahTerima ? "Foto serah terima ada di pengiriman itu." : null,
     docNo: p.docNo,
   };

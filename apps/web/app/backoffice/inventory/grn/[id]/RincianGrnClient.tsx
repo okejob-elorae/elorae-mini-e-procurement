@@ -14,6 +14,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatDisplayDate, formatDisplayDateTime } from '@/lib/date-only';
 import { KeputusanPemilikGrn } from '@/components/grn/KeputusanPemilikGrn';
 import { JurnalGrnPanel } from '@/components/grn/JurnalGrnPanel';
+import { KonfirmasiTanpaPoGrn } from '@/components/grn/KonfirmasiTanpaPoGrn';
+import { bolehMengonfirmasiGrnTanpaPo } from '@/lib/grn/grn-tanpa-po';
 import { TAUTAN_DOKUMEN } from '@/app/backoffice/purchase-orders/tautan-dokumen';
 import type { RincianGRN } from '@/app/actions/grn';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
@@ -35,6 +37,8 @@ export function RincianGrnClient({ grn }: { grn: RincianGRN | null }) {
   const bolehBukaPo = hasPermission(perms, PERMISSIONS.PURCHASE_ORDERS_VIEW);
   const bolehBukaRetur = hasPermission(perms, PERMISSIONS.VENDOR_RETURNS_VIEW);
   const bolehBuatRetur = hasPermission(perms, PERMISSIONS.VENDOR_RETURNS_CREATE);
+  const bolehKonfirmasi = bolehMengonfirmasiGrnTanpaPo(perms);
+  const tTanpaPo = useTranslations('inventory.grnTanpaPo');
 
   const kembali = (
     <Button variant="ghost" size="icon" asChild>
@@ -61,6 +65,7 @@ export function RincianGrnClient({ grn }: { grn: RincianGRN | null }) {
   }
 
   const keadaan = grn.pemilik.keadaan;
+  const tanpaPo = grn.konfirmasiTanpaPo.keadaan;
   const totalQty = grn.baris.reduce((s, b) => s + b.qty, 0);
 
   return (
@@ -84,8 +89,9 @@ export function RincianGrnClient({ grn }: { grn: RincianGRN | null }) {
                   {tp('declinedByOwner')}
                 </Badge>
               )}
-              {/* Jalan pintas: retur barang GRN ini ke pemasoknya, pemasok dan barang terisi. */}
-              {bolehBuatRetur && keadaan !== 'ditolak' && (
+              {/* Jalan pintas: retur barang GRN ini ke pemasoknya, pemasok dan barang terisi. GRN tanpa PO yang
+                  belum dikonfirmasi admin belum masuk stok, jadi belum ada yang bisa diretur (P51a). */}
+              {bolehBuatRetur && keadaan !== 'ditolak' && tanpaPo !== 'menunggu' && (
                 <Button variant="outline" size="sm" asChild>
                   <Link href={`/backoffice/vendor-returns/new?grnId=${encodeURIComponent(grn.id)}`}>
                     <Undo2 className="mr-2 h-4 w-4" />
@@ -144,6 +150,38 @@ export function RincianGrnClient({ grn }: { grn: RincianGRN | null }) {
           )}
         </CardContent>
       </Card>
+
+      {tanpaPo !== null && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {tTanpaPo('judulKartu')}
+              <Badge variant={tanpaPo === 'menunggu' ? 'secondary' : 'outline'}>
+                {tanpaPo === 'menunggu' ? tTanpaPo('lencanaMenunggu') : tTanpaPo('lencanaDikonfirmasi')}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {tanpaPo === 'menunggu' ? (
+              <>
+                <p className="text-sm">{tTanpaPo('menungguIsi')}</p>
+                {bolehKonfirmasi ? (
+                  <KonfirmasiTanpaPoGrn grnId={grn.id} docNumber={grn.docNumber} onSelesai={() => router.refresh()} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">{tTanpaPo('hanyaAdmin')}</p>
+                )}
+              </>
+            ) : (
+              <p className="text-sm">
+                {tTanpaPo('dikonfirmasiOleh', {
+                  waktu: grn.konfirmasiTanpaPo.waktu ? formatDisplayDateTime(grn.konfirmasiTanpaPo.waktu, locale) : '—',
+                  nama: grn.konfirmasiTanpaPo.oleh ?? '—',
+                })}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {keadaan !== null && (
         <Card>
@@ -323,7 +361,11 @@ export function RincianGrnClient({ grn }: { grn: RincianGRN | null }) {
           <CardTitle>{t('jurnal')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <JurnalGrnPanel grnId={grn.id} ditolak={keadaan === 'ditolak'} />
+          {tanpaPo === 'menunggu' ? (
+            <p className="text-sm text-muted-foreground">{tTanpaPo('jurnalMenunggu')}</p>
+          ) : (
+            <JurnalGrnPanel grnId={grn.id} ditolak={keadaan === 'ditolak'} />
+          )}
           {grn.returPemasok.length > 0 && (
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">{t('returPemasok')}</p>

@@ -27,10 +27,13 @@ import {
  *   mulai mencatat). Mutasi antar toko yang diterima kantor atas nama toko
  *   tanpa buku ikut sebagai "dikirim" (jumlah DITERIMA dari tanda terimanya) —
  *   penerimaan kantor sengaja tidak membukakan buku untuk toko itu.
- *   "Dikirim" untuk pesanan konsinyasi = baris `KonsiTransfer`, bertanggal
- *   transfernya: barang masuk toko tanpa SPG saat bukti terima pengirimannya
- *   (transfer dibuat saat pengiriman selesai), sebesar yang diserahkan — bukan
- *   jumlah yang disetujui. Pesanan lama yang disetujui sebelum transfer dicatat
+ *   "Dikirim" untuk pesanan konsinyasi = baris `KonsiTransfer` yang sudah
+ *   DITERIMA toko (`RECEIVED`), sebesar yang tiba (`receivedQty`), bertanggal
+ *   diterimanya — bukan jumlah yang disetujui. Transfer dibuat saat surat
+ *   jalannya dibuat; selama dalam perjalanan (`IN_TRANSIT`) barangnya belum di
+ *   toko (dihitung "dalam proses"), dan transfer yang tidak jadi dikirim
+ *   (`CANCELLED`) serta barang yang ditolak di pintu sudah kembali ke Gudang
+ *   Utama. Pesanan lama yang disetujui sebelum transfer dicatat
  *   (`bacaPesananKonsiLama`, tanpa transfer sama sekali) tetap dihitung dari
  *   baris pesanannya, bertanggal disetujui. Pesanan lama yang cadangannya masih
  *   ditahan (`bacaPesananKonsiCadanganLama`) masuk toko hanya lewat transfer
@@ -62,6 +65,17 @@ const STATUS_HILANG_DIPUTUSKAN = ["DITETAPKAN", "SELESAI"] as const;
 const SUMBER_HILANG_DI_TOKO = ["OPNAME", "MANUAL"] as const;
 
 const HARI_MS = 86_400_000;
+
+/**
+ * Potong satu baris `KonsiTransfer` DITERIMA yang ada di toko: yang TIBA (`receivedQty`, diisi saat
+ * toko menerima antarannya; yang ditolak di pintu sudah dikembalikan sebelumnya dan yang kurang tiba
+ * adalah barang hilang di jalan). Baris lama tanpa `receivedQty` (transfer sebelum penerimaan per
+ * antaran, berstatus `RECEIVED` bawaan) = `qty − returnedQty`. Hanya untuk transfer `RECEIVED`:
+ * transfer di perjalanan atau dibatalkan tidak di toko sama sekali.
+ */
+export function barangTransferDiToko(l: { qty: number | { toString(): string }; receivedQty: number | null; returnedQty: number }): number {
+  return l.receivedQty ?? Math.max(0, Number(l.qty) - l.returnedQty);
+}
 
 export type BarisStokMentah = {
   itemId: string;
@@ -337,17 +351,31 @@ export async function muatStokDiToko(storeIds: string[], sekarang = new Date()):
 
   if (idTitipan.length > 0) {
     const [transfer, pesananLama, kiriman, terjual, retur, mutasi, rusakDihapus, hilang] = await Promise.all([
-      // Barang konsinyasi berpindah ke toko = baris `KonsiTransfer`, satu transfer
-      // per pengiriman yang selesai (bukti terima), sebesar yang diserahkan. Di
-      // titik yang sama stok gudang utama dipotong (KONSI_TRANSFER) — toko ini
-      // gudang lain, jadi setiap potong ada di SATU tempat saja. Transfer lama
-      // tanpa pengiriman (stok keluar saat disetujui) ikut di sini juga, begitu
-      // pula konfirmasi sampai pesanan lama yang cadangannya dulu ditahan
-      // (`oldOrderArrival`, bertanggal konfirmasinya) — sisa yang belum
-      // dikonfirmasi masih di gudang sendiri dan di "dalam proses", tidak di sini.
+      // Barang konsinyasi berpindah ke toko = baris `KonsiTransfer` yang sudah
+      // DITERIMA toko. Transfer dibuat saat surat jalannya dibuat — stok gudang
+      // utama dipotong di titik itu (KONSI_TRANSFER) — tetapi barangnya baru di
+      // toko saat diterima: selama `IN_TRANSIT` ia dalam perjalanan (dihitung
+      // `muatDalamProses`, bukan di sini), dan transfer `CANCELLED` (tidak jadi
+      // dikirim / ditolak seluruhnya) sudah kembali ke Gudang Utama. Jumlahnya
+      // yang TIBA (`receivedQty`, termasuk yang rusak — rusak yang dihapuskan
+      // dikurangkan di bawah): yang ditolak di pintu sudah dikembalikan
+      // (`returnedQty`) dan yang kurang tiba adalah barang hilang di jalan, jadi
+      // keduanya tidak pernah di toko. Transfer lama tanpa pengiriman (stok keluar
+      // saat disetujui; `RECEIVED` bawaan tanpa `receivedQty`) ikut sebesar
+      // `qty − returnedQty`, begitu pula konfirmasi sampai pesanan lama yang
+      // cadangannya dulu ditahan (`oldOrderArrival`, bertanggal konfirmasinya) —
+      // sisa yang belum dikonfirmasi masih di gudang sendiri dan di "dalam
+      // proses", tidak di sini.
       prisma.konsiTransferLine.findMany({
-        where: { transfer: { storeId: { in: idTitipan } } },
-        select: { itemId: true, variantSku: true, qty: true, transfer: { select: { storeId: true, createdAt: true } } },
+        where: { transfer: { storeId: { in: idTitipan }, status: "RECEIVED" } },
+        select: {
+          itemId: true,
+          variantSku: true,
+          qty: true,
+          receivedQty: true,
+          returnedQty: true,
+          transfer: { select: { storeId: true, createdAt: true, receivedAt: true } },
+        },
       }),
       // Pesanan konsi yang disetujui — hanya calon pesanan LAMA tanpa transfer
       // sama sekali (disaring di bawah). Pesanan aturan baru masuk lewat transfernya.
@@ -415,8 +443,8 @@ export async function muatStokDiToko(storeIds: string[], sekarang = new Date()):
               .map((l) => ({
                 itemId: l.itemId,
                 variantSku: l.variantSku ?? "",
-                qty: Number(l.qty),
-                tanggal: l.transfer.createdAt,
+                qty: barangTransferDiToko(l),
+                tanggal: l.transfer.receivedAt ?? l.transfer.createdAt,
               })),
             ...pesananLama
               .filter((o) => o.storeId === id && lamaTanpaTransfer.has(o.id))
@@ -541,9 +569,15 @@ async function muatTersediaGudang(itemIds: string[]): Promise<Map<string, number
  *   lama yang cadangannya masih ditahan IKUT, sebesar sisa yang belum
  *   dikonfirmasi sampai: belum terhitung di toko, dan hilang dari sini begitu
  *   dikonfirmasi (terkirim naik) atau ditutup kantor (dibatalkan naik).
- * - Toko berbuku saja: kiriman yang sudah diserahkan tapi belum diterima SPG
- *   (antaran konsinyasi, pengiriman putus, …). Untuk toko TITIPAN, antaran yang
- *   sudah diserahkan SUDAH dihitung sebagai stok di toko.
+ * - Setiap toko: antaran konsinyasi yang masih DALAM PERJALANAN (`KonsiTransfer`
+ *   `IN_TRANSIT`, `qty − returnedQty`) — sudah keluar dari Gudang Utama dan sudah
+ *   terhitung "terkirim" di baris pesanannya saat surat jalannya dibuat, tetapi
+ *   belum di toko (buku maupun titipan) sampai diterima. Sama dengan
+ *   `openKonsiQtyByKey`. Termasuk yang suratnya sudah dibuat tetapi belum
+ *   berangkat, yang tidak ada di `kirimanMenunggu`.
+ * - Toko berbuku saja: kiriman lain yang sudah diserahkan tapi belum diterima
+ *   SPG (pengiriman putus, kiriman modul konsinyasi, mutasi, …). Antaran
+ *   konsinyasi dari `kirimanMenunggu` dilewati — sudah terhitung di atas.
  */
 async function muatDalamProses(
   storeIds: string[],
@@ -559,24 +593,34 @@ async function muatDalamProses(
     p.set(k, (p.get(k) ?? 0) + qty);
   };
 
-  const lines = await prisma.fieldSalesOrderLine.findMany({
-    where: {
-      order: {
-        storeId: { in: storeIds },
-        OR: [{ status: "PENDING_APPROVAL" }, { status: "APPROVED", deliveryStatus: { in: ["PENDING", "PARTIAL"] } }],
+  const [lines, diJalan] = await Promise.all([
+    prisma.fieldSalesOrderLine.findMany({
+      where: {
+        order: {
+          storeId: { in: storeIds },
+          OR: [{ status: "PENDING_APPROVAL" }, { status: "APPROVED", deliveryStatus: { in: ["PENDING", "PARTIAL"] } }],
+        },
       },
-    },
-    select: { itemId: true, variantSku: true, qty: true, deliveredQty: true, cancelledQty: true, order: { select: { storeId: true, status: true } } },
-  });
+      select: { itemId: true, variantSku: true, qty: true, deliveredQty: true, cancelledQty: true, order: { select: { storeId: true, status: true } } },
+    }),
+    prisma.konsiTransferLine.findMany({
+      where: { transfer: { storeId: { in: storeIds }, status: "IN_TRANSIT" } },
+      select: { itemId: true, variantSku: true, qty: true, returnedQty: true, transfer: { select: { storeId: true } } },
+    }),
+  ]);
   for (const l of lines) {
     const sisa = l.order.status === "PENDING_APPROVAL" ? l.qty - l.cancelledQty : l.qty - l.deliveredQty - l.cancelledQty;
     tambah(l.order.storeId, l.itemId, l.variantSku, sisa);
   }
+  for (const l of diJalan) tambah(l.transfer.storeId, l.itemId, l.variantSku, Math.round(Number(l.qty)) - l.returnedQty);
 
   const berbuku = storeIds.filter((id) => sumber.get(id) === "BUKU_TOKO");
   const menunggu = await Promise.all(berbuku.map((id) => kirimanMenunggu(id, sekarang)));
   berbuku.forEach((id, i) => {
-    for (const k of menunggu[i]) for (const l of k.lines) if (l.itemId) tambah(id, l.itemId, l.variantSku, l.qty);
+    for (const k of menunggu[i]) {
+      if (k.sourceType === "KONSI_TRANSFER") continue;
+      for (const l of k.lines) if (l.itemId) tambah(id, l.itemId, l.variantSku, l.qty);
+    }
   });
   return hasil;
 }

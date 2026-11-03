@@ -33,8 +33,10 @@ d("jadwal SPG — bacaan (test bed only)", () => {
   let a = "";
   let b = "";
   let kantor = "";
+  /* SPG yang sudah berhenti (P66) — dibuat di tesnya sendiri, paling akhir. */
+  let berhenti = "";
   let setelanAwal: string | null = null;
-  const userIds = () => seededIds([a, b, kantor].filter(Boolean));
+  const userIds = () => seededIds([a, b, kantor, berhenti].filter(Boolean));
   const tokoIds = () => seededIds([toko, tokoLain].filter(Boolean));
 
   beforeAll(async () => {
@@ -93,6 +95,7 @@ d("jadwal SPG — bacaan (test bed only)", () => {
       await prisma.auditLog.deleteMany({ where: { userId: { in: userIds() } } });
       await prisma.spgShiftSwap.deleteMany({ where: { storeId: { in: tokoIds() } } });
       await prisma.spgShift.deleteMany({ where: { userId: { in: userIds() } } });
+      await prisma.spgMonthSchedule.deleteMany({ where: { userId: { in: userIds() } } });
       await prisma.user.deleteMany({ where: { id: { in: userIds() } } });
       await prisma.store.deleteMany({ where: { id: { in: tokoIds() } } });
     }
@@ -174,5 +177,33 @@ d("jadwal SPG — bacaan (test bed only)", () => {
       expect(teks).not.toMatch(/"[^"]*(price|harga|total|nilai|amount)[^"]*":/i);
       expect(teks).not.toMatch(/Rp\s?\d/);
     }
+  });
+
+  it("kisi kantor membawa status kepala jadwal bulanan setiap SPG untuk bulan minggu itu", async () => {
+    const data = await jadwalSpgMingguKantor({ storeId: toko, senin: SEN, sekarang: wib(RAB, "12:00") });
+    // Jadwal yang disimpan kantor membuat kepalanya (DRAF).
+    expect(data.statusBulan[kunciSel(a, "2030-01")]).toBe("DRAF");
+    expect(data.statusBulan[kunciSel(b, "2030-01")]).toBe("DRAF");
+  });
+
+  it("sel sesudah hari terakhir SPG yang berhenti tidak dibaca siapa pun (P66)", async () => {
+    berhenti = (
+      await prisma.user.create({
+        data: { email: `${tag}-citra@test.local`.toLowerCase(), name: `citra ${tag}`, assignedStoreId: null, spgEndedOn: SEL, spgEndedStoreId: toko },
+      })
+    ).id;
+    const isi = (day: string) =>
+      prisma.spgShift.create({
+        data: { userId: berhenti, storeId: toko, day, kind: "KERJA", shiftCode: "PAGI", startTime: "10:00", endTime: "18:00", createdById: kantor },
+      });
+    await isi(SEL);
+    await isi(RAB);
+
+    const data = await jadwalSpgMingguKantor({ storeId: toko, senin: SEN, sekarang: wib(RAB, "12:00") });
+    expect(data.sel[kunciSel(berhenti, SEL)]).toBeDefined();
+    expect(data.sel[kunciSel(berhenti, RAB)]).toBeUndefined();
+    expect(data.orang.find((o) => o.id === berhenti)).toMatchObject({ diToko: false });
+    expect(await shiftHariIni(berhenti, SEL)).toMatchObject({ jenis: "KERJA" });
+    expect(await shiftHariIni(berhenti, RAB)).toBeNull();
   });
 });

@@ -8,7 +8,8 @@ vi.mock("@/lib/notifications/kabar-pengguna", async (asli) => ({
 }));
 
 import { approveFieldSalesOrder, batasiPromoPesanan } from "./writer";
-import { recordFieldSalesDelivery } from "./delivery/writer";
+// Nota tanpa surat jalan untuk tes ("Catat pengiriman" dihapus, P44a) — sama dengan penulis aslinya.
+import { catatNotaUji as recordFieldSalesDelivery } from "./delivery/uji-nota";
 
 /*
  * Keputusan pemilik 2026-10-06 (sementara): promo tingkat PESANAN tidak boleh

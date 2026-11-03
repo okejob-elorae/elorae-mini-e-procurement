@@ -1,5 +1,7 @@
 import {
   computeCommissionEvents,
+  confirmedPieces,
+  splitByLargestRemainder,
   type CommissionEvent,
   type CommissionRate,
   type CommissionReport,
@@ -30,10 +32,11 @@ import { isYearMonth, wibYearMonth } from "./month";
  * Settings → Komisi SPG closes once the month is over (`setRate` refuses a past month), so the
  * check date never moves an amount.
  *
- * Per item, each SPG's weight is her own sales minus her own notes' shopper returns of the month,
- * never below zero; the confirmed pieces are split over those weights by largest remainder. At a
- * putus store the weights ARE the pieces. A sale whose item has no category, or whose category has
- * no rate for the month, earns 0 and is reported as unrated.
+ * Per item × line category, each SPG's weight is her own sales minus her own notes' approved shopper
+ * returns (counted in the ORIGINAL note's month, P9), never below zero; the confirmed pieces are
+ * split over those weights by largest remainder. At a putus store the weights ARE the pieces. The
+ * category is the one stored on the sale line at sale time (P8); a line with no category, or whose
+ * category has no rate for the month, earns 0 and is reported as unrated.
  *
  * `Item.commissionPerPcs` is no source of any figure here, and the old equal split is gone (owner,
  * 2026-11-02: "jangan ada harga rata-rata"). A row not yet paid is paid at this figure; a row
@@ -45,7 +48,10 @@ import { isYearMonth, wibYearMonth } from "./month";
 
 export type SalesReportKind = "KONSI" | "PUTUS";
 
-/** One SPG sale line (+qty) or shopper-return line (−qty) of the sales month, credited to the seller of the original note. */
+/**
+ * One SPG sale line (+qty) or shopper-return line (−qty) of the sales month, credited to the seller of
+ * the original note, with the category stored on the sale line (null: sold without one).
+ */
 export type SpgSaleMovement = { salesmanId: string; itemId: string; categoryId: string | null; qty: number };
 
 export type SalesReport = {
@@ -99,22 +105,33 @@ export function salesMonthNoteId(salesMonth: string): string {
 
 const compareId = (a: string, b: string) => (a === b ? 0 : a < b ? -1 : 1);
 
+/** Category key for ordering: a real id sorts by code unit, "no category" (null) sorts last. */
+const NO_CATEGORY = "\uffff";
+const categoryKey = (c: string | null) => c ?? NO_CATEGORY;
+
 /**
- * The report as the team's computation reads it: one line per item, its weights each SPG's net
- * pieces (clamped at zero), its POS figure their sum, and its billed figure the official quantity
- * (KONSI) or the POS figure itself (PUTUS). Lines are ordered by item id, weights by salesman id.
+ * The report as the team's computation reads it: one line per item × LINE CATEGORY (owner
+ * 2026-11-02, P8 — a piece keeps the category stored on its sale line, so one item re-categorised
+ * mid-month forms two lines, each at its own rate), its weights each SPG's net pieces (clamped at
+ * zero), its POS figure their sum, and its billed figure:
+ * - PUTUS: the POS figure itself — every recorded piece confirms.
+ * - KONSI: per ITEM the official quantity caps the item's net POS pieces (`confirmedPieces`, the cap
+ *   rule of today, unchanged), and `min(official, POS)` is split over the item's category lines by
+ *   largest remainder on their net POS pieces, a tie going to the lower category id with "no
+ *   category" last. Each line is billed its share.
+ * Lines are ordered by item id then category (null last), weights by salesman id.
  */
 export function toCommissionReport(report: SalesReport): CommissionReport {
-  const byItem = new Map<string, { categoryId: string | null; perSpg: Map<string, number> }>();
+  const byLine = new Map<string, { itemId: string; categoryId: string | null; perSpg: Map<string, number> }>();
   for (const m of report.movements) {
     if (!Number.isFinite(m.qty) || m.qty === 0) continue;
-    let item = byItem.get(m.itemId);
-    if (!item) {
-      item = { categoryId: m.categoryId, perSpg: new Map() };
-      byItem.set(m.itemId, item);
+    const key = `${m.itemId}\u0000${m.categoryId ?? ""}`;
+    let line = byLine.get(key);
+    if (!line) {
+      line = { itemId: m.itemId, categoryId: m.categoryId, perSpg: new Map() };
+      byLine.set(key, line);
     }
-    if (item.categoryId === null && m.categoryId !== null) item.categoryId = m.categoryId;
-    item.perSpg.set(m.salesmanId, (item.perSpg.get(m.salesmanId) ?? 0) + m.qty);
+    line.perSpg.set(m.salesmanId, (line.perSpg.get(m.salesmanId) ?? 0) + m.qty);
   }
 
   const official = new Map<string, number>();
@@ -123,22 +140,41 @@ export function toCommissionReport(report: SalesReport): CommissionReport {
     official.set(o.itemId, (official.get(o.itemId) ?? 0) + o.qty);
   }
 
-  const lines: CommissionReportLine[] = Array.from(byItem, ([itemId, item]) => {
-    const perSpgPosQty: SpgPosQty[] = Array.from(item.perSpg, ([salesmanId, qty]) => ({ salesmanId, qty }))
+  const built = Array.from(byLine.values(), (line) => {
+    const perSpgPosQty: SpgPosQty[] = Array.from(line.perSpg, ([salesmanId, qty]) => ({ salesmanId, qty }))
       .filter((w) => w.qty > 0)
       .sort((a, b) => compareId(a.salesmanId, b.salesmanId));
     const posQty = perSpgPosQty.reduce((n, w) => n + w.qty, 0);
-    return {
-      itemId,
+    return { itemId: line.itemId, categoryId: line.categoryId, posQty, perSpgPosQty };
+  }).filter((l) => l.posQty > 0);
+
+  // KONSI: the item's confirmed pieces, split over its category lines by their POS pieces.
+  const billedByLine = new Map<string, number>();
+  if (report.official !== null) {
+    const byItem = new Map<string, typeof built>();
+    for (const l of built) byItem.set(l.itemId, [...(byItem.get(l.itemId) ?? []), l]);
+    for (const [itemId, lines] of byItem) {
+      const itemPos = lines.reduce((n, l) => n + l.posQty, 0);
+      const confirmed = confirmedPieces({ posQty: itemPos, billedQty: official.get(itemId) ?? 0 });
+      const shares = splitByLargestRemainder(
+        confirmed,
+        lines.map((l) => ({ salesmanId: categoryKey(l.categoryId), qty: l.posQty })),
+      );
+      const perCategory = new Map(shares.map((s) => [s.salesmanId, s.pieces]));
+      for (const l of lines) billedByLine.set(`${itemId}\u0000${l.categoryId ?? ""}`, perCategory.get(categoryKey(l.categoryId)) ?? 0);
+    }
+  }
+
+  const lines: CommissionReportLine[] = built
+    .map((l) => ({
+      itemId: l.itemId,
       variantSku: "",
-      categoryId: item.categoryId,
-      posQty,
-      billedQty: report.official === null ? posQty : official.get(itemId) ?? 0,
-      perSpgPosQty,
-    };
-  })
-    .filter((l) => l.posQty > 0)
-    .sort((a, b) => compareId(a.itemId, b.itemId));
+      categoryId: l.categoryId,
+      posQty: l.posQty,
+      billedQty: report.official === null ? l.posQty : (billedByLine.get(`${l.itemId}\u0000${l.categoryId ?? ""}`) ?? 0),
+      perSpgPosQty: l.perSpgPosQty,
+    }))
+    .sort((a, b) => compareId(a.itemId, b.itemId) || compareId(categoryKey(a.categoryId), categoryKey(b.categoryId)));
 
   return {
     id: report.key,

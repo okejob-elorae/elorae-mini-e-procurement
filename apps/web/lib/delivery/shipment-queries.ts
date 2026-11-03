@@ -1,3 +1,4 @@
+import { jumlahSpgToko } from "@/lib/spg/kiriman";
 import { prisma, type DeliveryShipmentStatus } from "@elorae/db";
 import { SHIPMENT_STATUS_LABEL_KEY, type ShipmentStatusLabelKey } from "@/lib/delivery/shipment-status-display";
 import { urlFromKey } from "@/lib/r2";
@@ -27,6 +28,9 @@ export async function listDeliveryShipments(input: {
     carrierName: string | null;
     resiNumber: string | null;
     packedAt: Date;
+    /** The putus nota issued with the shipment; null for konsi and for a shipment of the old rule. */
+    deliveryId: string | null;
+    shippedAt: Date | null;
   }>;
   total: number;
 }> {
@@ -67,6 +71,8 @@ export async function listDeliveryShipments(input: {
       carrierName: row.carrierName,
       resiNumber: row.resiNumber,
       packedAt: row.packedAt,
+      deliveryId: row.deliveryId,
+      shippedAt: row.shippedAt,
     })),
     total,
   };
@@ -92,6 +98,15 @@ export async function getDeliveryShipment(id: string): Promise<{
   storePaymentTempo: number;
   orderNo: string;
   deliveryId: string | null;
+  /** Kg, recorded before an expedition shipment leaves (P35). */
+  weightKg: number | null;
+  /** The handover-to-courier photo (showing the weight) is on file (P43). */
+  adaFotoSerah: boolean;
+  shippedAt: Date | null;
+  /** The store has an SPG now (`jumlahSpgToko`): the POD is information only, the SPG receives. */
+  tokoPunyaSpg: boolean;
+  /** The store's receipt of this shipment's document exists (`StoreReceipt`). */
+  sudahDiterimaToko: boolean;
   lines: Array<{
     id: string;
     orderLineId: string;
@@ -116,6 +131,16 @@ export async function getDeliveryShipment(id: string): Promise<{
     select: { id: true, productName: true },
   });
   const productNameByOrderLineId = new Map(orderLines.map((l) => [l.id, l.productName]));
+  const transfer = await prisma.konsiTransfer.findUnique({ where: { shipmentId: row.id }, select: { id: true } });
+  const sumber = transfer
+    ? { sourceType: "KONSI_TRANSFER", sourceId: transfer.id }
+    : row.deliveryId
+      ? { sourceType: "PUTUS_DELIVERY", sourceId: row.deliveryId }
+      : null;
+  const [tokoPunyaSpg, diterima] = await Promise.all([
+    jumlahSpgToko(prisma, row.order.storeId).then((n) => n > 0),
+    sumber ? prisma.storeReceipt.findUnique({ where: { sourceType_sourceId: sumber }, select: { id: true } }) : null,
+  ]);
 
   return {
     id: row.id,
@@ -137,6 +162,11 @@ export async function getDeliveryShipment(id: string): Promise<{
     storePaymentTempo: row.order.store.paymentTempo,
     orderNo: row.order.orderNo,
     deliveryId: row.deliveryId,
+    weightKg: row.weightKg === null ? null : Number(row.weightKg),
+    adaFotoSerah: Boolean(row.handoverPhotoR2Key && row.handoverPhotoUrl),
+    shippedAt: row.shippedAt,
+    tokoPunyaSpg,
+    sudahDiterimaToko: diterima !== null,
     lines: row.lines.map((line) => ({
       id: line.id,
       orderLineId: line.orderLineId,
@@ -187,12 +217,26 @@ export type DeliveryShipmentDetail = {
   konsiTransferDocNo: string | null;
   goodsPhoto: ShipmentProofPhoto;
   notaPhoto: ShipmentProofPhoto;
+  /** Kg recorded before an expedition shipment leaves (P35). */
+  weightKg: number | null;
+  /** The handover-to-courier photo showing the weight (P43), bound to `delivery-handover/<id>`. */
+  handoverPhoto: ShipmentProofPhoto;
+  /** "Tidak jadi dikirim" reason. */
+  cancelReason: string | null;
+  /** The putus nota of this shipment, cancelled or corrected (R22); null for konsi and old-rule shipments. */
+  nota: { invoiceDate: Date; dueDate: Date; voidedAt: Date | null; voidReason: string | null; correctedAt: Date | null } | null;
+  konsiTransferStatus: "IN_TRANSIT" | "RECEIVED" | "CANCELLED" | null;
+  /** The store's receipt of this shipment's document (`StoreReceipt`) — the "store received" marker (R9). */
+  penerimaan: { receivedAt: Date; receivedVia: string | null; receiverName: string | null; picName: string | null } | null;
   lines: Array<{
     id: string;
     productName: string;
     variantSku: string;
     plannedQty: number;
     deliveredQty: number | null;
+    /** Refused at the door / lost in transit, recorded by the POD at a store without an SPG. */
+    returnedQty: number | null;
+    lostQty: number | null;
   }>;
 };
 
@@ -255,10 +299,27 @@ export async function getDeliveryShipmentDetail(id: string): Promise<DeliveryShi
       select: { id: true, productName: true },
     }),
     row.deliveryId
-      ? prisma.fieldSalesDelivery.findUnique({ where: { id: row.deliveryId }, select: { docNo: true } })
+      ? prisma.fieldSalesDelivery.findUnique({
+          where: { id: row.deliveryId },
+          select: { docNo: true, invoiceDate: true, dueDate: true, voidedAt: true, voidReason: true, correctedAt: true },
+        })
       : Promise.resolve(null),
-    prisma.konsiTransfer.findUnique({ where: { shipmentId: row.id }, select: { docNo: true } }),
+    prisma.konsiTransfer.findUnique({ where: { shipmentId: row.id }, select: { id: true, docNo: true, status: true } }),
   ]);
+  const sumber = konsiTransfer
+    ? { sourceType: "KONSI_TRANSFER", sourceId: konsiTransfer.id }
+    : row.deliveryId
+      ? { sourceType: "PUTUS_DELIVERY", sourceId: row.deliveryId }
+      : null;
+  const terima = sumber
+    ? await prisma.storeReceipt.findUnique({
+        where: { sourceType_sourceId: sumber },
+        select: { receivedAt: true, receivedVia: true, receivedById: true, picName: true },
+      })
+    : null;
+  const penerima = terima?.receivedById
+    ? await prisma.user.findUnique({ where: { id: terima.receivedById }, select: { name: true, email: true } })
+    : null;
   const userNameById = new Map(users.map((u) => [u.id, u.name || u.email]));
   const nameOf = (userId: string | null): string | null => (userId ? userNameById.get(userId) ?? null : null);
   const productNameByOrderLineId = new Map(orderLines.map((l) => [l.id, l.productName]));
@@ -280,8 +341,9 @@ export async function getDeliveryShipmentDetail(id: string): Promise<DeliveryShi
     storeCheckinRadiusMeters: store.checkinRadiusMeters,
     carrierName: row.carrierName,
     resiNumber: row.resiNumber,
-    invoiceDate: row.invoiceDate,
-    dueDate: row.dueDate,
+    /* The nota carries the dates since it is issued at creation; the shipment columns are legacy. */
+    invoiceDate: delivery?.invoiceDate ?? row.invoiceDate,
+    dueDate: delivery?.dueDate ?? row.dueDate,
     packedAt: row.packedAt,
     shippedAt: row.shippedAt,
     deliveredAt: row.deliveredAt,
@@ -302,12 +364,35 @@ export async function getDeliveryShipmentDetail(id: string): Promise<DeliveryShi
       row.signatureUrl,
       `delivery-pod-proofs/${row.id}`,
     ),
+    weightKg: row.weightKg === null ? null : Number(row.weightKg),
+    handoverPhoto: deriveProofPhoto(row.handoverPhotoR2Key, row.handoverPhotoUrl, `delivery-handover/${row.id}`),
+    cancelReason: row.cancelReason,
+    nota: delivery
+      ? {
+          invoiceDate: delivery.invoiceDate,
+          dueDate: delivery.dueDate,
+          voidedAt: delivery.voidedAt,
+          voidReason: delivery.voidReason,
+          correctedAt: delivery.correctedAt,
+        }
+      : null,
+    konsiTransferStatus: konsiTransfer?.status ?? null,
+    penerimaan: terima
+      ? {
+          receivedAt: terima.receivedAt,
+          receivedVia: terima.receivedVia,
+          receiverName: penerima ? penerima.name || penerima.email : null,
+          picName: terima.picName,
+        }
+      : null,
     lines: row.lines.map((line) => ({
       id: line.id,
       productName: productNameByOrderLineId.get(line.orderLineId) ?? "",
       variantSku: line.variantSku,
       plannedQty: line.plannedQty,
       deliveredQty: line.deliveredQty,
+      returnedQty: line.returnedQty,
+      lostQty: line.lostQty,
     })),
   };
 }

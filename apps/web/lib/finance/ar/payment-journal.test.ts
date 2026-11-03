@@ -38,6 +38,7 @@ d("payment-journal (test bed only)", () => {
   let orderIds: string[] = [];
   let deliveryIds: string[] = [];
   let sellThroughIds: string[] = [];
+  let cycleIds: string[] = [];
   let receivableIds: string[] = [];
   let notificationIds: string[] = [];
   let mappingSnapshot: MappingSnapshot | undefined;
@@ -47,7 +48,7 @@ d("payment-journal (test bed only)", () => {
     seq = 0;
     storeId = ""; userId = ""; paymentId = "";
     cashId = ""; bankId = ""; revId = ""; arId = ""; arStoreId = ""; arConsignmentId = "";
-    paymentIds = []; orderIds = []; deliveryIds = []; sellThroughIds = []; receivableIds = []; notificationIds = [];
+    paymentIds = []; orderIds = []; deliveryIds = []; sellThroughIds = []; cycleIds = []; receivableIds = []; notificationIds = [];
     h.mulai = new Date("2026-01-01T00:00:00.000+07:00");
     mappingSnapshot = undefined;
     mappingSnapshot = await snapshotMappings(["CASH", "BANK", "SALES_REVENUE", "AR", "AR_STORE", "AR_CONSIGNMENT"]);
@@ -86,7 +87,7 @@ d("payment-journal (test bed only)", () => {
   afterEach(async () => {
     /* Live config first, so no bookkeeping delete below can stand between a failure and restoring it. */
     if (mappingSnapshot) await restoreMappings(mappingSnapshot);
-    const journalSourceIds = [...paymentIds, ...deliveryIds, ...sellThroughIds].map(seededId);
+    const journalSourceIds = [...paymentIds, ...deliveryIds, ...sellThroughIds, ...cycleIds].map(seededId);
     await prisma.journalLine.deleteMany({ where: { journal: { sourceId: { in: journalSourceIds.map(seededId) } } } });
     await prisma.journal.deleteMany({ where: { sourceId: { in: journalSourceIds.map(seededId) } } });
     await prisma.adminNotification.deleteMany({ where: { id: { in: notificationIds.map(seededId) } } });
@@ -94,6 +95,8 @@ d("payment-journal (test bed only)", () => {
     await prisma.payment.deleteMany({ where: { storeId: seededId(storeId) } });
     /* Receivables before the delivery or report they hang off (an optional 1:1 under relationMode = "prisma"). */
     await prisma.receivable.deleteMany({ where: { id: { in: receivableIds.map(seededId) } } });
+    /* After its receivable: `Receivable.consignmentCycle` is `onDelete: Restrict`. */
+    await prisma.consignmentCycle.deleteMany({ where: { id: { in: cycleIds.map(seededId) } } });
     await prisma.konsiSellThrough.deleteMany({ where: { id: { in: sellThroughIds.map(seededId) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds.map(seededId) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: orderIds.map(seededId) } } });
@@ -216,6 +219,50 @@ d("payment-journal (test bed only)", () => {
     receivableIds.push(receivable.id);
     if (opts.revenueJournal) await journalSource("KONSI_SELLTHRU_REVENUE", report.id);
     return { receivableId: receivable.id, sellThroughId: report.id };
+  }
+
+  /*
+   * A konsi cycle bill as the cycle lock writes it: DELIVERY-sourced, backed by its cycle, flagged
+   * `isConsignment`, both column families. `cycleJournal` stands its `CONSIGNMENT_CYCLE` journal in
+   * today's shape (AR_CONSIGNMENT tagged with its role and the store).
+   */
+  async function makeCycleReceivable(
+    amount: number,
+    opts: { cycleJournal: boolean; invoiceDate?: Date },
+  ): Promise<{ receivableId: string; cycleId: string }> {
+    const n = ++seq;
+    const cycle = await prisma.consignmentCycle.create({
+      data: { noKonsi: `TEST-PJ-KONSI-${token}-${n}`, storeId, periodYear: 2026, periodMonth: n },
+    });
+    cycleIds.push(cycle.id);
+    const invoiceDate = opts.invoiceDate ?? paidAt;
+    const receivable = await prisma.receivable.create({
+      data: {
+        consignmentCycleId: cycle.id, isConsignment: true, storeId,
+        invoiceNo: cycle.noKonsi,
+        invoiceDate, dueDate: invoiceDate,
+        amount, outstanding: amount, originalAmount: amount, outstandingAmount: amount,
+      },
+    });
+    receivableIds.push(receivable.id);
+    if (opts.cycleJournal) {
+      await prisma.journal.create({
+        data: {
+          date: invoiceDate,
+          description: "fixture",
+          sourceType: "CONSIGNMENT_CYCLE",
+          sourceId: cycle.id,
+          postedById: userId,
+          lines: {
+            create: [
+              { chartAccountId: arConsignmentId, debit: amount, credit: 0, memo: "AR_CONSIGNMENT", storeId },
+              { chartAccountId: revId, debit: 0, credit: amount, memo: "SALES_REVENUE", storeId },
+            ],
+          },
+        },
+      });
+    }
+    return { receivableId: receivable.id, cycleId: cycle.id };
   }
 
   /*
@@ -371,6 +418,29 @@ d("payment-journal (test bed only)", () => {
     expect(await postPaymentReceiptJournal(paymentId, userId)).toMatchObject({ ok: true, created: true });
     const j = await receiptOf(paymentId);
     expect(Number(j!.lines.find((l) => l.chartAccountId === bankId)!.debit)).toBe(400);
+  });
+
+  it("a konsi cycle bill paid through the office credits AR_CONSIGNMENT, with its store, once the cycle journal stands", async () => {
+    const { receivableId } = await makeCycleReceivable(400, { cycleJournal: true });
+    paymentId = await createPayment("TRANSFER", 400, [{ receivableId, amount: 400 }]);
+    expect(await postPaymentReceiptJournal(paymentId, userId)).toMatchObject({ ok: true, created: true });
+    const j = await receiptOf(paymentId);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === bankId)!.debit)).toBe(400);
+    expect(j!.lines.find((l) => l.chartAccountId === arConsignmentId)).toMatchObject({ memo: "AR_CONSIGNMENT", storeId });
+    expect(Number(j!.lines.find((l) => l.chartAccountId === arConsignmentId)!.credit)).toBe(400);
+    expect(j!.lines.find((l) => l.chartAccountId === arStoreId)).toBeUndefined();
+  });
+
+  it("a konsi cycle bill without its journal is late on or after the cutover and outside before it", async () => {
+    const late = await makeCycleReceivable(400, { cycleJournal: false });
+    paymentId = await createPayment("TRANSFER", 400, [{ receivableId: late.receivableId, amount: 400 }]);
+    expect(await postPaymentReceiptJournal(paymentId, userId)).toEqual({ ok: false, code: "RECEIVABLE_REVENUE_NOT_POSTED_YET" });
+
+    h.mulai = new Date("2026-06-01T00:00:00.000+07:00");
+    expect(await postPaymentReceiptJournal(paymentId, userId)).toEqual({ ok: false, code: "RECEIVABLE_OUTSIDE_LEDGER" });
+    h.mulai = null;
+    expect(await postPaymentReceiptJournal(paymentId, userId)).toEqual({ ok: false, code: "RECEIVABLE_OUTSIDE_LEDGER" });
+    expect(await journalCountFor(paymentId)).toBe(0);
   });
 
   it("an invoice whose nota journal debited AR_STORE is credited back on AR_STORE, with its store", async () => {

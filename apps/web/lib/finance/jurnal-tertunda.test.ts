@@ -247,7 +247,7 @@ d("hitung & tandai JOURNAL_PENDING (basis data uji)", () => {
     expect(await dibaca(rev)).toBe(false);
   });
 
-  it("tanda pengiriman (`field_delivery_*`) selesai oleh jurnal nota, atau oleh separuh pasangan lamanya sendiri", async () => {
+  it("tanda pengiriman (`field_delivery_*`) selesai oleh penyelaras nota (bergenerasi), atau oleh separuh pasangan lamanya sendiri", async () => {
     const lewatNota = `dlv-nota-${token}`;
     const lewatLama = `dlv-lama-${token}`;
     const notaRev = await gagal({ docId: lewatNota, kind: "field_delivery_revenue", reason: "UNMAPPED_ROLE", role: "AR" });
@@ -257,10 +257,12 @@ d("hitung & tandai JOURNAL_PENDING (basis data uji)", () => {
     const semua = [notaRev, notaCogs, lamaRev, lamaCogs];
     expect(await hitungJurnalTertunda({ notifikasiIds: semua })).toBe(4);
 
-    // Satu jurnal nota membawa piutang, pendapatan, dan HPP: kedua tandanya beres.
+    // Jurnal nota bergenerasi (koreksi & batal nota): generasi pertama yang berdiri bukan bukti…
     await jurnal("FIELD_DELIVERY", lewatNota);
-    expect(await hitungJurnalTertunda({ notifikasiIds: semua })).toBe(2);
+    expect(await hitungJurnalTertunda({ notifikasiIds: semua })).toBe(4);
+    // …penyelarasnya yang menandai: satu jurnal nota membawa piutang, pendapatan, dan HPP, jadi kedua tandanya beres.
     expect(await tandaiJurnalTertundaSelesai([dokumenJurnal("FIELD_DELIVERY", lewatNota)])).toBe(2);
+    expect(await hitungJurnalTertunda({ notifikasiIds: semua })).toBe(2);
     expect(await dibaca(notaRev)).toBe(true);
     expect(await dibaca(notaCogs)).toBe(true);
 
@@ -284,16 +286,18 @@ d("hitung & tandai JOURNAL_PENDING (basis data uji)", () => {
     expect(await hitungJurnalTertunda({ notifikasiIds: [bayar, konsi] })).toBe(0);
   });
 
-  it("pindah barang & retur lapangan konsinyasi (sekali posting): selesai oleh jurnalnya, dan ditandai oleh posting ulangnya", async () => {
+  it("pindah barang konsinyasi (bergenerasi) selesai oleh penyelarasnya; retur lapangan konsinyasi (sekali posting) oleh jurnalnya", async () => {
     const transferId = `kt-${token}`;
     const returId = `fr-${token}`;
     const pindah = await gagal({ docId: transferId, kind: "konsi_pindah", reason: "UNMAPPED_ROLE", role: "INVENTORY_CONSIGNMENT" });
     const retur = await gagal({ docId: returId, kind: "konsi_retur_lapangan", reason: "UNMAPPED_ROLE", role: "INVENTORY_CONSIGNMENT" });
     expect(await hitungJurnalTertunda({ notifikasiIds: [pindah, retur] })).toBe(2);
 
+    // Pindah barang berubah sesudah dijurnal (ditolak di pintu, tidak jadi dikirim): jurnalnya bukan bukti.
     await jurnal("CONSIGNMENT_TRANSFER", transferId);
-    expect(await hitungJurnalTertunda({ notifikasiIds: [pindah, retur] })).toBe(1);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [pindah, retur] })).toBe(2);
     expect(await tandaiJurnalTertundaSelesai([dokumenJurnal("CONSIGNMENT_TRANSFER", transferId)])).toBe(1);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [pindah, retur] })).toBe(1);
     expect(await dibaca(pindah)).toBe(true);
     expect(await dibaca(retur)).toBe(false);
 

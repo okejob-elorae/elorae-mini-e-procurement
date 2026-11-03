@@ -146,6 +146,13 @@ const TAUTAN: Record<JenisKabar, Pembuat> = {
   // Keputusan kantor atas laporan retur pembeli: ke daftar laporan SPG itu, tempat status dan alasannya tampil.
   RETUR_PEMBELI_DISETUJUI: () => "/pwa/spg/retur-pembeli",
   RETUR_PEMBELI_DITOLAK: () => "/pwa/spg/retur-pembeli",
+  // Pengiriman yang sudah berangkat dibatalkan: tidak ada yang perlu diterima, jadi ke daftar kiriman,
+  // bukan ke formulir terima satu kiriman.
+  KIRIMAN_DIBATALKAN: () => "/pwa/spg/terima",
+  // Selisih retur yang perlu dicek pemegang toko: bagiannya ada di atas daftar retur sales.
+  RETUR_SELISIH_CEK: () => "/pwa/retur",
+  // Selisih retur ditanggung toko: ke tagihan toko itu, tempat kekurangannya ditagih.
+  RETUR_DITANGGUNG_TOKO: tagihanToko,
 };
 
 /**

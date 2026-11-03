@@ -62,6 +62,7 @@ vi.mock("@/lib/production/hutang-jasa-queries", async () => {
               hargaTermasukPpn: false,
               qtyTerhutang: 100,
               hutang: jasa.hutang,
+              hutangTanpaKoreksi: jasa.hutang,
               dasarPotong: jasa.dasar,
               ppn: jasa.hutang - jasa.dasar,
               dibayar,

@@ -24,8 +24,11 @@ export type RingkasPiutangBeranda = {
   lewatNilai: number;
   lewatJumlah: number;
   /**
-   * Lewat jatuh tempo FAKTUR tanpa kontrabon, BKM menunggu, atau tahanan retur —
-   * definisi dan angka yang sama dengan `/backoffice/piutang?keadaan=jatuh_tempo`.
+   * Lewat jatuh tempo FAKTUR tanpa kontrabon atau BKM menunggu, ditambah faktur yang
+   * SEBAGIAN tertahan retur sebesar bagian di luar tahanannya yang sudah lewat jatuh tempo
+   * (P46 — faktur itu juga tetap di "tertahan", jadi `perKeadaanTampil` bukan partisi) —
+   * definisi dan angka yang sama dengan `/backoffice/piutang?keadaan=jatuh_tempo`
+   * (`nilaiLewatJatuhTempo` di `ringkasPiutang`; berkas ini tidak menghitungnya sendiri).
    * Berbeda dari kartu umur, yang mengelompokkan SEMUA piutang terbuka menurut
    * umurnya sejak jatuh tempo.
    */

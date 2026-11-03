@@ -4,6 +4,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { daftarPiutang, ringkasPiutang } from "@/lib/receivables/queries";
 import { katalogBarang, tokoUntukRetur } from "@/lib/receivables/return-queries";
 import { bacaKeadaanTampil } from "@/lib/receivables/jatuh-tempo";
+import { bacaJenisTagihan } from "@/lib/receivables/jenis-tagihan";
 import { bolehMembacaPiutang } from "@/lib/receivables/izin";
 import { PiutangClient } from "./PiutangClient";
 import { hitungPilPiutang, saringPiutang } from "./saring";
@@ -12,15 +13,15 @@ import { bacaCari, bacaHalaman, potongHalaman } from "./_daftar/halaman";
 export const dynamic = "force-dynamic";
 
 /**
- * `?keadaan=` (termasuk `jatuh_tempo`), `?cari=`, dan `?halaman=` disaring di
- * server: tautan beranda ("Lewat janji bayar", "Lewat jatuh tempo", satu faktur
+ * `?keadaan=` (termasuk `jatuh_tempo`), `?cari=`, `?jenis=` (konsi / nonkonsi),
+ * dan `?halaman=` disaring di server: tautan beranda ("Lewat janji bayar", "Lewat jatuh tempo", satu faktur
  * di daftar tindakan) mendarat di daftar yang sudah tersaring, dan peramban
  * hanya menerima satu halaman. Ringkasan di kepala tetap atas SEMUA faktur.
  */
 export default async function PiutangPage({
   searchParams,
 }: {
-  searchParams: Promise<{ keadaan?: string; cari?: string; halaman?: string }>;
+  searchParams: Promise<{ keadaan?: string; cari?: string; halaman?: string; jenis?: string }>;
 }) {
   const session = await auth();
   if (!session) redirect("/login");
@@ -29,6 +30,7 @@ export default async function PiutangPage({
   const sp = await searchParams;
   const saring = bacaKeadaanTampil(sp.keadaan);
   const cari = bacaCari(sp.cari);
+  const jenis = bacaJenisTagihan(sp.jenis);
 
   const bolehMengelola = hasPermission(
     session.user.permissions ?? [],
@@ -41,7 +43,7 @@ export default async function PiutangPage({
     bolehMengelola ? tokoUntukRetur() : Promise.resolve([]),
     bolehMengelola ? katalogBarang() : Promise.resolve([]),
   ]);
-  const halaman = potongHalaman(saringPiutang(semua, { keadaan: saring, cari }), bacaHalaman(sp.halaman));
+  const halaman = potongHalaman(saringPiutang(semua, { keadaan: saring, cari, jenis }), bacaHalaman(sp.halaman));
 
   return (
     <PiutangClient
@@ -49,12 +51,13 @@ export default async function PiutangPage({
       halaman={{ halaman: halaman.halaman, totalHalaman: halaman.totalHalaman, total: halaman.total, ukuran: halaman.ukuran }}
       adaFaktur={semua.length > 0}
       ringkasan={ringkasPiutang(semua)}
-      pil={hitungPilPiutang(semua, cari)}
+      pil={hitungPilPiutang(semua, cari, jenis)}
       toko={toko}
       katalog={katalog}
       bolehMengelola={bolehMengelola}
       saring={saring}
       cari={cari}
+      jenis={jenis}
     />
   );
 }

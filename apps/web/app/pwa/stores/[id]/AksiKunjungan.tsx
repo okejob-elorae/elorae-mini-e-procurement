@@ -22,8 +22,9 @@ import { GridUbin, useUbinLapor, type Ubin } from "./UbinLapor";
  * - Rencana kirim (dulu "pesanan cepat") untuk toko PUTUS dan KONSI — draf
  *   konsinyasi tanpa harga, dan tetap lewat penulis pesanan biasa.
  * - Tukar barang hanya toko PUTUS — konsinyasi punya jalur kirim + retur sendiri.
- * - Lapor pelunasan (toko PUTUS) dan lapor retur langsung untuk toko ini —
- *   formulirnya memilih toko ini bila penonton boleh melapor untuknya.
+ * - Lapor pelunasan (toko PUTUS, dan toko KONSINYASI bagi pemegangnya — P31)
+ *   dan lapor retur langsung untuk toko ini — formulirnya memilih toko ini bila
+ *   penonton boleh melapor untuknya.
  * - Daftar periksa dan harga pesaing untuk semua toko.
  * - SPG tidak mengambil pesanan, tidak menukar barang, tidak menagih: ia
  *   menjual dari layarnya sendiri. Untuknya hanya pekerjaan display —
@@ -34,9 +35,12 @@ export function AksiKunjungan({
   termsType,
   preorder,
   spg = false,
+  pemegang = false,
 }: {
   storeId: string;
   termsType: "PUTUS" | "KONSI";
+  /** Penonton adalah pemegang toko sekarang (dinilai di server). */
+  pemegang?: boolean;
   /** Tombol pre-order bila ada jendela yang buka (dirakit di server). */
   preorder?: ReactNode;
   /** SPG di toko tetapnya (dinilai di server dari `ambilTokoTetap`). */
@@ -56,7 +60,7 @@ export function AksiKunjungan({
   }, []);
 
   const putus = termsType === "PUTUS" && !spg;
-  const lapor = useUbinLapor({ storeId, termsType, spg });
+  const lapor = useUbinLapor({ storeId, termsType, spg, pemegang });
   const ubin: Ubin[] = [
     ...(!spg ? [{ href: `/pwa/stores/${storeId}/smart-request`, label: tRencana("ubin"), ikon: Sparkles }] : []),
     ...(putus ? [{ href: `/pwa/stores/${storeId}/tukar`, label: t("tukar"), ikon: ArrowLeftRight }] : []),

@@ -95,7 +95,11 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/spg-tutup-hari': 'spg_sales:view',
   '/backoffice/spg-pelanggan': 'spg_sales:view',
   '/backoffice/jadwal-spg': 'spg_sales:view',
-  '/backoffice/komisi-spg': 'spg_sales:view',
+  // `/backoffice/komisi-spg` (termasuk `/catatan-hadir` di bawahnya) sengaja TIDAK dipetakan lagi:
+  // Keuangan membayar gaji & komisi SPG dengan `spg_commission:pay` saja, tanpa `spg_sales:view`
+  // (keputusan pemilik 2026-11-02, Q9 + P28), dan pemeriksa pembayaran utang SPG
+  // (`payments:verify`) ikut membukanya — peta ini hanya bisa satu izin. Halamannya memagari
+  // dirinya sendiri (`bolehMembukaKomisiSpg`, `bolehMembukaCatatanHadir`).
   // Retur pembeli SPG: daftar dan rinciannya dibuka pengawas SPG; tombol
   // Setujui/Tolak memeriksa `spg_returns:approve` di halaman dan aksinya.
   "/backoffice/retur-spg": "spg_sales:view",
@@ -105,8 +109,9 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/kinerja-spg': 'spg_sales:view',
   // `/backoffice/barang-hilang` sengaja TIDAK dipetakan: terbuka untuk pengawas
   // SPG (`spg_sales:view`), keuangan yang mencatat dan menandai pelunasan
-  // (`receivables:manage`) ATAU yang menetapkan beban (`receivables:decide_bearer`);
-  // halamannya memagari dirinya sendiri.
+  // (`receivables:manage`) ATAU yang menetapkan beban barang hilang — di toko SPG
+  // maupun di perjalanan pengiriman (`receivables:decide_bearer`); halamannya
+  // memagari dirinya sendiri.
   '/backoffice/items/labels': 'items:view',
   // `/backoffice/spg-kiriman-rusak` sengaja TIDAK dipetakan: terbuka untuk
   // pengawas SPG (`spg_sales:view`) ATAU gudang yang memutuskan (`inventory:manage`).
@@ -163,7 +168,10 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   // terbuka untuk `collections:manage` ATAU `payments:verify` (keputusan
   // pemilik 2026-11-01) dan memagari dirinya sendiri; peta ini hanya bisa
   // menguji satu izin.
-  '/backoffice/settings/piutang': 'collections:manage',
+  // Ambang pengingat jatuh tempo: halaman = izin aksinya (`getOverdueThresholds`/
+  // `setOverdueThresholds`), keputusan pemilik 2026-11-02 (Q14). MENERIMA pengingatnya adalah
+  // izin terpisah, `receivables:overdue_reminder` (P48).
+  "/backoffice/settings/piutang": "receivables:manage",
   "/backoffice/settings/purchasing": "purchase_orders:edit",
   "/backoffice/settings/spg-commission": "spg_commission:manage",
   "/backoffice/item-requests": "item_requests:view",
@@ -318,10 +326,19 @@ export const PERMISSIONS = {
   // Receivables & collections
   RECEIVABLES_VIEW: 'receivables:view',
   RECEIVABLES_MANAGE: 'receivables:manage',
-  // Who bears a return shortfall or lost SPG goods — a manager decision
-  // (owner, 2026-11-01), so it is split out of receivables:manage and held by
-  // ADMIN only until the owner grants it in Peran & izin.
+  // Who bears LOST GOODS — at an SPG store or in transit, including the value of a carrier
+  // claim. A manager decision (owner, 2026-11-01), held by ADMIN only until the owner grants
+  // it in Peran & izin. Store-return shortfalls moved to their own code below (owner
+  // 2026-11-02, P22); every role holding this code on the day of the split was given both
+  // (seed-owner-2026-11-02b-permissions.sql).
   RECEIVABLES_DECIDE_BEARER: "receivables:decide_bearer",
+  // Who bears a STORE-RETURN SHORTFALL (warehouse count below the return note) — split from
+  // receivables:decide_bearer (owner 2026-11-02, P22). Manager decision, admin only by default.
+  STORE_RETURNS_DECIDE_SHORTFALL: "store_returns:decide_shortfall",
+  // RECEIVING the office overdue reminder (AR_OVERDUE) — its own code so Finance needs no
+  // receivables:manage (owner 2026-11-02, P48). Admin and KEUANGAN by default. Changing the
+  // thresholds is receivables:manage (Q14).
+  RECEIVABLES_OVERDUE_REMINDER: "receivables:overdue_reminder",
   // Creative marketing — content calendar, KOL briefs, KOL master.
   // Held apart from sales: the people who plan an Instagram post are not the
   // people who approve a field-sales order, and neither should inherit the
@@ -347,6 +364,11 @@ export const PERMISSIONS = {
   // Delivery Shipments
   DELIVERIES_SHIP: 'deliveries:ship',
   DELIVERIES_POD: 'deliveries:pod',
+  // "Tidak jadi dikirim" on a PUTUS shipment whose nota tagihan is already issued: the nota, its
+  // receivable and tax invoice are voided and Finance is told at once (owner 2026-11-02, P25 +
+  // P41a: Admin Penjualan presses it alone, no second approval). Admin and ADMIN_PENJUALAN by
+  // default. A KONSI shipment is still cancelled with deliveries:ship.
+  DELIVERIES_CANCEL_NOTA: "deliveries:cancel_nota",
   // Purchase Orders
   PURCHASE_ORDERS_VIEW: 'purchase_orders:view',
   PURCHASE_ORDERS_CREATE: 'purchase_orders:create',
@@ -364,6 +386,10 @@ export const PERMISSIONS = {
   INVENTORY_OPNAME_APPROVE: 'inventory_opname:approve',
   INVENTORY_RECONCILIATION_VIEW: 'inventory_reconciliation:view',
   INVENTORY_RECONCILIATION_MANAGE: 'inventory_reconciliation:manage',
+  // Confirming or declining a goods receipt recorded WITHOUT a PO, before it enters stock or
+  // payables (owner 2026-11-02, P51a: "tidak usah dihapus, tapi ada konfirmasi dari admin").
+  // Manager decision, admin only by default.
+  GOODS_RECEIPTS_CONFIRM_NO_PO: "goods_receipts:confirm_no_po",
   // Work Orders
   WORK_ORDERS_VIEW: 'work_orders:view',
   WORK_ORDERS_CREATE: 'work_orders:create',
@@ -428,10 +454,20 @@ export const PERMISSIONS = {
   // SPG Sales (in-store promoter)
   SPG_SALES_RECORD: "spg_sales:record",
   SPG_SALES_VIEW: "spg_sales:view",
-  // SPG Commission (rates per item category)
+  // SPG Commission (rates per item category, and each SPG's monthly base salary)
   SPG_COMMISSION_MANAGE: "spg_commission:manage",
-  // Marking SPG pay & commission paid (consignment and putus stores).
+  // Marking SPG pay & commission paid (consignment and putus stores). KEUANGAN holds it by default
+  // (owner 2026-11-02, Q9) and opens only the Komisi SPG page with it, no other SPG screen (P28).
   SPG_COMMISSION_PAY: "spg_commission:pay",
+  // Approving, rejecting or reopening the monthly work schedule an SPG fills on her phone (owner
+  // 2026-11-02, P7c). Manager decision, admin only by default.
+  SPG_SCHEDULES_APPROVE: "spg_schedules:approve",
+  // Entering a store check-in record (typed or Excel) for an SPG who did not fill her schedule
+  // (owner 2026-11-02, P7d + P7e): admin and ADMIN_PENJUALAN by default.
+  SPG_ATTENDANCE_RECORD: "spg_attendance:record",
+  // Cross-checking that record before it counts for base salary (owner 2026-11-02, P61a: "admin
+  // keuangan saja yang memeriksa"): admin and KEUANGAN by default; never the person who entered it.
+  SPG_ATTENDANCE_VERIFY: "spg_attendance:verify",
   // SPG shopper returns — approving a reported return (owner 2026-11-02: admin and ADMIN_PENJUALAN
   // by default, grantable).
   SPG_RETURNS_APPROVE: "spg_returns:approve",
@@ -441,6 +477,10 @@ export const PERMISSIONS = {
   // Vendor billing (vendor invoices against PO items and WO steps)
   VENDOR_BILLS_VIEW: "vendor_bills:view",
   VENDOR_BILLS_MANAGE: "vendor_bills:manage",
+  // Deciding a supplier invoice whose price differs from the recorded payable, higher or lower:
+  // accept it, or correct the invoice down (owner 2026-11-02, P27 + P53). Manager decision,
+  // admin only by default.
+  VENDOR_BILLS_DECIDE_PRICE: "vendor_bills:decide_price",
   // Finance — Settlements
   SETTLEMENTS_VIEW: "finance:settlements:view",
   SETTLEMENTS_MANAGE: "finance:settlements:manage",

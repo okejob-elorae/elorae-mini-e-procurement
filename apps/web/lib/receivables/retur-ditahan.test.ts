@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { buatKlaimPembayaran } from "./claim-writer";
-import { batalkanRetur, catatHitunganGudang } from "./return-writer";
+import { alihkanBeban, batalkanRetur, catatHitunganGudang, catatHitunganSusulan, jadikanSusulan, putuskanBeban } from "./return-writer";
 import { bacaSisaDanTahanan, putuskanKlaim } from "./writer";
 import { daftarPiutang } from "./queries";
 
@@ -31,6 +31,7 @@ let piutangId = "";
 let klaimIds: string[] = [];
 let nrtIds: string[] = [];
 let urut = 0;
+const mulai = new Date();
 
 beforeEach(async () => {
   salesId = "";
@@ -73,14 +74,48 @@ afterEach(async () => {
     ? await prisma.paymentClaim.findMany({ where: { storeId: seededId(tokoId) }, select: { id: true } })
     : [];
   klaimIds = [...new Set([...klaimIds, ...klaimToko.map((k) => k.id)])];
-  const nri = nrtIds.length
-    ? await prisma.warehouseReturn.findMany({ where: { storeReturnId: { in: seededIds(nrtIds) } }, select: { id: true } })
+  // Hitungan asli, hitungan susulan (tanpa storeReturnId), dan penerimaan tanpa nota di toko uji.
+  const nri =
+    nrtIds.length || tokoId
+      ? await prisma.warehouseReturn.findMany({
+          where: {
+            OR: [
+              { storeReturnId: { in: seededIds(nrtIds) } },
+              { followUpOfStoreReturnId: { in: seededIds(nrtIds) } },
+              ...(tokoId ? [{ storeId: seededId(tokoId) }] : []),
+            ],
+          },
+          select: { id: true },
+        })
+      : [];
+  // Lonceng selisih retur yang ditulis penulis — dicocokkan per nota uji di JS.
+  const lonceng = nrtIds.length
+    ? (
+        await prisma.adminNotification.findMany({
+          where: { category: "RETUR_SELISIH", createdAt: { gte: mulai } },
+          select: { id: true, metadata: true },
+        })
+      ).filter((x) => nrtIds.includes(String((x.metadata as Record<string, unknown> | null)?.storeReturnId ?? "")))
     : [];
+  if (lonceng.length) await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(lonceng.map((x) => x.id)) } } });
   const beban = nrtIds.length
     ? await prisma.returnCharge.findMany({ where: { storeReturnId: { in: seededIds(nrtIds) } }, select: { id: true } })
     : [];
+  // Jejak beban yang barisnya sudah dihapus (tertutup susulan) tidak terjangkau lewat beban yang
+  // masih ada; jejak penulis retur membawa `storeReturnId` di metadata-nya — dicocokkan di JS.
+  const jejakNota = nrtIds.length
+    ? (
+        await prisma.auditLog.findMany({
+          where: { createdAt: { gte: mulai }, entityType: { in: ["ReturnCharge", "WarehouseReturn", "StoreReturn"] } },
+          select: { id: true, metadata: true },
+        })
+      )
+        .filter((x) => nrtIds.includes(String((x.metadata as Record<string, unknown> | null)?.storeReturnId ?? "")))
+        .map((x) => x.id)
+    : [];
   const entitas = [...klaimIds, ...nrtIds, ...nri.map((n) => n.id), ...beban.map((b) => b.id), piutangId].filter(Boolean);
   if (entitas.length) await prisma.auditLog.deleteMany({ where: { entityId: { in: seededIds(entitas) } } });
+  if (jejakNota.length) await prisma.auditLog.deleteMany({ where: { id: { in: seededIds(jejakNota) } } });
   if (beban.length) await prisma.returnCharge.deleteMany({ where: { id: { in: seededIds(beban.map((b) => b.id)) } } });
   if (klaimIds.length) await prisma.paymentClaim.deleteMany({ where: { id: { in: seededIds(klaimIds) } } });
   if (nri.length) await prisma.warehouseReturn.deleteMany({ where: { id: { in: seededIds(nri.map((n) => n.id)) } } });
@@ -233,5 +268,124 @@ describe("BKM kedua tidak boleh melunasi bagian faktur yang ditahan retur", () =
       expect(["RETUR_DITAHAN", "MELEBIHI_SISA"]).toContain(gagal && !gagal.ok ? gagal.alasan : "");
       expect(await dilunasiTerverifikasi()).toBeLessThanOrEqual(1_000_000);
     }
+  });
+});
+
+describe("selisih yang ditanggung TOKO tetap terbuka di nota asal (P84, keputusan 1 2026-10-29)", () => {
+  async function selisih200(): Promise<{ nrtId: string; chargeId: string; bkmId: string }> {
+    const n = await nrt(300_000);
+    const a = await lapor(1_000_000, { nilai: 300_000, nrtId: n });
+    if (!a.ok) throw new Error(`BKM pertama harus tercatat: ${a.alasan}`);
+    expect((await verifikasi(a.id)).ok).toBe(true);
+    await hitungGudang(n, 100_000);
+    const beban = await prisma.returnCharge.findFirstOrThrow({ where: { storeReturnId: seededId(n) }, select: { id: true } });
+    return { nrtId: n, chargeId: beban.id, bkmId: a.id };
+  }
+
+  it("menahan bagian selisihnya tanpa faktur baru; BKM berikutnya boleh melunasinya", async () => {
+    const { chargeId } = await selisih200();
+    expect(await bacaSisaDanTahanan(prisma, piutangId)).toEqual({ sisa: 200_000, tertahan: 200_000 });
+
+    expect(
+      (await putuskanBeban({ chargeId, bearer: "TOKO", alasan: "toko mengaku barangnya laku", olehUserId: keuanganId })).ok,
+    ).toBe(true);
+    // Tidak dikreditkan ke toko, tapi bukan lagi tahanan yang lepas sendiri: tokonya berutang.
+    expect(await bacaSisaDanTahanan(prisma, piutangId)).toEqual({ sisa: 200_000, tertahan: 0 });
+    // Tidak ada faktur BEBAN/<NRT> — satu-satunya faktur toko ini tetap faktur asalnya.
+    expect(await prisma.receivable.count({ where: { storeId: seededId(tokoId) } })).toBe(1);
+
+    const b = await lapor(200_000);
+    if (!b.ok) throw new Error(`BKM penagih harus tercatat: ${b.alasan}`);
+    expect(await verifikasi(b.id)).toEqual({ ok: true, sisaBaru: [0] });
+  });
+
+  it("sesudah toko membayar bagian itu, mengalihkannya ke sales ditolak — toko akan kelebihan bayar", async () => {
+    const { chargeId } = await selisih200();
+    expect((await putuskanBeban({ chargeId, bearer: "TOKO", alasan: "toko mengaku", olehUserId: keuanganId })).ok).toBe(true);
+    const b = await lapor(200_000);
+    if (!b.ok) throw new Error("BKM penagih harus tercatat");
+    expect((await verifikasi(b.id)).ok).toBe(true);
+
+    expect(
+      await alihkanBeban({ chargeId, bearer: "SALES", bearerUserId: salesId, alasan: "tutup nota", olehUserId: keuanganId }),
+    ).toEqual({ ok: false, alasan: "TOKO_SUDAH_MEMBAYAR" });
+    const beban = await prisma.returnCharge.findUniqueOrThrow({ where: { id: seededId(chargeId) }, select: { bearer: true } });
+    expect(beban.bearer).toBe("TOKO");
+    expect(await bacaSisaDanTahanan(prisma, piutangId)).toEqual({ sisa: 0, tertahan: 0 });
+  });
+
+  it("dialihkan ke sales SEBELUM toko membayar: tahanannya lepas (nota ditutup)", async () => {
+    const { chargeId } = await selisih200();
+    expect((await putuskanBeban({ chargeId, bearer: "TOKO", alasan: "toko mengaku", olehUserId: keuanganId })).ok).toBe(true);
+    expect(
+      (await alihkanBeban({ chargeId, bearer: "SALES", bearerUserId: salesId, alasan: "nota harus ditutup", olehUserId: keuanganId }))
+        .ok,
+    ).toBe(true);
+    expect(await bacaSisaDanTahanan(prisma, piutangId)).toEqual({ sisa: 0, tertahan: 0 });
+  });
+
+  it("sesudah toko membayar bagian itu, barang susulannya ditolak TOKO_SUDAH_MEMBAYAR — tidak ada NRI susulan, tahanan tetap", async () => {
+    const { nrtId, chargeId } = await selisih200();
+    expect((await putuskanBeban({ chargeId, bearer: "TOKO", alasan: "toko mengaku", olehUserId: keuanganId })).ok).toBe(true);
+    const b = await lapor(200_000);
+    if (!b.ok) throw new Error("BKM penagih harus tercatat");
+    expect((await verifikasi(b.id)).ok).toBe(true);
+
+    expect(
+      await catatHitunganSusulan({
+        storeReturnId: nrtId,
+        warehouseUserId: gudangId,
+        receivedAt: wib("2026-10-02"),
+        deliveryMethod: "SALES",
+        physicalAmount: 150_000,
+      }),
+    ).toEqual({ ok: false, alasan: "TOKO_SUDAH_MEMBAYAR" });
+    // Seluruh transaksinya batal: tidak ada hitungan susulan, beban dan sisa faktur tetap.
+    expect(await prisma.warehouseReturn.count({ where: { followUpOfStoreReturnId: seededId(nrtId) } })).toBe(0);
+    const beban = await prisma.returnCharge.findUniqueOrThrow({ where: { id: seededId(chargeId) }, select: { amount: true, bearer: true } });
+    expect([Number(beban.amount), beban.bearer]).toEqual([200_000, "TOKO"]);
+    expect(await bacaSisaDanTahanan(prisma, piutangId)).toEqual({ sisa: 0, tertahan: 0 });
+  });
+
+  it("sesudah toko membayar bagian itu, menjadikan penerimaan tanpa nota sebagai susulannya ditolak TOKO_SUDAH_MEMBAYAR", async () => {
+    const { nrtId, chargeId } = await selisih200();
+    expect((await putuskanBeban({ chargeId, bearer: "TOKO", alasan: "toko mengaku", olehUserId: keuanganId })).ok).toBe(true);
+    const b = await lapor(200_000);
+    if (!b.ok) throw new Error("BKM penagih harus tercatat");
+    expect((await verifikasi(b.id)).ok).toBe(true);
+
+    const yatim = await catatHitunganGudang({
+      storeId: tokoId,
+      warehouseUserId: gudangId,
+      receivedAt: wib("2026-10-02"),
+      deliveryMethod: "EKSPEDISI",
+      physicalAmount: 150_000,
+    });
+    if (!yatim.ok) throw new Error(`hitungan yatim gagal: ${yatim.alasan}`);
+    expect(await jadikanSusulan({ warehouseReturnId: yatim.id, storeReturnId: nrtId, olehUserId: keuanganId })).toEqual({
+      ok: false,
+      alasan: "TOKO_SUDAH_MEMBAYAR",
+    });
+    // Penerimaannya tetap yatim; beban dan sisa faktur tidak bergerak.
+    expect(
+      await prisma.warehouseReturn.findUniqueOrThrow({ where: { id: seededId(yatim.id) }, select: { followUpOfStoreReturnId: true } }),
+    ).toEqual({ followUpOfStoreReturnId: null });
+    const beban = await prisma.returnCharge.findUniqueOrThrow({ where: { id: seededId(chargeId) }, select: { amount: true } });
+    expect(Number(beban.amount)).toBe(200_000);
+    expect(await bacaSisaDanTahanan(prisma, piutangId)).toEqual({ sisa: 0, tertahan: 0 });
+  });
+
+  it("barang susulan yang sudah dihitung mengecilkan tahanan sebelum ada keputusan", async () => {
+    const { nrtId } = await selisih200();
+    const h = await catatHitunganSusulan({
+      storeReturnId: nrtId,
+      warehouseUserId: gudangId,
+      receivedAt: wib("2026-10-02"),
+      deliveryMethod: "SALES",
+      physicalAmount: 150_000,
+    });
+    if (!h.ok) throw new Error(`hitungan susulan gagal: ${h.alasan}`);
+    expect(h.sisaSelisih).toBe(50_000);
+    expect(await bacaSisaDanTahanan(prisma, piutangId)).toEqual({ sisa: 50_000, tertahan: 50_000 });
   });
 });

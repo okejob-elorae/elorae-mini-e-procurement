@@ -4,6 +4,7 @@ import {
   Prisma,
   createItemFromIngest,
   pruneJubelioOrphans,
+  recordJubelioObservedPrice,
   recordJubelioPriceOnMapping,
   updateItemFromIngest,
   upsertJubelioImage,
@@ -11,6 +12,7 @@ import {
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { JubelioHttpService } from "../http.service";
 import { fetchItemGroups } from "../inventory/fetch-item-groups";
+import { OUTBOX_SKIP_REASONS } from "../outbox/outbox-status";
 import { buildCatalogDrafts, sellingPriceToDecimal } from "./map-catalog";
 import type {
   CatalogItemDraft,
@@ -63,6 +65,37 @@ export async function ensureInventoryRows(
   });
 }
 
+/**
+ * The draft narrowed to the variants the ERP item itself lists, for an item whose ERP edits are
+ * not reaching Jubelio (see the update branch of `persistDraft`). The rule is the product push's
+ * own: it keeps a mapping whose `erpVariantSku` is in the item's variant skus — or `""` for an
+ * item without variants — and DELETEs every other one in Jubelio. So a Jubelio variant is kept here
+ * only when its key matches that set exactly; anything else would be mapped only to be deleted.
+ *
+ * - ERP without variants, Jubelio without variants: kept whole (the one `""` mapping and row).
+ * - ERP without variants, Jubelio with variants (or the reverse): nothing is mapped or created.
+ * - Both with variants: the Jubelio variants whose sku the ERP lists, nothing else.
+ */
+export function limitToErpVariants(
+  draft: CatalogItemDraft,
+  erpVariants: VariantJson[] | null | undefined,
+): CatalogItemDraft {
+  const erpSkus = new Set(
+    (Array.isArray(erpVariants) ? erpVariants : [])
+      .map((v) => (v && typeof v.sku === "string" ? v.sku : ""))
+      .filter((sku) => sku !== ""),
+  );
+  if (erpSkus.size === 0) {
+    return draft.variantless ? draft : { ...draft, variants: [], sourceVariants: [] };
+  }
+  if (draft.variantless) return { ...draft, variantless: false, variants: [], sourceVariants: [] };
+  return {
+    ...draft,
+    variants: draft.variants.filter((v) => erpSkus.has(v.sku)),
+    sourceVariants: draft.sourceVariants.filter((sv) => erpSkus.has(sv.erpVariantSku)),
+  };
+}
+
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -98,6 +131,12 @@ export class JubelioCatalogSyncService {
     const dryRun = opts.dryRun ?? false;
 
     const categoryIdByJubelioId = await this.loadCategoryMap();
+    /*
+     * Captured BEFORE the fetch: what Jubelio showed is recorded as read at this moment, so a push
+     * that lands while the fetch is running is never overwritten by this older reading
+     * (`recordJubelioObservedPrice` refuses a read older than the one recorded).
+     */
+    const readAt = new Date();
     const payload = await fetchItemGroups(this.http, this.logger, {
       stopWhenSeen: opts.itemGroupIds?.length ? new Set(opts.itemGroupIds) : undefined,
     });
@@ -132,7 +171,7 @@ export class JubelioCatalogSyncService {
     // Fix 1: bounded parallel draft processing
     const settled = await mapWithConcurrency(drafts, CONCURRENCY, async (draft) => {
       if (!dryRun && !uomId) throw new Error("UOM PCS missing");
-      return this.persistDraft(draft, uomId, dryRun, existingBySku);
+      return this.persistDraft(draft, uomId, dryRun, existingBySku, readAt);
     });
 
     for (let i = 0; i < settled.length; i++) {
@@ -240,6 +279,7 @@ export class JubelioCatalogSyncService {
     uomId: string,
     dryRun: boolean,
     existingBySku: Map<string, { id: string; sku: string; description: string | null; variants: Prisma.JsonValue }>,
+    readAt: Date,
   ): Promise<{ action: "create" | "update" | "skip"; warnings: string[] }> {
     const warnings: string[] = [];
     // Fix 2: use prefetched map instead of per-draft findUnique
@@ -250,7 +290,9 @@ export class JubelioCatalogSyncService {
     }
 
     const variantsJson = draft.variants as Prisma.InputJsonValue;
+    /* THE Jubelio price is the highest variant price (owner answer P1); see summarizeJubelioPrices. */
     const sellingPrice = sellingPriceToDecimal(draft.sellingPrice);
+    const observed = draft.priceKnown ? { highest: draft.sellingPrice, lowest: draft.lowestPrice } : null;
 
     if (!existing) {
       /*
@@ -274,7 +316,7 @@ export class JubelioCatalogSyncService {
             reorderPoint: null,
             overReceiveThreshold: null,
             sellingPrice,
-          });
+          }, undefined, observed ? { ...observed, readAt } : undefined);
           await ensureInventoryRows(tx, item.id, draft);
           await this.upsertMappings(tx, item.id, draft);
           createdItemId = item.id;
@@ -306,16 +348,51 @@ export class JubelioCatalogSyncService {
      */
     await this.prisma.$transaction(
       async (tx) => {
-        await updateItemFromIngest(tx, { id: existing.id }, {
-          nameId: draft.nameId,
-          nameEn: draft.nameEn,
-          description: draft.description ?? existing.description,
-          variants: draft.variantless ? [] : (merged as Prisma.InputJsonValue),
-        });
-        await ensureInventoryRows(tx, existing.id, draft);
-        await this.upsertMappings(tx, existing.id, draft);
+        /*
+         * An ERP edit that never reached Jubelio must not be undone from Jubelio: the item's pushes
+         * are HELD while its Jubelio price differs (owner answer P75, `price_differs_held`), and a
+         * "Toko offline saja" item's edits are never pushed at all (P3a). Writing Jubelio's name and
+         * variants here would bring the old ones back into the ERP and the salesman/SPG catalogs,
+         * and the release of the hold would then send them back to Jubelio. So for those items the
+         * synced fields are kept as the ERP has them, and only the variants the ERP itself lists are
+         * mapped and given inventory rows (`limitToErpVariants`): a mapping for a variant the ERP
+         * does not list is exactly what the next push DELETEs in Jubelio (its `removed` block), and
+         * that next push is the release, a Kirim ulang, a confirmation or the P72 (de)activation —
+         * a variant someone added in Jubelio would be deleted there. It is left unmapped instead,
+         * and merged by the first ingest after the item's pushes resume. What Jubelio shows is
+         * recorded over ALL its variants either way, the same reading the observer and the push
+         * take (`summarizeGroupsPrice`).
+         */
+        let kept = draft;
+        if (await this.erpEditsUnsent(tx, existing.id)) {
+          await updateItemFromIngest(tx, { id: existing.id }, {});
+          kept = limitToErpVariants(draft, existingVariants);
+          warnings.push(
+            `Item ${draft.itemSku}: name and variants kept as in the ERP (sold offline only, or its Jubelio pushes are held for a price difference)`,
+          );
+          const unmapped = draft.sourceVariants.length - kept.sourceVariants.length;
+          if (unmapped > 0) {
+            warnings.push(
+              `Item ${draft.itemSku}: ${unmapped} Jubelio variant(s) the ERP does not list left unmapped until its pushes resume`,
+            );
+          }
+        } else {
+          await updateItemFromIngest(tx, { id: existing.id }, {
+            nameId: draft.nameId,
+            nameEn: draft.nameEn,
+            description: draft.description ?? existing.description,
+            variants: draft.variantless ? [] : (merged as Prisma.InputJsonValue),
+          });
+        }
+        await ensureInventoryRows(tx, existing.id, kept);
+        await this.upsertMappings(tx, existing.id, kept);
         if (draft.sourceVariants.length > 0) {
           await recordJubelioPriceOnMapping(tx, existing.id, sellingPrice);
+          /*
+           * What Jubelio shows now, highest and lowest variant price (P1/P2): the warning "Harga di
+           * Jubelio berbeda dengan ERP" is derived from it. Never written onto sellingPrice.
+           */
+          if (observed) await recordJubelioObservedPrice(tx, existing.id, observed, readAt);
         }
       },
       CATALOG_PERSIST_TX_OPTIONS,
@@ -323,6 +400,21 @@ export class JubelioCatalogSyncService {
     await this.syncImages(existing.id, draft);
 
     return { action: "update", warnings };
+  }
+
+  /**
+   * The item holds ERP edits Jubelio has not received and will not receive by itself: it is sold
+   * in offline stores only, or its latest product push was held for a price difference.
+   */
+  private async erpEditsUnsent(tx: Prisma.TransactionClient, itemId: string): Promise<boolean> {
+    const item = await tx.item.findUnique({ where: { id: itemId }, select: { salesChannel: true } });
+    if (item?.salesChannel === "OFFLINE") return true;
+    const latest = await tx.jubelioOutbox.findFirst({
+      where: { entityType: "product_push", entityId: itemId },
+      orderBy: { createdAt: "desc" },
+      select: { status: true, skipReason: true },
+    });
+    return latest?.status === "SKIPPED" && latest.skipReason === OUTBOX_SKIP_REASONS.PRICE_DIFFERS_HELD;
   }
 
   private async syncImages(itemId: string, draft: CatalogItemDraft): Promise<void> {

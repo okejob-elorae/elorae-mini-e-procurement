@@ -36,6 +36,8 @@ import { antreOpname } from "@/lib/pwa/offline/luring-antrean";
 import { ikatanKunjungan, kunjunganLokalSah } from "@/lib/pwa/offline/luring-kunjungan";
 import { useKunjunganLokal } from "@/lib/pwa/offline/luring-kunjungan-hook";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
+import { BarangDisisihkanBanner } from "../BarangDisisihkanBanner";
+import type { BarangDisisihkan } from "@/lib/spg/retur-pembeli-queries";
 
 /** Kelompok barang yang dirender di hasil pencarian — katalog bisa ribuan varian. */
 const BATAS_HASIL = 20;
@@ -128,6 +130,7 @@ export function OpnameClient({
   kunjunganServer = null,
   opnamePertama,
   pilihan,
+  disisihkan = [],
 }: {
   /** Kunci draf — draf toko lain tidak pernah terbawa. */
   storeId: string;
@@ -137,6 +140,8 @@ export function OpnameClient({
   kunjunganServer?: { id: string; checkinAtMs: number } | null;
   opnamePertama: boolean;
   pilihan: BarisPilihan[];
+  /** Barang retur pembeli yang disisihkan (P12) — tidak di rak, jangan dihitung. */
+  disisihkan?: BarangDisisihkan[];
 }) {
   const t = useTranslations("pwa.spgOpname");
   const td = dinamis(t);
@@ -402,6 +407,8 @@ export function OpnameClient({
         </div>
         <p className="truncate text-sm text-muted-foreground">{namaToko}</p>
       </header>
+
+      <BarangDisisihkanBanner barang={disisihkan} />
 
       {!sudahCheckIn ? (
         <PerluCheckIn judul={t("checkIn.title")} isi={t("checkIn.body")} tombol={t("checkIn.cta")} />

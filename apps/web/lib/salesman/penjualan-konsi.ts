@@ -27,9 +27,9 @@ import { kunciHariWib } from "@/lib/dashboard/tren";
  * sampai saat laku — sama dengan aturan penagih piutang (pemegang dulu,
  * penjual sebagai cadangan).
  *
- * Di HP salesman konsinyasi tetap TANPA rupiah (aturan mutlak) — hanya pcs
- * laku. Layar kantor (komisi, target, peringkat, rincian sales) memakai
- * rupiahnya.
+ * HP salesman juga menampilkan rupiah ini (P56, jawaban pemilik 2026-11-02
+ * "tampilkan semuanya saja") di samping pcs lakunya — sama dengan layar kantor
+ * (komisi, target, peringkat, rincian sales). HP SPG tidak pernah membacanya.
  */
 
 /** Dasar omzet konsinyasi yang berlaku. Diganti di sini bila pemilik memutuskan lain. */

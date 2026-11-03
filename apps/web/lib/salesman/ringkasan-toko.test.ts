@@ -89,6 +89,7 @@ d("ringkasanToko (test bed only)", () => {
   let receivableIds: string[] = [];
   let noteIds: string[] = [];
   let visitIds: string[] = [];
+  let konsiTungguId = "";
 
   beforeAll(async () => {
     uomId = "";
@@ -103,11 +104,19 @@ d("ringkasanToko (test bed only)", () => {
     receivableIds = [];
     noteIds = [];
     visitIds = [];
+    konsiTungguId = "";
 
     uomId = (await prisma.uOM.create({ data: { code: `TEST-UOM-RT-${token}`, nameId: "t", nameEn: "t" } })).id;
     for (const k of ["A", "B", "C"]) {
       const it = await prisma.item.create({
-        data: { sku: `TEST-RT-${k}-${token}`, nameId: `Barang ${k}`, nameEn: `Item ${k}`, type: "FINISHED_GOOD", uomId },
+        data: {
+          sku: `TEST-RT-${k}-${token}`,
+          nameId: `Barang ${k}`,
+          nameEn: `Item ${k}`,
+          type: "FINISHED_GOOD",
+          uomId,
+          ...(k === "A" ? { sellingPrice: 5000 } : {}),
+        },
       });
       itemIds.push(it.id);
     }
@@ -120,7 +129,16 @@ d("ringkasanToko (test bed only)", () => {
       })
     ).id;
     tokoKonsiId = (
-      await prisma.store.create({ data: { code: `TEST-RT-K-${token}`, name: "Toko RT Konsi", address: "x", termsType: "KONSI" } })
+      await prisma.store.create({
+        data: {
+          code: `TEST-RT-K-${token}`,
+          name: "Toko RT Konsi",
+          address: "x",
+          termsType: "KONSI",
+          salesmanId: salesAId,
+          markupPercent: 20,
+        },
+      })
     ).id;
     tokoTanpaPemegangId = (
       await prisma.store.create({ data: { code: `TEST-RT-N-${token}`, name: "Toko RT Bebas", address: "x", termsType: "PUTUS" } })
@@ -179,11 +197,12 @@ d("ringkasanToko (test bed only)", () => {
     orderIds.push(tolak.id);
 
     // Toko konsi: pesanan disetujui menyumbang favorit; yang menunggu tidak.
+    // Disetujui kantor: nilainya sudah ditetapkan (7 × 6.000), jadi tampil apa adanya.
     const konsiOk = await prisma.fieldSalesOrder.create({
       data: {
         orderNo: `TEST-RT-${token}-3`, storeId: tokoKonsiId, salesmanId: salesAId, status: "APPROVED", orderType: "KONSI",
-        subtotal: 0, total: 0, approvedAt: new Date(),
-        lines: { create: [{ itemId: itemC, productName: "Barang C", qty: 7, unitPrice: 0, lineTotal: 0 }] },
+        subtotal: 42000, total: 42000, approvedAt: new Date(),
+        lines: { create: [{ itemId: itemC, productName: "Barang C", qty: 7, unitPrice: 6000, lineTotal: 42000 }] },
       },
     });
     const konsiTunggu = await prisma.fieldSalesOrder.create({
@@ -194,18 +213,19 @@ d("ringkasanToko (test bed only)", () => {
       },
     });
     orderIds.push(konsiOk.id, konsiTunggu.id);
+    konsiTungguId = konsiTunggu.id;
 
     // Piutang toko putus: satu lewat janji (kontrabon 60 hari lalu), satu belum.
     const r1 = await prisma.receivable.create({
       data: {
         invoiceNo: `TEST-RT-INV-${token}-1`, storeId: tokoPutusId, invoiceDate: new Date(), dueDate: new Date(sekarang.getTime() + 10 * HARI),
-        amount: 100000, outstanding: 100000, salesmanId: salesBId,
+        amount: 100000, outstanding: 100000, originalAmount: 100000, outstandingAmount: 100000, salesmanId: salesBId,
       },
     });
     const r2 = await prisma.receivable.create({
       data: {
         invoiceNo: `TEST-RT-INV-${token}-2`, storeId: tokoPutusId, invoiceDate: new Date(), dueDate: new Date(sekarang.getTime() + 20 * HARI),
-        amount: 50000, outstanding: 50000, salesmanId: salesBId,
+        amount: 50000, outstanding: 50000, originalAmount: 50000, outstandingAmount: 50000, salesmanId: salesBId,
       },
     });
     receivableIds.push(r1.id, r2.id);
@@ -222,10 +242,20 @@ d("ringkasanToko (test bed only)", () => {
     const r3 = await prisma.receivable.create({
       data: {
         invoiceNo: `TEST-RT-INV-${token}-3`, storeId: tokoTanpaPemegangId, invoiceDate: new Date(), dueDate: new Date(),
-        amount: 1000, outstanding: 1000, salesmanId: salesBId,
+        amount: 1000, outstanding: 1000, originalAmount: 1000, outstandingAmount: 1000, salesmanId: salesBId,
       },
     });
     receivableIds.push(r3.id);
+
+    // Tagihan siklus konsinyasi di toko konsi yang dipegang A (P31: nominalnya hanya untuk A).
+    const r4 = await prisma.receivable.create({
+      data: {
+        invoiceNo: `TEST-RT-KNS-${token}`, storeId: tokoKonsiId, invoiceDate: new Date(), dueDate: new Date(sekarang.getTime() + 30 * HARI),
+        amount: 70000, outstanding: 70000, originalAmount: 70000, outstandingAmount: 70000, salesmanId: salesAId,
+        source: "MANUAL", isConsignment: true,
+      },
+    });
+    receivableIds.push(r4.id);
 
     // Kunjungan: B kemarin (selesai), A sekarang (masih berjalan).
     const v1 = await prisma.storeVisit.create({
@@ -261,7 +291,8 @@ d("ringkasanToko (test bed only)", () => {
     const tol = (await bacaAturanKreditDb()).hariToleransi;
     const r = await ringkasanToko(tokoPutusId, { penontonId: salesAId });
     expect(r!.jenisToko).toBe("PUTUS");
-    expect(r!.tagihan).toMatchObject({ sisa: 150000, fakturTerbuka: 2, lebih: 0, bolehLihat: true });
+    expect(r!.tagihan).toMatchObject({ sisa: 150000, fakturTerbuka: 2, lebih: 0, bolehLihat: true, belumDinota: 0 });
+    expect(r!.tagihanHanyaPemegang).toBe(false);
     expect(r!.tagihan!.lewatJanji).toBe(60 > tol ? 100000 : 0);
     expect(r!.tagihan!.faktur[0]).toMatchObject({ invoiceNo: `TEST-RT-INV-${token}-1`, keadaan: "lewat", jenisTanggal: "janji" });
     expect(r!.tagihan!.faktur[1]).toMatchObject({ keadaan: "belum", jenisTanggal: "jatuhTempo", sisa: 50000 });
@@ -293,12 +324,42 @@ d("ringkasanToko (test bed only)", () => {
     expect(b!.kunjunganTerakhir).toMatchObject({ oleh: "Sales A", olehSaya: false });
   });
 
-  it("toko konsi: tanpa tagihan, favorit dari pesanan disetujui saja, nilai konsi tunggu disembunyikan", async () => {
+  it("toko konsi, pemegangnya: tagihan konsinyasi dengan nominal; pesanan menunggu membawa perkiraan (P18/P31)", async () => {
     const r = await ringkasanToko(tokoKonsiId, { penontonId: salesAId });
     expect(r!.jenisToko).toBe("KONSI");
-    expect(r!.tagihan).toBeNull();
+    expect(r!.tagihan).toMatchObject({ sisa: 70000, fakturTerbuka: 1, bolehLihat: true });
+    expect(r!.tagihanHanyaPemegang).toBe(false);
     expect(r!.favorit.map((f) => [f.nama, f.pcs])).toEqual([["Barang C", 7]]);
-    expect(r!.pesananTerakhir).toMatchObject({ orderNo: `TEST-RT-${token}-4`, total: null, milikSaya: true, keadaan: "MENUNGGU" });
+    // 99 pcs × (5.000 + markup 20%) = 594.000.
+    expect(r!.pesananTerakhir).toMatchObject({
+      orderNo: `TEST-RT-${token}-4`,
+      total: null,
+      perkiraan: { nilai: 594000, lengkap: true },
+      milikSaya: true,
+      keadaan: "MENUNGGU",
+    });
     expect(r!.kunjunganTerakhir).toBeNull();
+  });
+
+  it("toko konsi, bukan pemegangnya: tagihan disembunyikan (P31)", async () => {
+    const r = await ringkasanToko(tokoKonsiId, { penontonId: salesBId });
+    expect(r!.tagihan).toBeNull();
+    expect(r!.tagihanHanyaPemegang).toBe(true);
+    expect(JSON.stringify(r)).not.toContain("70000");
+  });
+
+  it("toko konsi, pesanan terakhir yang sudah DISETUJUI: nilai tersimpannya tampil, tanpa perkiraan (P18)", async () => {
+    // Pesanan yang menunggu disingkirkan dulu supaya yang disetujui menjadi yang terakhir.
+    await prisma.fieldSalesOrder.update({ where: { id: seededId(konsiTungguId) }, data: { status: "REJECTED", rejectedAt: new Date() } });
+    try {
+      const r = await ringkasanToko(tokoKonsiId, { penontonId: salesAId });
+      expect(r!.pesananTerakhir).toMatchObject({ orderNo: `TEST-RT-${token}-3`, total: 42000, perkiraan: null });
+      expect(typeof r!.pesananTerakhir!.total).toBe("number");
+    } finally {
+      await prisma.fieldSalesOrder.update({
+        where: { id: seededId(konsiTungguId) },
+        data: { status: "PENDING_APPROVAL", rejectedAt: null },
+      });
+    }
   });
 });

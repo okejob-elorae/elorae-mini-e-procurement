@@ -260,42 +260,17 @@ describe("menurunUntukHp", () => {
     expect(masuk.map((m) => m.storeId)).toEqual(["putus-tajam", "jarang", "putus-sedikit", "tanpa-nilai"]);
   });
 
-  describe("toko dengan nilai konsinyasi", () => {
-    // Campuran: 90 hari lalu konsi 80.000, 90 hari terakhir van 15.000 (notanya
-    // dipegang salesman). Rasio 0,1875 → 15.000 ÷ 0,1875 = 80.000 = total konsi.
-    const campur = menurun("campur", { nama: "Campur", alasan: "NILAI_TURUN", hariSejakTerakhir: 25, nilai90: 15_000, nilai90Sebelumnya: 80_000 });
+  describe("toko dengan nilai konsinyasi (P56)", () => {
     const konsi = menurun("konsi", { nama: "Konsi", alasan: "NILAI_TURUN", hariSejakTerakhir: 25, nilai90: 21_150, nilai90Sebelumnya: 110_040 });
-    const konsiJarang = menurun("konsi-jarang", { nama: "Konsi Jarang", hariSejakTerakhir: 40, jarakBiasa: 20, nilai90: 10_000, nilai90Sebelumnya: 30_000 });
     const putus = menurun("putus", { nama: "Putus", alasan: "NILAI_TURUN", hariSejakTerakhir: 25, nilai90: 30_000, nilai90Sebelumnya: 100_000 });
-    const tokoKonsi = new Set(["campur", "konsi", "konsi-jarang"]);
-    const hpKonsi = menurunUntukHp([konsi, putus, campur, konsiJarang], { tokoKonsi });
+    const hp = menurunUntukHp([konsi, putus]);
 
-    it("tidak mendapat rasio — persen turunnya tidak bisa dihitung di HP, alasannya tetap", () => {
-      for (const id of tokoKonsi) {
-        expect(dari(hpKonsi, id).rasioNilai).toBeNull();
-        expect(persenTurun(dari(hpKonsi, id))).toBeNull();
-      }
-      expect(dari(hpKonsi, "campur").alasan).toBe("NILAI_TURUN");
-      expect(dari(hpKonsi, "konsi-jarang").alasan).toBe("JARANG");
-      // Toko tanpa konsi tetap mendapat angkanya.
-      expect(dari(hpKonsi, "putus").rasioNilai).toBe(0.3);
-      expect(persenTurun(dari(hpKonsi, "putus"))).toBe(70);
-      const json = JSON.stringify(hpKonsi);
-      for (const angka of ["0.1875", "0.1922", "0.3333", "80000", "15000", "21150", "110040"]) expect(json).not.toContain(angka);
-    });
-
-    it("urutannya tidak bergantung pada rupiah konsi: yang tanpa rasio di belakang, menurut nama", () => {
-      // Dari rupiahnya, campur (0,1875) dan konsi (0,1922) lebih tajam dari putus (0,3).
-      expect(urutkanTokoMenurun([konsi, putus, campur, konsiJarang]).map((m) => m.storeId)).toEqual([
-        "konsi-jarang",
-        "campur",
-        "konsi",
-        "putus",
-      ]);
-      expect(hpKonsi.map((m) => m.storeId)).toEqual(["konsi-jarang", "putus", "campur", "konsi"]);
-      // Masukan dengan urutan lain menghasilkan payload yang sama persis.
-      expect(menurunUntukHp([campur, konsiJarang, putus, konsi], { tokoKonsi })).toEqual(hpKonsi);
-      expect(urutkanTokoMenurun(hpKonsi)).toEqual(hpKonsi);
+    it("mendapat rasio 'turun X%' seperti toko lain; rupiahnya tetap tidak dikirim", () => {
+      expect(dari(hp, "konsi").rasioNilai).toBe(0.1922);
+      expect(persenTurun(dari(hp, "konsi"))).toBe(81);
+      expect(dari(hp, "putus").rasioNilai).toBe(0.3);
+      expect(dari(hp, "konsi").nilai90).toBeNull();
+      expect(dari(hp, "konsi").nilai90Sebelumnya).toBeNull();
     });
   });
 });

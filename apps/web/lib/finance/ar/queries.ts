@@ -24,10 +24,11 @@ export type ReceivableRow = {
   storeId: string;
   storeName: string;
   docNo: string;
-  /** Null for a SELL_THROUGH row whose report has no salesman yet, or an INVOICE row raised without
-   * one; a DELIVERY row keeps the pre-existing "" fallback so existing output is byte-identical. */
+  /** Null for a SELL_THROUGH row whose report has no salesman yet, an INVOICE row raised without
+   * one, or a CONSIGNMENT_CYCLE row (a konsi cycle bill carries no seller); a DELIVERY row keeps the
+   * pre-existing "" fallback so existing output is byte-identical. */
   salesmanName: string | null;
-  sourceKind: "DELIVERY" | "SELL_THROUGH" | "INVOICE";
+  sourceKind: "DELIVERY" | "SELL_THROUGH" | "INVOICE" | "CONSIGNMENT_CYCLE";
   invoiceDate: Date;
   dueDate: Date;
   originalAmount: number;
@@ -55,8 +56,8 @@ export function whereFor(f: ReceivableFilters): Prisma.ReceivableWhereInput {
 
   /*
    * One `AND` element per independent `OR`: a receivable's salesman lives on its delivery's order,
-   * its sellThrough report, or — for a MANUAL/IMPORT invoice backed by neither — the receivable row
-   * itself, so that filter is itself an `OR` now — and the search filter below is its own `OR` too.
+   * its sellThrough report, or — for a MANUAL/IMPORT invoice or a konsi cycle bill — the receivable
+   * row itself, so that filter is itself an `OR` now — and the search filter below is its own `OR` too.
    * Two sibling `where.OR` assignments on the same object would silently overwrite each other, so
    * each is nested inside its own `AND` element instead, keeping them independent. With no salesman
    * filter this reduces to exactly the prior shape: a single `AND` element holding the search `OR`.
@@ -69,6 +70,7 @@ export function whereFor(f: ReceivableFilters): Prisma.ReceivableWhereInput {
         { delivery: { order: { salesmanId: f.salesmanId } } },
         { sellThrough: { salesmanId: f.salesmanId } },
         { source: { in: ["MANUAL", "IMPORT"] }, salesmanId: f.salesmanId },
+        { consignmentCycleId: { not: null }, salesmanId: f.salesmanId },
       ],
     });
   }
@@ -81,6 +83,7 @@ export function whereFor(f: ReceivableFilters): Prisma.ReceivableWhereInput {
         { delivery: { docNo: { contains: search } } },
         { sellThrough: { docNo: { contains: search } } },
         { source: { in: ["MANUAL", "IMPORT"] }, invoiceNo: { contains: search } },
+        { consignmentCycleId: { not: null }, invoiceNo: { contains: search } },
       ],
     });
   }
@@ -172,8 +175,8 @@ export async function listReceivables(filters: ReceivableFilters): Promise<{
       storeId: r.storeId,
       storeName: r.store.name,
       docNo: source.docNo,
-      /* DELIVERY keeps the pre-existing "" fallback byte-identical; SELL_THROUGH and INVOICE may
-       * genuinely have no salesman, so they stay null rather than being coerced to "". */
+      /* DELIVERY keeps the pre-existing "" fallback byte-identical; SELL_THROUGH, INVOICE and
+       * CONSIGNMENT_CYCLE may genuinely have no salesman, so they stay null rather than being coerced to "". */
       salesmanName: source.kind === "DELIVERY" ? (source.salesmanName ?? "") : source.salesmanName,
       sourceKind: source.kind,
       invoiceDate: r.invoiceDate,
@@ -246,7 +249,7 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
     },
   });
   if (!r) return null;
-  const { delivery: _delivery, sellThrough: _sellThrough, ...rest } = r;
+  const { delivery: _delivery, sellThrough: _sellThrough, consignmentCycle: _consignmentCycle, ...rest } = r;
   return {
     ...rest,
     source: resolveReceivableSource(r),
@@ -490,9 +493,9 @@ export type ReceivableExportRow = {
   outstandingAmount: number;
   status: string;
   collectorName: string | null;
-  /** Null for a SELL_THROUGH or INVOICE row without a salesman; see `ReceivableRow`. */
+  /** Null for a SELL_THROUGH, INVOICE or CONSIGNMENT_CYCLE row without a salesman; see `ReceivableRow`. */
   salesmanName: string | null;
-  sourceKind: "DELIVERY" | "SELL_THROUGH" | "INVOICE";
+  sourceKind: "DELIVERY" | "SELL_THROUGH" | "INVOICE" | "CONSIGNMENT_CYCLE";
 };
 
 /**

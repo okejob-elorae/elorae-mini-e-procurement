@@ -945,6 +945,37 @@ d("konsi sell-through writer (test bed only)", () => {
       expect(doc.spgSplitSnapshotAt?.getTime()).toBe(doc.approvedAt?.getTime());
       expect(await sharesOf(id)).toEqual([["OWN", state.userId, state.itemId, "", 2]]);
     }, SLOW);
+
+    /*
+     * The RECORD branch guards DRAFT → APPROVED with `updateMany where status DRAFT` and a count
+     * check — not a compare-and-swap on its own (Prisma reads, then writes by id). Two approves of
+     * one report at once must still end with exactly one winner, one snapshot and nothing billed.
+     */
+    it("two RECORD approves of one report at once: exactly one wins, the SPG split is written once, nothing is billed", async () => {
+      await setMethod("SPG_POS");
+      await transferIn(10);
+      await sellAs(state.userId, 3);
+      await sellAs(state.salesmanId, 1);
+      const stocktakeId = await count(6);
+      const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+      const results = await Promise.allSettled([fx.approveRecord(id), fx.approveRecord(id)]);
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+
+      const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) }, include: { lines: true } });
+      expect(doc.status).toBe("APPROVED");
+      expect(doc.spgSplitSnapshotAt?.getTime()).toBe(doc.approvedAt?.getTime());
+      expect(doc.lines.every((l) => l.unitPrice !== null)).toBe(true);
+      expect((await sharesOf(id)).sort(byId)).toEqual(
+        [
+          ["OWN", state.userId, state.itemId, "", 3],
+          ["OWN", state.salesmanId, state.itemId, "", 1],
+        ].sort(byId),
+      );
+      expect(await prisma.receivable.count({ where: { sellThroughId: seededId(id) } })).toBe(0);
+      expect(await prisma.taxInvoice.count({ where: { sellThroughId: seededId(id) } })).toBe(0);
+      expect(await prisma.journal.count({ where: { sourceId: seededId(id) } })).toBe(0);
+    }, SLOW);
   });
 
   /* cancel */
@@ -983,6 +1014,37 @@ d("konsi sell-through writer (test bed only)", () => {
 
   /* approve invoices */
 
+  describe("approve RECORD — the screen's approve since sell-through stopped billing", () => {
+    it("freezes and prices the lines, stores surplus, and creates no receivable, faktur or journal", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      await expect(fx.approveRecord(id)).resolves.toEqual({ ok: true, invoiced: false });
+
+      const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id }, include: { lines: true, receivable: true, taxInvoice: true } });
+      expect(doc).toMatchObject({ status: "APPROVED", baseline: false, invoiceDate: null, dueDate: null, total: null, salesmanId: null });
+      expect(doc.spgSplitSnapshotAt).not.toBeNull();
+      expect(Number(doc.lines[0].unitPrice)).toBe(40000);
+      expect(Number(doc.lines[0].lineTotal)).toBe(160000);
+      expect(doc.receivable).toBeNull();
+      expect(doc.taxInvoice).toBeNull();
+      expect(await prisma.journal.count({ where: { sourceId: id } })).toBe(0);
+    });
+
+    it("never refuses an unpriced line: it stores no price for it", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      await prisma.item.update({ where: { id: state.itemId }, data: { sellingPrice: null } });
+      await expect(fx.approveRecord(id)).resolves.toEqual({ ok: true, invoiced: false });
+      const line = await onlyLine(id);
+      expect(line.unitPrice).toBeNull();
+      expect(line.lineTotal).toBeNull();
+    });
+
+    it("a second RECORD is refused INVALID_STATE", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      await fx.approveRecord(id);
+      await expect(fx.approveRecord(id)).rejects.toMatchObject({ code: "INVALID_STATE" });
+    });
+  });
+
   describe("approve invoices", () => {
     it("stamps prices, dates, total and salesman, and creates one receivable and one faktur", async () => {
       const { id } = await buildShelfCountReportBilling4();
@@ -1006,6 +1068,8 @@ d("konsi sell-through writer (test bed only)", () => {
       expect(doc.receivable?.dueDate.getTime()).toBe(doc.dueDate?.getTime());
       /* The receivables module's own columns, so its screens show the report's real figures. */
       expect(doc.receivable).toMatchObject({ invoiceNo: doc.docNo, source: "DELIVERY", salesmanId: state.salesmanId });
+      /* A sell-through bill is a konsi bill: the marker the Piutang filter and the holder-only rule read. */
+      expect(doc.receivable?.isConsignment).toBe(true);
       expect(Number(doc.receivable?.amount)).toBe(160000);
       expect(Number(doc.receivable?.outstanding)).toBe(160000);
       expect(doc.taxInvoice).toMatchObject({ status: "PENDING", deliveryId: null });

@@ -2,7 +2,6 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getSellThrough } from "@/lib/konsi-sell-through/queries";
-import { listSellThroughSalesmanCandidates } from "@/lib/konsi-sell-through/salesman-candidates";
 import { SellThroughDetailClient } from "./SellThroughDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -23,8 +22,6 @@ export default async function SellThroughDetailPage({ params }: PageProps) {
 
   const canManage = hasPermission(perms, PERMISSIONS.STORES_MANAGE);
   const canDecide = hasPermission(perms, PERMISSIONS.CONSIGNMENT_LOCK);
-  /* Loaded here rather than fetched by the dialog: the candidate query reads the db barrel, which a client file must not import. */
-  const salesmanCandidates = canDecide && report.status === "DRAFT" ? await listSellThroughSalesmanCandidates() : [];
 
   return (
     <SellThroughDetailClient
@@ -32,7 +29,6 @@ export default async function SellThroughDetailPage({ params }: PageProps) {
       canManage={canManage}
       canDecide={canDecide}
       canPrint={canManage}
-      salesmanCandidates={salesmanCandidates}
     />
   );
 }

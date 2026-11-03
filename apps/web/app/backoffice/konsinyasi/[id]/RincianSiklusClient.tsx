@@ -54,9 +54,10 @@ import {
 import { NADA_TAHAP } from '../tahap';
 import { TagihanKonsiCard } from "./TagihanKonsiCard";
 import { PencocokanBukuCard } from "./PencocokanBukuCard";
-import { alasanTolakBukaKunci } from "./buka-kunci";
+import { alasanTolakBukaKunci, alasanTolakKunci } from "./buka-kunci";
 import { formatYearMonth } from "@/app/backoffice/settings/spg-commission/format";
 import { formatKoreksi, type RencanaBayarKomisi } from "@/lib/spg/koreksi";
+import { ringkasRincianGaji } from "@/lib/spg/gaji-pokok";
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string | null) =>
@@ -83,7 +84,6 @@ export function RincianSiklusClient({
   bolehCatatNota,
   bolehCatatPajak,
   bolehBayarGaji,
-  bolehCatatBayar,
 }: {
   data: RincianSiklus;
   katalog: PilihanBarang[];
@@ -97,7 +97,6 @@ export function RincianSiklusClient({
   bolehCatatPajak: boolean;
   /** Menandai gaji SPG dibayar — `spg_commission:pay`. */
   bolehBayarGaji: boolean;
-  bolehCatatBayar: boolean;
 }) {
   const t = useTranslations('konsinyasi');
   const td = dinamis(t);
@@ -113,7 +112,6 @@ export function RincianSiklusClient({
 
   const [kunciTerbuka, setKunciTerbuka] = useState(false);
   const [resmi, setResmi] = useState<BarisResmi[]>([]);
-  const [gajiPokok, setGajiPokok] = useState('0');
 
   const [nomorTerbuka, setNomorTerbuka] = useState<'NOTA' | 'PAJAK' | null>(null);
   // Konfirmasi "Tandai dibayar": yang dibayarkan dan rinciannya, persis rencana penulisnya.
@@ -128,7 +126,17 @@ export function RincianSiklusClient({
     noNota: b.noNota,
     noFakturPajak: b.noFakturPajak,
     komisi: data.komisi,
-    pembayaranToko: data.pelunasan.pembayaran,
+    penghalangTagihan: data.pelunasan.tagihan?.penghalangBuka ?? null,
+  });
+  // Penguncian yang pasti ditolak `kunciAngka` (bulan belum selesai, bulan siklus pertama,
+  // laporan belum lengkap, toko tanpa pemegang): tombolnya mati dengan alasannya.
+  const tolakKunci = alasanTolakKunci({
+    terkunci: data.terkunci,
+    bulanSelesai: data.bulanSelesai,
+    siklusPertama: data.siklusPertama,
+    adaLaporanSpg: data.laporanSpg !== null,
+    adaLaporanToko: data.laporanToko !== null,
+    adaPemegang: data.adaPemegang,
   });
 
   /* Angka resmi dimulai dari laporan TOKO — itu yang sah (pemilik, 2026-10-08);
@@ -143,7 +151,6 @@ export function RincianSiklusClient({
         price: 0,
       })),
     );
-    setGajiPokok('0');
     setKunciTerbuka(true);
   };
 
@@ -240,7 +247,11 @@ export function RincianSiklusClient({
                 {t('unlock')}
               </Button>
             ) : (
-              <Button disabled={pending} onClick={bukaKunciDialog}>
+              <Button
+                disabled={pending || tolakKunci !== null}
+                title={tolakKunci ? td(`err${tolakKunci}`) : undefined}
+                onClick={bukaKunciDialog}
+              >
                 <Lock className="mr-1.5 h-4 w-4" />
                 {t('lock')}
               </Button>
@@ -252,6 +263,9 @@ export function RincianSiklusClient({
 
       {bolehMengunci && data.terkunci && tolakBuka && (
         <p className="text-sm text-muted-foreground">{td(`err${tolakBuka}`)}</p>
+      )}
+      {bolehMengunci && !data.terkunci && tolakKunci && (
+        <p className="text-sm text-muted-foreground">{td(`err${tolakKunci}`)}</p>
       )}
 
       <AlertDialog open={bukaKunciTerbuka} onOpenChange={(o) => !pending && setBukaKunciTerbuka(o)}>
@@ -311,12 +325,7 @@ export function RincianSiklusClient({
         </CardContent>
       </Card>
 
-      <TagihanKonsiCard
-        cycleId={b.id}
-        tagihan={data.tagihan}
-        pelunasan={data.pelunasan}
-        bolehCatatBayar={bolehCatatBayar}
-      />
+      <TagihanKonsiCard tagihan={data.tagihan} pelunasan={data.pelunasan} />
 
       {/* Laporan SPG dan toko: sudah masuk atau belum, dan tombol mencatatnya.
           Angka per barang TIDAK diulang di sini — kartu pencocokan di bawahnya
@@ -452,6 +461,9 @@ export function RincianSiklusClient({
               <TableBody>
                 {data.komisi.map((k) => {
                   const p = k.dibayarPada ? null : k.bayar;
+                  // Baris belum dibayar tanpa angka bayar (ditahan, atau kunci siklus dibuka lagi): "—", bukan
+                  // angka tersimpannya — syarat yang sama dengan lembar cetak (`susunGajiCetak`).
+                  const tanpaAngka = !k.dibayarPada && (!p || Boolean(p.ditahan) || Boolean(k.tahan));
                   const diganti = p !== null && p.berubah && !p.ditahan && Math.round(p.komisiLama * 100) !== Math.round(p.komisiBaru * 100);
                   const garis = p && !p.ditahan ? p.koreksi.filter((x) => x.diterapkan !== 0 || x.dibawa !== 0) : [];
                   const potongan = p && !p.ditahan ? p.potonganHilang : k.potonganHilang;
@@ -460,8 +472,11 @@ export function RincianSiklusClient({
                   <TableRow key={k.id} className={cn(!k.dibayarPada && b.gajiTerlambat && 'bg-destructive/[0.06]')}>
                     <TableCell className="font-medium">
                       {k.spgNama ?? '—'}
-                      {!k.bergaji ? (
-                        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{t("salaryNotParticipant")}</span>
+                      {k.tahan && !k.dibayarPada ? (
+                        <span className="mt-0.5 block max-w-[14rem] text-xs font-normal text-amber-700 dark:text-amber-400">
+                          {td(`err${k.tahan.alasan}`)}
+                          {k.tahan.hari.length > 0 ? ` (${k.tahan.hari.map((h) => tanggal(`${h}T00:00:00+07:00`)).join(", ")})` : ""}
+                        </span>
                       ) : null}
                       {/* Brief bilang beban selisih "BISA dipotong dari komisi" —
                           bisa, bukan harus. Jadi angkanya tidak dikurangkan
@@ -473,9 +488,26 @@ export function RincianSiklusClient({
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{rupiah(k.gajiPokok)}</TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {rupiah(p && !p.ditahan ? p.komisiBaru : k.komisi)}
+                      {tanpaAngka ? '—' : rupiah(p && !p.ditahan ? p.gajiPokok : k.gajiPokok)}
+                      {(() => {
+                        const g = p?.gaji ?? k.gaji;
+                        if (!g || tanpaAngka) return null;
+                        const r = ringkasRincianGaji(g);
+                        return (
+                          <span className="mt-0.5 block max-w-[14rem] text-xs font-normal text-muted-foreground">
+                            {t("salaryBreakdown", { monthly: rupiah(g.gajiBulanan), divisor: r.pembagi, daily: rupiah(r.tarifHarian) })}
+                            {r.dipotong > 0 ? <span className="block">{t("salaryAbsentLine", { n: g.hariTidakMasuk, value: rupiah(r.dipotong) })}</span> : null}
+                            {r.tambahan > 0 ? <span className="block">{t("salaryExtraLine", { n: g.hariMasukLibur, value: rupiah(r.tambahan) })}</span> : null}
+                            {g.tanggalLuarRadius.length > 0 ? (
+                              <span className="block text-amber-700 dark:text-amber-400">{t("salaryOutOfRadius", { n: g.tanggalLuarRadius.length })}</span>
+                            ) : null}
+                          </span>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {tanpaAngka ? '—' : rupiah(p && !p.ditahan ? p.komisiBaru : k.komisi)}
                       {diganti && p ? (
                         <span className="mt-0.5 block text-xs text-amber-700 dark:text-amber-400">
                           {t("commissionReplaced", { old: rupiah(p.komisiLama) })}
@@ -486,7 +518,12 @@ export function RincianSiklusClient({
                       {k.koreksiDiterapkan.length > 0 ? (
                         <ul className="space-y-0.5">
                           {k.koreksiDiterapkan.map((x, i) => (
-                            <li key={i}>{t("correctionLine", { month: formatYearMonth(x.bulanJual, locale), store: x.toko, amount: formatKoreksi(x.jumlah) })}</li>
+                            <li key={i}>
+                              {t("correctionLine", { month: formatYearMonth(x.bulanJual, locale), store: x.toko, amount: formatKoreksi(x.jumlah) })}
+                              {x.gaji !== 0 ? (
+                                <span className="block text-muted-foreground">{t("correctionSalaryPart", { amount: formatKoreksi(x.gaji) })}</span>
+                              ) : null}
+                            </li>
                           ))}
                         </ul>
                       ) : garis.length > 0 || p?.koreksiDiBarisLain ? (
@@ -510,8 +547,8 @@ export function RincianSiklusClient({
                       )}
                     </TableCell>
                     <TableCell className="text-right font-semibold tabular-nums">
-                      {rupiah(total)}
-                      {potongan > 0 && (
+                      {tanpaAngka ? '—' : rupiah(total)}
+                      {!tanpaAngka && potongan > 0 && (
                         <span className="mt-0.5 block text-xs font-normal text-amber-700 dark:text-amber-400">
                           {t('lossDeducted', {
                             value: rupiah(potongan),
@@ -521,7 +558,7 @@ export function RincianSiklusClient({
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {k.dibayarkan !== null ? rupiah(k.dibayarkan) : p && !p.ditahan ? rupiah(p.dibayar) : '—'}
+                      {k.dibayarkan !== null ? rupiah(k.dibayarkan) : !tanpaAngka && p ? rupiah(p.dibayar) : '—'}
                     </TableCell>
                     <TableCell className="text-right">
                       {k.dibayarPada ? (
@@ -756,6 +793,17 @@ export function RincianSiklusClient({
             <DialogTitle>{t('lockTitle')}</DialogTitle>
             <DialogDescription>{t('lockBody')}</DialogDescription>
           </DialogHeader>
+          {data.tanpaKategori.length > 0 ? (
+            // Tidak menahan kunci: komisinya menyusul begitu kategori barangnya diisi (P69).
+            <div className="rounded-md bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200">
+              <p>{t('lockNoCategory', { pcs: data.tanpaKategori.reduce((n, x) => n + x.potong, 0) })}</p>
+              <ul className="mt-1 list-disc pl-5 text-xs">
+                {data.tanpaKategori.map((x) => (
+                  <li key={x.itemId}>{t('lockNoCategoryItem', { nama: x.nama, pcs: x.potong })}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <div className="space-y-3">
             {resmi.map((r, i) => (
               <div key={i} className="flex flex-wrap items-end gap-2">
@@ -824,19 +872,14 @@ export function RincianSiklusClient({
             ))}
 
             <div className="flex flex-wrap items-end justify-between gap-3 border-t pt-3">
-              <div className="w-48 space-y-1">
-                <Label htmlFor="k-pokok">{t('baseSalary')}</Label>
-                <Input
-                  id="k-pokok"
-                  type="number"
-                  min={0}
-                  value={gajiPokok}
-                  onChange={(e) => setGajiPokok(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">{t('baseSalaryHint')}</p>
-              </div>
+              {/* Gaji pokok SPG tidak diketik di sini: dihitung dari gaji bulanan dan jadwal /
+                  catatan check-in yang disetujui (Pengaturan → Komisi SPG, Komisi SPG). */}
+              <p className="max-w-sm text-xs text-muted-foreground">{t('baseSalaryFromSchedule')}</p>
               <p className="text-sm">{t('officialTotal', { value: rupiah(totalResmi) })}</p>
             </div>
+            <p className="text-xs text-muted-foreground">
+              {t('lockCreatesReceivable', { doc: b.noKonsi, days: data.tempoHari })}
+            </p>
             {data.tagihan.promoElorae !== 0 && (
               <p className="text-xs text-muted-foreground">
                 {t("tagihan.lockPreview", {
@@ -871,7 +914,6 @@ export function RincianSiklusClient({
                         qty: r.qty,
                         price: r.price,
                       })),
-                      Number(gajiPokok) || 0,
                     ),
                   t('okLocked'),
                   () => setKunciTerbuka(false),

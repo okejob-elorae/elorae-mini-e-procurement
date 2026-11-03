@@ -6,11 +6,11 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { bacaHargaDiharapkan, MAKS_ANTRE_LANGSUNG, MAKS_BARIS_KONFIRMASI } from "@/lib/jubelio/harga/aturan";
 import {
-  batalkanPengajuanJubelio,
   kembalikanHargaErp,
+  kirimUlangHargaJubelio,
   konfirmasiHargaJubelio,
-  type HasilBatalkanPengajuan,
   type HasilKembalikanHarga,
+  type HasilKirimUlang,
   type HasilKonfirmasiHarga,
 } from "@/lib/jubelio/harga/writer";
 import { fireProductPushNow } from "@/lib/jubelio/product-push";
@@ -18,8 +18,10 @@ import { gagalJubelio, jalankanAksiJubelio, type HasilJubelio } from "@/app/back
 
 /**
  * Aksi halaman Jubelio → Konfirmasi harga (keputusan pemilik 2026-11-02). Ketiganya butuh
- * `jubelio_prices:confirm` — izin yang sama dengan halaman, tombol, dan baris Beranda; bawaannya
- * hanya admin. Pelakunya selalu dari sesi, tidak pernah dari isian.
+ * `jubelio_prices:confirm` — izin yang sama dengan halaman, tombol, baris Beranda dan lonceng;
+ * bawaannya hanya admin. Pelakunya selalu dari sesi, tidak pernah dari isian. "Batalkan pengajuan"
+ * sudah tidak ada: barang dijual di marketplace atau tidak kini ditentukan saluran jualnya di
+ * halaman barang (jawaban pemilik P3/P76).
  */
 
 const HALAMAN = "/backoffice/jubelio/harga";
@@ -98,19 +100,31 @@ export async function kembalikanHargaErpAction(input: unknown): Promise<HasilJub
   });
 }
 
-/** Batalkan pengajuan produk baru. Isian: `{ itemId, diajukanPada }` (ISO yang dilihat halaman). */
-export async function batalkanPengajuanJubelioAction(input: unknown): Promise<HasilJubelio<HasilBatalkanPengajuan>> {
+/** ISO yang terbaca sebagai waktu, atau null. */
+function waktuSah(nilai: unknown): nilai is string | null {
+  return nilai === null || (typeof nilai === "string" && nilai.length <= 40 && !Number.isNaN(Date.parse(nilai)));
+}
+
+/**
+ * "Kirim ulang harga ERP" — satu-satunya jalan keluar "Harga di Jubelio berbeda dengan ERP"
+ * (jawaban pemilik P74). SATU baris per tekan (rancangan R26): setiap penimpaan harga di Jubelio
+ * adalah keputusan sendiri atas angka yang dilihat orangnya (P75 "saya tidak setuju jika harga bisa
+ * tertimpa"). Isian: `{ itemId, berubahPada }` — `berubahPada` adalah waktu bacaan Jubelio berubah
+ * yang ditampilkan halaman; bila Jubelio berubah lagi sejak itu, ditolak (`TERBACA_BERUBAH`).
+ */
+export async function kirimUlangHargaJubelioAction(input: unknown): Promise<HasilJubelio<HasilKirimUlang>> {
   return jalankanAksiJubelio(async () => {
     const pelaku = await pelakuBerizin();
     if (!pelaku) return gagalJubelio("TANPA_AKSES");
 
     const itemId = (input as { itemId?: unknown } | null)?.itemId;
-    const diajukanPada = (input as { diajukanPada?: unknown } | null)?.diajukanPada;
-    if (!idSah(itemId) || typeof diajukanPada !== "string" || Number.isNaN(Date.parse(diajukanPada))) {
-      return gagalJubelio("ISIAN_TIDAK_SAH");
-    }
+    const berubahPada = (input as { berubahPada?: unknown } | null)?.berubahPada;
+    if (!idSah(itemId) || !waktuSah(berubahPada)) return gagalJubelio("ISIAN_TIDAK_SAH");
 
-    const h = await batalkanPengajuanJubelio({ itemId, diajukanPadaDiharapkan: diajukanPada, olehUserId: pelaku });
+    if ((await prisma.jubelioPushDefaults.count()) === 0) return gagalJubelio("BAWAAN_BELUM_ADA");
+
+    const h = await kirimUlangHargaJubelio({ itemId, berubahPadaDiharapkan: berubahPada, olehUserId: pelaku });
+    if (h.hasil === "DIKIRIM_ULANG") fireProductPushNow(h.outboxId, pelaku);
 
     revalidatePath(HALAMAN);
     revalidatePath(`/backoffice/items/${itemId}`);

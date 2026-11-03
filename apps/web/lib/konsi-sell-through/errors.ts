@@ -29,7 +29,14 @@ export type SellThroughErrorCode =
   | "SETTLEMENT_PENDING"
   | "COLLECTION_PENDING"
   | "ALREADY_SETTLED"
-  | "VOID_REASON_REQUIRED";
+  | "VOID_REASON_REQUIRED"
+  /** Sell-through reports no longer bill the store (decision 2026-10-29): konsi bills come from the cycle. */
+  | "INVOICING_RETIRED"
+  /** A receivable being voided is held by a payment report, kontrabon, office payment or collection task. */
+  | "ADA_BKM"
+  | "ADA_KONTRABON"
+  | "ADA_PEMBAYARAN_TOKO"
+  | "ADA_TUGAS_TAGIH";
 
 export class SellThroughError extends Error {
   constructor(

@@ -1,6 +1,7 @@
 import { prisma } from "@elorae/db";
 import { resolveVariantAxes } from "@elorae/db/variant-axes";
 import { parseItemVariants } from "@/lib/items/variants";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import type { PlanCandidate } from "./plan";
 
 // Only the size axis is read here (`Ukuran`, or `size`/`Size` before #437 normalised them).
@@ -51,7 +52,8 @@ export function bacaUkuranVarian(raw: unknown): Array<{ variantSku: string; size
 }
 
 /**
- * Active finished goods in the given categories, shaped for the planner:
+ * Active finished goods sold offline (owner P3a: a "Marketplace saja" item never appears in a
+ * salesman catalog) in the given categories, shaped for the planner:
  * raw variants (variantSku + size) + main-WH available (qtyOnHand - reservedQty).
  * Items with no variant rows contribute a single null-sku bucket so a
  * ratio that names sizes will simply not match them (they drop MISSING_SIZE) —
@@ -63,7 +65,7 @@ export function bacaUkuranVarian(raw: unknown): Array<{ variantSku: string; size
  */
 export async function loadSmartRequestCandidates(categoryIds: string[]): Promise<Map<string, KandidatMuat[]>> {
   const items = await prisma.item.findMany({
-    where: { isActive: true, type: "FINISHED_GOOD", categoryId: { in: categoryIds } },
+    where: { isActive: true, type: "FINISHED_GOOD", categoryId: { in: categoryIds }, ...syaratDijualOffline() },
     select: {
       id: true,
       sku: true,

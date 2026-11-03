@@ -11,10 +11,9 @@ import type { SpgReportCommission } from "./payout";
  * and a row already paid is never changed — its difference = figure − paid − corrections already
  * applied rides once on the SPG's next payout (`lib/spg/koreksi.ts`). A unit is CLOSED when her row
  * is paid, or when she has no row and the report is closed (a locked cycle; a putus month with a
- * paid row); only closed units carry a difference. A unit HELD for an owner decision (`alasanTahan`:
- * an old-rule report with pieces that have no category rate — rates exist only from 2026-10 and a
- * past month cannot be given one — or a konsi cycle whose official figures were not all recorded on
- * the phones, open question Q7) carries none either, and an unpaid row of it is not paid.
+ * checked month); only closed units carry a difference. A unit whose whole payment waits for its
+ * salary basis (`heldSalesmen`, owner 2026-11-02 P60) carries none either. The recap is COMMISSION
+ * only — the base-salary part of a correction is left out by the loader.
  *
  * Client-safe: plain values in, plain values out.
  */
@@ -28,8 +27,6 @@ export type StoredSpgCommission = {
   commission: number;
   /* Pieces stored with it: putus only. Null for konsi, which stores no pieces per SPG. */
   pieces: number | null;
-  /* Set or locked under the old rule (item rate, equal split). */
-  oldRule: boolean;
   paid: boolean;
 };
 
@@ -40,7 +37,7 @@ export type PayoutReportInput = {
   salesMonth: string;
   /* The payout month the report belongs to (the month it was checked / locked). */
   payoutMonth: string;
-  /* KONSI: the cycle is locked. PUTUS: some row of the store × month is paid. */
+  /* KONSI: the cycle is locked. PUTUS: the store × month is checked. */
   closed: boolean;
   /* The report's stored rows; null for a checked putus month the office has not set yet. */
   stored: readonly StoredSpgCommission[] | null;
@@ -48,7 +45,7 @@ export type PayoutReportInput = {
   computed: readonly SpgReportCommission[];
   /* Σ corrections already applied from this report, per SPG. */
   appliedBySalesman: ReadonlyMap<string, number>;
-  /* SPGs whose unit on this report waits for an owner decision. */
+  /* SPGs whose whole payment on this report waits for its salary basis (P60). */
   heldSalesmen?: ReadonlySet<string>;
 };
 
@@ -122,12 +119,9 @@ export function payoutLinesOf(reports: readonly PayoutReportInput[]): PayoutLine
       const held = report.heldSalesmen?.has(salesmanId) ?? false;
       const closedUnit = s ? s.paid : report.closed;
       const pendingDifference = closedUnit && !held ? rupiah(cents(figure) - cents(paidAmount) - cents(correctionsFromThis)) : 0;
-      // A held row is not replaced when paid — it is not paid at all until the owner decides.
+      // A held row is not replaced when paid — it is not paid at all until its basis is decided.
       const differs =
-        !held &&
-        status === "DITETAPKAN" &&
-        s !== undefined &&
-        (!sameCents(s.commission, figure) || (report.kind === "PUTUS" && (s.oldRule || s.pieces !== pieces)));
+        !held && status === "DITETAPKAN" && s !== undefined && (!sameCents(s.commission, figure) || (report.kind === "PUTUS" && s.pieces !== pieces));
       lines.push({
         reportKey: report.key,
         kind: report.kind,

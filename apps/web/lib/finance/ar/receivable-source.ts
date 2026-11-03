@@ -1,10 +1,12 @@
 /**
  * Resolves a `Receivable` or `TaxInvoice` row to whichever document actually backs it — a putus
- * `FieldSalesDelivery` or a `KonsiSellThrough` report — now that both relations on both models are
- * optional (`Receivable.deliveryId`/`sellThroughId`, `TaxInvoice.deliveryId`/`sellThroughId`). A
- * receivable can also stand on its own invoice number: one typed in by hand (`source = MANUAL`) or
- * imported from a spreadsheet (`source = IMPORT`) carries NEITHER relation by construction, and the
- * `Receivable_one_source_check` CHECK demands exactly one source only of a `DELIVERY`-sourced row.
+ * `FieldSalesDelivery`, a `KonsiSellThrough` report, or (receivables only) a locked konsi
+ * `ConsignmentCycle` — now that every relation on both models is optional
+ * (`Receivable.deliveryId`/`sellThroughId`/`consignmentCycleId`, `TaxInvoice.deliveryId`/
+ * `sellThroughId`). A receivable can also stand on its own invoice number: one typed in by hand
+ * (`source = MANUAL`) or imported from a spreadsheet (`source = IMPORT`) carries NONE of the three
+ * relations by construction, and the `Receivable_one_source_check` CHECK demands exactly one of
+ * them only of a `DELIVERY`-sourced row.
  *
  * Deliberately import-free apart from `import type { Prisma }` for the `Decimal` type on
  * `FieldSalesDelivery.total` — no runtime `@elorae/db` import, so this module stays cheap to pull
@@ -13,9 +15,10 @@
  * with `as const`. They carry no `satisfies Prisma.ReceivableSelect`/`TaxInvoiceSelect` annotation;
  * each consumer's own `select` inference type-checks them.
  *
- * `resolveReceivableSource` prefers `delivery` when both relations are somehow set, resolves a
- * MANUAL/IMPORT row to its own invoice (`kind: "INVOICE"`), and throws `ReceivableSourceMissingError`
- * only for a `DELIVERY`-sourced row that resolves neither relation — unreachable through the normal
+ * `resolveReceivableSource` prefers `delivery`, then `sellThrough`, then `consignmentCycle` when
+ * several relations are somehow set, resolves a MANUAL/IMPORT row to its own invoice
+ * (`kind: "INVOICE"`), and throws `ReceivableSourceMissingError` only for a `DELIVERY`-sourced row
+ * that resolves none of them — unreachable through the normal
  * write paths, except for an orphan whose relation row was deleted out from under it, which
  * `relationMode = "prisma"` makes possible with no database FK to stop it.
  */
@@ -51,6 +54,14 @@ export const RECEIVABLE_SOURCE_SELECT = {
       salesman: { select: { name: true } },
     },
   },
+  consignmentCycle: {
+    select: {
+      id: true,
+      noKonsi: true,
+      periodYear: true,
+      periodMonth: true,
+    },
+  },
 } as const;
 
 export type ReceivableSourceRow = {
@@ -82,6 +93,13 @@ export type ReceivableSourceRow = {
     salesmanId: string | null;
     salesman: { name: string | null } | null;
   } | null;
+  /* Optional so a caller with its own selection still type-checks; without it a cycle bill reads as an orphan. */
+  consignmentCycle?: {
+    id: string;
+    noKonsi: string;
+    periodYear: number;
+    periodMonth: number;
+  } | null;
 };
 
 export type ReceivableSource =
@@ -105,6 +123,20 @@ export type ReceivableSource =
       periodEnd: Date;
     }
   | {
+      /*
+       * A konsi bill born when its consignment cycle was locked. `docNo` is the receivable's own
+       * invoice number (the cycle's `noKonsi`, or its "(batal)" form once voided). The receivable
+       * carries no seller by construction; the salesman fields are the receivable's own.
+       */
+      kind: "CONSIGNMENT_CYCLE";
+      cycleId: string;
+      docNo: string;
+      periodYear: number;
+      periodMonth: number;
+      salesmanId: string | null;
+      salesmanName: string | null;
+    }
+  | {
       /* A receivable backed by nothing but its own invoice number; `docNo` IS that number. */
       kind: "INVOICE";
       origin: "MANUAL" | "IMPORT";
@@ -115,8 +147,8 @@ export type ReceivableSource =
 
 /**
  * Thrown by `resolveReceivableSource`/`resolveTaxInvoiceSource` when a row carries no source it can
- * name. Unreachable through any writer in this codebase — every delivery- or sell-through-backed
- * `Receivable`/`TaxInvoice` is created with exactly one of `deliveryId`/`sellThroughId` set, and a
+ * name. Unreachable through any writer in this codebase — every delivery-, sell-through- or
+ * cycle-backed `Receivable`/`TaxInvoice` is created with exactly one source relation set, and a
  * MANUAL/IMPORT receivable resolves to its own invoice — except for an orphan whose relation row was
  * deleted after the fact: `relationMode = "prisma"` means neither FK is backed by a real database
  * constraint, so that deletion is not stopped at the database.
@@ -150,6 +182,17 @@ export function resolveReceivableSource(row: ReceivableSourceRow): ReceivableSou
       salesmanName: row.sellThrough.salesman?.name ?? null,
       periodStart: row.sellThrough.periodStart,
       periodEnd: row.sellThrough.periodEnd,
+    };
+  }
+  if (row.consignmentCycle) {
+    return {
+      kind: "CONSIGNMENT_CYCLE",
+      cycleId: row.consignmentCycle.id,
+      docNo: row.invoiceNo ?? row.consignmentCycle.noKonsi,
+      periodYear: row.consignmentCycle.periodYear,
+      periodMonth: row.consignmentCycle.periodMonth,
+      salesmanId: row.salesmanId ?? null,
+      salesmanName: row.salesman?.name ?? null,
     };
   }
   if (row.invoiceNo !== undefined && (row.source === "MANUAL" || row.source === "IMPORT")) {

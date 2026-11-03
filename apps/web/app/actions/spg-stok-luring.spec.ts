@@ -77,6 +77,36 @@ describe("terimaKirimanAction dari antrean HP", () => {
   });
 });
 
+describe("terimaKirimanAction — barang ditolak di pintu (P40)", () => {
+  const PUTUS = { sourceType: "PUTUS_DELIVERY", sourceId: "d1", diterima: [{ lineId: "L1", qtyReceived: 3, qtyRefused: 2 }] };
+
+  it("passes each line's refused pieces to the writer as typed", async () => {
+    state.aktif = { storeId: "t1" };
+    expect(await terimaKirimanAction(PUTUS)).toEqual({ ok: true, receiptId: "r1" });
+    expect(state.terima[0]).toMatchObject({ storeId: "t1", userId: "spg1", diterima: [{ lineId: "L1", qtyReceived: 3, qtyRefused: 2 }] });
+  });
+
+  it("refuses a refused count that is not a whole number of pieces before the writer runs", async () => {
+    state.aktif = { storeId: "t1" };
+    for (const qtyRefused of [-1, 1.5, "2"]) {
+      expect(await terimaKirimanAction({ ...PUTUS, diterima: [{ lineId: "L1", qtyReceived: 3, qtyRefused }] })).toEqual({
+        ok: false,
+        code: "VALIDATION",
+      });
+    }
+    expect(state.terima).toHaveLength(0);
+  });
+
+  it("passes the writer's refusal of a cancelled or not-yet-departed shipment through unchanged", async () => {
+    const { terimaKiriman } = await import("@/lib/spg/stok-writer");
+    state.aktif = { storeId: "t1" };
+    for (const alasan of ["KIRIMAN_DIBATALKAN", "BELUM_BERANGKAT"]) {
+      vi.mocked(terimaKiriman).mockResolvedValueOnce({ ok: false, alasan } as never);
+      expect(await terimaKirimanAction(PUTUS)).toEqual({ ok: false, code: alasan });
+    }
+  });
+});
+
 describe("catatOpnameAction dari antrean HP", () => {
   it("passes key, count time and the queued visit to the writer", async () => {
     const r = await catatOpnameAction({

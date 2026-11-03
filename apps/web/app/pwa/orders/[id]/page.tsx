@@ -87,6 +87,7 @@ export default async function DetailPesananSayaPage({ params }: { params: Promis
         orderDiscountAmount: d.orderDiscountAmount,
         appliedOrderPromoName: d.appliedOrderPromoName,
         total: d.total,
+        perkiraan: d.perkiraan,
         jumlahPcs: d.jumlahPcs,
         kreditDitahan: d.kreditDitahan,
         remoteChannel: d.remoteChannel,

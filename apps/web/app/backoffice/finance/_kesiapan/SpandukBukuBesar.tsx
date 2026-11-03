@@ -53,6 +53,11 @@ export function SpandukBukuBesar({ kesiapan, akses, tanpaTautanTertunda }: Props
     butir.push({ ok: !pkpBelum, teks: t(`pkp.${kesiapan.statusPkp}`) });
   }
   const tampilPajak = akses.jurnal && pkpBelum;
+  // Q26: ada toko konsinyasi aktif → persediaan konsinyasi wajib dipetakan; sebutkan alasannya.
+  if (kesiapan.adaTokoKonsiAktif) {
+    const konsiBelum = kesiapan.peranWajibBelum.includes("INVENTORY_CONSIGNMENT");
+    butir.push({ ok: !konsiBelum, teks: t(konsiBelum ? "konsiWajib" : "konsiTerpetakan") });
+  }
 
   const tampilTertunda = !tanpaTautanTertunda && akses.jurnal && kesiapan.jurnalTertunda > 0;
 

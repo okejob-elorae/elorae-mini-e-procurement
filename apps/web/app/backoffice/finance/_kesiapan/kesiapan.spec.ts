@@ -5,6 +5,7 @@ import { buildIncomeStatement } from "@/lib/finance/reports/income-statement";
 import {
   PERAN_OPSIONAL,
   PERAN_WAJIB,
+  PERAN_WAJIB_KONSI,
   adaMutasi,
   adaMutasiLabaRugi,
   adaMutasiPohon,
@@ -200,5 +201,22 @@ describe("status PKP di kesiapan buku besar (pajak, 2026-10-08)", () => {
     const siap = nilaiKesiapan({ ...lengkap, statusPkp: "PKP", peranTerpetakan: [...PERAN_WAJIB, "PPN_KELUARAN", "PPN_MASUKAN", "PPN_PAYABLE"] });
     expect(siap.aktif).toBe(true);
     expect(perluSpanduk(siap)).toBe(false);
+  });
+});
+
+describe("toko konsinyasi aktif di kesiapan buku besar (Q26)", () => {
+  const lengkap = { peranTerpetakan: [...PERAN_WAJIB], jumlahJurnal: 5, tanggalMulai: "2026-08-01", jurnalTertunda: 0 };
+
+  it("tanpa toko konsinyasi aktif: persediaan konsinyasi tetap opsional", () => {
+    expect(nilaiKesiapan({ ...lengkap, adaTokoKonsiAktif: false }).aktif).toBe(true);
+    expect(nilaiKesiapan(lengkap).aktif).toBe(true);
+  });
+
+  it("ada toko konsinyasi aktif: persediaan konsinyasi wajib — tanpa pemetaannya buku besar belum aktif", () => {
+    const k = nilaiKesiapan({ ...lengkap, adaTokoKonsiAktif: true });
+    expect(k.aktif).toBe(false);
+    expect(k.peranWajibBelum).toEqual([...PERAN_WAJIB_KONSI]);
+    expect(k.totalPeranWajib).toBe(PERAN_WAJIB.length + 1);
+    expect(nilaiKesiapan({ ...lengkap, adaTokoKonsiAktif: true, peranTerpetakan: [...PERAN_WAJIB, "INVENTORY_CONSIGNMENT"] }).aktif).toBe(true);
   });
 });

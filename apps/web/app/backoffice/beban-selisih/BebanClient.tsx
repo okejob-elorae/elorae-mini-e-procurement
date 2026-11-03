@@ -40,7 +40,6 @@ import {
 import { dinamis } from '@/lib/i18n/dinamis';
 import { alihkanBebanAction, tandaiBebanLunasAction } from '@/app/actions/store-returns';
 import type { BarisBeban } from '@/lib/receivables/dashboard-queries';
-import type { FakturBebanRingkas } from '@/lib/receivables/return-queries';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string | null) =>
@@ -63,24 +62,36 @@ const URUT: BarisBeban['status'][] = ['TERBUKA', 'DITETAPKAN', 'LUNAS'];
 
 const PENANGGUNG = ['TOKO', 'SALES', 'GUDANG', 'PERUSAHAAN'] as const;
 
+/**
+ * Hanya beban gudang dan perusahaan yang ditandai "sudah diganti" di sini. Beban sales lunas lewat
+ * potongan komisinya (Laporan → Komisi salesman), beban toko tetap terbuka di nota asalnya (P84).
+ */
+const DITANDAI_DI_SINI: ReadonlySet<BarisBeban['penanggung']> = new Set(['GUDANG', 'PERUSAHAAN']);
+
 export function BebanClient({
   baris,
+  tokoDiNota = {},
   kandidat,
   bolehMengelola,
   bolehPutuskanBeban = false,
-  faktur = {},
-  tagihanToko = {},
+  bolehPotongKomisiSales = false,
 }: {
   baris: BarisBeban[];
+  /**
+   * Beban TOKO per nota retur: yang tidak dikreditkan ke toko di BKM hidup (`tertahan`) dan yang masih
+   * harus ditagih (`tampil`, dibatasi sisa fakturnya) — `bebanTokoDiNota`, sama dengan rincian nota retur.
+   */
+  tokoDiNota?: Record<string, { tertahan: number; tampil: number }>;
   kandidat: { id: string; name: string }[];
   /** Tandai lunas — `receivables:manage`. */
   bolehMengelola: boolean;
-  /** Alihkan beban — `receivables:decide_bearer`. */
+  /** Alihkan beban selisih retur — `store_returns:decide_shortfall` (P22). */
   bolehPutuskanBeban?: boolean;
-  /** Faktur beban toko per id beban. */
-  faktur?: Record<string, FakturBebanRingkas>;
-  /** Yang ditagihkan ke toko saat beban TOKO terakhir ditetapkan (`tagihanBebanTokoTercatat`). */
-  tagihanToko?: Record<string, number>;
+  /**
+   * Memotong beban sales dari komisinya atau mengembalikan kelebihannya di Laporan → Komisi salesman:
+   * halamannya `field_sales_orders:approve`, tombolnya `receivables:manage` — harus keduanya.
+   */
+  bolehPotongKomisiSales?: boolean;
 }) {
   const t = useTranslations('bebanSelisih');
   const td = dinamis(t);
@@ -94,14 +105,25 @@ export function BebanClient({
 
   const yatim = baris.filter((b) => b.tanpaAlamat).length;
 
+  /*
+   * Tautan ke laporan komisi untuk beban sales. Sisa dan kelebihan tidak pernah ada bersamaan pada
+   * satu beban: yang masih harus dipotong dibuka dengan "Potong dari komisi", yang dipotong melebihi
+   * besarnya sekarang (barangnya ketemu, P87) dengan "Kembalikan kelebihan potongan".
+   */
+  const tautanKomisi = (b: BarisBeban) =>
+    bolehPotongKomisiSales && b.penanggung === 'SALES' && (b.sisa > 0 || b.kelebihan > 0) ? (
+      <Button size="sm" variant="outline" asChild>
+        <Link href="/backoffice/laporan/komisi-salesman">
+          {b.sisa > 0 ? t('deductFromCommission') : t('payBackOverDeduction')}
+        </Link>
+      </Button>
+    ) : null;
+
   const tampil = saring ? baris.filter((b) => b.status === saring) : baris;
   const jumlah = (s: BarisBeban['status']) => baris.filter((b) => b.status === s).length;
   const nilaiTerbuka = baris
     .filter((b) => b.status === 'TERBUKA')
     .reduce((s, b) => s + b.nilai, 0);
-
-  // Beban TOKO yang ditagih 0: tidak ada faktur dan tidak ada yang bisa "diganti".
-  const tanpaTagihan = (b: BarisBeban) => b.penanggung === 'TOKO' && !faktur[b.id] && tagihanToko[b.id] === 0;
 
   const lunaskan = (id: string) => {
     startTransition(async () => {
@@ -186,8 +208,25 @@ export function BebanClient({
                         )}
                       </TableCell>
                       <TableCell>{b.storeName ?? '—'}</TableCell>
-                      <TableCell className="text-right font-semibold tabular-nums">
-                        {rupiah(b.nilai)}
+                      <TableCell className="text-right tabular-nums">
+                        <span className="font-semibold">{rupiah(b.nilai)}</span>
+                        {/* Seluruh barangnya ketemu di toko dan sudah dihitung gudang (P22a): besarnya nol. */}
+                        {b.pulih && <span className="block text-xs text-muted-foreground">{t('goodsBack')}</span>}
+                        {b.sudahDipotong > 0 && (
+                          <span className="block text-xs text-muted-foreground">
+                            {t('deductedRow', { value: rupiah(b.sudahDipotong) })}
+                          </span>
+                        )}
+                        {b.penanggung === 'SALES' && b.status === 'DITETAPKAN' && b.sisa > 0 && b.sudahDipotong > 0 && (
+                          <span className="block text-xs text-muted-foreground">
+                            {t('remainingRow', { value: rupiah(b.sisa) })}
+                          </span>
+                        )}
+                        {b.kelebihan > 0 && (
+                          <span className="block text-xs font-medium text-amber-700 dark:text-amber-400">
+                            {t('overDeductedRow', { value: rupiah(b.kelebihan) })}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {b.penanggung ? (
@@ -203,17 +242,13 @@ export function BebanClient({
                                 {t('orphanRow')}
                               </span>
                             )}
-                            {faktur[b.id] && (
+                            {b.penanggung === 'TOKO' && b.storeReturnId && tokoDiNota[b.storeReturnId] && (
                               <span className="block text-xs text-muted-foreground">
-                                {t('invoiceRow', {
-                                  no: faktur[b.id].invoiceNo,
-                                  sisa: rupiah(faktur[b.id].outstanding),
-                                })}
-                              </span>
-                            )}
-                            {b.penanggung === 'TOKO' && !faktur[b.id] && tagihanToko[b.id] !== undefined && (
-                              <span className="block text-xs text-muted-foreground">
-                                {t('tokoBilledRow', { value: rupiah(tagihanToko[b.id]) })}
+                                {tokoDiNota[b.storeReturnId].tertahan <= 0
+                                  ? t('tokoNotDeductedRow')
+                                  : tokoDiNota[b.storeReturnId].tampil > 0
+                                    ? t('tokoHeldRow', { value: rupiah(tokoDiNota[b.storeReturnId].tampil) })
+                                    : t('tokoPaidRow')}
                               </span>
                             )}
                           </>
@@ -247,7 +282,7 @@ export function BebanClient({
                           </Button>
                         )}
                         {b.status === 'DITETAPKAN' && (bolehMengelola || bolehPutuskanBeban) && (
-                          <span className="inline-flex gap-2">
+                          <span className="inline-flex flex-wrap justify-end gap-2">
                             {bolehPutuskanBeban && (
                               <Button
                                 size="sm"
@@ -263,22 +298,15 @@ export function BebanClient({
                                 {t('reassign')}
                               </Button>
                             )}
-                            {/* Beban toko lunas lewat BKM atas fakturnya, bukan ditandai di sini. */}
-                            {bolehMengelola && !faktur[b.id] && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={pending || tanpaTagihan(b)}
-                                onClick={() => lunaskan(b.id)}
-                              >
+                            {bolehMengelola && DITANDAI_DI_SINI.has(b.penanggung) && (
+                              <Button size="sm" variant="outline" disabled={pending} onClick={() => lunaskan(b.id)}>
                                 {t('markSettled')}
                               </Button>
                             )}
+                            {tautanKomisi(b)}
                           </span>
                         )}
-                        {b.status === 'DITETAPKAN' && bolehMengelola && tanpaTagihan(b) && (
-                          <span className="mt-1 block text-xs text-muted-foreground">{t('markSettledNothingBilled')}</span>
-                        )}
+                        {b.status === 'LUNAS' && tautanKomisi(b)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -311,14 +339,9 @@ export function BebanClient({
                 </SelectContent>
               </Select>
             </div>
-            {/* Faktur beban mengikuti keputusannya — katakan sebelum disimpan. */}
-            {alih && penanggung === 'TOKO' && !faktur[alih.id] && (
-              <p className="text-xs text-muted-foreground">{t('reassignToTokoHint', { value: rupiah(alih.nilai) })}</p>
-            )}
-            {alih && penanggung !== 'TOKO' && faktur[alih.id] && (
-              <p className="text-xs text-muted-foreground">
-                {t('reassignFromTokoHint', { no: faktur[alih.id].invoiceNo })}
-              </p>
+            {/* Beban toko tidak membuat faktur baru: selisihnya tetap terbuka di nota asal (P84). */}
+            {alih && penanggung === 'TOKO' && (
+              <p className="text-xs text-muted-foreground">{t('reassignToTokoHeldHint', { value: rupiah(alih.nilai) })}</p>
             )}
             {penanggung === 'SALES' && (
               <div className="space-y-2">

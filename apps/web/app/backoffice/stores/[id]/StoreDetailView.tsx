@@ -150,6 +150,7 @@ type Visit = {
 
 type StockCardProps = {
   rows: StoreStockCardData["rows"];
+  dalamPerjalananTanpaStok: StoreStockCardData["dalamPerjalananTanpaStok"];
   negativeCount: number;
   lastPartialCount: StoreStockCardData["lastPartialCount"];
   inTransitAdminReturn: { raisedQty: number; receivedQty: number };
@@ -824,6 +825,11 @@ export function StoreDetailView({
                       <DetailField label={tKredit("outstanding")}>
                         <span className="font-semibold tabular-nums">{formatRupiah(kredit.piutang.sisa)}</span>
                       </DetailField>
+                      {kredit.piutang.belumDinota > 0 && (
+                        <DetailField label={tKredit("belumDinota")}>
+                          <span className="tabular-nums">{formatRupiah(kredit.piutang.belumDinota)}</span>
+                        </DetailField>
+                      )}
                       <DetailField label={tKredit("openInvoices")}>
                         <span className="tabular-nums">{tKredit("invoiceCount", { n: kredit.piutang.fakturTerbuka })}</span>
                       </DetailField>
@@ -1252,6 +1258,7 @@ export function StoreDetailView({
       {store.termsType === "KONSI" && stockCard && (
         <StoreStockCard
           rows={stockCard.rows}
+          dalamPerjalananTanpaStok={stockCard.dalamPerjalananTanpaStok}
           negativeCount={stockCard.negativeCount}
           lastPartialCount={stockCard.lastPartialCount}
           inTransitAdminReturn={stockCard.inTransitAdminReturn}

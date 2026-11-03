@@ -10,9 +10,13 @@ import { formatIDR } from "@/lib/sales-orders/format";
 import { getBillLinesForPo, getBillLinesForWo } from "@/app/actions/vendor-billing";
 import type { LinkedBillLine } from "@/lib/vendor-billing/queries";
 
-/** Read-only "Tagihan" card: the vendor bill lines on a PO's items or a WO's steps. Hidden when none. */
+/**
+ * Read-only "Tagihan" card: the vendor bill lines on a PO's items or a WO's steps. Hidden when none.
+ * A line that bills a specific receipt names its GRN, and a receipt recorded without a PO says so.
+ */
 export function LinkedBillLines({ poId, woId }: { poId?: string; woId?: string }) {
   const t = useTranslations("vendorBills");
+  const tGrn = useTranslations("vendorBills.grn");
   const [lines, setLines] = useState<LinkedBillLine[]>([]);
 
   useEffect(() => {
@@ -48,7 +52,15 @@ export function LinkedBillLines({ poId, woId }: { poId?: string; woId?: string }
                   </Link>
                 </TableCell>
                 <TableCell>{l.vendorInvoiceNo}</TableCell>
-                <TableCell>{l.label}</TableCell>
+                <TableCell>
+                  {l.label}
+                  {l.grnDocNumber ? (
+                    <span className="block text-xs text-muted-foreground">
+                      {t("linkedGrn", { no: l.grnDocNumber })}
+                      {l.tanpaPo ? ` · ${tGrn("tanpaPo")}` : ""}
+                    </span>
+                  ) : null}
+                </TableCell>
                 <TableCell className="text-right">{l.qty.toLocaleString()}</TableCell>
                 <TableCell className="text-right">{formatIDR(l.amount)}</TableCell>
                 <TableCell>

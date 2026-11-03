@@ -76,6 +76,7 @@ beforeEach(async () => {
       amount: 7_000_000,
       outstanding: 7_000_000,
       source: 'MANUAL',
+      isConsignment: true,
     },
   });
   piutangKonsiId = p2.id;
@@ -92,12 +93,18 @@ afterEach(async () => {
 });
 
 describe('daftarPiutang (basis data)', () => {
-  it('TIDAK PERNAH menampilkan piutang toko konsinyasi', async () => {
-    // Barang di toko konsi masih milik kita sampai terjual. Menagihnya berarti
-    // menagih barang yang belum laku, dan angkanya menaikkan total perusahaan.
+  it("menampilkan tagihan konsinyasi bertanda konsi (keputusan 2026-10-29)", async () => {
+    // Tagihan konsinyasi masuk Piutang setelah angka terjualnya dikunci; utang
+    // konsi di kertas masuk lewat faktur manual atau impor (P32).
     const baris = await daftarPiutang();
-    expect(baris.some((b) => b.invoiceNo === `${tag}/KONSI`)).toBe(false);
-    expect(baris.some((b) => b.invoiceNo === `${tag}/PUTUS`)).toBe(true);
+    expect(baris.find((b) => b.invoiceNo === `${tag}/KONSI`)).toMatchObject({ konsi: true, asal: "MANUAL", siklusId: null });
+    expect(baris.find((b) => b.invoiceNo === `${tag}/PUTUS`)).toMatchObject({ konsi: false, asal: "MANUAL" });
+  });
+
+  it("piutang yang dibatalkan (VOIDED) bukan piutang", async () => {
+    await prisma.receivable.update({ where: { id: seededId(piutangPutusId) }, data: { status: "VOIDED" } });
+    const baris = await daftarPiutang();
+    expect(baris.some((b) => b.invoiceNo === `${tag}/PUTUS`)).toBe(false);
   });
 
   it('MENGABAIKAN kolom outstanding dan menghitung ulang dari klaim', async () => {
@@ -221,7 +228,25 @@ describe('daftarPiutang — penagih (pemegang toko sekarang)', () => {
     expect(ditugasi.some((b) => b.invoiceNo === `${tag}/PUTUS`)).toBe(false);
   });
 
-  it('tugas tagih tidak pernah membuka faktur toko konsinyasi', async () => {
+  /*
+   * P31 ("pemegang toko"): tagihan konsinyasi hanya sampai ke pemegang toko
+   * SEKARANG — bukan ke penjualnya saat toko tanpa pemegang, dan bukan ke
+   * petugas tugas tagih yang bukan pemegang.
+   */
+  it("pemegang toko konsinyasi melihat tagihan konsinyasinya", async () => {
+    await prisma.store.update({ where: { id: seededId(tokoKonsiId) }, data: { salesmanId: `${tag}-pemegang` } });
+    const baris = await daftarPiutang({ penagihId: `${tag}-pemegang` });
+    expect(baris.map((b) => b.invoiceNo)).toContain(`${tag}/KONSI`);
+  });
+
+  it("penjual tagihan konsinyasi di toko tanpa pemegang TIDAK melihatnya; piutang putus tetap", async () => {
+    await prisma.receivable.update({ where: { id: seededId(piutangKonsiId) }, data: { salesmanId: `${tag}-penjual` } });
+    await prisma.receivable.update({ where: { id: seededId(piutangPutusId) }, data: { salesmanId: `${tag}-penjual` } });
+    const baris = await daftarPiutang({ penagihId: `${tag}-penjual` });
+    expect(baris.map((b) => b.invoiceNo)).toEqual([`${tag}/PUTUS`]);
+  });
+
+  it('tugas tagih tidak membuka tagihan konsinyasi bagi yang bukan pemegang toko', async () => {
     const t = await prisma.collectionTask.create({
       data: {
         assigneeId: `${tag}-penugasan`,

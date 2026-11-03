@@ -167,7 +167,8 @@ function isValidRecordPaymentInput(input: unknown): input is RecordPaymentAction
  * The receipt journal is posted AFTER `recordPayment`'s transaction commits, not inside it —
  * everything the journal needs is fixed by rows that transaction just created, so posting inside
  * would only stretch an already serializable window for no correctness gain. Same pattern as
- * `recordDeliveryAction` in `field-sales-deliveries.ts`.
+ * `createShipmentAction` in `delivery-shipments.ts`, which posts a putus nota's journals after the
+ * shipment that issued it commits.
  */
 export async function recordPaymentAction(input: RecordPaymentActionInput): Promise<PaymentActionResult> {
   let userId = "";

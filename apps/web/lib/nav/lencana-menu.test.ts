@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 /*
  * Lencana menu samping. Dulu jurnal gagal dan faktur pajak dipetakan ke grup
  * "#" yang tidak ada (Buku Besar tidak pernah berlencana), BKM menunggu dan
- * faktur lewat janji bayar tidak punya lencana, keenam belas antrean kantor
+ * faktur lewat janji bayar tidak punya lencana, setiap antrean kantor
  * tidak ikut, dan stok minus dihitung per BARIS varian sementara Beranda per
  * BARANG. Grup kini diturunkan dari halaman tujuan lewat susunan menu.
  */
@@ -45,7 +45,15 @@ vi.mock("@/lib/dashboard/antrean-kantor", async (asli) => {
     ...m,
     getAntreanKantor: vi.fn(async (izin: string[]) => {
       kueri.push("antrean");
-      const semua = { leavePending: 2, stockLossOpen: 1, transfersPendingApproval: 1, claimCorrectionsPending: 1 };
+      const semua = {
+        leavePending: 2,
+        stockLossOpen: 1,
+        transfersPendingApproval: 1,
+        claimCorrectionsPending: 1,
+        // Anak menu baru 2026-11-02 (putaran kedua): lencananya mendarat di halaman anak itu sendiri.
+        spgAttendanceToEnter: 4,
+        receiptsWithoutInvoice: 5,
+      };
       return Object.fromEntries(Object.entries(semua).filter(([k]) => m.bolehLihatAntrean(k as never, izin)));
     }),
     hitungBarangStokMinus: catat("stokMinusPerBarang", 2),
@@ -88,7 +96,11 @@ describe("hitungLencanaMenu", () => {
     expect(grup["/backoffice/sales-lapangan"]).toBe(2);
     expect(halaman["/backoffice/barang-hilang"]).toBe(1);
     expect(halaman["/backoffice/spg-transfers"]).toBe(1);
-    expect(grup["/backoffice/spg-sales"]).toBe(2);
+    expect(halaman["/backoffice/komisi-spg/catatan-hadir"]).toBe(4);
+    expect(halaman["/backoffice/komisi-spg"]).toBeUndefined();
+    expect(grup["/backoffice/spg-sales"]).toBe(6);
+    expect(halaman["/backoffice/vendor-bills/belum-ditagih"]).toBe(5);
+    expect(halaman["/backoffice/vendor-bills"]).toBeUndefined();
   });
 
   it("stok minus per BARANG — angka yang sama dengan Beranda, bukan per baris varian", async () => {
@@ -101,7 +113,8 @@ describe("hitungLencanaMenu", () => {
   it("total grup = jumlah halaman yang berlencana di dalamnya", async () => {
     const { grup, halaman } = await hitungLencanaMenu(["*"], "u-admin");
     expect(grup["/backoffice/sales-orders"]).toBe(halaman["/backoffice/field-sales-orders"] + halaman["/backoffice/fulfillment"]);
-    expect(grup["/backoffice/purchase-orders"]).toBe(3);
+    // PO terlambat 1 + PO draf 2 + penerimaan belum ada invoice 5.
+    expect(grup["/backoffice/purchase-orders"]).toBe(8);
   });
 
   it("produksi tanpa izin pekerjaan kantor: tidak ada lencana, dan kuerinya tidak dijalankan", async () => {

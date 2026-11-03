@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { keadaanTagihanToko } from "@/lib/salesman/tagihan-toko";
-import { recordFieldSalesDelivery, buatPiutangNota, isiPiutangNotaLama, NomorPiutangDipakaiError } from "./writer";
+import { buatPiutangNota, isiPiutangNotaLama, NomorPiutangDipakaiError } from "./writer";
+import { catatNotaUji as recordFieldSalesDelivery } from "./uji-nota";
 
 /* Menggerakkan stok — jangan pernah di basis data produksi. */
 const url = process.env.DATABASE_URL ?? "";

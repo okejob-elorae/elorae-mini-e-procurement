@@ -36,6 +36,7 @@ const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 export function VariantSheet({
   item,
   isKonsi,
+  hargaKonsiTampil = false,
   inden = false,
   hasActiveVisit,
   cart,
@@ -48,6 +49,8 @@ export function VariantSheet({
 }: {
   item: CatalogItem | null;
   isKonsi: boolean;
+  /** Toko konsinyasi: server mengirim harga retail toko (P18, HP salesman). */
+  hargaKonsiTampil?: boolean;
   /** Pre-order: varian belum ada di gudang — "akan datang", tanpa batas stok. */
   inden?: boolean;
   hasActiveVisit: boolean;
@@ -182,7 +185,7 @@ export function VariantSheet({
                               </Badge>
                             )}
                             <LencanaRak jumlah={v.diRak} />
-                            {!isKonsi && item.price != null && (
+                            {(!isKonsi || hargaKonsiTampil) && item.price != null && (
                               <span className="text-xs text-muted-foreground tabular-nums">{rupiah(item.price)}</span>
                             )}
                           </div>

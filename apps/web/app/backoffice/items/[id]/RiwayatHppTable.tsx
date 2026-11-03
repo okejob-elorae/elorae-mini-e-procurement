@@ -119,7 +119,11 @@ export function RiwayatHppTable({
           </TableHeader>
           <TableBody>
             {riwayat.baris.map((b) => (
-              <TableRow key={b.kunci} className={b.catatan ? "text-muted-foreground" : undefined}>
+              // Baris yang bukan dasar HPP terbaru diredupkan; baris yang dikoreksi invoice tidak.
+              <TableRow
+                key={b.kunci}
+                className={b.catatan && b.catatan !== "DIKOREKSI_INVOICE" ? "text-muted-foreground" : undefined}
+              >
                 <TableCell>{formatDisplayDateTime(b.tanggal, locale)}</TableCell>
                 <TableCell className="whitespace-normal">
                   <div className="space-y-0.5">
@@ -144,7 +148,13 @@ export function RiwayatHppTable({
                         )}
                       </div>
                     )}
-                    {b.catatan && <div className="text-xs">{t(`catatan.${b.catatan}`)}</div>}
+                    {b.catatan === "DIKOREKSI_INVOICE" ? (
+                      <div className="text-xs">
+                        {t("catatan.DIKOREKSI_INVOICE", { sebelum: rupiah(b.hppSebelumKoreksi ?? null) })}
+                      </div>
+                    ) : b.catatan ? (
+                      <div className="text-xs">{t(`catatan.${b.catatan}`)}</div>
+                    ) : null}
                   </div>
                 </TableCell>
                 <TableCell className="whitespace-normal">{b.varianLabel ?? b.varianSku ?? "—"}</TableCell>

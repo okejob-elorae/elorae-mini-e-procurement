@@ -43,7 +43,7 @@ export async function infoDokumenOperasional(pasangan: readonly Pasangan[]): Pro
   const isi = (jenis: SumberOperasional, id: string, info: InfoDokumenOperasional) => hasil.push({ jenis, id, info });
   const S = SUMBER_OPERASIONAL;
 
-  const [kirim, pesanan, pindah, nri, returLapangan, siklus, gaji, bayar, bayarSpg, hilang, potong, rusak, stok, retur] = await Promise.all([
+  const [kirim, pesanan, pindah, nri, returLapangan, siklus, gaji, bayarSpg, hilang, potong, potongRetur, rusak, stok, retur] = await Promise.all([
     aman("ConsignmentShipment", ids(S.KIRIM_KONSI), () =>
       prisma.consignmentShipment.findMany({ where: { id: { in: ids(S.KIRIM_KONSI) } }, select: { id: true, noKirim: true, cycleId: true } }),
     ),
@@ -54,7 +54,10 @@ export async function infoDokumenOperasional(pasangan: readonly Pasangan[]): Pro
       prisma.konsiTransfer.findMany({ where: { id: { in: ids(S.PINDAH_KONSI) } }, select: { id: true, docNo: true, orderId: true } }),
     ),
     aman("WarehouseReturn", ids(S.RETUR_KONSI), () =>
-      prisma.warehouseReturn.findMany({ where: { id: { in: ids(S.RETUR_KONSI) } }, select: { id: true, noNri: true, storeReturnId: true } }),
+      prisma.warehouseReturn.findMany({
+        where: { id: { in: ids(S.RETUR_KONSI) } },
+        select: { id: true, noNri: true, storeReturnId: true, followUpOfStoreReturnId: true },
+      }),
     ),
     aman("FieldReturn", ids(S.RETUR_LAPANGAN_KONSI), () =>
       prisma.fieldReturn.findMany({ where: { id: { in: ids(S.RETUR_LAPANGAN_KONSI) } }, select: { id: true, docNo: true } }),
@@ -68,9 +71,6 @@ export async function infoDokumenOperasional(pasangan: readonly Pasangan[]): Pro
         select: { id: true, cycleId: true, cycle: { select: { noKonsi: true } }, spgUser: { select: { name: true } } },
       }),
     ),
-    aman("ConsignmentPayment", ids(S.BAYAR_TOKO_KONSI), () =>
-      prisma.consignmentPayment.findMany({ where: { id: { in: ids(S.BAYAR_TOKO_KONSI) } }, select: { id: true, cycleId: true, cycle: { select: { noKonsi: true } } } }),
-    ),
     aman("SpgCommission", ids(S.BAYAR_KOMISI_SPG), () =>
       prisma.spgCommission.findMany({ where: { id: { in: ids(S.BAYAR_KOMISI_SPG) } }, select: { id: true, period: true, storeId: true } }),
     ),
@@ -79,6 +79,9 @@ export async function infoDokumenOperasional(pasangan: readonly Pasangan[]): Pro
     ),
     aman("StockLossDeduction", ids(S.POTONG_SALES), () =>
       prisma.stockLossDeduction.findMany({ where: { id: { in: ids(S.POTONG_SALES) } }, select: { id: true, refId: true } }),
+    ),
+    aman("ReturnChargeDeduction", ids(S.POTONG_SALES_RETUR), () =>
+      prisma.returnChargeDeduction.findMany({ where: { id: { in: ids(S.POTONG_SALES_RETUR) } }, select: { id: true, refId: true, chargeId: true } }),
     ),
     aman("DamagedStockMovement", ids(S.GUDANG_RUSAK), () =>
       prisma.damagedStockMovement.findMany({ where: { id: { in: ids(S.GUDANG_RUSAK) } }, select: { id: true, productName: true } }),
@@ -94,7 +97,8 @@ export async function infoDokumenOperasional(pasangan: readonly Pasangan[]): Pro
   for (const r of kirim) isi(S.KIRIM_KONSI, r.id, { nomor: r.noKirim, cycleId: r.cycleId });
   for (const r of pesanan) isi(S.PESANAN_KONSI, r.id, { nomor: r.orderNo });
   for (const r of pindah) isi(S.PINDAH_KONSI, r.id, { nomor: r.docNo, fieldOrderId: r.orderId });
-  for (const r of nri) isi(S.RETUR_KONSI, r.id, { nomor: r.noNri, storeReturnId: r.storeReturnId });
+  // Hitungan SUSULAN tidak berpasangan dengan nota toko; nota asalnya dibaca dari `followUpOf`.
+  for (const r of nri) isi(S.RETUR_KONSI, r.id, { nomor: r.noNri, storeReturnId: r.storeReturnId ?? r.followUpOfStoreReturnId });
   for (const r of returLapangan) isi(S.RETUR_LAPANGAN_KONSI, r.id, { nomor: r.docNo });
   const idSiklus = new Set(ids(S.SIKLUS_KONSI));
   const idKomisi = new Set(ids(S.KOMISI_KONSI));
@@ -103,7 +107,6 @@ export async function infoDokumenOperasional(pasangan: readonly Pasangan[]): Pro
     if (idKomisi.has(r.id)) isi(S.KOMISI_KONSI, r.id, { nomor: r.noKonsi, cycleId: r.id });
   }
   for (const r of gaji) isi(S.BAYAR_GAJI_KONSI, r.id, { nomor: `${r.cycle.noKonsi} · ${r.spgUser.name ?? "SPG"}`, cycleId: r.cycleId });
-  for (const r of bayar) isi(S.BAYAR_TOKO_KONSI, r.id, { nomor: r.cycle.noKonsi, cycleId: r.cycleId });
 
   // Nama toko untuk komisi SPG (per toko × bulan) dan barang hilang.
   const komisiSpg = ids(S.KOMISI_SPG).flatMap((id) => {
@@ -120,6 +123,22 @@ export async function infoDokumenOperasional(pasangan: readonly Pasangan[]): Pro
   for (const r of bayarSpg) isi(S.BAYAR_KOMISI_SPG, r.id, { nomor: `${toko.get(r.storeId) ?? "Toko"} ${r.period}`, periode: r.period });
   for (const r of hilang) isi(S.BARANG_HILANG, r.id, { nomor: [r.storeId ? toko.get(r.storeId) : null, r.sourceDocNo].filter(Boolean).join(" · ") || "Barang hilang" });
   for (const r of potong) isi(S.POTONG_SALES, r.id, { nomor: `Potongan komisi ${r.refId.split(":")[1] ?? ""}`.trim() });
+  const bebanIds = [...new Set(potongRetur.map((r) => r.chargeId))];
+  const bebanRetur = new Map(
+    (
+      await aman("ReturnCharge", bebanIds, () =>
+        prisma.returnCharge.findMany({ where: { id: { in: bebanIds } }, select: { id: true, storeReturnId: true, storeReturn: { select: { noNrt: true } } } }),
+      )
+    ).map((b) => [b.id, b]),
+  );
+  for (const r of potongRetur) {
+    const bulan = r.refId.replace(/^kembali:/, "").split(":")[1] ?? "";
+    const beban = bebanRetur.get(r.chargeId);
+    isi(S.POTONG_SALES_RETUR, r.id, {
+      nomor: [`Potongan komisi ${bulan}`.trim(), beban?.storeReturn?.noNrt ?? ""].filter(Boolean).join(" · "),
+      storeReturnId: beban?.storeReturnId ?? null,
+    });
+  }
   for (const r of rusak) isi(S.GUDANG_RUSAK, r.id, { nomor: r.productName });
   for (const r of stok) isi(S.STOK_MANUAL, r.id, { nomor: r.docNumber });
   for (const r of retur) isi(S.RETUR_PEMASOK, r.id, { nomor: r.docNumber });

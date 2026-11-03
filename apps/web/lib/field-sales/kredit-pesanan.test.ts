@@ -15,6 +15,25 @@ describe("teksAlasanKredit", () => {
     expect(biasa(teksAlasanKredit(nilai))).toBe("sisa Rp 5.000.000 termasuk pesanan ini, dari batas Rp 4.000.000");
     expect(teksAlasanKredit(faktur)).toBe("4 faktur belum lunas dari batas 3");
   });
+
+  it("merinci sisa saat ada pesanan disetujui yang belum masuk nota (Q10)", () => {
+    const rinci: HasilKredit["alasan"][number] = {
+      kode: "MELEBIHI_BATAS_NILAI",
+      sisaSesudah: 21_000_000,
+      batas: 20_000_000,
+      sisaFaktur: 15_000_000,
+      belumDinota: 4_000_000,
+      pesanan: 2_000_000,
+    };
+    expect(biasa(teksAlasanKredit(rinci))).toBe(
+      "sisa Rp 21.000.000 (faktur Rp 15.000.000 + disetujui belum dinota Rp 4.000.000 + pesanan ini Rp 2.000.000), dari batas Rp 20.000.000",
+    );
+  });
+
+  it("tanpa pesanan belum dinota, kalimatnya tetap seperti sebelumnya", () => {
+    const nol: HasilKredit["alasan"][number] = { ...nilai, sisaFaktur: 3_000_000, belumDinota: 0, pesanan: 2_000_000 };
+    expect(biasa(teksAlasanKredit(nol))).toBe("sisa Rp 5.000.000 termasuk pesanan ini, dari batas Rp 4.000.000");
+  });
 });
 
 describe("putuskanKreditPesanan", () => {
@@ -29,6 +48,22 @@ describe("putuskanKreditPesanan", () => {
     expect(p.ditahan).toBe(false);
     expect(biasa(p.catatan)).toBe(
       "Saat dibuat: tagihan lewat janji Rp 1.200.000 (2 faktur); sisa Rp 5.000.000 termasuk pesanan ini, dari batas Rp 4.000.000",
+    );
+  });
+
+  it("PERINGATAN dengan rincian: catatan tersimpan menyebut faktur, belum dinota, dan pesanan ini", () => {
+    const p = putuskanKreditPesanan(
+      {
+        tingkat: "PERINGATAN",
+        alasan: [
+          { kode: "MELEBIHI_BATAS_NILAI", sisaSesudah: 21_000_000, batas: 20_000_000, sisaFaktur: 15_000_000, belumDinota: 4_000_000, pesanan: 2_000_000 },
+        ],
+      },
+      "PERINGATAN",
+    );
+    if (p.blokir) throw new Error("tidak diharapkan");
+    expect(biasa(p.catatan)).toBe(
+      "Saat dibuat: sisa Rp 21.000.000 (faktur Rp 15.000.000 + disetujui belum dinota Rp 4.000.000 + pesanan ini Rp 2.000.000), dari batas Rp 20.000.000",
     );
   });
 

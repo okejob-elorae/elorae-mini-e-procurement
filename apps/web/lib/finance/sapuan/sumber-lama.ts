@@ -62,13 +62,17 @@ daftarkanSumberSapuan({
   label: "Penerimaan barang",
   // GRN yang ditolak pemilik tidak menambah hutang bersih: jurnal penerimaannya
   // (bila ada) dibalik `GRN_REVERSAL`, dan yang belum pernah berjurnal tidak perlu keduanya.
+  // GRN tanpa PO yang masih menunggu konfirmasi admin (P51a, `SYARAT_GRN_DIPROSES` di
+  // `lib/grn/grn-tanpa-po.ts`) belum menggerakkan stok dan belum menjadi hutang, jadi
+  // bukan "tanpa jurnal"; ia baru dicari sesudah dikonfirmasi.
   cariTanpaJurnal: (opsi) =>
     cariTanpaJurnalSql({
       tabel: "GRN",
       sourceType: "GRN",
       tanggal: Prisma.sql`d.${sqlId("grnDate")}`,
       kolomLabel: "docNumber",
-      syarat: Prisma.sql`AND ABS(d.${sqlId("totalAmount")}) >= 0.01 AND d.${sqlId("ownerDeclinedAt")} IS NULL`,
+      syarat: Prisma.sql`AND ABS(d.${sqlId("totalAmount")}) >= 0.01 AND d.${sqlId("ownerDeclinedAt")} IS NULL
+        AND (d.${sqlId("requiresNoPoConfirmation")} = false OR d.${sqlId("noPoConfirmedAt")} IS NOT NULL)`,
       opsi,
     }),
   posting: async (id, oleh) => {

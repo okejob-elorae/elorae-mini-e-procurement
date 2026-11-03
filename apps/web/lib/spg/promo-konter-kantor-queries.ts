@@ -12,6 +12,7 @@ import {
   type StatusPromoKonter,
 } from "./promo-konter-kantor";
 import { promoKonterUntukToko } from "./promo-konter-queries";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 
 /**
  * Kueri layar kantor "Promo konter" dan layar HP SPG "Promo di toko ini".
@@ -449,7 +450,9 @@ export async function opsiFormPromoKonter(terpilih?: { itemIds: string[]; catego
   const t = terpilih ?? { itemIds: [], categoryIds: [], storeIds: [] };
   const [barang, kategori, toko, spg] = await Promise.all([
     prisma.item.findMany({
-      where: { type: "FINISHED_GOOD", OR: [{ isActive: true }, { id: { in: t.itemIds } }] },
+      // Promo konter berlaku di toko: hanya barang yang dijual offline (P3a). Barang yang sudah
+      // terpilih tetap tampil apa pun salurannya, supaya pilihan tersimpan tidak hilang diam-diam.
+      where: { type: "FINISHED_GOOD", OR: [{ isActive: true, ...syaratDijualOffline() }, { id: { in: t.itemIds } }] },
       select: { id: true, sku: true, nameId: true, categoryId: true, isActive: true, sellingPrice: true },
       orderBy: [{ nameId: "asc" }, { sku: "asc" }],
     }),

@@ -14,13 +14,11 @@ export const dynamic = "force-dynamic";
  * Target saya — target per kategori dan per barang yang ditetapkan kantor
  * untuk bulan ini, dengan kemajuan, "kurang berapa lagi", dan lajunya.
  *
- * Hanya milik salesman yang login. Aturan mutlak pemilik: harga dan total
- * konsinyasi tidak pernah sampai ke HP. Payload-nya dari `targetSayaHp`:
- * target total memakai omzet putus + van — angka yang sama dengan kartu
- * "Bulan ini" di beranda — dan setiap target dalam rupiah (kategori maupun
- * barang) dihitung tanpa konsinyasi; target pcs tetap menghitung pcs konsi.
- * Capaian × target − putus − van akan membuka total konsi, jadi capaian yang
- * memuat konsi tidak pernah dikirim.
+ * Hanya milik salesman yang login. Payload-nya dari `targetSayaHp`: capaian
+ * yang sama dengan layar kantor — HP salesman menampilkan konsinyasi lengkap
+ * (pemilik P56, 2026-11-02). Target total memakai omzet resmi putus + konsi +
+ * van, angka yang sama dengan kartu "Bulan ini" di beranda, dan setiap target
+ * rupiah (kategori maupun barang) memuat konsinyasi.
  *
  * SPG (toko tetap): capaiannya dari nota penjualannya sendiri bulan ini, bersih
  * dari retur pembeli (`capaianRinciSpg`); target totalnya dari pengaturan yang

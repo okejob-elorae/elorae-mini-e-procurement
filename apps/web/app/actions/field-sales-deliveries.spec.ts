@@ -176,7 +176,6 @@ vi.mock("@/lib/db/tx-retry", async (importActual) => {
 
 import {
   recordNotaTagihanPrinted,
-  recordDeliveryAction,
   closeRemainderAction,
   updateDeliveryDatesAction,
   postFieldDeliveryJournalsAction,
@@ -816,44 +815,6 @@ d("updateDeliveryDatesAction (test bed only)", () => {
 
     expect(result).toEqual({ ok: true, posted: [], stillPending: ["field_delivery_revenue"] });
     expect(journalPostStub.calls).toEqual([{ kind: "field_delivery_revenue", docId: deliveryId }]);
-  });
-
-  it("posts the recorded delivery's nota journal when it refuses a replay with changed dates", async () => {
-    /* The crash window: the delivery committed under this key, its journal never posted. */
-    const idempotencyKey = `dlv-replay-${token}`;
-    await prisma.fieldSalesDelivery.update({ where: { id: deliveryId }, data: { idempotencyKey } });
-    journalPostStub.active = true;
-
-    const result = await recordDeliveryAction({
-      orderId,
-      lines: [{ orderLineId: lineId, qty: 1 }],
-      invoiceDate: "2026-04-02",
-      dueDate: "2026-05-01",
-      idempotencyKey,
-    });
-
-    expect(result).toMatchObject({ ok: false, reason: "REPLAY_MISMATCH", replay: { deliveryId, docNo } });
-    /* Through the nota engine's hook only — never the old two-journal pair beside it. */
-    expect(notaHook.calls).toEqual([deliveryId]);
-    expect(journalPostStub.calls).toEqual([]);
-  });
-
-  it("rejects a malformed delivery payload as INVALID_REQUEST before touching anything", async () => {
-    const base = { orderId, invoiceDate: "2026-04-02", dueDate: "2026-05-01", idempotencyKey: `dlv-bad-${token}` };
-    const malformed = [
-      [{ orderLineId: 123, qty: 1 }],
-      [{ orderLineId: lineId, qty: 0 }],
-      [{ orderLineId: lineId, qty: -1 }],
-      [{ orderLineId: lineId, qty: 1.5 }],
-      [{ orderLineId: lineId, qty: "1" }],
-      [null],
-      "not-an-array",
-    ];
-    for (const lines of malformed) {
-      const result = await recordDeliveryAction({ ...base, lines } as unknown as Parameters<typeof recordDeliveryAction>[0]);
-      expect(result).toEqual({ ok: false, reason: "INVALID_REQUEST" });
-    }
-    expect(await prisma.fieldSalesDelivery.count({ where: { orderId } })).toBe(1);
   });
 
   it("rejects an empty, blank or non-string close-remainder reason as INVALID_REQUEST", async () => {

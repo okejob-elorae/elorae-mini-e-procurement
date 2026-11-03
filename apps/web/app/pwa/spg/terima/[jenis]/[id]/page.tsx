@@ -64,6 +64,8 @@ export default async function SpgTerimaKirimanPage({ params }: { params: Promise
               lines: k.lines,
               opnameSesudah: opname ? formatDisplayDate(opname.countedAt) : null,
               antaran,
+              bolehDitolak: k.bolehDitolak === true,
+              dalamPerjalanan: k.dalamPerjalanan === true,
             }
           : null
       }

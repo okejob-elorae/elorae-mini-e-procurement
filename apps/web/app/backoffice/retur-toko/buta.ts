@@ -18,8 +18,22 @@ import { cocokCari } from "../piutang/_daftar/halaman";
  */
 
 export type BarisReturTampil = BarisKerjaRetur & {
-  /** Klaim dibuang di server karena penonton ini akan menghitung notanya. */
+  /** Klaim dibuang di server karena penonton ini akan menghitung notanya (atau susulannya). */
   klaimTersembunyi?: boolean;
+};
+
+/**
+ * Siapa yang boleh menghitung — dan siapa yang tidak pernah menghitung susulan
+ * nota mana. `tanganSusulan` hanya memuat nota yang selisihnya masih bisa
+ * menerima barang susulan; nilainya orang-orang yang dikecualikan aturan dua
+ * tangan (pelapor nota, pelapor cek, sales yang dibebani, pemegang toko).
+ */
+export type LingkupButa = {
+  bolehMenghitung: boolean;
+  penggunaId: string;
+  /** Yang memutuskan penanggung harus melihat selisihnya; ia tidak dibutakan. */
+  bolehMemutuskan?: boolean;
+  tanganSusulan?: ReadonlyMap<string, readonly string[]>;
 };
 
 /** Penonton adalah pelapor nota ini — aturan yang sama dengan penulis hitungan gudang. */
@@ -34,13 +48,36 @@ export function klaimDisembunyikan(
   return p.bolehMenghitung && b.jenis === "NRT" && b.langkah === "cek" && !pelaporNota(b, p.penggunaId);
 }
 
+/**
+ * Hitungan BARANG SUSULAN juga buta (keputusan 2, 2026-10-29). Selama selisih
+ * sebuah nota masih bisa menerima susulan, orang yang boleh menghitungnya tidak
+ * menerima klaim, selisih, barang yang kurang per baris, atau catatan cek sales
+ * — kalau melihatnya, ia tahu persis apa yang harus "ditemukan". Yang dikecualikan
+ * aturan dua tangan tidak pernah menghitung susulannya, jadi tidak dibutakan;
+ * begitu pula yang memutuskan penanggung, karena ia harus melihat selisihnya.
+ */
+export function selisihDisembunyikan(
+  b: Pick<BarisKerjaRetur, "id" | "jenis" | "langkah">,
+  p: LingkupButa,
+): boolean {
+  if (!p.bolehMenghitung || p.bolehMemutuskan || b.jenis !== "NRT") return false;
+  if (b.langkah === "cek" || b.langkah === "batal") return false;
+  const tangan = p.tanganSusulan?.get(b.id);
+  if (!tangan) return false;
+  return p.penggunaId === "" || !tangan.includes(p.penggunaId);
+}
+
 /** Buang angka klaim (dan potongannya, yang sama-sama membocorkan klaim) dari baris yang buta. */
-export function butakan(baris: BarisKerjaRetur[], p: { bolehMenghitung: boolean; penggunaId: string }): BarisReturTampil[] {
-  return baris.map((b) =>
-    klaimDisembunyikan(b, p)
-      ? { ...b, nilaiKlaim: null, nilaiDipotong: 0, jumlahPotongan: 0, klaimTersembunyi: true }
-      : { ...b, klaimTersembunyi: false },
-  );
+export function butakan(baris: BarisKerjaRetur[], p: LingkupButa): BarisReturTampil[] {
+  return baris.map((b) => {
+    if (klaimDisembunyikan(b, p)) {
+      return { ...b, nilaiKlaim: null, nilaiDipotong: 0, jumlahPotongan: 0, klaimTersembunyi: true };
+    }
+    if (selisihDisembunyikan(b, p)) {
+      return { ...b, nilaiKlaim: null, selisih: 0, nilaiDipotong: 0, jumlahPotongan: 0, klaimTersembunyi: true };
+    }
+    return { ...b, klaimTersembunyi: false };
+  });
 }
 
 /**

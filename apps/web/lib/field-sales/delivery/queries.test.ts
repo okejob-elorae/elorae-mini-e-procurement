@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { getFieldSalesOrderById } from "../queries";
-import { recordFieldSalesDelivery } from "./writer";
+import { catatNotaUji as recordFieldSalesDelivery } from "./uji-nota";
 
 /**
  * Read-only query under test, but the fixture drives a real delivery through the writer, which

@@ -154,12 +154,9 @@ export default function CetakSiklusPage({ params }: { params: Promise<{ id: stri
               <tr key={k.id} className="border-b border-neutral-300">
                 <td className="px-2 py-1.5">
                   {k.spgNama ?? '—'}
-                  {!k.bergaji ? (
-                    <span className="block text-[8pt] text-neutral-600">Bukan SPG toko ini — komisi dari penjualannya sendiri, tanpa gaji pokok.</span>
-                  ) : null}
                   {alasan ? <span className="block text-[8pt] text-neutral-600">{alasan}</span> : null}
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{rupiah(k.gajiPokok)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{angka ? rupiah(k.dibayarPada ? k.gajiPokok : (k.bayar?.gajiPokok ?? k.gajiPokok)) : '—'}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{angka ? rupiah(angka.komisi) : '—'}</td>
                 <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{angka ? rupiah(angka.total) : '—'}</td>
                 {adaPotonganHilang && (

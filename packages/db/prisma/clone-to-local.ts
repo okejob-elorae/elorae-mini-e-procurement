@@ -108,7 +108,11 @@ async function main() {
 
     // ---------- Item ----------
     // The confirmed Jubelio price state is copied too: without it every mapped
-    // item would read as "waiting to be sent to Jubelio" on the local bed.
+    // item would read as "waiting to be sent to Jubelio" on the local bed. So are
+    // the sales channel, the price-rule basis, what Jubelio was last observed to
+    // show and the admin's last price decision: without them every item reads as
+    // "Keduanya", markup-based and never observed, and the "price differs in
+    // Jubelio" warnings and push holds of the source never appear locally.
     const items = await src.item.findMany();
     await batchInsert("Item", items, (batch) =>
       dst.item.createMany({
@@ -131,6 +135,13 @@ async function main() {
           jubelioConfirmedById: i.jubelioConfirmedById,
           jubelioCreateRequestedAt: i.jubelioCreateRequestedAt,
           jubelioCreateRequestedById: i.jubelioCreateRequestedById,
+          jubelioObservedPriceMax: i.jubelioObservedPriceMax,
+          jubelioObservedPriceMin: i.jubelioObservedPriceMin,
+          jubelioObservedAt: i.jubelioObservedAt,
+          jubelioObservedChangedAt: i.jubelioObservedChangedAt,
+          jubelioPriceDecidedAt: i.jubelioPriceDecidedAt,
+          salesChannel: i.salesChannel,
+          priceRuleBasis: i.priceRuleBasis,
           targetMarginPercent: i.targetMarginPercent,
           additionalCost: i.additionalCost,
           defaultPpnIncluded: i.defaultPpnIncluded,

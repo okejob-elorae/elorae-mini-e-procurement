@@ -16,6 +16,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { dinamis } from "@/lib/i18n/dinamis";
 import { newLocalId } from "@/lib/pwa/id-lokal";
 import { formatIDR } from "@/lib/sales-orders/format";
+import { perkiraanNilaiKonsi } from "@/lib/field-sales/perkiraan-konsi";
 import {
   bacaKriteriaTersimpan,
   kunciPenyimpanan,
@@ -37,8 +38,9 @@ import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
  * Draf TIDAK PERNAH terkirim sendiri. Jumlahnya boleh diubah (tidak pernah
  * melebihi stok gudang yang dibaca saat menyusun) dan barisnya boleh dihapus;
  * yang dikirim hanya barang, varian, dan jumlah — HP tidak pernah mengirim
- * harga. Toko konsinyasi tidak punya harga, total, maupun anggaran di layar ini,
- * dan datanya dari server memang tidak membawanya.
+ * harga. Toko konsinyasi (P18): harga retail toko per pcs, subtotal artikel,
+ * dan totalnya ditampilkan sebagai PERKIRAAN — nilai pastinya dihitung kantor
+ * saat menyetujui; anggaran tetap hanya untuk toko putus.
  *
  * Kriteria terakhir diingat per toko di HP (localStorage) — kenyamanan saja.
  */
@@ -51,8 +53,8 @@ type BarisHp = {
   namaProduk: string;
   qty: number;
   tersedia: number;
-  /** Hanya toko putus. */
-  hargaSatuan?: number;
+  /** Toko putus: harga per pcs. Toko konsinyasi: harga retail toko (perkiraan); null = belum ada harga. */
+  hargaSatuan?: number | null;
 };
 type ArtikelHp = {
   itemId: string;
@@ -186,8 +188,11 @@ export function RencanaKirimShell({
       pcs += b.qty;
       nilai += b.qty * (b.hargaSatuan ?? 0);
     }
-    return { artikel: artikel.length, pcs, nilai };
-  }, [draf]);
+    const perkiraan = konsi
+      ? perkiraanNilaiKonsi(artikel.flatMap((a) => a.baris.map((b) => ({ qty: b.qty, harga: b.hargaSatuan ?? null }))))
+      : null;
+    return { artikel: artikel.length, pcs, nilai, perkiraan };
+  }, [draf, konsi]);
 
   const kurangKirim: string | null = !draf || ringkas.pcs === 0 ? t("kirimKosong") : visitId === null ? t("kirimBelumCheckin") : null;
 
@@ -315,7 +320,14 @@ export function RencanaKirimShell({
             <p className="text-base font-semibold tabular-nums">
               {t("ringkasArtikel", { n: angka.format(ringkas.artikel) })} · {t("ringkasPcs", { n: angka.format(ringkas.pcs) })}
             </p>
-            {konsi ? null : (
+            {konsi ? (
+              ringkas.perkiraan ? (
+                <p className="flex items-baseline justify-between gap-3 pt-1">
+                  <span className="text-sm text-muted-foreground">{t("perkiraan")}</span>
+                  <span className="text-lg font-semibold tabular-nums">{formatIDR(ringkas.perkiraan.nilai)}</span>
+                </p>
+              ) : null
+            ) : (
               <p className="flex items-baseline justify-between gap-3 pt-1">
                 <span className="text-sm text-muted-foreground">{t("estimasi")}</span>
                 <span className="text-lg font-semibold tabular-nums">{formatIDR(ringkas.nilai)}</span>
@@ -401,7 +413,7 @@ export function RencanaKirimShell({
                                   </Button>
                                 </div>
                               </div>
-                              {b.hargaSatuan !== undefined ? (
+                              {b.hargaSatuan != null ? (
                                 <p className="text-xs text-muted-foreground tabular-nums">
                                   {t("perPcs", { harga: formatIDR(b.hargaSatuan) })}
                                 </p>
@@ -411,9 +423,9 @@ export function RencanaKirimShell({
                         })}
                       </ul>
 
-                      {konsi ? null : (
+                      {konsi && !a.baris.some((b) => b.hargaSatuan != null) ? null : (
                         <p className="flex items-baseline justify-between gap-3 text-sm">
-                          <span className="text-muted-foreground">{t("subtotal")}</span>
+                          <span className="text-muted-foreground">{konsi ? t("perkiraan") : t("subtotal")}</span>
                           <span className="font-semibold tabular-nums">{formatIDR(nilaiArtikel)}</span>
                         </p>
                       )}

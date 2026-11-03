@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { serializeListItem, listFieldSalesOrders, getFieldSalesOrderById, sentItemIds, getStoreSentItems, getStoreSentItemsPage } from "./queries";
 import { createFieldSalesOrder } from "./writer";
-import { createDeliveryShipment } from "@/lib/delivery/shipment-writer";
 import { Prisma, prisma, seededId } from "@elorae/db";
 
 describe("serializeListItem", () => {
@@ -259,13 +258,25 @@ d("konsi queries (test bed only)", () => {
      * A transfer written against a real shipment must not surface here — legacyKonsiTransfer
      * stays pinned to the null-shipmentId row created above.
      */
-    const orderLines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: order.id } });
-    const shipment = await createDeliveryShipment({
-      orderId: order.id,
-      method: "EXPEDITION",
-      lines: [{ orderLineId: orderLines[0].id, qty: 1 }],
-      packedById: salesmanId,
-    });
+    /*
+     * The shipment row is written directly: the shipment writer now moves a konsi order's stock
+     * into transit at creation (it needs the order's reservation), and this test only needs a
+     * transfer that carries a shipmentId.
+     */
+    const shipment = {
+      shipmentId: (
+        await prisma.deliveryShipment.create({
+          data: {
+            docNo: `DLV/TEST/${Math.random().toString(36).slice(2, 10)}`,
+            orderId: order.id,
+            method: "EXPEDITION",
+            status: "PACKED",
+            packedById: salesmanId,
+          },
+          select: { id: true },
+        })
+      ).id,
+    };
     const shipmentTransfer = await prisma.konsiTransfer.create({
       data: {
         docNo: `KONSITRF/TEST/${Math.random().toString(36).slice(2, 10)}`,
@@ -464,6 +475,56 @@ d("getStoreSentItems (test bed only)", () => {
     const rows = await getStoreSentItems(storeId);
     expect(rows).toHaveLength(1);
     expect(rows[0].totalQty).toBe(3);
+  });
+
+  it("shows a voided nota and a corrected nota on the order, and counts only what each still bills", async () => {
+    const putus = await seedOrder({ orderType: "PUTUS", status: "APPROVED", lines: [{ variantSku: "M", qty: 5 }] });
+    const orderLineId = putus.lines[0].id;
+    const dibuatPada = new Date();
+    /* Tidak jadi dikirim: the nota stays, zeroed, with its reason. */
+    await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `DLV/TEST/${Math.random().toString(36).slice(2, 10)}`,
+        orderId: putus.id,
+        deliveredAt: dibuatPada,
+        deliveredById: salesmanId,
+        invoiceDate: dibuatPada,
+        dueDate: dibuatPada,
+        subtotal: 0,
+        total: 0,
+        voidedAt: dibuatPada,
+        voidedById: salesmanId,
+        voidReason: "Toko tutup, tidak jadi dikirim",
+        lines: { create: [{ orderLineId, itemId, variantSku: "M", productName: "Kaos Test", qty: 0, returnedQty: 2 }] },
+      },
+    });
+    /* Corrected at the door: 3 sent, 1 refused, 1 lost — 1 billed. */
+    await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `DLV/TEST/${Math.random().toString(36).slice(2, 10)}`,
+        orderId: putus.id,
+        deliveredAt: dibuatPada,
+        deliveredById: salesmanId,
+        invoiceDate: dibuatPada,
+        dueDate: dibuatPada,
+        subtotal: 0,
+        total: 0,
+        correctedAt: dibuatPada,
+        lines: { create: [{ orderLineId, itemId, variantSku: "M", productName: "Kaos Test", qty: 1, returnedQty: 1, lostQty: 1 }] },
+      },
+    });
+
+    const detail = await getFieldSalesOrderById(putus.id);
+    expect(detail?.deliveries).toHaveLength(2);
+    const batal = detail!.deliveries.find((d) => d.voidedAt !== null);
+    expect(batal).toMatchObject({ voidReason: "Toko tutup, tidak jadi dikirim", correctedAt: null });
+    expect(batal!.lines[0]).toMatchObject({ qty: 0, returnedQty: 2, lostQty: 0 });
+    const koreksi = detail!.deliveries.find((d) => d.correctedAt !== null);
+    expect(koreksi).toMatchObject({ voidedAt: null, voidReason: null });
+    expect(koreksi!.lines[0]).toMatchObject({ qty: 1, returnedQty: 1, lostQty: 1 });
+
+    const rows = await getStoreSentItems(storeId);
+    expect(rows.map((r) => [r.variantSku, r.totalQty])).toEqual([["M", 1]]);
   });
 
   it("sums repeat deliveries of the same article+variant", async () => {

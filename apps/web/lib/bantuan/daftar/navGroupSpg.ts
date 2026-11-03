@@ -248,6 +248,13 @@ export const ENTRI: EntriBantuan[] = [
         judul: { kunci: "jadwalSpg.tab.tukar" },
         isi: "SPG mengajukan tukar shift dari HP, dan rekannya harus menyetujui lebih dulu sebelum ajuan sampai ke kantor. Kantor menyetujui atau menolak; sesudah disetujui, jadwal kedua SPG bertukar.",
       },
+      {
+        judul: "Jadwal bulanan",
+        isi: [
+          "Jadwal sebulan yang diisi dan diajukan SPG dari HP — dasar gaji pokoknya. Kantor menyetujui, menolak dengan alasan, atau membukanya lagi selama bulan itu belum dibayar. Perubahan sesudah disetujui kembali menunggu persetujuan.",
+          "Hari yang sudah lewat terkunci; hari lewat yang dibiarkan kosong ditutup oleh catatan check-in toko (Komisi SPG → Catatan check-in toko). Menyetujui, menolak, dan membuka lagi butuh izin Setujui jadwal SPG.",
+        ],
+      },
     ],
   },
   {
@@ -256,28 +263,47 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "komisiSpg.judul" },
     isi: [
       { kunci: "komisiSpg.deskripsi" },
-      "Satu hitungan untuk toko putus dan konsinyasi (keputusan pemilik 2026-11-01): tarif per kategori barang bulan penjualannya (Pengaturan → Komisi SPG) × potong yang dijual masing-masing SPG sendiri, dikurangi retur pembeli dari notanya yang sudah disetujui kantor. Tidak ada bagi rata (keputusan pemilik 2026-11-02). Barang yang kategorinya belum bertarif bulan itu tidak menghasilkan komisi.",
-      "Halaman disusun per BULAN PEMBAYARAN: komisi dibayar di bulan laporannya dicek, dengan catatan bulan penjualannya — penjualan Oktober yang dicek awal November tampil di November sebagai Komisi penjualan Oktober 2026.",
-      "Toko putus, tiga langkah: Tandai laporan dicek (hanya untuk bulan penjualan yang sudah selesai), Tetapkan, lalu Tandai dibayar. Mengecek, membatalkan tanda dicek, dan menetapkan butuh izin mengelola piutang; menandai dibayar butuh izin membayar gaji & komisi SPG, yang bawaannya hanya dipegang admin. Tanda dicek boleh dibatalkan dengan alasan selama belum ada komisi toko × bulan itu yang dibayar — baris yang sudah ditetapkan ikut terhapus. Menetapkan boleh diulang selama belum ada yang dibayar. Bulan yang sebagian sudah dibayar dengan aturan lama (tarif per barang atau dibagi rata) tidak bisa dicek lagi, tetapi baris yang belum dibayar di bulan itu tetap bisa dibayar.",
-      "Yang belum dibayar selalu dibayar dengan komisi per SPG SAAT ditandai dibayar, bukan angka yang tersimpan: angka lama yang berbeda dicoret di layar dan tercatat di jejak audit, dan dialog bayarnya menyebut jumlah persis yang dibayarkan. Bila angkanya berubah sejak halaman dibuka (nota, pengembalian, atau pembayaran lain masuk), pembayaran ditolak dan halaman dimuat ulang supaya angkanya diperiksa lagi.",
-      "Koreksi: komisi per SPG sekarang − yang sudah dibayar − koreksi yang sudah diterapkan, untuk laporan yang sudah dibayar (pembayaran lama yang dibagi rata, pengembalian pembeli yang disetujui sesudah dibayar, atau nota HP yang masuk sesudah dibayar). Koreksi tidak disimpan sebelum dibayar: ia diterapkan sekali, di pembayaran SPG itu yang paling lama di antara yang belum dibayar dan sudah boleh dibayar (12 bulan terakhir), dan baru tercatat saat pembayaran itu ditandai dibayar. Pembayaran tidak pernah di bawah Rp 0 — sisa koreksi minus dibawa ke pembayaran sesudahnya.",
-      "Laporan aturan lama yang tidak bisa dibandingkan jujur — sebagian potongnya tanpa tarif kategori, atau (konsinyasi) angka resminya tidak seluruhnya tercatat di HP SPG — tidak dikoreksi dan tidak dibayar otomatis: barisnya menunggu keputusan pemilik.",
-      "Toko konsinyasi: laporannya dicek saat kantor mengunci angka resmi siklusnya (Konsinyasi). Gaji & komisinya bisa ditandai dibayar di sini atau di siklus konsinyasinya, dengan izin membayar gaji & komisi SPG, tanpa membuka kunci. Kartunya memperingatkan bila hitungan sekarang berbeda dari angka yang dikunci.",
-      "Beban barang hilang yang ditanggung SPG dipotong dari komisinya saat ditetapkan; batas potongannya diatur di Pengaturan → SPG. Bila komisinya turun saat dibayar, potongannya ikut diturunkan sampai batas yang baru.",
-      "Komisi tidak terbentuk sendiri: baris resminya baru ada setelah laporan dicek dan ditetapkan. Beranda mengingatkan pemegang izin mengelola piutang dengan jumlah toko putus ber-SPG yang laporan bulan lalunya belum dicek atau belum ditetapkan (bulan yang seluruh penjualannya dikembalikan pembeli tidak dihitung — tidak ada komisi yang bisa dicek atau ditetapkan); tautannya membuka halaman ini. Pemegang izin membayar gaji & komisi SPG juga diingatkan dengan jumlah baris yang tertunggak dari bulan pembayaran sebelumnya.",
+      "Satu pembayaran per SPG per bulan: gaji pokok ditambah komisi. Komisi = tarif kategori barang bulan PENJUALANNYA (Pengaturan → Komisi SPG) × potong yang dijual masing-masing SPG sendiri, untuk toko putus dan konsinyasi. Tidak ada bagi rata. Kategorinya adalah kategori yang tercatat saat barang dijual; barang yang terjual tanpa kategori ikut kategori yang diberikan kemudian.",
+      "Retur pembeli yang disetujui kantor mengurangi komisi bulan nota ASLINYA, bukan bulan returnya.",
+      "Toko putus: Tandai laporan dicek (hanya untuk bulan yang sudah selesai), Tetapkan, lalu Tandai dibayar. Bulan dengan SPG terjadwal tanpa penjualan juga dicek. Mengecek, membatalkan tanda dicek, dan menetapkan butuh izin mengelola piutang; menandai dibayar butuh izin membayar gaji & komisi SPG (bawaannya admin dan Keuangan).",
+      "Yang belum dibayar selalu dibayar dengan angka SAAT ditandai dibayar, bukan angka yang tersimpan: angka lama yang berbeda dicoret di layar dan tercatat di jejak audit, dan dialog bayarnya menyebut jumlah persis yang dibayarkan. Bila angkanya berubah sejak halaman dibuka, pembayaran ditolak dan halaman dimuat ulang. Bulan yang sudah dibayar dikoreksi di pembayaran berikutnya, sampai 12 bulan ke belakang.",
+      "Barang hilang dan beban retur pembeli yang ditolak dipotong PENUH saat pembayaran: dari komisi dulu, lalu dari gaji pokok. Sisa yang belum tertutup dibawa ke pembayaran berikutnya.",
+      "Sebuah baris ditahan — gaji pokok DAN komisinya — selama gaji pokoknya belum diatur, jadwal bulanannya belum disetujui, atau catatan check-in tokonya belum dimasukkan atau belum diperiksa. Setiap sebab menaut ke tempat membereskannya, bila Anda boleh membukanya. Check-in di luar radius tetap dihitung hadir dan didaftar untuk diperiksa.",
+      "Toko konsinyasi: laporannya dicek saat kantor mengunci angka resmi siklusnya (Konsinyasi). Gaji & komisinya bisa ditandai dibayar di sini atau di siklus konsinyasinya, dengan izin membayar gaji & komisi SPG, tanpa membuka kunci.",
+      "Halaman ini terbuka untuk pengawas SPG dan untuk yang membayar gaji & komisi SPG — Keuangan membukanya tanpa halaman SPG lain. Pemegang izin Periksa pembayaran saja hanya melihat kartu utang SPG.",
+      "Beranda mengingatkan pemegang izin mengelola piutang dengan laporan toko putus bulan lalu yang belum dicek atau belum ditetapkan, dan pemegang izin membayar gaji & komisi SPG dengan baris yang tertunggak dari bulan pembayaran sebelumnya.",
     ],
     kartu: [
       {
         judul: "Belum dibayar dari bulan pembayaran sebelumnya",
         isi: [
-          "Komisi yang laporannya sudah dicek, atau siklusnya sudah dikunci, di bulan pembayaran sebelumnya tetapi belum ditandai dibayar. Kartunya bertiga: yang bisa dibayar sekarang (dihitung di Beranda), yang menunggu keputusan pemilik (tidak bisa dibayar, tidak dihitung), dan yang lebih tua dari 12 bulan (tidak dihitung).",
+          "Komisi yang laporannya sudah dicek, atau siklusnya sudah dikunci, di bulan pembayaran sebelumnya tetapi belum ditandai dibayar. Yang bisa dibayar sekarang dihitung di Beranda; yang ditahan menunggu dasar gajinya (gaji pokok, jadwal, atau catatan check-in) tampil dengan sebabnya dan dihitung di baris tahannya sendiri.",
         ],
       },
       {
         judul: "Koreksi komisi",
         isi: "Koreksi yang menunggu, per SPG, beserta pembayaran yang akan membawanya. SPG yang belum punya pembayaran berikutnya ditulis menunggu — koreksinya diterapkan begitu ada.",
       },
+      {
+        judul: "Utang SPG",
+        isi: [
+          "SPG yang sudah berhenti menerima pembayaran terakhirnya dengan semua koreksi dan potongannya. Yang tidak tertutup menjadi utang SPG; tambahan yang muncul kemudian lebih dulu mengurangi utangnya, sisanya dibayar terpisah.",
+          "Pembayaran utang yang dicatat menunggu cek mutasi bank oleh orang lain selain yang mencatatnya (izin Periksa pembayaran). Mencatat utang dan pembayarannya butuh izin membayar gaji & komisi SPG.",
+        ],
+      },
       { judul: { kunci: "komisiSpg.konsi.judul" }, isi: { kunci: "komisiSpg.konsi.isi" } },
+    ],
+  },
+  {
+    rute: "/backoffice/komisi-spg/catatan-hadir",
+    bagian: "navGroupSpg",
+    judul: { kunci: "navigation.navCatatanHadirSpg" },
+    isi: [
+      "Bila SPG tidak mengisi jadwalnya, kantor memasukkan catatan check-in dari toko — diketik per hari atau diunggah dari Excel (templatnya: Tanggal, Jadwal KERJA/LIBUR, Hadir YA/TIDAK, Catatan).",
+      "Admin Keuangan memeriksanya dengan kertas atau berkas aslinya, dan tidak boleh memeriksa catatan yang ia masukkan sendiri. Hanya catatan yang sudah diperiksa yang dipakai, dan untuk hari yang dicakupnya ia menggantikan check-in sistem. Catatan yang dikembalikan diperbaiki lalu diajukan lagi.",
+      "Catatan bulan yang sudah dibayar tidak bisa diubah.",
+      "Dari Beranda, baris \"belum dimasukkan\" membuka SPG × bulan yang pembayarannya tertahan karena catatannya belum ada (atau masih menyisakan hari tanpa dasar gaji), dan baris \"menunggu diperiksa\" membuka catatan yang sudah diajukan.",
+      "Memasukkan dan mengunggah butuh izin mencatat catatan check-in toko; memeriksa dan mengembalikan butuh izin memeriksanya. Pengawas SPG hanya membaca.",
     ],
   },
   {
@@ -341,7 +367,8 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "spgReturPembeli.kantor.deskripsi" },
       "Laporan datang dari HP SPG, lewat tombol Laporkan retur pembeli di nota penjualan. Selama Menunggu, laporan itu tidak mengubah apa pun: stok rak toko, penjualan bersih, komisi SPG, laporan konsinyasi, dan riwayat penjualan tetap seperti sebelum retur. Barang yang masih menunggu tetap mengurangi jumlah yang bisa dilaporkan dari baris nota itu, jadi potong yang sama tidak bisa dilaporkan dua kali.",
       "Pengawas SPG bisa melihat daftar ini. Menyetujui dan menolak butuh izin Setujui retur pembeli SPG — bawaannya admin dan Admin Penjualan (keputusan pemilik 2026-11-02), dan bisa diberikan ke peran lain di Peran & izin. Tidak ada yang bisa memutuskan laporan yang ia buat sendiri.",
-      "Tab memilih status (bawaannya Menunggu); saringan toko dan nomor nota tersimpan di alamat halaman. Beranda menghitung laporan yang menunggu untuk pemegang izin menyetujui, dan tautannya membuka tab Menunggu.",
+      "Setiap laporan membawa foto barangnya dan keadaan uangnya: belum dikembalikan, sudah dikembalikan kasir (dengan foto struk), atau ditandai kantor sudah dikembalikan. Uang pembeli baru dikembalikan sesudah kantor menyetujui; tidak ada kredit toko.",
+      "Tab memilih status (bawaannya Menunggu); tab Perlu keputusan barang berisi laporan yang ditolak sesudah uangnya dikembalikan dan beban SPG-nya sudah lunas, menunggu keputusan barangnya. Saringan toko dan nomor nota tersimpan di alamat halaman. Beranda menghitung laporan yang menunggu dan barang yang menunggu keputusan untuk pemegang izin menyetujui.",
     ],
   },
   {
@@ -350,8 +377,9 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "spgReturPembeli.rincian.judul" },
     isi: [
       "Satu laporan: SPG pelapor, toko, nota asal, barang per baris dengan kondisinya, alasan pembeli, dan riwayat keputusannya.",
-      "Menyetujui menerapkan retur sekaligus: jumlah kembali di nota bertambah, barang layak masuk lagi ke stok rak toko (barang rusak tidak), dan penjualan bersih, komisi SPG, laporan konsinyasi, serta riwayat penjualan berkurang. Semuanya dihitung pada tanggal retur DILAPORKAN, bukan tanggal disetujui. Barang yang sudah dihitung opname toko sesudah dilaporkan tidak ditambahkan lagi ke stok rak.",
-      "Bila komisi bulan itu sudah dicek, atau angka konsinyasinya sudah dikunci, angka yang tersimpan tidak berubah; selisih komisinya dikoreksi di pembayaran berikutnya. Menolak wajib disertai alasan, yang dikirim ke HP SPG, dan laporan yang ditolak tidak mengubah apa pun. Laporan lama yang dicatat sebelum ada persetujuan kantor tertulis Berlaku langsung.",
+      "Menyetujui menerapkan retur sekaligus: jumlah kembali di nota bertambah, barang layak masuk lagi ke stok rak toko (barang rusak tidak), dan penjualan bersih, komisi SPG, laporan konsinyasi, serta riwayat penjualan berkurang. Penjualan bersih dan laporan konsinyasi dihitung pada tanggal retur DILAPORKAN; komisi SPG berkurang di bulan nota ASLINYA. Menyetujui membukukan setiap potong layak jual ke stok rak.",
+      "Bila komisi bulan itu sudah dicek, atau angka konsinyasinya sudah dikunci, angka yang tersimpan tidak berubah; selisih komisinya dikoreksi di pembayaran berikutnya. Menolak wajib disertai alasan, yang dikirim ke HP SPG. Bila uangnya ternyata sudah dikembalikan, tandai \"Uang ternyata sudah dikembalikan\" dengan alasan: uang itu menjadi beban SPG — sebesar harga bersih di notanya, atau angka struk yang Anda tetapkan dengan alasan bila berbeda — dipotong dari komisi lalu gaji, tidak pernah dihapuskan.",
+      "Batalkan penolakan hanya bisa selama belum ada yang dipotong dari bebannya dan bebannya belum menjadi utang SPG. Putuskan barangnya baru bisa sesudah bebannya lunas: barang kembali ke stok (uang SPG dikembalikan di pembayaran berikutnya) atau barang dibeli SPG.",
     ],
   },
   {
@@ -372,6 +400,7 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "barangHilang.kantor.deskripsi" },
       "Pengawas SPG bisa melihat. Mencatat barang hilang secara manual, menandai pelunasan, dan membatalkan catatan yang belum diputuskan butuh izin mengelola piutang. Menetapkan penanggung, mengubah keputusan, dan membatalkan catatan yang sudah diputuskan adalah keputusan manager: butuh izin memutuskan penanggung, yang bawaannya hanya dipegang admin.",
       "Barang hilang yang dicatat manual untuk toko yang sudah punya buku stok langsung mengurangi buku toko itu (gerakan Barang hilang di kartu stok toko), jadi opname berikutnya atas potong yang sama tidak membuka catatan kedua. Membatalkan catatannya mengembalikan potong itu ke buku, kecuali barangnya sudah dihitung opname sesudah catatan dibuat — opname itu yang berlaku. Toko tanpa buku stok tidak dibukakan buku; stok titipannya dikurangi catatan yang sudah ditetapkan.",
+      "Barang yang tidak sampai di toko saat kiriman diterima (tidak tiba dan tidak ditolak) langsung tercatat di sini sebagai barang hilang di perjalanan. Saringan klaim (Diajukan, Menunggu cek, Ditolak) menampilkan catatan yang klaimnya ke ekspedisi ada di giliran itu — tujuan tiga baris klaim ekspedisi di Beranda.",
     ],
   },
   {
@@ -382,6 +411,8 @@ export const ENTRI: EntriBantuan[] = [
       "Satu catatan barang hilang: asalnya, barang dan nilainya, penanggung beserta pelunasan bagiannya, dan riwayat keputusannya.",
       { kunci: "barangHilang.keputusan.akibat" },
       "Penanggung bisa dibagi ke beberapa pihak, dan jumlah semua bagian harus sama dengan total. Keringanan diskon pegawai, bila dipakai, persennya diketik setiap kali memutuskan dan selisihnya ditanggung Elorae. Keputusan bisa diubah atau dibatalkan selama belum ada potongan atau tagihan atas catatan ini; keduanya butuh izin memutuskan penanggung, sama dengan memutuskannya.",
+      "Penanggung Ekspedisi hanya untuk barang hilang dari pengiriman lewat ekspedisi, dan menanggung seluruhnya. Buktinya ditampilkan di sini: resi, berat, foto serah ke kurir, dan foto terima di toko. Nilai klaimnya bawaan nilai jual di nota atau surat jalan, dan bisa diubah oleh pemegang izin memutuskan penanggung.",
+      "Klaim ekspedisi berjalan Diajukan → Menunggu cek → Dibayar (transfer, tunai, atau potong ongkos) atau Ditolak. Mencatat bayar atau tolak dari ekspedisi butuh izin mengelola piutang; memeriksa uangnya sah atau mengembalikannya butuh izin Periksa pembayaran, dan yang mencatat tidak boleh memeriksanya sendiri. Klaim yang ditolak membuka lagi keputusan penanggungnya — tetapkan penanggung lain.",
     ],
     kartu: [{ judul: { kunci: "barangHilang.rincian.rincianJudul" }, isi: { kunci: "barangHilang.rincian.dasarTerimaIsi" } }],
   },

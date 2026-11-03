@@ -51,7 +51,9 @@ export type GalatPersetujuan =
   | "KODE_TERLALU_PANJANG"
   | "JENIS_WAJIB"
   | "TEMPO_TIDAK_SAH"
-  | "MARKUP_TIDAK_SAH";
+  | "MARKUP_TIDAK_SAH"
+  /** Toko KONSI tanpa salesman pemegang (pemilik P47: toko konsi pasti punya pemegang). */
+  | "PEMEGANG_WAJIB_KONSI";
 
 export type MasukanUsulanToko = {
   name?: string | null;
@@ -389,6 +391,9 @@ export function validasiPersetujuan(
   const paymentTempo: number = m.paymentTempo ?? 0;
   if (!Number.isInteger(paymentTempo) || paymentTempo < 0 || paymentTempo > 365) galat.push("TEMPO_TIDAK_SAH");
 
+  const salesmanId = atauNull(rapi(m.salesmanId));
+  if (termsType === "KONSI" && salesmanId === null) galat.push("PEMEGANG_WAJIB_KONSI");
+
   let markupPercent: number | null = null;
   if (termsType === "KONSI" && m.markupPercent !== null && m.markupPercent !== undefined) {
     const markup = m.markupPercent;
@@ -404,7 +409,7 @@ export function validasiPersetujuan(
       code,
       termsType,
       groupId: atauNull(rapi(m.groupId)),
-      salesmanId: atauNull(rapi(m.salesmanId)),
+      salesmanId,
       paymentTempo,
       isPkp: m.isPkp === true,
       markupPercent,

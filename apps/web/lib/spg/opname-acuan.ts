@@ -72,6 +72,45 @@ export function saldoAcuan(
   return hasil;
 }
 
+/** Gerakan RETUR_PEMBELI di buku toko, dengan sejak kapan potongnya boleh kembali ke rak. */
+export type ReturDiRakSejak = {
+  itemId: string;
+  variantSku: string | null;
+  qty: number;
+  /** Tanggal gerakan buku — tanggal LAPORAN retur, bukan tanggal disetujui. */
+  createdAt: Date;
+  /** Saat kantor menyetujui laporannya: sebelum itu potongnya DISISIHKAN, bukan di rak. */
+  diRakSejak: Date;
+};
+
+/**
+ * Retur pembeli yang barangnya belum di rak saat baris itu dihitung (pemilik P12, 2026-11-02:
+ * "di sisihkan dahulu" — barang layak jual menunggu persetujuan kantor tidak kembali ke rak).
+ *
+ * Gerakan bukunya bertanggal laporan, jadi sudah masuk saldo acuan baris yang dihitung sesudah
+ * laporan; tetapi selama laporan menunggu, potongnya disisihkan dan tidak ikut terhitung di rak.
+ * Untuk setiap gerakan bertanggal pada/sebelum waktu hitung baris itu (atau `dasar` untuk baris
+ * tanpa umur) yang laporannya baru disetujui SESUDAH waktu hitung itu, saldo acuan kunci itu
+ * dikurangi qty-nya — tanpa ini potong itu terbaca kurang dan di toko konsinyasi membuka catatan
+ * barang hilang palsu. Gerakan yang tanggalnya sesudah waktu hitung sudah dikeluarkan `saldoAcuan`.
+ */
+export function kurangiReturBelumDiRak(
+  saldo: Map<string, number>,
+  retur: ReadonlyArray<ReturDiRakSejak>,
+  waktuHitung: Map<string, Date>,
+  dasar: Date,
+): Map<string, number> {
+  const hasil = new Map(saldo);
+  for (const r of retur) {
+    const k = kunciBaris(r.itemId, r.variantSku);
+    const tc = (waktuHitung.get(k) ?? dasar).getTime();
+    if (r.createdAt.getTime() > tc) continue;
+    if (r.diRakSejak.getTime() <= tc) continue;
+    hasil.set(k, (hasil.get(k) ?? 0) - r.qty);
+  }
+  return hasil;
+}
+
 /**
  * Kunci yang sudah dihitung opname lain SESUDAH baris ini dihitung: hitungan
  * yang lebih baru itu yang berlaku, baris ini dilewati.

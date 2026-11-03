@@ -68,8 +68,9 @@ export function formatQty(n: number | null | undefined): string {
 
 /**
  * SATU definisi HPP/pcs untuk tabel dan dialog (keputusan sementara, 2026-10-06):
- * angka utama = jumlah biaya per pcs SEBAGAIMANA TERCATAT (`subtotal`) — dasar
- * harga jual (`calculateHPP`: harga jual = HPP × (1 + markup) + biaya tambahan).
+ * angka utama = jumlah biaya per pcs SEBAGAIMANA TERCATAT (`subtotal`). Harga
+ * rekomendasi tidak dihitung dari angka ini per WO lagi: Laporan HPP menampilkan
+ * rekomendasi barang jadinya (jawaban pemilik P4a, 2026-11-02).
  * Biaya tercatat itu campuran: bahan biasanya sudah termasuk PPN, jasa biasanya
  * belum (`ppnIncluded` per baris), jadi angka ini BUKAN "sebelum PPN". Angka
  * kedua (`nettSubtotal`) menaikkan biaya yang belum ber-PPN sebesar tarif PPN —

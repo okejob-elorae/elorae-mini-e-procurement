@@ -16,12 +16,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusPill } from "@/components/ui/status-pill";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { dinamis } from "@/lib/i18n/dinamis";
-import { STATUS_RETUR_PEMBELI, type SaringanReturPembeliKantor, type StatusReturPembeli } from "@/lib/spg/retur-pembeli-status";
+import { formatRupiah } from "@/lib/format/rupiah";
+import type { KeadaanBebanSpg } from "@/lib/spg/beban-spg";
+import {
+  STATUS_RETUR_PEMBELI,
+  type KeadaanUangRetur,
+  type SaringanReturPembeliKantor,
+  type StatusReturPembeli,
+  type TabReturPembeliKantor,
+} from "@/lib/spg/retur-pembeli-status";
 import { cn } from "@/lib/utils";
-import { NADA_STATUS_RETUR_PEMBELI } from "./tampilan";
+import { NADA_STATUS_RETUR_PEMBELI, NADA_UANG_RETUR_PEMBELI } from "./tampilan";
 
 const SEMUA_TOKO = "__semua__";
-const TAB: readonly (StatusReturPembeli | "SEMUA")[] = [...STATUS_RETUR_PEMBELI, "SEMUA"];
+const TAB: readonly TabReturPembeliKantor[] = [...STATUS_RETUR_PEMBELI, "KEPUTUSAN_BARANG", "SEMUA"];
 
 /** Baris antrean yang sudah diformat di server (tanggal WIB). */
 export type BarisReturPembeliTampil = {
@@ -38,7 +46,9 @@ export type BarisReturPembeliTampil = {
   diputuskanOleh: string | null;
   diputuskan: string | null;
   alasanTolak: string | null;
-  langsungBerlaku: boolean;
+  uang: KeadaanUangRetur;
+  /** Beban SPG (ditolak padahal uangnya sudah dikembalikan). */
+  beban: { keadaan: KeadaanBebanSpg; jumlah: number; sisa: number } | null;
 };
 
 export function DaftarReturPembeliClient({
@@ -46,6 +56,7 @@ export function DaftarReturPembeliClient({
   baris,
   total,
   perStatus,
+  keputusanBarang,
   toko,
   bolehMemutuskan,
 }: {
@@ -53,6 +64,8 @@ export function DaftarReturPembeliClient({
   baris: BarisReturPembeliTampil[];
   total: number;
   perStatus: Record<StatusReturPembeli, number>;
+  /** Beban yang sudah diganti penuh dan barangnya menunggu keputusan (P79). */
+  keputusanBarang: number;
   toko: { id: string; name: string }[];
   /** `spg_returns:approve` — hanya untuk kalimat penjelas; tombolnya di halaman rincian. */
   bolehMemutuskan: boolean;
@@ -79,8 +92,8 @@ export function DaftarReturPembeliClient({
     mulai(() => router.replace(qs ? `/backoffice/retur-spg?${qs}` : "/backoffice/retur-spg"));
   };
 
-  const jumlahTab = (s: StatusReturPembeli | "SEMUA") =>
-    s === "SEMUA" ? STATUS_RETUR_PEMBELI.reduce((n, x) => n + perStatus[x], 0) : perStatus[s];
+  const jumlahTab = (s: TabReturPembeliKantor) =>
+    s === "SEMUA" ? STATUS_RETUR_PEMBELI.reduce((n, x) => n + perStatus[x], 0) : s === "KEPUTUSAN_BARANG" ? keputusanBarang : perStatus[s];
   const totalHalaman = Math.max(1, Math.ceil(total / saringan.ukuran));
   const disaring = saringan.storeId !== null || saringan.cari !== "";
   const tokoPilihan =
@@ -132,7 +145,7 @@ export function DaftarReturPembeliClient({
         </form>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5" role="tablist" aria-label={t("kantor.saringStatus")}>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6" role="tablist" aria-label={t("kantor.saringStatus")}>
         {TAB.map((s) => {
           const aktif = saringan.status === s;
           return (
@@ -148,7 +161,7 @@ export function DaftarReturPembeliClient({
                 aktif && "border-primary ring-1 ring-primary",
               )}
             >
-              <span className="text-xs font-normal text-muted-foreground">{td(`status.${s}`)}</span>
+              <span className="text-xs font-normal text-muted-foreground">{s === "KEPUTUSAN_BARANG" ? t("kantor.tab.KEPUTUSAN_BARANG") : td(`status.${s}`)}</span>
               <span className="text-lg font-semibold tabular-nums">{jumlahTab(s)}</span>
             </Button>
           );
@@ -163,6 +176,9 @@ export function DaftarReturPembeliClient({
           </CardTitle>
           {saringan.status === "MENUNGGU" && perStatus.MENUNGGU > 0 ? (
             <p className="text-sm text-muted-foreground">{bolehMemutuskan ? t("kantor.menungguBoleh") : t("kantor.menungguLihat")}</p>
+          ) : null}
+          {saringan.status === "KEPUTUSAN_BARANG" && keputusanBarang > 0 ? (
+            <p className="text-sm text-muted-foreground">{bolehMemutuskan ? t("kantor.keputusanBoleh") : t("kantor.keputusanLihat")}</p>
           ) : null}
         </CardHeader>
         <CardContent className={baris.length === 0 ? undefined : "px-0"}>
@@ -184,6 +200,7 @@ export function DaftarReturPembeliClient({
                     <TableHead>{t("kantor.kolom.barang")}</TableHead>
                     <TableHead className="hidden 2xl:table-cell">{t("kantor.kolom.alasan")}</TableHead>
                     <TableHead>{t("kantor.kolom.status")}</TableHead>
+                    <TableHead>{t("kantor.kolom.uang")}</TableHead>
                     <TableHead className="hidden 2xl:table-cell">{t("kantor.kolom.diputuskan")}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -210,10 +227,19 @@ export function DaftarReturPembeliClient({
                       <TableCell>
                         <StatusPill tone={NADA_STATUS_RETUR_PEMBELI[b.status]}>{td(`status.${b.status}`)}</StatusPill>
                       </TableCell>
+                      <TableCell className="min-w-[10rem] whitespace-normal">
+                        <StatusPill tone={NADA_UANG_RETUR_PEMBELI[b.uang]}>{td(`uang.${b.uang}`)}</StatusPill>
+                        {b.beban ? (
+                          <span className="mt-1 block text-xs text-muted-foreground tabular-nums">
+                            {/* Beban yang dibatalkan (P82) tidak ditagihkan lagi — jangan tampil sebagai "dibebankan". */}
+                            {b.beban.keadaan === "BATAL"
+                              ? t("kantor.bebanBatal", { jumlah: formatRupiah(b.beban.jumlah) })
+                              : t("kantor.bebanRingkas", { jumlah: formatRupiah(b.beban.jumlah), sisa: formatRupiah(b.beban.sisa) })}
+                          </span>
+                        ) : null}
+                      </TableCell>
                       <TableCell className="hidden min-w-[10rem] whitespace-normal text-sm 2xl:table-cell">
-                        {b.langsungBerlaku ? (
-                          <span className="text-muted-foreground">{t("kantor.langsungBerlaku")}</span>
-                        ) : b.diputuskan ? (
+                        {b.diputuskan ? (
                           <>
                             <span className="block">{t("rincian.diputuskan", { oleh: b.diputuskanOleh ?? "—", pada: b.diputuskan })}</span>
                             {b.alasanTolak ? <span className="block text-xs text-muted-foreground">{b.alasanTolak}</span> : null}

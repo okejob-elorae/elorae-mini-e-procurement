@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowLeftRight, CalendarRange, ChevronLeft, ChevronRight, Store } from "lucide-react";
+import { ArrowLeftRight, CalendarCheck, CalendarRange, ChevronLeft, ChevronRight, Store } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,13 +24,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatDisplayDate } from "@/lib/date-only";
 import { geserHari } from "@/lib/spg/shift";
 import type { BarisTukarKantor, DataJadwalSpgKantor, TokoBerSpg } from "@/lib/spg/shift-queries";
+import type { BarisJadwalBulanKantor } from "@/lib/spg/jadwal-bulan-queries";
 import { KisiJadwalSpg, versiKisi } from "./KisiJadwalSpg";
 import { TukarShiftKantor } from "./TukarShiftKantor";
+import { JadwalBulananKantor, type LencanaBulan } from "./JadwalBulananKantor";
+
+export type { LencanaBulan };
 
 const ALAMAT = "/backoffice/jadwal-spg";
 
+type TabJadwal = "jadwal" | "tukar" | "bulanan";
+
 export type PropsJadwalSpg = {
-  tab: "jadwal" | "tukar";
+  tab: TabJadwal;
   toko: TokoBerSpg[];
   storeId: string | null;
   senin: string;
@@ -42,11 +48,20 @@ export type PropsJadwalSpg = {
   tukar: { menunggu: BarisTukarKantor[]; riwayat: BarisTukarKantor[]; menungguRekan: number } | null;
   menungguKantor: number;
   bolehUbah: boolean;
+  /** Tab Jadwal bulanan (P7c); null di tab lain. */
+  bulanan: BarisJadwalBulanKantor[] | null;
+  /** Jadwal bulanan yang menunggu persetujuan — angka di tab. */
+  bulananMenunggu: number;
+  /** `spg_schedules:approve` — izin yang sama dengan aksi setuju/tolak/buka lagi. */
+  bolehSetujui: boolean;
+  /** userId → lencana jadwal bulanan untuk bulan minggu ini. */
+  lencanaBulan: Record<string, LencanaBulan[]>;
 };
 
 /**
  * Layar kantor Jadwal & shift SPG: tab Jadwal (kisi SPG × 7 hari satu toko,
- * disunting sebagai draf lalu disimpan sekali) dan tab Tukar shift.
+ * disunting sebagai draf lalu disimpan sekali), tab Tukar shift, dan tab Jadwal
+ * bulanan (jadwal yang diisi SPG di HP, disetujui kantor — dasar gaji pokok).
  * Pindah toko/minggu/tab dengan perubahan yang belum disimpan meminta
  * konfirmasi lebih dulu — drafnya hilang saat pindah.
  */
@@ -57,11 +72,11 @@ export function JadwalSpgClient(props: PropsJadwalSpg) {
   const [belumDisimpan, setBelumDisimpan] = useState(0);
   const [tujuan, setTujuan] = useState<string | null>(null);
 
-  const alamat = (o: { tab?: "jadwal" | "tukar"; toko?: string | null; minggu?: string }) => {
+  const alamat = (o: { tab?: TabJadwal; toko?: string | null; minggu?: string }) => {
     const q = new URLSearchParams();
     const tab = o.tab ?? props.tab;
     const toko = o.toko !== undefined ? o.toko : props.storeId;
-    if (tab === "tukar") q.set("tab", "tukar");
+    if (tab !== "jadwal") q.set("tab", tab);
     if (toko) q.set("toko", toko);
     q.set("minggu", o.minggu ?? props.senin);
     return `${ALAMAT}?${q.toString()}`;
@@ -78,7 +93,9 @@ export function JadwalSpgClient(props: PropsJadwalSpg) {
 
       <Tabs
         value={props.tab}
-        onValueChange={(v) => v !== props.tab && pindah(alamat({ tab: v === "tukar" ? "tukar" : "jadwal" }))}
+        onValueChange={(v) =>
+          v !== props.tab && pindah(alamat({ tab: v === "tukar" ? "tukar" : v === "bulanan" ? "bulanan" : "jadwal" }))
+        }
       >
         <TabsList aria-label={t("judul")}>
           <TabsTrigger value="jadwal">
@@ -90,10 +107,17 @@ export function JadwalSpgClient(props: PropsJadwalSpg) {
             {t("tab.tukar")}
             {props.menungguKantor > 0 ? <Badge className="ml-2 px-1.5 py-0 tabular-nums">{props.menungguKantor}</Badge> : null}
           </TabsTrigger>
+          <TabsTrigger value="bulanan">
+            <CalendarCheck className="mr-2 h-4 w-4" aria-hidden />
+            {t("tab.bulanan")}
+            {props.bulananMenunggu > 0 ? <Badge className="ml-2 px-1.5 py-0 tabular-nums">{props.bulananMenunggu}</Badge> : null}
+          </TabsTrigger>
         </TabsList>
       </Tabs>
 
-      {props.tab === "tukar" ? (
+      {props.tab === "bulanan" ? (
+        <JadwalBulananKantor baris={props.bulanan ?? []} bolehSetujui={props.bolehSetujui} />
+      ) : props.tab === "tukar" ? (
         <TukarShiftKantor data={props.tukar ?? { menunggu: [], riwayat: [], menungguRekan: 0 }} bolehUbah={props.bolehUbah} />
       ) : props.toko.length === 0 ? (
         <Card>
@@ -137,7 +161,13 @@ export function JadwalSpgClient(props: PropsJadwalSpg) {
 
           {!props.bolehUbah ? <p className="text-sm text-muted-foreground">{t("hanyaLihat")}</p> : null}
 
-          {props.data ? <KisiJadwalSpg key={versiKisi(props.data)} data={props.data} bolehUbah={props.bolehUbah} onBelumDisimpan={setBelumDisimpan} /> : null}
+          {props.data ? <KisiJadwalSpg
+              key={versiKisi(props.data)}
+              data={props.data}
+              bolehUbah={props.bolehUbah}
+              onBelumDisimpan={setBelumDisimpan}
+              lencanaBulan={props.lencanaBulan}
+            /> : null}
         </>
       )}
 

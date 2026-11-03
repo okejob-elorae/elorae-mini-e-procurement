@@ -41,10 +41,6 @@ export async function nomorDokumenOperasional(sumber: SumberOperasional, id: str
         const k = await prisma.consignmentCommission.findUnique({ where: { id }, select: { cycle: { select: { noKonsi: true } }, spgUser: { select: { name: true } } } });
         return k ? `${k.cycle.noKonsi} · ${k.spgUser.name ?? "SPG"}` : null;
       }
-      case SUMBER_OPERASIONAL.BAYAR_TOKO_KONSI: {
-        const p = await prisma.consignmentPayment.findUnique({ where: { id }, select: { cycle: { select: { noKonsi: true } } } });
-        return p?.cycle.noKonsi ?? null;
-      }
       case SUMBER_OPERASIONAL.KOMISI_SPG: {
         const k = bacaIdKomisiSpg(id);
         if (!k) return null;
@@ -64,6 +60,7 @@ export async function nomorDokumenOperasional(sumber: SumberOperasional, id: str
         return [toko?.name, l.sourceDocNo].filter(Boolean).join(" · ") || null;
       }
       case SUMBER_OPERASIONAL.POTONG_SALES:
+      case SUMBER_OPERASIONAL.POTONG_SALES_RETUR:
         return null;
       case SUMBER_OPERASIONAL.GUDANG_RUSAK:
         return (await prisma.damagedStockMovement.findUnique({ where: { id }, select: { productName: true } }))?.productName ?? null;
@@ -71,6 +68,18 @@ export async function nomorDokumenOperasional(sumber: SumberOperasional, id: str
         return (await prisma.stockAdjustment.findUnique({ where: { id }, select: { docNumber: true } }))?.docNumber ?? null;
       case SUMBER_OPERASIONAL.RETUR_PEMASOK:
         return (await prisma.vendorReturn.findUnique({ where: { id }, select: { docNumber: true } }))?.docNumber ?? null;
+      case SUMBER_OPERASIONAL.BAYAR_UTANG_SPG: {
+        const p = await prisma.spgDebtPayment.findUnique({ where: { id }, select: { spgUserId: true, receivedOn: true } });
+        if (!p) return null;
+        const orang = await prisma.user.findUnique({ where: { id: p.spgUserId }, select: { name: true } });
+        return `${orang?.name ?? "SPG"} · ${p.receivedOn}`;
+      }
+      case SUMBER_OPERASIONAL.BAYAR_TAMBAHAN_SPG: {
+        const p = await prisma.spgExtraPayout.findUnique({ where: { id }, select: { spgUserId: true, paidOn: true } });
+        if (!p) return null;
+        const orang = await prisma.user.findUnique({ where: { id: p.spgUserId }, select: { name: true } });
+        return `${orang?.name ?? "SPG"} · ${p.paidOn}`;
+      }
       case SUMBER_OPERASIONAL.BIAYA_PERJALANAN:
       case SUMBER_OPERASIONAL.BAYAR_BIAYA_PERJALANAN: {
         const k = await prisma.expenseClaim.findUnique({ where: { id }, select: { userId: true, category: true } });

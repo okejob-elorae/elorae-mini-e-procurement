@@ -187,6 +187,10 @@ async function siapkanBuku() {
         reason: "ukuran",
         idempotencyKey: `${tag}-RET1`,
         createdAt: pada("2026-08-12T03:00:00Z"),
+        // Disetujui kantor: laporan yang masih MENUNGGU (bawaan) tidak mengurangi apa pun (`returPembeliBerlaku`).
+        status: "DISETUJUI",
+        decidedAt: pada("2026-08-12T05:00:00Z"),
+        decidedById: orangId,
         lines: { create: [{ spgSaleLineId: barisA.id, itemId: barangA, qty: 1, condition: "LAYAK" }] },
       },
     })
@@ -288,6 +292,69 @@ async function terimaKonsi(sourceType: "KONSI_TRANSFER" | "KONSI_ORDER", sourceI
   });
   konsiTerimaIds.push(r.id);
   await gerak(itemId, diterima, "TERIMA", iso);
+}
+
+/**
+ * Antaran aturan sekarang: transfer dibuat saat surat jalannya dibuat (`IN_TRANSIT`), lalu diterima
+ * toko (`RECEIVED`, `receivedQty` = yang tiba) atau tidak jadi dikirim (`CANCELLED`). `kembali` =
+ * potong yang sudah kembali ke Gudang Utama (`returnedQty`: ditolak di pintu / dibatalkan), `selesai`
+ * = saat diterima atau dibatalkan.
+ */
+async function antaranSuratJalan(
+  o: { id: string; lineId: string; itemId: string },
+  qty: number,
+  keadaan: { status: "IN_TRANSIT" | "RECEIVED" | "CANCELLED"; kembali?: number; tiba?: number; selesai?: string },
+  iso: string,
+): Promise<string> {
+  nomor += 1;
+  const selesai = pada(keadaan.selesai ?? iso);
+  const shp = await prisma.deliveryShipment.create({
+    data: {
+      docNo: `${tag}-SHP-${nomor}`,
+      orderId: o.id,
+      method: "SALESMAN_CARRY",
+      status: keadaan.status === "RECEIVED" ? "DELIVERED" : keadaan.status,
+      packedById: orangId,
+      carriedById: orangId,
+      packedAt: pada(iso),
+      deliveredAt: keadaan.status === "RECEIVED" ? selesai : null,
+      cancelledAt: keadaan.status === "CANCELLED" ? selesai : null,
+      lines: { create: [{ orderLineId: o.lineId, itemId: o.itemId, variantSku: "", plannedQty: qty, deliveredQty: keadaan.status === "RECEIVED" ? (keadaan.tiba ?? qty) : null }] },
+    },
+    select: { id: true },
+  });
+  konsiPengirimanIds.push(shp.id);
+  nomor += 1;
+  const t = await prisma.konsiTransfer.create({
+    data: {
+      docNo: `${tag}-TRF-${nomor}`,
+      orderId: o.id,
+      storeId: tokoId,
+      shipmentId: shp.id,
+      transferredById: orangId,
+      createdAt: pada(iso),
+      status: keadaan.status,
+      ...(keadaan.status === "RECEIVED" ? { receivedAt: selesai, receivedById: orangId } : {}),
+      ...(keadaan.status === "CANCELLED" ? { cancelledAt: selesai, cancelledById: orangId, cancelReason: "uji" } : {}),
+      lines: {
+        create: [
+          {
+            orderLineId: o.lineId,
+            itemId: o.itemId,
+            variantSku: "",
+            productName: "uji",
+            qty,
+            unitCost: 0,
+            returnedQty: keadaan.kembali ?? 0,
+            receivedQty: keadaan.status === "RECEIVED" ? (keadaan.tiba ?? qty) : null,
+          },
+        ],
+      },
+    },
+    select: { id: true },
+  });
+  konsiTransferIds.push(t.id);
+  return t.id;
 }
 
 describe("pencocokanSiklus (basis data)", () => {
@@ -465,6 +532,26 @@ describe("pencocokanSiklus (basis data)", () => {
     a = (await pencocokanSiklus(siklusId))!.baris.find((b) => b.itemId === barangA)!;
     // Buku 6 + 57; antaran sudah diterima → keluar dari dalam proses; kurang 3 sudah tercatat → tidak menambah kemungkinan hilang.
     expect(a.stok).toEqual({ buku: 63, titipan: 68, dalamProses: 1, hilangTercatat: 3, seharusnya: 64, selisih: -1, kemungkinanHilang: 1 });
+  });
+
+  it("antaran surat jalan: yang di perjalanan dalam proses, yang tidak jadi dikirim dan yang ditolak di pintu tidak pernah di toko — dibaca per akhir bulan", async () => {
+    await siapkanBuku();
+    const o = await pesananKonsi(barangA, 40, { terkirim: 0, disetujui: "2026-08-01T03:00:00Z", cadangan: "RESERVED" });
+    // 5 masih di perjalanan di akhir Agustus.
+    await antaranSuratJalan(o, 5, { status: "IN_TRANSIT" }, "2026-08-26T03:00:00Z");
+    // 4 tidak jadi dikirim 27 Agustus: kembali seluruhnya ke Gudang Utama.
+    await antaranSuratJalan(o, 4, { status: "CANCELLED", kembali: 4, selesai: "2026-08-27T03:00:00Z" }, "2026-08-25T03:00:00Z");
+    // 10 diantar; saat diterima 28 Agustus 2 ditolak di pintu, 8 tiba.
+    const t3 = await antaranSuratJalan(o, 10, { status: "RECEIVED", kembali: 2, tiba: 8, selesai: "2026-08-28T03:00:00Z" }, "2026-08-27T03:00:00Z");
+    await terimaKonsi("KONSI_TRANSFER", t3, barangA, 8, 8, "2026-08-28T03:00:00Z");
+    // 3 dibuat 29 Agustus, baru tidak jadi dikirim 3 September: di akhir Agustus masih di perjalanan.
+    await antaranSuratJalan(o, 3, { status: "CANCELLED", kembali: 3, selesai: "2026-09-03T03:00:00Z" }, "2026-08-29T03:00:00Z");
+
+    const a = (await pencocokanSiklus(siklusId))!.baris.find((b) => b.itemId === barangA)!;
+    // Dasar: buku 6, titipan 8, dalam proses 1, seharusnya 7, kurang 1. Titipan + 5 + 8 + 3 = 24 (bukan
+    // + 4 yang batal sebelum akhir bulan, bukan + 2 yang ditolak); buku + 8 = 14; dalam proses 1 + 5 + 3 = 9
+    // → seharusnya 15 → kurang tetap 1: yang ditolak di pintu bukan barang hilang.
+    expect(a.stok).toEqual({ buku: 14, titipan: 24, dalamProses: 9, hilangTercatat: 0, seharusnya: 15, selisih: -1, kemungkinanHilang: 1 });
   });
 
   it("pesanan konsi lama (stok keluar saat disetujui) masuk sekali — dari transfernya kalau ada, kalau tidak dari barisnya — dan diterima sekali per pesanan", async () => {

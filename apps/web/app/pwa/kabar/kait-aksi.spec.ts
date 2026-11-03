@@ -25,7 +25,6 @@ const h = vi.hoisted(() => ({
   alihkanBeban: vi.fn(),
   approveStore: vi.fn(),
   rejectStore: vi.fn(),
-  recordDelivery: vi.fn(),
   closeRemainder: vi.fn(),
 }));
 
@@ -76,7 +75,6 @@ vi.mock("@/lib/store-changes/writer", () => ({
   rejectStoreChangeRequest: h.rejectStore,
 }));
 vi.mock("@/lib/field-sales/delivery/writer", () => ({
-  recordFieldSalesDelivery: h.recordDelivery,
   closeFieldSalesOrderRemainder: h.closeRemainder,
 }));
 
@@ -88,7 +86,7 @@ import {
   putuskanBebanAction,
 } from "@/app/actions/store-returns";
 import { approveStoreChangeRequestAction, rejectStoreChangeRequestAction } from "@/app/actions/store-changes";
-import { closeRemainderAction, recordDeliveryAction } from "@/app/actions/field-sales-deliveries";
+import { closeRemainderAction } from "@/app/actions/field-sales-deliveries";
 
 /** Kabar dikirim tanpa di-await; tunggu antreannya habis sebelum memeriksa. */
 const tuntas = () => new Promise((r) => setTimeout(r, 0));
@@ -262,52 +260,11 @@ describe("kabar perubahan data toko", () => {
   });
 });
 
+/*
+ * "Catat pengiriman" (nota tanpa surat jalan, `recordDeliveryAction`) dihapus (pemilik P44a); nota
+ * putus kini terbit saat surat jalan dibuat, jadi kabar pengirimannya bukan lagi milik aksi itu.
+ */
 describe("kabar pengiriman pesanan", () => {
-  const input = {
-    orderId: "order-1",
-    lines: [{ orderLineId: "line-1", qty: 2 }],
-    invoiceDate: "2026-09-30",
-    dueDate: "2026-10-30",
-    idempotencyKey: "kunci-1",
-  };
-
-  beforeEach(() => {
-    h.recordDelivery.mockResolvedValue({ deliveryId: "dlv-1", docNo: "DLV/2026/0001" });
-    h.db.fieldSalesDelivery.findUnique.mockImplementation(async (args: { where: { idempotencyKey?: string; id?: string } }) =>
-      args.where.idempotencyKey
-        ? null
-        : {
-            docNo: "DLV/2026/0001",
-            total: 250_000,
-            order: {
-              id: "order-1",
-              orderNo: "PUT/2026/0012",
-              salesmanId: "sales-1",
-              deliveryStatus: "PARTIAL",
-              store: { name: "Toko Maju" },
-            },
-          },
-    );
-  });
-
-  it("pengiriman baru dikabarkan ke salesman pesanan", async () => {
-    expect(await recordDeliveryAction(input)).toEqual({ ok: true });
-    await tuntas();
-    expect(h.kabari.mock.calls[0][0]).toBe("sales-1");
-    expect(h.kabari.mock.calls[0][1]).toMatchObject({
-      jenis: "PESANAN_DIKIRIM",
-      judul: "Pesanan PUT/2026/0012 dikirim sebagian",
-      data: { orderId: "order-1", deliveryId: "dlv-1" },
-    });
-  });
-
-  it("kiriman ulang dengan kunci yang sama tidak dikabarkan dua kali", async () => {
-    h.db.fieldSalesDelivery.findUnique.mockResolvedValueOnce({ id: "dlv-1" });
-    expect(await recordDeliveryAction(input)).toEqual({ ok: true });
-    await tuntas();
-    expect(h.kabari).not.toHaveBeenCalled();
-  });
-
   it("menutup sisa pesanan dikabarkan dengan alasannya", async () => {
     h.closeRemainder.mockResolvedValue({ ok: true });
     h.db.fieldSalesOrder.findUnique.mockResolvedValue({ orderNo: "PUT/2026/0012", salesmanId: "sales-1", store: { name: "Toko Maju" } });

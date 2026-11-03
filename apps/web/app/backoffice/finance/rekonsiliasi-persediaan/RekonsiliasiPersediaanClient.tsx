@@ -274,6 +274,13 @@ export function RekonsiliasiPersediaanClient({ rekon, tindakan, gagal, bolehMeng
                   nilai={rekon.rincian.konsinyasi}
                   catatan={rekon.rincian.konsinyasiCadangan > 0 ? t("rincian.konsinyasiCadangan", { n: rekon.rincian.konsinyasiCadangan }) : null}
                 />
+                {/* Barang konsinyasi keluar dari Gudang Utama saat surat jalannya dibuat (keputusan pemilik Q1) dan
+                    sudah ada di persediaan konsinyasi buku besar, tetapi belum diterima toko — barisnya sendiri. */}
+                <BarisNilai
+                  label={t("rincian.konsinyasiDalamPerjalanan")}
+                  nilai={rekon.rincian.dalamPerjalananKonsinyasi}
+                  catatan={rekon.rincian.dalamPerjalananKonsinyasi !== 0 ? t("rincian.konsinyasiDalamPerjalananCatatan") : null}
+                />
                 <BarisNilai
                   label={t("rincian.gudangRusak")}
                   nilai={rekon.rincian.gudangRusak}

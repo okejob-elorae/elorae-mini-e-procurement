@@ -4,14 +4,13 @@ import {
   PartialConsumeError,
   prisma,
   type Prisma,
-  type PrismaClient,
 } from "@elorae/db";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { roundCents, roundToWholeRupiah } from "@elorae/db/pricing";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
-import { DeliveryError, type DeliveryErrorCode, type DeliveryReplayDetail } from "../errors";
+import { DeliveryError, type DeliveryErrorCode } from "../errors";
 import { IndenBelumRilisError } from "../inden";
 import { muatPesananKonsiCadanganLama } from "../konsi-transfer/pesanan-lama";
 import { outstandingQty, nextDeliveryStatus, allocateDeliveryDiscounts } from "./plan";
@@ -303,346 +302,316 @@ const PARTIAL_CONSUME_CODE: Record<PartialConsumeError["code"], DeliveryErrorCod
 };
 
 /**
- * The delivery already recorded under `idempotencyKey`, as the `REPLAY_MISMATCH` detail carries
- * it: lines summed per `orderLineId`. Shared by `recordFieldSalesDelivery`'s replay compare and by
- * `completeDeliveryShipment`'s all-zero retry, which never reaches that compare, so both refuse
- * with the same recorded values.
- */
-export async function findRecordedDelivery(
-  client: PrismaClient | Prisma.TransactionClient,
-  idempotencyKey: string,
-  orderId: string,
-): Promise<DeliveryReplayDetail | null> {
-  const existing = await client.fieldSalesDelivery.findUnique({
-    where: { idempotencyKey },
-    select: {
-      id: true,
-      orderId: true,
-      docNo: true,
-      invoiceDate: true,
-      dueDate: true,
-      lines: { select: { orderLineId: true, qty: true } },
-    },
-  });
-  if (!existing) return null;
-  /* A key is only a replay of THIS order's delivery; another order's must never hand back its values or post its journals. */
-  if (existing.orderId !== orderId) throw new DeliveryError("INVALID_STATE");
-  const recorded = new Map<string, number>();
-  for (const l of existing.lines) recorded.set(l.orderLineId, (recorded.get(l.orderLineId) ?? 0) + l.qty);
-  return {
-    deliveryId: existing.id,
-    docNo: existing.docNo,
-    invoiceDate: existing.invoiceDate,
-    dueDate: existing.dueDate,
-    lines: Array.from(recorded, ([orderLineId, qty]) => ({ orderLineId, qty })),
-  };
-}
-
-/**
- * `idempotencyKey` is kept across a failed submit on purpose, so a genuine retry — including one
- * after a lost success response — cannot ship twice. A matching key therefore returns the
- * recorded delivery, but only when the retry asks for the SAME thing: same per-`orderLineId`
- * quantity totals and, under the default `replayCompare`, the same invoice/due dates (exact
- * instants). A retry that differs is REFUSED with `REPLAY_MISMATCH` carrying the recorded values,
- * because returning the original would report success while silently discarding the operator's
- * correction. The key is never rotated to get around this: after a lost-response success a fresh
- * key would ship the order twice. Checked before any write, so the refusal leaves nothing behind.
+ * Writes one nota tagihan inside the CALLER's transaction: the `FieldSalesDelivery` with its lines,
+ * exactly one `TaxInvoice` (PENDING), the `Receivable`, the consume of each line's reservation,
+ * `SalesHistory`, the order lines' `deliveredQty` and the order's `deliveryStatus`. Its only caller
+ * is putus delivery-shipment CREATION (owner putus answer 2026-11-02: "ketika kita membuat nota,
+ * maka itu sudah harus keluar barangnya"); the hand-entered "Catat pengiriman" path was removed
+ * (P44/P44a), so a nota always belongs to a shipment.
  *
- * `replayCompare: "linesOnly"` is for `completeDeliveryShipment` on a `SALESMAN_CARRY` shipment
- * only, whose `shipment-<id>` key is replayed with dates the caller does not own: that completion
- * always sends the frozen shipment row's dates, so once Edit nota dates corrected the recorded
- * delivery in the crash window, a dates compare would refuse every retry forever. There the
- * recorded delivery's dates are the accounting truth, corrected only through Edit nota dates, and
- * the quantities are what desync the shipment from it. Every caller that owns its dates keeps the
- * strict default — a hand-entered delivery, and an `EXPEDITION` shipment completion, whose operator
- * types the dates into the completion dialog — because a changed date there is a correction the
- * replay must not swallow.
+ * `idempotencyKey` (`shipment-<shipmentId>`) is checked first: a nota already recorded under it for
+ * the same order is returned untouched; another order's is refused INVALID_STATE. The shipment's own
+ * key (`DeliveryShipment.idempotencyKey`) is what makes a double submit create one shipment — this
+ * is the backstop for the nota written inside it.
+ *
+ * `barangKeluar` lists the items whose stock left, for the caller's post-commit Jubelio push.
  */
-export async function recordFieldSalesDelivery(input: {
-  orderId: string;
-  deliveredById: string;
-  lines: Array<{ orderLineId: string; qty: number }>;
-  note?: string;
-  invoiceDate: Date;
-  dueDate: Date;
-  idempotencyKey?: string;
-  replayCompare?: "datesAndLines" | "linesOnly";
-  deliveredAt?: Date;
-}): Promise<{ deliveryId: string; docNo: string }> {
+export async function recordFieldSalesDeliveryInTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    orderId: string;
+    deliveredById: string;
+    lines: Array<{ orderLineId: string; qty: number }>;
+    note?: string;
+    invoiceDate: Date;
+    dueDate: Date;
+    idempotencyKey: string;
+    deliveredAt: Date;
+  },
+): Promise<{ deliveryId: string; docNo: string; barangKeluar: string[] }> {
   if (input.lines.length === 0) throw new DeliveryError("NO_LINES");
-
   if (input.dueDate.getTime() < input.invoiceDate.getTime()) {
     throw new DeliveryError("INVALID_DATES");
   }
 
-  // Barang yang stoknya keluar di percobaan yang COMMIT (diulang dari nol tiap percobaan;
-  // kiriman ulang dengan kunci yang sama tidak menggerakkan apa pun).
-  let barangKeluar: string[] = [];
-  const hasil = await runSerializable(async (tx) => {
-    barangKeluar = [];
-    if (input.idempotencyKey) {
-      const recorded = await findRecordedDelivery(tx, input.idempotencyKey, input.orderId);
-      if (recorded) {
-        const recordedQty = new Map(recorded.lines.map((l) => [l.orderLineId, l.qty]));
-        const asked = new Map<string, number>();
-        for (const l of input.lines) asked.set(l.orderLineId, (asked.get(l.orderLineId) ?? 0) + l.qty);
-        const sameLines =
-          Array.from(recordedQty.keys()).every((id) => asked.get(id) === recordedQty.get(id)) &&
-          Array.from(asked.keys()).every((id) => recordedQty.get(id) === asked.get(id));
-        const sameDates =
-          input.replayCompare === "linesOnly" ||
-          (recorded.invoiceDate.getTime() === input.invoiceDate.getTime() &&
-            recorded.dueDate.getTime() === input.dueDate.getTime());
-        if (!sameLines || !sameDates) throw new DeliveryError("REPLAY_MISMATCH", [], recorded);
-        return { deliveryId: recorded.deliveryId, docNo: recorded.docNo };
-      }
-    }
+  const barangKeluar: string[] = [];
+  const existing = await tx.fieldSalesDelivery.findUnique({
+    where: { idempotencyKey: input.idempotencyKey },
+    select: { id: true, docNo: true, orderId: true },
+  });
+  if (existing) {
+    /* A key is only a replay of THIS order's nota; another order's must never be handed back. */
+    if (existing.orderId !== input.orderId) throw new DeliveryError("INVALID_STATE");
+    return { deliveryId: existing.id, docNo: existing.docNo, barangKeluar };
+  }
 
-    const order = await tx.fieldSalesOrder.findUnique({
-      where: { id: input.orderId },
-      include: {
-        lines: { include: { item: { select: { sku: true, category: { select: { name: true } } } } } },
-        deliveries: { select: { discountAmount: true, lines: { select: { orderLineId: true, discountAmount: true } } } },
-      },
+  const order = await tx.fieldSalesOrder.findUnique({
+    where: { id: input.orderId },
+    include: {
+      lines: { include: { item: { select: { sku: true, category: { select: { name: true } } } } } },
+      deliveries: { select: { discountAmount: true, lines: { select: { orderLineId: true, discountAmount: true } } } },
+    },
+  });
+  if (!order) throw new DeliveryError("NOT_FOUND");
+  if (order.status !== "APPROVED" || order.orderType !== "PUTUS") throw new DeliveryError("INVALID_STATE");
+
+  /*
+   * Pre-order: stoknya baru dicadangkan saat jendela dirilis (barang datang).
+   * Sebelum itu tidak ada reservasi untuk dikonsumsi — tanpa penjaga ini
+   * pengiriman jatuh ke OVER_DELIVER, pesan yang keliru dan tidak menunjukkan
+   * jalan keluarnya. Jendela yang hilang dianggap belum dirilis (tidak ada
+   * yang pernah mencadangkan pesanan itu).
+   */
+  if (order.preorderWindowId) {
+    const jendela = await tx.preorderWindow.findUnique({ where: { id: order.preorderWindowId }, select: { releasedAt: true } });
+    if (!jendela?.releasedAt) throw new IndenBelumRilisError(order.id);
+  }
+
+  const lineById = new Map(order.lines.map((l) => [l.id, l]));
+  const requested = new Map<string, number>();
+  for (const l of input.lines) {
+    if (!Number.isInteger(l.qty) || l.qty <= 0) throw new DeliveryError("OVER_DELIVER");
+    const orderLine = lineById.get(l.orderLineId);
+    if (!orderLine) throw new DeliveryError("NOT_FOUND");
+    const outstanding = outstandingQty({
+      orderLineId: orderLine.id,
+      qty: orderLine.qty,
+      deliveredQty: orderLine.deliveredQty,
+      cancelledQty: orderLine.cancelledQty,
     });
-    if (!order) throw new DeliveryError("NOT_FOUND");
-    if (order.status !== "APPROVED" || order.orderType !== "PUTUS") throw new DeliveryError("INVALID_STATE");
+    const total = (requested.get(l.orderLineId) ?? 0) + l.qty;
+    if (total > outstanding) throw new DeliveryError("OVER_DELIVER");
+    requested.set(l.orderLineId, total);
+  }
 
-    /*
-     * Pre-order: stoknya baru dicadangkan saat jendela dirilis (barang datang).
-     * Sebelum itu tidak ada reservasi untuk dikonsumsi — tanpa penjaga ini
-     * pengiriman jatuh ke OVER_DELIVER, pesan yang keliru dan tidak menunjukkan
-     * jalan keluarnya. Jendela yang hilang dianggap belum dirilis (tidak ada
-     * yang pernah mencadangkan pesanan itu).
-     */
-    if (order.preorderWindowId) {
-      const jendela = await tx.preorderWindow.findUnique({ where: { id: order.preorderWindowId }, select: { releasedAt: true } });
-      if (!jendela?.releasedAt) throw new IndenBelumRilisError(order.id);
+  const closesOrder = order.lines.every((ol) => {
+    const delivered = ol.deliveredQty + (requested.get(ol.id) ?? 0);
+    return ol.qty - delivered - ol.cancelledQty === 0;
+  });
+
+  const lineDiscountAllocated = new Map<string, number>();
+  for (const d of order.deliveries) {
+    for (const dl of d.lines) {
+      lineDiscountAllocated.set(dl.orderLineId, (lineDiscountAllocated.get(dl.orderLineId) ?? 0) + Number(dl.discountAmount));
     }
+  }
+  const orderDiscountAllocated = order.deliveries.reduce((s, d) => s + Number(d.discountAmount), 0);
 
-    const lineById = new Map(order.lines.map((l) => [l.id, l]));
-    const requested = new Map<string, number>();
-    for (const l of input.lines) {
-      if (!Number.isInteger(l.qty) || l.qty <= 0) throw new DeliveryError("OVER_DELIVER");
-      const orderLine = lineById.get(l.orderLineId);
-      if (!orderLine) throw new DeliveryError("NOT_FOUND");
-      const outstanding = outstandingQty({
-        orderLineId: orderLine.id,
-        qty: orderLine.qty,
-        deliveredQty: orderLine.deliveredQty,
-        cancelledQty: orderLine.cancelledQty,
-      });
-      const total = (requested.get(l.orderLineId) ?? 0) + l.qty;
-      if (total > outstanding) throw new DeliveryError("OVER_DELIVER");
-      requested.set(l.orderLineId, total);
-    }
+  const deliveredLines = Array.from(requested, ([orderLineId, qty]) => {
+    const ol = lineById.get(orderLineId)!;
+    return { ol, qty, deliveredSubtotal: qty * Number(ol.unitPrice) };
+  });
 
-    const closesOrder = order.lines.every((ol) => {
-      const delivered = ol.deliveredQty + (requested.get(ol.id) ?? 0);
-      return ol.qty - delivered - ol.cancelledQty === 0;
-    });
-
-    const lineDiscountAllocated = new Map<string, number>();
-    for (const d of order.deliveries) {
-      for (const dl of d.lines) {
-        lineDiscountAllocated.set(dl.orderLineId, (lineDiscountAllocated.get(dl.orderLineId) ?? 0) + Number(dl.discountAmount));
-      }
-    }
-    const orderDiscountAllocated = order.deliveries.reduce((s, d) => s + Number(d.discountAmount), 0);
-
-    const deliveredLines = Array.from(requested, ([orderLineId, qty]) => {
-      const ol = lineById.get(orderLineId)!;
-      return { ol, qty, deliveredSubtotal: qty * Number(ol.unitPrice) };
-    });
-
-    const allocation = allocateDeliveryDiscounts({
-      closesOrder,
-      orderSubtotal: Number(order.subtotal),
-      orderDiscount: Number(order.orderDiscountAmount),
-      orderDiscountAllocated,
-      /**
-       * Every order line, not just the ones in this delivery: a line that finished in an earlier
-       * delivery can still be holding rounding residue that only the closing delivery can absorb.
-       */
-      lines: order.lines.map((ol) => {
-        const qty = requested.get(ol.id) ?? 0;
-        return {
-          orderLineId: ol.id,
-          lineDiscount: Number(ol.discountAmount),
-          orderedQty: ol.qty,
-          deliveredQty: qty,
-          lineDiscountAllocated: lineDiscountAllocated.get(ol.id) ?? 0,
-          deliveredSubtotal: qty * Number(ol.unitPrice),
-        };
-      }),
-    });
-    const lineDiscountByOrderLine = new Map(allocation.lineDiscounts.map((l) => [l.orderLineId, l.discountAmount]));
-
+  const allocation = allocateDeliveryDiscounts({
+    closesOrder,
+    orderSubtotal: Number(order.subtotal),
+    orderDiscount: Number(order.orderDiscountAmount),
+    orderDiscountAllocated,
     /**
-     * `subtotal`, the discounts and every line figure stay exact 2dp; `total` is the whole-rupiah
-     * CHARGED figure, the same cash-boundary rule as `VanSale.total`/`SpgSale.total`. A store pays
-     * a nota tagihan in whole rupiah, so a total carrying sen left its receivable at a sub-rupiah
-     * `PARTIAL` that no real payment could clear. Rounding here, once, is what makes every figure
-     * downstream agree: the receivable is created from `total`, the revenue journal posts `total` on
-     * both its AR and SALES_REVENUE sides, and the nota prints it. The exact figure stays derivable
-     * as `subtotal - discountAmount - Σ line discountAmount`, which is what the undelivered-residual
-     * readers measure against the order. `roundCents` first so a float sum that lands a hair under
-     * a half rupiah (`x.4999999`) still rounds half-up as its 2dp value would.
+     * Every order line, not just the ones in this delivery: a line that finished in an earlier
+     * delivery can still be holding rounding residue that only the closing delivery can absorb.
      */
-    const subtotal = deliveredLines.reduce((s, d) => s + d.deliveredSubtotal, 0);
-    const lineDiscountTotal = allocation.lineDiscounts.reduce((s, l) => s + l.discountAmount, 0);
-    const total = roundToWholeRupiah(roundCents(subtotal - lineDiscountTotal - allocation.orderDiscountAmount));
+    lines: order.lines.map((ol) => {
+      const qty = requested.get(ol.id) ?? 0;
+      return {
+        orderLineId: ol.id,
+        lineDiscount: Number(ol.discountAmount),
+        orderedQty: ol.qty,
+        deliveredQty: qty,
+        lineDiscountAllocated: lineDiscountAllocated.get(ol.id) ?? 0,
+        deliveredSubtotal: qty * Number(ol.unitPrice),
+      };
+    }),
+  });
+  const lineDiscountByOrderLine = new Map(allocation.lineDiscounts.map((l) => [l.orderLineId, l.discountAmount]));
 
-    const docNo = await nomorNotaBebas(tx);
-    const now = input.deliveredAt ?? new Date();
+  /**
+   * `subtotal`, the discounts and every line figure stay exact 2dp; `total` is the whole-rupiah
+   * CHARGED figure, the same cash-boundary rule as `VanSale.total`/`SpgSale.total`. A store pays
+   * a nota tagihan in whole rupiah, so a total carrying sen left its receivable at a sub-rupiah
+   * `PARTIAL` that no real payment could clear. Rounding here, once, is what makes every figure
+   * downstream agree: the receivable is created from `total`, the revenue journal posts `total` on
+   * both its AR and SALES_REVENUE sides, and the nota prints it. The exact figure stays derivable
+   * as `subtotal - discountAmount - Σ line discountAmount`, which is what the undelivered-residual
+   * readers measure against the order. `roundCents` first so a float sum that lands a hair under
+   * a half rupiah (`x.4999999`) still rounds half-up as its 2dp value would.
+   */
+  const subtotal = deliveredLines.reduce((s, d) => s + d.deliveredSubtotal, 0);
+  const lineDiscountTotal = allocation.lineDiscounts.reduce((s, l) => s + l.discountAmount, 0);
+  const total = roundToWholeRupiah(roundCents(subtotal - lineDiscountTotal - allocation.orderDiscountAmount));
 
-    const delivery = await tx.fieldSalesDelivery.create({
-      data: {
-        docNo,
-        orderId: order.id,
-        deliveredAt: now,
-        deliveredById: input.deliveredById,
-        invoiceDate: input.invoiceDate,
-        dueDate: input.dueDate,
-        subtotal,
-        discountAmount: allocation.orderDiscountAmount,
-        total,
-        note: input.note,
-        idempotencyKey: input.idempotencyKey ?? null,
-        lines: {
-          create: deliveredLines.map((d) => ({
-            orderLineId: d.ol.id,
-            itemId: d.ol.itemId,
-            variantSku: d.ol.variantSku,
-            productName: d.ol.productName,
-            qty: d.qty,
-            unitPrice: Number(d.ol.unitPrice),
-            discountAmount: lineDiscountByOrderLine.get(d.ol.id) ?? 0,
-            lineTotal: d.deliveredSubtotal,
-          })),
-        },
-      },
-      select: { id: true, docNo: true },
-    });
+  const docNo = await nomorNotaBebas(tx);
+  const now = input.deliveredAt;
 
-    await tx.taxInvoice.create({
-      data: { deliveryId: delivery.id },
-    });
-
-    /*
-     * Nota tagihan = piutang, di transaksi yang sama: cek kredit toko membaca piutang, jadi nota
-     * yang keluar tanpa piutang membuat toko tampak bersih padahal sudah berutang. Kiriman ulang
-     * dengan kunci idempoten yang sama sudah kembali di atas sebelum sampai ke sini.
-     */
-    await buatPiutangNota(tx, {
-      deliveryId: delivery.id,
-      docNo: delivery.docNo,
-      storeId: order.storeId,
-      salesmanId: order.salesmanId,
+  const delivery = await tx.fieldSalesDelivery.create({
+    data: {
+      docNo,
+      orderId: order.id,
+      deliveredAt: now,
+      deliveredById: input.deliveredById,
       invoiceDate: input.invoiceDate,
       dueDate: input.dueDate,
+      subtotal,
+      discountAmount: allocation.orderDiscountAmount,
       total,
-    });
-
-    /**
-     * `OVER_CONSUME` is not a quantity error — the quantities were checked against the order lines
-     * above. It means a line's `StockReservation` is missing, no longer `RESERVED` (released, or
-     * already consumed), or would be over-consumed, i.e. the reservation disagrees with the
-     * deliveries recorded against it. The most likely cause is the delivery-rollout deploy race: an
-     * order the OLD image approved after the backfill migration ran was consumed with no backfilled
-     * delivery. It surfaces as `RESERVATION_MISMATCH`; the remedy is an admin repair of the order
-     * (for the deploy race, the per-order hand-run of that migration's statements,
-     * `20260809130000_backfill_field_sales_deliveries`), never a retry.
-     *
-     * Consume AFTER the delivery row exists so the audit adjustment can key on the real delivery
-     * id. Everything here is one serializable transaction, so a short-stock throw rolls the
-     * delivery back with it.
-     */
-    let consumeResult: Awaited<ReturnType<typeof consumeFieldSalesOrderPartial>>;
-    try {
-      consumeResult = await consumeFieldSalesOrderPartial(tx, {
-        orderNo: order.orderNo,
-        deliveryId: delivery.id,
-        lines: deliveredLines.map((d) => ({
-          fieldSalesLineId: d.ol.id,
+      note: input.note,
+      idempotencyKey: input.idempotencyKey ?? null,
+      lines: {
+        create: deliveredLines.map((d) => ({
+          orderLineId: d.ol.id,
           itemId: d.ol.itemId,
           variantSku: d.ol.variantSku,
-          qty: d.qty,
-        })),
-      });
-    } catch (e) {
-      if (e instanceof PartialConsumeError) {
-        if (e.code === "OVER_CONSUME") throw new CadanganTidakCocokError();
-        throw new DeliveryError(
-          PARTIAL_CONSUME_CODE[e.code],
-          e.shortLines.map((s) => ({ orderLineId: s.fieldSalesLineId, requested: s.requested, onHand: s.onHand, available: s.available })),
-        );
-      }
-      throw e;
-    }
-
-    const cogsAmount = consumeResult.lines.reduce((s, l) => s + l.qty * l.avgCost, 0);
-    await tx.fieldSalesDelivery.update({
-      where: { id: delivery.id },
-      data: { cogsAmount },
-    });
-
-    for (const d of deliveredLines) {
-      await tx.fieldSalesOrderLine.update({
-        where: { id: d.ol.id },
-        data: { deliveredQty: { increment: d.qty } },
-      });
-      barangKeluar.push(d.ol.itemId);
-    }
-
-    const settled = order.lines.map((ol) => ({
-      orderLineId: ol.id,
-      qty: ol.qty,
-      deliveredQty: ol.deliveredQty + (requested.get(ol.id) ?? 0),
-      cancelledQty: ol.cancelledQty,
-    }));
-    await tx.fieldSalesOrder.update({
-      where: { id: order.id },
-      data: { deliveryStatus: nextDeliveryStatus(settled) },
-    });
-
-    /**
-     * SalesHistory is keyed (channel, orderId, variantSku), so each delivery files under its own
-     * docNo — an order number would collide on the second delivery of the same variant.
-     */
-    const rows = buildOfflineSalesHistoryRows({
-      orderNo: delivery.docNo,
-      orderTotal: total,
-      lines: deliveredLines.map((d) => {
-        const disc = lineDiscountByOrderLine.get(d.ol.id) ?? 0;
-        const net = d.deliveredSubtotal - disc;
-        return {
-          itemId: d.ol.itemId,
-          variantSku: d.ol.variantSku,
-          parentSku: d.ol.item.sku,
           productName: d.ol.productName,
           qty: d.qty,
-          unitPrice: d.qty > 0 ? net / d.qty : 0,
-          lineTotal: net,
-          productCategory: d.ol.item.category?.name ?? null,
-        };
-      }),
-    }).map((row) => ({ ...row, orderDate: now, completedDate: now }));
-    await tx.salesHistory.createMany({ data: rows });
+          unitPrice: Number(d.ol.unitPrice),
+          discountAmount: lineDiscountByOrderLine.get(d.ol.id) ?? 0,
+          lineTotal: d.deliveredSubtotal,
+        })),
+      },
+    },
+    select: { id: true, docNo: true },
+  });
 
-    return { deliveryId: delivery.id, docNo: delivery.docNo };
+  await tx.taxInvoice.create({
+    data: { deliveryId: delivery.id },
   });
 
   /*
-   * Sesudah commit. Selama cadangannya cukup, onHand dan reserved turun bersama
-   * sehingga available tetap — tapi pesanan yang dicadangkan kurang (oversell
-   * diperingatkan, tidak ditolak) memang menurunkan available. Push mengirim
-   * angka mutlak, jadi mengirimnya pada setiap pengiriman selalu aman.
+   * Nota tagihan = piutang, di transaksi yang sama: cek kredit toko membaca piutang, jadi nota
+   * yang keluar tanpa piutang membuat toko tampak bersih padahal sudah berutang. Kiriman ulang
+   * dengan kunci idempoten yang sama sudah kembali di atas sebelum sampai ke sini.
    */
-  if (barangKeluar.length > 0) {
-    await antrekanPushStok(barangKeluar, { sumber: "ADJUSTMENT", ref: `kirim putus ${hasil.docNo}`, userId: input.deliveredById });
+  await buatPiutangNota(tx, {
+    deliveryId: delivery.id,
+    docNo: delivery.docNo,
+    storeId: order.storeId,
+    salesmanId: order.salesmanId,
+    invoiceDate: input.invoiceDate,
+    dueDate: input.dueDate,
+    total,
+  });
+
+  /**
+   * `OVER_CONSUME` is not a quantity error — the quantities were checked against the order lines
+   * above. It means a line's `StockReservation` is missing, no longer `RESERVED` (released, or
+   * already consumed), or would be over-consumed, i.e. the reservation disagrees with the
+   * deliveries recorded against it. The most likely cause is the delivery-rollout deploy race: an
+   * order the OLD image approved after the backfill migration ran was consumed with no backfilled
+   * delivery. It surfaces as `RESERVATION_MISMATCH`; the remedy is an admin repair of the order
+   * (for the deploy race, the per-order hand-run of that migration's statements,
+   * `20260809130000_backfill_field_sales_deliveries`), never a retry.
+   *
+   * Consume AFTER the delivery row exists so the audit adjustment can key on the real delivery
+   * id. Everything here is one serializable transaction, so a short-stock throw rolls the
+   * delivery back with it.
+   */
+  let consumeResult: Awaited<ReturnType<typeof consumeFieldSalesOrderPartial>>;
+  try {
+    consumeResult = await consumeFieldSalesOrderPartial(tx, {
+      orderNo: order.orderNo,
+      deliveryId: delivery.id,
+      lines: deliveredLines.map((d) => ({
+        fieldSalesLineId: d.ol.id,
+        itemId: d.ol.itemId,
+        variantSku: d.ol.variantSku,
+        qty: d.qty,
+      })),
+    });
+  } catch (e) {
+    if (e instanceof PartialConsumeError) {
+      if (e.code === "OVER_CONSUME") throw new CadanganTidakCocokError();
+      throw new DeliveryError(
+        PARTIAL_CONSUME_CODE[e.code],
+        e.shortLines.map((s) => ({ orderLineId: s.fieldSalesLineId, requested: s.requested, onHand: s.onHand, available: s.available })),
+      );
+    }
+    throw e;
   }
-  return hasil;
+
+  const cogsAmount = consumeResult.lines.reduce((s, l) => s + l.qty * l.avgCost, 0);
+  await tx.fieldSalesDelivery.update({
+    where: { id: delivery.id },
+    data: { cogsAmount },
+  });
+
+  for (const d of deliveredLines) {
+    await tx.fieldSalesOrderLine.update({
+      where: { id: d.ol.id },
+      data: { deliveredQty: { increment: d.qty } },
+    });
+    barangKeluar.push(d.ol.itemId);
+  }
+
+  const settled = order.lines.map((ol) => ({
+    orderLineId: ol.id,
+    qty: ol.qty,
+    deliveredQty: ol.deliveredQty + (requested.get(ol.id) ?? 0),
+    cancelledQty: ol.cancelledQty,
+  }));
+  await tx.fieldSalesOrder.update({
+    where: { id: order.id },
+    data: { deliveryStatus: nextDeliveryStatus(settled) },
+  });
+
+  /**
+   * SalesHistory is keyed (channel, orderId, variantSku), so each delivery files under its own
+   * docNo — an order number would collide on the second delivery of the same variant.
+   */
+  const rows = buildOfflineSalesHistoryRows({
+    orderNo: delivery.docNo,
+    orderTotal: total,
+    lines: deliveredLines.map((d) => {
+      const disc = lineDiscountByOrderLine.get(d.ol.id) ?? 0;
+      const net = d.deliveredSubtotal - disc;
+      return {
+        itemId: d.ol.itemId,
+        variantSku: d.ol.variantSku,
+        parentSku: d.ol.item.sku,
+        productName: d.ol.productName,
+        qty: d.qty,
+        unitPrice: d.qty > 0 ? net / d.qty : 0,
+        lineTotal: net,
+        productCategory: d.ol.item.category?.name ?? null,
+      };
+    }),
+  }).map((row) => ({ ...row, orderDate: now, completedDate: now }));
+  await tx.salesHistory.createMany({ data: rows });
+
+  /*
+   * The caller pushes `barangKeluar` to Jubelio after commit. While the reservation covers the
+   * line, onHand and reserved fall together so available is unchanged — but an under-reserved
+   * order (oversell warns, never refuses) does lower available. The push sends absolute figures,
+   * so sending it on every nota is always safe.
+   */
+  return { deliveryId: delivery.id, docNo: delivery.docNo, barangKeluar };
+}
+
+/**
+ * True while any shipment of the order is PACKED or IN_TRANSIT, or is DELIVERED/PARTIALLY_DELIVERED
+ * with a live document the store has not received yet (`StoreReceipt` is the received marker,
+ * never `FieldSalesDelivery.receivedAt`).
+ */
+async function adaPengirimanBelumTuntas(tx: Prisma.TransactionClient, orderId: string): Promise<boolean> {
+  const shipments = await tx.deliveryShipment.findMany({
+    where: { orderId, status: { in: ["PACKED", "IN_TRANSIT", "DELIVERED", "PARTIALLY_DELIVERED"] } },
+    select: {
+      status: true,
+      deliveryId: true,
+      delivery: { select: { voidedAt: true } },
+      konsiTransfer: { select: { status: true } },
+    },
+  });
+  const notaDitunggu: string[] = [];
+  for (const s of shipments) {
+    if (s.status === "PACKED" || s.status === "IN_TRANSIT") return true;
+    if (s.konsiTransfer?.status === "IN_TRANSIT") return true;
+    if (s.deliveryId && s.delivery && s.delivery.voidedAt === null) notaDitunggu.push(s.deliveryId);
+  }
+  if (notaDitunggu.length === 0) return false;
+  const diterima = await tx.storeReceipt.count({
+    where: { sourceType: "PUTUS_DELIVERY", sourceId: { in: notaDitunggu } },
+  });
+  return diterima < notaDitunggu.length;
 }
 
 export async function closeFieldSalesOrderRemainder(input: {
@@ -677,16 +646,14 @@ export async function closeFieldSalesOrderRemainder(input: {
     }
 
     /**
-     * Refused, not netted, while a shipment is still PACKED or IN_TRANSIT. The release below flips
-     * each line's whole reservation — a partial release per reservation is not expressible — so
-     * the in-flight shipment would then complete against nothing, and netting its planned qty out
-     * would still let the admin close units that are physically on a truck. Checked before any
+     * Refused, not netted, while a shipment is still PACKED or IN_TRANSIT — its pieces are on a
+     * truck — AND while a delivered shipment's live document (a nota not voided, a konsi transfer
+     * still IN_TRANSIT) has no store receipt yet: a door refusal recorded at that receipt reopens
+     * pieces on the order (P40), and closing first would strand them on a CLOSED order. The release
+     * below flips each line's whole reservation, so neither may be netted out. Checked before any
      * write, for putus as well as konsi.
      */
-    const inFlight = await tx.deliveryShipment.count({
-      where: { orderId: order.id, status: { in: ["PACKED", "IN_TRANSIT"] } },
-    });
-    if (inFlight > 0) throw new DeliveryError("SHIPMENT_IN_FLIGHT");
+    if (await adaPengirimanBelumTuntas(tx, order.id)) throw new DeliveryError("SHIPMENT_IN_FLIGHT");
 
     for (const l of openLines) {
       await tx.fieldSalesOrderLine.update({

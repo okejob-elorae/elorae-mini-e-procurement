@@ -1,4 +1,4 @@
-import type { MenungguGudang } from "@/lib/receivables/pwa-queries";
+import type { MenungguGudang, MenungguSusulan } from "@/lib/receivables/pwa-queries";
 
 /**
  * Nota retur seperti yang dilihat penghitung gudang: TANPA klaim.
@@ -57,6 +57,30 @@ export function untukPenghitung(n: MenungguGudang, penghitungId: string, pelapor
     })),
     nilaiPerPotong: !berharga && qtyKlaim > 0 ? n.nilaiKlaim / qtyKlaim : 0,
     milikSendiri: pelaporId !== null && pelaporId === penghitungId,
+  };
+}
+
+/** Nota berselisih yang barang SUSULAN-nya dihitung gudang — tetap tanpa klaim. */
+export type NotaSusulan = NotaHitung & {
+  chargeId: string;
+  /** Salesman pemegang toko melapor barangnya ditemukan dan dikirim balik. */
+  dilaporkanDitemukan: boolean;
+};
+
+/**
+ * Nota berselisih seperti yang dilihat penghitung barang susulan: hitungan BUTA
+ * (keputusan 2, 2026-10-29). Klaim, jumlah yang kurang per barang, dan catatan cek
+ * sales tidak ikut dikirim ke peramban — kalau terlihat, penghitung tahu persis
+ * apa yang harus "ditemukan". Daftar orang yang tidak boleh menghitung (dua
+ * tangan) juga tidak dikirim; yang sampai hanya apakah penghitung ini salah
+ * satunya (`milikSendiri`). Murni, dites tanpa basis data.
+ */
+export function untukPenghitungSusulan(n: MenungguSusulan, penghitungId: string): NotaSusulan {
+  return {
+    ...untukPenghitung(n, penghitungId, null),
+    chargeId: n.chargeId,
+    dilaporkanDitemukan: n.dilaporkanDitemukan,
+    milikSendiri: penghitungId === "" || n.tidakBolehMenghitung.includes(penghitungId),
   };
 }
 

@@ -125,7 +125,6 @@ export default function WorkOrderDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [printIssueId, setPrintIssueId] = useState<string | null>(null);
   const [printData, setPrintData] = useState<Awaited<ReturnType<typeof getMaterialIssueForPrint>>>(null);
-  const [hppMarginPercent, setHppMarginPercent] = useState('');
   const [hppAdditionalCost, setHppAdditionalCost] = useState('');
   const [rollAllocationStatus, setRollAllocationStatus] = useState<Awaited<ReturnType<typeof getWorkOrderRollAllocationStatus>> | null>(null);
   const [additionalMaterialsOpen, setAdditionalMaterialsOpen] = useState(false);
@@ -227,9 +226,6 @@ export default function WorkOrderDetailPage() {
     getWorkOrderById(id)
       .then((data) => {
         setWO(data);
-        setHppMarginPercent(
-          data?.hppMarginPercent != null ? String(data.hppMarginPercent) : ''
-        );
         setHppAdditionalCost(
           data?.hppAdditionalCost != null ? String(data.hppAdditionalCost) : ''
         );
@@ -306,7 +302,6 @@ export default function WorkOrderDetailPage() {
     if (!wo) return;
     try {
       const updated = await updateWOHppAdjustments(String(wo.id), {
-        hppMarginPercent: hppMarginPercent.trim() ? Number(hppMarginPercent) : undefined,
         hppAdditionalCost: hppAdditionalCost.trim() ? Number(hppAdditionalCost) : undefined,
       });
       setWO(updated as any);
@@ -896,29 +891,14 @@ export default function WorkOrderDetailPage() {
               <CardHeader>
                 <CardTitle>{tD('hppTitle')}</CardTitle>
                 <CardDescription>
+                  {/* Markup WO dihapus (P4a): harga rekomendasi hanya dari pengaturan barang. */}
                   {tD('hppSekarang', {
-                    margin:
-                      (wo as any).hppMarginPercent != null
-                        ? `${Number((wo as any).hppMarginPercent).toLocaleString('id-ID', { maximumFractionDigits: 2 })}%`
-                        : '—',
                     biaya:
                       (wo as any).hppAdditionalCost != null ? formatRupiah(Number((wo as any).hppAdditionalCost)) : '—',
                   })}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="hpp-margin">{tD('marginLabel')}</Label>
-                  <Input
-                    id="hpp-margin"
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.01"
-                    value={hppMarginPercent}
-                    onChange={(e) => setHppMarginPercent(e.target.value)}
-                  />
-                </div>
+              <CardContent className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="hpp-biaya">{tD('additionalCostLabel')}</Label>
                   <Input

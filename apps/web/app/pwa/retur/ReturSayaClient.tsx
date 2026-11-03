@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Camera, Plus, RotateCcw } from 'lucide-react';
@@ -37,7 +38,14 @@ export type ReturSayaTampil = ReturSaya & {
   koreksi: { pada: string; alasan: string } | null;
 };
 
-export function ReturSayaClient({ baris }: { baris: ReturSayaTampil[] }) {
+export function ReturSayaClient({
+  baris,
+  selisih = null,
+}: {
+  baris: ReturSayaTampil[];
+  /** Bagian "Selisih retur yang perlu Anda cek" (salesman pemegang toko), di atas daftar. */
+  selisih?: ReactNode;
+}) {
   const t = useTranslations('pwaRetur');
   const td = dinamis(t);
   const tTarik = useTranslations('pwaTarik');
@@ -59,6 +67,8 @@ export function ReturSayaClient({ baris }: { baris: ReturSayaTampil[] }) {
           </Link>
         </Button>
       </header>
+
+      {selisih}
 
       {baris.length === 0 ? (
         <Card className="py-0">
@@ -87,7 +97,7 @@ export function ReturSayaClient({ baris }: { baris: ReturSayaTampil[] }) {
                       )}
                     </span>
                   </span>
-                  {/* Nilai toko KONSI tidak pernah sampai ke HP — yang tampil jumlah potongnya. */}
+                  {/* Nilai retur toko KONSI tidak sampai ke HP SPG (P18a) — yang tampil jumlah potongnya. */}
                   <span className="shrink-0 font-bold tabular-nums">
                     {b.nilaiKlaim !== null ? rupiah(b.nilaiKlaim) : t("jumlahPotong", { count: b.jumlahBarang })}
                   </span>

@@ -14,7 +14,7 @@ import { listShipmentsForOrder, type OrderShipmentSummary } from "@/lib/delivery
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { muatPanelKredit, type PanelKredit } from "@/lib/field-sales/kredit-panel";
 import { bolehMembacaPiutang } from "@/lib/receivables/izin";
-import { batasKreditBerlaku } from "@/lib/salesman/kredit";
+import { batasKreditBerlaku, lewatBatasNilai } from "@/lib/salesman/kredit";
 import { bacaAturanKreditDb } from "@/lib/salesman/tagihan-toko";
 import {
   muatKedatanganPesananLama,
@@ -23,6 +23,7 @@ import {
 } from "@/lib/field-sales/konsi-transfer/pesanan-lama";
 import { FieldSalesOrderDetailClient } from "./FieldSalesOrderDetailClient";
 import type { PesananLamaKantor } from "./KonsiPesananLamaCard";
+import type { KeadaanNotaTampil } from "./DeliveriesCard";
 import { muatTautanPesanan, penagihanSesuaiIzin, type FakturKreditTampil, type PiutangKiriman } from "./tautan-pesanan";
 
 export const dynamic = "force-dynamic";
@@ -131,8 +132,9 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
         if (batas && (batas.sumber === "TOKO" || batas.sumber === "BAWAAN")) {
           const limit = batas.nilai;
           const exposure = await computeStoreCreditExposure(prisma, orderRow.storeId);
+          /* A KONSI order whose store limit is empty is not previewed (KONSI_KOSONG, P21). */
           const orderTotal = order.orderType === "PUTUS" ? order.total : 0;
-          creditCheck = { exposure: exposure.total, limit, overLimit: exposure.total + orderTotal > limit, sumber: batas.sumber };
+          creditCheck = { exposure: exposure.total, limit, overLimit: lewatBatasNilai(exposure.total + orderTotal, limit), sumber: batas.sumber };
         }
       }
     } catch (error) {
@@ -229,6 +231,49 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
     console.error("[field-sales-orders] muatTautanPesanan failed", { orderId: id, error: e });
   }
 
+  /*
+   * Nota yang dibatalkan atau dikoreksi di penerimaan toko (R22), dibaca langsung: kartu pengiriman
+   * menyembunyikan cetak, ubah tanggal, dan bukti terima nota batal, dan menunjukkan rincian
+   * dikirim / retur langsung / hilang / ditagih nota yang dikoreksi. Gagal memuat tidak menjatuhkan
+   * halaman — server tetap menolak setiap tindakan pada nota batal.
+   */
+  let keadaanNota: Record<string, KeadaanNotaTampil> = {};
+  if (order.orderType === "PUTUS" && order.deliveries.length > 0) {
+    try {
+      const notas = await prisma.fieldSalesDelivery.findMany({
+        where: { orderId: id },
+        select: {
+          id: true,
+          voidedAt: true,
+          voidReason: true,
+          correctedAt: true,
+          lines: { select: { qty: true, returnedQty: true, lostQty: true } },
+        },
+      });
+      keadaanNota = Object.fromEntries(
+        notas.map((n) => {
+          const ditagih = n.lines.reduce((x, l) => x + l.qty, 0);
+          const kembali = n.lines.reduce((x, l) => x + l.returnedQty, 0);
+          const hilang = n.lines.reduce((x, l) => x + l.lostQty, 0);
+          return [
+            n.id,
+            {
+              voidedAt: n.voidedAt?.toISOString() ?? null,
+              voidReason: n.voidReason,
+              correctedAt: n.correctedAt?.toISOString() ?? null,
+              dikirim: ditagih + kembali + hilang,
+              kembali,
+              hilang,
+              ditagih,
+            },
+          ];
+        }),
+      );
+    } catch (e) {
+      console.error("[field-sales-orders] keadaan nota failed", { orderId: id, error: e });
+    }
+  }
+
   // Faktur pajak dan piutang nota tidak dikirim ke peramban yang tidak boleh membukanya — izin tidak melebar lewat halaman ini.
   const orderTampil = {
     ...order,
@@ -252,6 +297,7 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
       fakturKredit={fakturKredit}
       kreditDitahan={kreditDitahan}
       piutangKiriman={piutangKiriman}
+      keadaanNota={keadaanNota}
       bolehBukaPiutang={bolehBukaPiutang}
       bolehBukaFakturPajak={bolehBukaFakturPajak}
     />

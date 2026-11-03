@@ -10,7 +10,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -39,13 +38,9 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { dinamis } from '@/lib/i18n/dinamis';
-import type { PilihanBarang } from '../retur-toko/BarisBarangEditor';
-import type { BarisKurangKirim } from '@/lib/konsinyasi/writer';
-import { newLocalId } from '@/lib/pwa/id-lokal';
-import { BarisKirimEditor, barisKirimKosong, useVarianKirim } from './BarisKirimEditor';
-import { alasanBelumKirim, untukServer, type AlasanBelumKirim, type BarisKirimIsian } from './kirim-isian';
 import type { BarisSiklus, TahapSiklusLengkap } from '@/lib/konsinyasi/queries';
-import { bukaSiklusAction, kirimTitipanAction } from '@/app/actions/konsinyasi';
+import { bukaSiklusAction } from '@/app/actions/konsinyasi';
+import { KartuSiklusPertama } from './KartuSiklusPertama';
 import { NADA_TAHAP, URUT_TAHAP } from './tahap';
 import { tulisRupiah } from "./[id]/jumlah-bayar";
 import { TanggalInput } from '@/components/ui/tanggal-input';
@@ -79,9 +74,10 @@ export function KonsinyasiClient({
   saring = 'berjalan',
   cari = '',
   toko,
-  katalog,
   bolehMengelola,
   bolehIsiUlang = false,
+  siklusPertama,
+  bolehMengunci = false,
 }: {
   /** Satu halaman yang sudah disaring di server. */
   baris: BarisSiklus[];
@@ -93,8 +89,11 @@ export function KonsinyasiClient({
   /** Dari `?cari=`. */
   cari?: string;
   toko: { id: string; name: string }[];
-  katalog: PilihanBarang[];
   bolehMengelola: boolean;
+  /** Bulan siklus pertama konsinyasi (P59); null = belum diatur. */
+  siklusPertama?: string | null;
+  /** Mengatur bulan siklus pertama — `consignment:lock`. */
+  bolehMengunci?: boolean;
   /** Boleh membuka Isi ulang toko konsinyasi (stores:view). */
   bolehIsiUlang?: boolean;
 }) {
@@ -113,18 +112,10 @@ export function KonsinyasiClient({
   const [bulan, setBulan] = useState(String(now.getMonth() + 1));
   const [tenggat, setTenggat] = useState(hariIniWib(10));
 
+  // "Kirim titipan" dihentikan (keputusan 2026-10-29 #3): barang ke toko konsi berangkat lewat
+  // Dorong konsi + dokumen pengiriman gudang→toko. Dialog ini hanya memilih tokonya.
   const [kirimTerbuka, setKirimTerbuka] = useState(false);
   const [tokoKirim, setTokoKirim] = useState('');
-  const [tglKirim, setTglKirim] = useState(hariIniWib());
-  const [barang, setBarang] = useState<BarisKirimIsian[]>(() => [barisKirimKosong()]);
-  const [catatanKirim, setCatatanKirim] = useState('');
-  // Dibuat SEKALI per isian formulir: klik ganda atau simpan ulang sesudah jawaban hilang
-  // tercatat sebagai kiriman yang sama — satu kiriman, satu potongan stok. Diganti hanya
-  // sesudah kiriman tersimpan.
-  const [kunciKirim, setKunciKirim] = useState(() => newLocalId());
-  const [kurang, setKurang] = useState<BarisKurangKirim[]>([]);
-  const { varian, muat: muatVarian, segarkan: segarkanVarian } = useVarianKirim();
-  const belumKirim = alasanBelumKirim(tokoKirim, barang, varian);
 
   const jumlah = (x: TahapSiklusLengkap) => hitung.perTahap[x] ?? 0;
   const tampil = baris;
@@ -149,65 +140,6 @@ export function KonsinyasiClient({
         router.refresh();
       } else {
         toast.error(td(`err${hasil.kode}`));
-      }
-    });
-  };
-
-  const tulisAlasan = (a: AlasanBelumKirim): string => {
-    switch (a.kode) {
-      case 'TOKO':
-        return t('kirimBaris.whyStore');
-      case 'BARIS':
-        return t('kirimBaris.whyRows');
-      case 'NAMA':
-        return t('kirimBaris.whyName', { n: a.baris });
-      case 'QTY':
-        return t('kirimBaris.whyQty', { n: a.baris });
-      case 'MEMUAT':
-        return t('kirimBaris.whyLoading', { n: a.baris });
-      case 'GAGAL_MUAT':
-        return t('kirimBaris.whyLoadFailed', { n: a.baris, item: a.nama });
-      case 'VARIAN':
-        return t('kirimBaris.whyVariant', { n: a.baris, item: a.nama });
-    }
-  };
-
-  const simpanKirim = () => {
-    if (pending || belumKirim) return;
-    setKurang([]);
-    startTransition(async () => {
-      try {
-        const hasil = await kirimTitipanAction({
-          storeId: tokoKirim,
-          shippedAt: tglKirim,
-          items: untukServer(barang),
-          note: catatanKirim,
-          idempotencyKey: kunciKirim,
-        });
-        if (hasil.ok) {
-          toast.success(
-            hasil.ulang
-              ? t('kirimBaris.okAlreadyShipped', { noKirim: hasil.noKirim })
-              : t('kirimBaris.okShippedNo', { noKirim: hasil.noKirim }),
-          );
-          setKirimTerbuka(false);
-          setTokoKirim('');
-          setBarang([barisKirimKosong()]);
-          setCatatanKirim('');
-          setKunciKirim(newLocalId());
-          segarkanVarian();
-          router.refresh();
-          return;
-        }
-        if (hasil.kode === 'STOK_KURANG' && hasil.kurang) {
-          setKurang(hasil.kurang);
-          // Angka tersedia di baris ikut diperbarui, supaya yang terlihat sama dengan rinciannya.
-          for (const id of new Set(hasil.kurang.map((k) => k.itemId))) void muatVarian(id, true);
-        }
-        toast.error(td(`err${hasil.kode}`));
-      } catch {
-        // Jawaban hilang di jalan: kuncinya tetap, simpan ulang mendapat kiriman yang sama.
-        toast.error(t('errGAGAL'));
       }
     });
   };
@@ -253,6 +185,8 @@ export function KonsinyasiClient({
           </CardContent>
         </Card>
       )}
+
+      <KartuSiklusPertama bulan={siklusPertama ?? null} bolehMengatur={bolehMengunci} />
 
       {hitung.semua > 0 && (
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -456,55 +390,37 @@ export function KonsinyasiClient({
       </Dialog>
 
       <Dialog open={kirimTerbuka} onOpenChange={setKirimTerbuka}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('shipTitle')}</DialogTitle>
-            <DialogDescription>{t('shipBody')}</DialogDescription>
+            <DialogDescription>{t('shipViaPush')}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="kk-toko">{t('store')}</Label>
-                <Select value={tokoKirim} onValueChange={setTokoKirim}>
-                  <SelectTrigger id="kk-toko">
-                    <SelectValue placeholder={t('storePlaceholder')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {toko.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="kk-tgl">{t('shipDate')}</Label>
-                <TanggalInput id="kk-tgl" value={tglKirim} onChange={(e) => setTglKirim(e.target.value)} />
-              </div>
-            </div>
-
-            <BarisKirimEditor
-              rows={barang}
-              onChange={setBarang}
-              katalog={katalog}
-              varian={varian}
-              muatVarian={muatVarian}
-              kurang={kurang}
-              disabled={pending}
-            />
-
-            <div className="space-y-2">
-              <Label htmlFor="kk-catatan">{t('noteLabel')}</Label>
-              <Textarea id="kk-catatan" value={catatanKirim} onChange={(e) => setCatatanKirim(e.target.value)} rows={2} />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="kk-toko">{t('store')}</Label>
+            <Select value={tokoKirim} onValueChange={setTokoKirim}>
+              <SelectTrigger id="kk-toko">
+                <SelectValue placeholder={t('storePlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {toko.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <DialogFooter className="flex-col items-stretch gap-2 sm:flex-col sm:items-end">
-            {/* Tombol yang dimatikan menyebut sebabnya: baris mana yang belum siap. */}
-            {belumKirim && <p className="text-xs text-muted-foreground sm:text-right">{tulisAlasan(belumKirim)}</p>}
-            <Button disabled={pending || belumKirim !== null} onClick={simpanKirim}>
-              {t('saveShip')}
-            </Button>
+            {tokoKirim ? (
+              <Button asChild>
+                <Link href={`/backoffice/stores/${tokoKirim}/konsi-push`}>{t('shipOpenPush')}</Link>
+              </Button>
+            ) : (
+              <>
+                <Button disabled>{t('shipOpenPush')}</Button>
+                <KeteranganKirim teks={t('whyCycleStore')} />
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

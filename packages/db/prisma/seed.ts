@@ -232,7 +232,7 @@ async function main() {
     // Office work and approvals split out of broad codes (owner decision 2026-11-01). Approvals
     // are held by ADMIN only (through the '*' wildcard) until the owner grants them in Peran & izin.
     { code: "payments:verify", module: "payments", action: "verify", description: "Verify store payment reports (BKM), giro clearing, collector submissions and store settlements against the bank statement (never a payment you reported, recorded or handed in)" },
-    { code: "receivables:decide_bearer", module: "receivables", action: "decide_bearer", description: "Decide, reassign or cancel who bears a store-return shortfall or lost SPG goods (manager decision)" },
+    { code: "receivables:decide_bearer", module: "receivables", action: "decide_bearer", description: "Decide, change or cancel who bears lost goods, at an SPG store or in transit (manager decision)" },
     { code: "consignment:note_number", module: "consignment", action: "note_number", description: "Record the sales-note number on a locked consignment cycle" },
     { code: "consignment:tax_number", module: "consignment", action: "tax_number", description: "Record the tax-invoice (faktur pajak) number on a locked consignment cycle" },
     { code: "consignment:lock", module: "consignment", action: "lock", description: "Lock and unlock the official sold figures of a consignment cycle (manager decision)" },
@@ -241,9 +241,23 @@ async function main() {
     { code: "store_transfers:decide_shortfall", module: "store_transfers", action: "decide_shortfall", description: "Decide an inter-store transfer shortfall: lost or returned (manager decision)" },
     { code: "spg_commission:pay", module: "spg_commission", action: "pay", description: "Mark SPG base pay and commission as paid" },
     // Approvals added by the owner's 2026-11-02 decisions (prod rows: seed-owner-2026-11-02-permissions.sql).
-    // spg_returns:approve is the one approval an office role holds by default (ADMIN_PENJUALAN, below).
+    // spg_returns:approve is one of the two approvals an office role holds by default (ADMIN_PENJUALAN,
+    // below); the other is spg_commission:pay for KEUANGAN (owner 2026-11-02, Q9).
     { code: "spg_returns:approve", module: "spg_returns", action: "approve", description: "Approve or reject an SPG's report of goods a shopper returned at the counter (manager decision, admin and sales admin by default)" },
     { code: "jubelio_prices:confirm", module: "jubelio_prices", action: "confirm", description: "Confirm selling prices before they are sent to Jubelio" },
+    // Codes added by the owner's 2026-11-02 round-4 answers (prod rows: seed-owner-2026-11-02b-permissions.sql).
+    // Approvals (admin only): store_returns:decide_shortfall (P22, split from receivables:decide_bearer),
+    // vendor_bills:decide_price (P27/P53), goods_receipts:confirm_no_po (P51a), spg_schedules:approve (P7c).
+    // Office work with an owner-decided default role: deliveries:cancel_nota and spg_attendance:record
+    // (ADMIN_PENJUALAN, P41a/P7e), receivables:overdue_reminder and spg_attendance:verify (KEUANGAN, P48/P61a).
+    { code: "deliveries:cancel_nota", module: "deliveries", action: "cancel_nota", description: "Cancel a putus shipment whose billing note is already issued: the note, its receivable and tax invoice are voided and Finance is notified" },
+    { code: "receivables:overdue_reminder", module: "receivables", action: "overdue_reminder", description: "Receive the office reminder when a store invoice passes an overdue threshold (receiving only)" },
+    { code: "store_returns:decide_shortfall", module: "store_returns", action: "decide_shortfall", description: "Decide or reassign who bears a store-return shortfall (manager decision)" },
+    { code: "vendor_bills:decide_price", module: "vendor_bills", action: "decide_price", description: "Decide a supplier invoice whose price differs from the recorded payable: accept it or correct the invoice (manager decision)" },
+    { code: "goods_receipts:confirm_no_po", module: "goods_receipts", action: "confirm_no_po", description: "Confirm or decline a goods receipt recorded without a PO before it is processed (manager decision)" },
+    { code: "spg_schedules:approve", module: "spg_schedules", action: "approve", description: "Approve, reject or reopen an SPG's monthly work schedule (manager decision)" },
+    { code: "spg_attendance:record", module: "spg_attendance", action: "record", description: "Enter an SPG's store check-in record for a month, typed or from an Excel file" },
+    { code: "spg_attendance:verify", module: "spg_attendance", action: "verify", description: "Check an SPG store check-in record entered by someone else against the original" },
   ];
 
   // Upsert all permissions
@@ -542,8 +556,12 @@ async function main() {
   // Office roles: the work each role exists for plus the views it needs, and NO approval codes —
   // approvals stay with ADMIN until the owner grants them in Peran & izin — except the ones the
   // owner decided himself, listed in PERSETUJUAN_BAWAAN_PERAN_KANTOR (apps/web/lib/rbac/penjelasan-izin.ts):
-  // ADMIN_PENJUALAN approves SPG shopper returns (owner 2026-11-02). Same lists as
-  // seed-office-roles-permissions.sql (apps/web/lib/rbac/peran-kantor.test.ts compares them).
+  // ADMIN_PENJUALAN approves SPG shopper returns, and KEUANGAN marks SPG pay & commission paid
+  // (both owner 2026-11-02; KEUANGAN opens only the Komisi SPG page with it, no spg_sales:view, P28).
+  // Owner-decided office work from the same day: KEUANGAN receives the overdue reminder (P48) and
+  // checks store check-in records (P61a); ADMIN_PENJUALAN cancels a shipment that already has a nota
+  // (P41a) and enters store check-in records (P7e). Same lists as seed-office-roles-permissions.sql
+  // (apps/web/lib/rbac/peran-kantor.test.ts compares them).
   // Re-running never revokes a code the owner added on screen.
   const officeRolePermissions: { roleId: string; codes: string[] }[] = [
     {
@@ -551,10 +569,11 @@ async function main() {
       codes: [
         "dashboard:view",
         "journals:view", "journals:manage", "coa:view", "finance_reports:view",
-        "payments:verify", "receivables:view",
+        "payments:verify", "receivables:view", "receivables:overdue_reminder",
         "tax_invoices:view",
         "supplier_payments:view", "supplier_payments:create", "supplier_payments:edit", "purchase_orders:view",
         "consignment:view", "sales_orders:view",
+        "spg_commission:pay", "spg_attendance:verify",
       ],
     },
     {
@@ -565,6 +584,7 @@ async function main() {
         "field_sales_orders:view", "stores:view", "promos:view", "spg_sales:view",
         "sales_orders:view", "sales_returns:view", "items:view",
         "spg_returns:approve",
+        "deliveries:cancel_nota", "spg_attendance:record",
       ],
     },
     {

@@ -141,7 +141,7 @@ export async function bangunRencanaKirimAction(input: unknown): Promise<HasilBan
       hariBaru: k.hariBaru,
       lewatiSisaMin: k.lewatiSisaMin,
       maksArtikel: k.maksArtikel ?? ARTIKEL_BAWAAN,
-      // Konsinyasi tidak punya harga di HP, jadi juga tidak punya anggaran.
+      // Anggaran hanya untuk putus: harga konsi di draf hanya untuk tampilan (P18), penyusun tidak memakainya.
       anggaran: konsi ? null : k.anggaran,
       konsi,
     },

@@ -5,8 +5,8 @@ import { ALASAN_KUNCI_DIBUKA, ALASAN_TAHAN, ALASAN_TANPA_RENCANA, susunGajiCetak
 
 /*
  * Lembar cetak gaji & komisi siklus konsinyasi harus menyebut angka yang sama dengan layar siklus
- * dan yang dibayar penulis. Baris belum dibayar yang belum punya angka bayar — ditahan (angka aturan
- * lama yang belum bisa dibandingkan) atau siklus yang kuncinya dibuka lagi — tidak dicetak dengan
+ * dan yang dibayar penulis. Baris belum dibayar yang belum punya angka bayar — ditahan (dasar gaji
+ * pokoknya belum pasti, P60) atau siklus yang kuncinya dibuka lagi — tidak dicetak dengan
  * angka tersimpannya dan tidak ikut dijumlah: layar menulis "—" dan HP SPG tidak menyebut angka.
  */
 
@@ -20,24 +20,39 @@ const rencana = (lain: Partial<RencanaBayarKomisi> = {}): RencanaBayarKomisi => 
   komisiBaru: 40_000,
   potongBaru: 8,
   berubah: true,
+  gaji: null,
+  gajiLama: 1_000_000,
   gajiPokok: 1_000_000,
-  potonganHilang: 0,
   dasar: 1_040_000,
+  potong: [],
+  potonganHilang: 0,
+  potonganRetur: 0,
+  potonganUtang: 0,
+  dariKomisi: 0,
+  dariGaji: 0,
   sasaran: true,
   koreksi: [],
   jumlahKoreksi: 17_500,
+  kembaliBeban: [],
+  jumlahKembaliBeban: 0,
   dibayar: 1_057_500,
   dibawa: 0,
   koreksiDiBarisLain: null,
+  akhir: false,
+  keUtang: null,
   ditahan: null,
+  hariTahan: [],
+  beban: [],
+  jumlahBeban: 0,
   ...lain,
 });
 
 const baris = (lain: Partial<Baris> = {}): Baris => ({
   id: "cc-1",
   spgNama: "Ani",
-  bergaji: true,
   gajiPokok: 1_000_000,
+  gaji: null,
+  tahan: null,
   komisi: 45_000,
   total: 1_045_000,
   potonganHilang: 0,
@@ -77,18 +92,29 @@ describe("susunGajiCetak", () => {
     const h = susunGajiCetak(
       [
         baris({ id: "a", bayar: rencana() }),
-        baris({ id: "b", spgNama: "Sari", komisi: 22_500, total: 1_022_500, potonganHilang: 3_000, bayar: rencana({ ditahan: "TANPA_TARIF", dibayar: 1_019_500 }) }),
+        baris({ id: "b", spgNama: "Sari", komisi: 22_500, total: 1_022_500, potonganHilang: 3_000, bayar: rencana({ ditahan: "JADWAL_MENUNGGU_PERSETUJUAN", dibayar: 1_019_500 }) }),
       ],
       true,
     );
     expect(h.baris[1].angka).toBeNull();
-    expect(h.baris[1].alasan).toBe(ALASAN_TAHAN.TANPA_TARIF);
+    expect(h.baris[1].alasan).toBe(ALASAN_TAHAN.JADWAL_MENUNGGU_PERSETUJUAN);
     expect(h).toMatchObject({ adaBelumPasti: true, totalKomisi: 1_040_000, totalPotonganHilang: 0, totalKoreksi: 17_500, totalDibayarkan: 1_057_500 });
   });
 
   it("setiap alasan tahan punya keterangan sendiri", () => {
-    const h = susunGajiCetak([baris({ bayar: rencana({ ditahan: "LAPORAN_TIDAK_LENGKAP" }) })], true);
-    expect(h.baris[0].alasan).toBe(ALASAN_TAHAN.LAPORAN_TIDAK_LENGKAP);
+    const h = susunGajiCetak([baris({ bayar: rencana({ ditahan: "GAJI_POKOK_BELUM_DIATUR" }) })], true);
+    expect(h.baris[0].alasan).toBe(ALASAN_TAHAN.GAJI_POKOK_BELUM_DIATUR);
+    expect(new Set(Object.values(ALASAN_TAHAN)).size).toBe(Object.keys(ALASAN_TAHAN).length);
+  });
+
+  it("tahan di tingkat baris (dasar gaji belum pasti) juga tidak dicetak dengan angka", () => {
+    const h = susunGajiCetak([baris({ bayar: rencana(), tahan: { alasan: "CATATAN_HADIR_BELUM_DIMASUKKAN", hari: ["2026-10-03"] } })], true);
+    expect(h.baris[0]).toMatchObject({ angka: null, alasan: ALASAN_TAHAN.CATATAN_HADIR_BELUM_DIMASUKKAN });
+  });
+
+  it("potongan memuat barang hilang, beban retur pembeli, dan utang", () => {
+    const h = susunGajiCetak([baris({ bayar: rencana({ potonganHilang: 1_000, potonganRetur: 2_000, potonganUtang: 3_000 }) })], true);
+    expect(h.baris[0].angka?.potongan).toBe(6_000);
   });
 
   it("siklus yang kuncinya dibuka lagi: belum ada angka bayar, angka tersimpannya tidak dicetak", () => {

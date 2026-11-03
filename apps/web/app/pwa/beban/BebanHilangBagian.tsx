@@ -12,8 +12,21 @@ import { cn } from "@/lib/utils";
  * orang yang masuk — toko, tanggal, barang, nilai bagian SAYA, yang sudah
  * dipotong, dan sisanya. Tidak pernah memuat nilai satuan, total kejadian,
  * atau bagian orang lain (payload-nya pun tidak — lihat `bebanHilangSaya`).
+ *
+ * `penuh` (SPG): beban barang hilang SPG dipotong PENUH di pembayaran berikutnya — dari komisi
+ * dulu, lalu gaji pokok (pemilik P11a "langsung potong", P5) — bukan dicicil dengan batas persen;
+ * yang tidak tertutup dibawa ke pembayaran berikutnya, tidak diikhlaskan (P6). Sales tetap
+ * dengan batas persen per pembayaran.
  */
-export function BebanHilangBagian({ hilang, maksPotongPersen }: { hilang: BebanHilangSaya[]; maksPotongPersen: number }) {
+export function BebanHilangBagian({
+  hilang,
+  maksPotongPersen,
+  penuh = false,
+}: {
+  hilang: BebanHilangSaya[];
+  maksPotongPersen: number;
+  penuh?: boolean;
+}) {
   const t = useTranslations("bebanHilangSaya");
   const terbuka = hilang.filter((h) => !h.lunas);
   const sisa = terbuka.reduce((n, h) => n + h.sisa, 0);
@@ -27,7 +40,9 @@ export function BebanHilangBagian({ hilang, maksPotongPersen }: { hilang: BebanH
         <p className="text-sm text-muted-foreground">
           {terbuka.length > 0 ? t("ringkas", { n: terbuka.length, sisa: formatRupiah(sisa) }) : t("semuaLunas")}
         </p>
-        {terbuka.length > 0 ? <p className="text-xs text-muted-foreground">{t("cara", { persen: maksPotongPersen })}</p> : null}
+        {terbuka.length > 0 ? (
+          <p className="text-xs text-muted-foreground">{penuh ? t("caraPenuh") : t("cara", { persen: maksPotongPersen })}</p>
+        ) : null}
       </div>
 
       <div className="space-y-3">
@@ -78,7 +93,7 @@ export function BebanHilangBagian({ hilang, maksPotongPersen }: { hilang: BebanH
                   h.lunas ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-destructive/10 text-destructive",
                 )}
               >
-                {h.lunas ? t("lunas") : h.dipotong > 0 ? t("dicicil") : t("belumDipotong")}
+                {h.lunas ? t("lunas") : h.dipotong > 0 ? t(penuh ? "sebagianPenuh" : "dicicil") : t("belumDipotong")}
               </p>
             </CardContent>
           </Card>

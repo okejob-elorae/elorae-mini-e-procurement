@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { allocateSupplierPaid, grnLineKey, lineRooms, paidFraction, paidPiecesByPoItem, readGrnLines, splitCents } from "./bill-paid-rule";
+import {
+  bagiLunasKeBaris,
+  grnLineKey,
+  grnLineSource,
+  hutangPerKunciGrn,
+  invoicedReturnedQty,
+  lineRooms,
+  readGrnLines,
+  readGrnLinesDetail,
+  splitCents,
+  urutkanInvoice,
+} from "./bill-paid-rule";
 
 describe("splitCents", () => {
   it("splits by weight and adds back up to the total exactly", () => {
@@ -19,17 +30,6 @@ describe("lineRooms", () => {
   });
 });
 
-describe("paidFraction", () => {
-  it("is the settled share of the booked payable, capped at whole", () => {
-    expect(paidFraction(450_000_000, 450_000_000)).toBe(1);
-    expect(paidFraction(900_000_000, 450_000_000)).toBe(1);
-    expect(paidFraction(0, 450_000_000)).toBe(0);
-    expect(paidFraction(100, 0)).toBe(0);
-    // A GRN booked with PPN (4.500.000 + 495.000) paid its DPP only: not settled.
-    expect(paidFraction(450_000_000, 499_500_000)).toBeCloseTo(0.9009, 4);
-  });
-});
-
 describe("readGrnLines", () => {
   it("reads the array, or the array stored as a JSON string, and skips what is not a line", () => {
     const lines = [{ itemId: "kain", variantSku: " M ", qty: 10 }, { itemId: "kaos", qty: "4" }, { qty: 3 }, { itemId: "nol", qty: 0 }];
@@ -44,96 +44,115 @@ describe("readGrnLines", () => {
   });
 });
 
-describe("paidPiecesByPoItem", () => {
-  const A = grnLineKey("kain-a");
-  const B = grnLineKey("kain-b");
-  const items = [
-    { id: "po-a", key: A, receivedQty: 100 },
-    { id: "po-b", key: B, receivedQty: 50 },
-  ];
-
-  it("pays an item only from the GRNs that brought it in", () => {
-    // GRN-1 brought kain A, GRN-2 kain B; only GRN-2 is paid.
-    const grns = [
-      { fraction: 0, lines: [{ key: A, qty: 100 }] },
-      { fraction: 1, lines: [{ key: B, qty: 50 }] },
+describe("readGrnLinesDetail", () => {
+  it("reads the base price before PPN and the PPN mode of each line", () => {
+    const lines = [
+      { itemId: "a", variantSku: "", qty: 100, unitCost: 8000, totalCost: 800000, ppnIncluded: false },
+      { itemId: "b", qty: 10, unitCost: 1110, totalCost: 11100, hargaPo: 1000, ppnDikapitalisasi: 1100, itemType: "FABRIC" },
+      { itemId: "c", qty: 2, unitCost: 500 },
     ];
-    expect(paidPiecesByPoItem(grns, items)).toEqual(
-      new Map([
-        ["po-a", 0],
-        ["po-b", 50],
-      ])
-    );
-  });
-
-  it("takes each GRN's settled share of its own pieces", () => {
-    // 60 pcs of A on a fully paid GRN, 40 on a half paid one.
-    const grns = [
-      { fraction: 1, lines: [{ key: A, qty: 60 }] },
-      { fraction: 0.5, lines: [{ key: A, qty: 40 }, { key: B, qty: 50 }] },
-    ];
-    expect(paidPiecesByPoItem(grns, items)).toEqual(
-      new Map([
-        ["po-a", 80],
-        ["po-b", 25],
-      ])
-    );
-  });
-
-  it("fills items sharing a key in order, each up to what it received", () => {
-    const twin = [
-      { id: "first", key: A, receivedQty: 30 },
-      { id: "second", key: A, receivedQty: 70 },
-    ];
-    expect(paidPiecesByPoItem([{ fraction: 1, lines: [{ key: A, qty: 50 }] }], twin)).toEqual(
-      new Map([
-        ["first", 30],
-        ["second", 20],
-      ])
-    );
+    const r = readGrnLinesDetail(lines);
+    expect(r.map((l) => [l.key, l.hargaDasar, l.ppnMasukan, l.ppnModal, l.totalCost])).toEqual([
+      [grnLineKey("a", null), 8000, true, false, 800000],
+      [grnLineKey("b", null), 1000, false, true, 11100],
+      [grnLineKey("c", null), 500, false, false, 1000],
+    ]);
+    expect(r[1].itemType).toBe("FABRIC");
+    expect(grnLineSource("g1", r[0].key)).toBe(`GRN:g1|${grnLineKey("a", null)}`);
   });
 });
 
-describe("allocateSupplierPaid", () => {
-  const step = "WO_STEP:s1";
-  const po = "PO_ITEM:p1";
-
-  it("pays the oldest saved bill first and stops at each line's room", () => {
-    // 20 settled pieces at 12.000: the old bill's 13,33 pcs left after its vendor payment, then the new one.
-    const lines = [
-      { billId: "old", source: step, qty: 30, amountCents: 36_000_000, roomCents: 16_000_000 },
-      { billId: "new", source: step, qty: 20, amountCents: 24_000_000, roomCents: 24_000_000 },
+describe("urutkanInvoice (P29: tanggal di kertas invoice)", () => {
+  it("puts an invoice dated earlier first even when it was recorded later", () => {
+    const rows = [
+      { id: "b", billDate: new Date("2026-11-05T00:00:00+07:00"), createdAt: new Date("2026-11-05T09:00:00Z") },
+      { id: "a", billDate: new Date("2026-11-03T00:00:00+07:00"), createdAt: new Date("2026-11-06T09:00:00Z") },
     ];
-    expect(allocateSupplierPaid(lines, new Map([[step, 20]]))).toEqual(
-      new Map([
-        ["old", 16_000_000],
-        ["new", 8_000_000],
-      ])
-    );
+    expect(urutkanInvoice(rows).map((r) => r.id)).toEqual(["a", "b"]);
   });
 
-  it("pays a line at its own invoice price, whatever the receipt was booked at", () => {
-    // Half the receipt's pieces settled; the invoice line reads half paid, at its own price.
-    const lines = [{ billId: "a", source: po, qty: 100, amountCents: 450_000_000, roomCents: 450_000_000 }];
-    expect(allocateSupplierPaid(lines, new Map([[po, 50]]))).toEqual(new Map([["a", 225_000_000]]));
-    expect(allocateSupplierPaid(lines, new Map([[po, 100]]))).toEqual(new Map([["a", 450_000_000]]));
+  it("compares the WIB calendar date, then createdAt, then id", () => {
+    // 2026-11-03 23:30 WIB and 2026-11-03 01:00 WIB are the same paper date.
+    const late = { id: "z", billDate: "2026-11-03T16:30:00.000Z", createdAt: "2026-11-04T00:00:00.000Z" };
+    const early = { id: "y", billDate: "2026-11-02T18:00:00.000Z", createdAt: "2026-11-05T00:00:00.000Z" };
+    expect(urutkanInvoice([early, late]).map((r) => r.id)).toEqual(["z", "y"]);
+    const tieA = { id: "a", billDate: "2026-11-03T00:00:00.000Z", createdAt: "2026-11-04T00:00:00.000Z" };
+    const tieB = { id: "b", billDate: "2026-11-03T00:00:00.000Z", createdAt: "2026-11-04T00:00:00.000Z" };
+    expect(urutkanInvoice([tieB, tieA]).map((r) => r.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("hutangPerKunciGrn", () => {
+  it("splits the payable over the keys with the input VAT going to the PPN-masukan keys", () => {
+    const A = grnLineKey("a", null);
+    const B = grnLineKey("b", null);
+    // A 800.000 (PPN masukan 88.000), B 200.000 without PPN: payable 1.088.000.
+    const r = hutangPerKunciGrn({
+      baris: [
+        { key: A, nilaiSen: 80_000_000, ppnMasukan: true },
+        { key: B, nilaiSen: 20_000_000, ppnMasukan: false },
+      ],
+      ppnSen: 8_800_000,
+      hutangSen: 108_800_000,
+    });
+    expect(r.get(A)).toBe(88_800_000);
+    expect(r.get(B)).toBe(20_000_000);
+    expect([...r.values()].reduce((s, n) => s + n, 0)).toBe(108_800_000);
   });
 
-  it("keeps sources apart and leaves a bill no pool reached out", () => {
-    const lines = [
-      { billId: "a", source: po, qty: 10, amountCents: 10_000, roomCents: 10_000 },
-      { billId: "a", source: step, qty: 5, amountCents: 5_000, roomCents: 5_000 },
-      { billId: "b", source: step, qty: 5, amountCents: 5_000, roomCents: 5_000 },
-    ];
-    expect(allocateSupplierPaid(lines, new Map([[po, 4], [step, 0]]))).toEqual(new Map([["a", 4_000]]));
+  it("keeps the sign of a reversed payable", () => {
+    const A = grnLineKey("a", null);
+    expect(hutangPerKunciGrn({ baris: [{ key: A, nilaiSen: 100, ppnMasukan: false }], ppnSen: 0, hutangSen: -100 }).get(A)).toBe(-100);
+  });
+});
+
+describe("bagiLunasKeBaris (value-based, oldest invoice first)", () => {
+  // R8's example: GRN-1 holds A 100 × 8.000 and B 100 × 2.000. INV-11 bills A at 8.500 and the
+  // difference was accepted (+50.000); INV-12 bills B at 2.000. 1.000.000 was paid on GRN-1.
+  const inv11 = { billId: "inv11", lineId: "l11", tercatatSen: 85_000_000, ruangSen: 85_000_000 };
+  const inv12 = { billId: "inv12", lineId: "l12", tercatatSen: 20_000_000, ruangSen: 20_000_000 };
+
+  it("INV-11 older: INV-11 reads paid and INV-12 partly (150.000 of 200.000)", () => {
+    const r = bagiLunasKeBaris(100_000_000, [inv11, inv12]);
+    expect(r.get("l11")).toEqual({ diambilSen: 85_000_000, dibayarInvoiceSen: 85_000_000 });
+    expect(r.get("l12")).toEqual({ diambilSen: 15_000_000, dibayarInvoiceSen: 15_000_000 });
   });
 
-  it("never counts a rupiah a vendor payment already paid on the bill", () => {
-    // Bill fully paid through Vendor Billing has no room; the settled pieces go to the next bill.
-    const lines = [
-      { billId: "paid", source: step, qty: 8, amountCents: 80_000, roomCents: lineRooms(80_000, [80_000])[0] },
-      { billId: "open", source: step, qty: 3, amountCents: 30_000, roomCents: 30_000 },
-    ];
-    expect(allocateSupplierPaid(lines, new Map([[step, 10]]))).toEqual(new Map([["open", 30_000]]));
+  it("INV-12 older: INV-12 reads paid and INV-11 partly (800.000 of 850.000)", () => {
+    const r = bagiLunasKeBaris(100_000_000, [inv12, inv11]);
+    expect(r.get("l12")?.dibayarInvoiceSen).toBe(20_000_000);
+    expect(r.get("l11")?.dibayarInvoiceSen).toBe(80_000_000);
+  });
+
+  it("reads the paid share back in invoice terms and leaves the rest to un-invoiced pieces", () => {
+    // A line whose recorded payable (PPN included) is 888.000 for an invoice of 800.000 before PPN.
+    const r = bagiLunasKeBaris(44_400_000, [{ billId: "x", lineId: "lx", tercatatSen: 88_800_000, ruangSen: 80_000_000 }]);
+    expect(r.get("lx")).toEqual({ diambilSen: 44_400_000, dibayarInvoiceSen: 40_000_000 });
+    // More paid than any line can take: the line is full, the rest is left.
+    expect(bagiLunasKeBaris(200_000_000, [inv12]).get("l12")).toEqual({ diambilSen: 20_000_000, dibayarInvoiceSen: 20_000_000 });
+    // Nothing recorded takes nothing.
+    expect(bagiLunasKeBaris(10_000, [{ billId: "n", lineId: "ln", tercatatSen: 0, ruangSen: 5_000 }]).get("ln")).toEqual({
+      diambilSen: 0,
+      dibayarInvoiceSen: 0,
+    });
+  });
+});
+
+describe("invoicedReturnedQty", () => {
+  it("returns leave the un-invoiced pieces first: nothing invoiced is counted returned while they cover the return", () => {
+    expect(invoicedReturnedQty({ received: 100, returned: 20, billed: 0 })).toBe(0);
+    expect(invoicedReturnedQty({ received: 100, returned: 20, billed: 80 })).toBe(0);
+    expect(invoicedReturnedQty({ received: 100, returned: 20, billed: 50 })).toBe(0);
+  });
+
+  it("counts the invoiced pieces a later return took back", () => {
+    expect(invoicedReturnedQty({ received: 100, returned: 20, billed: 100 })).toBe(20);
+    expect(invoicedReturnedQty({ received: 100, returned: 30, billed: 80 })).toBe(10);
+  });
+
+  it("ignores rounding noise below half a cent of a piece", () => {
+    expect(invoicedReturnedQty({ received: 0.3, returned: 0.1, billed: 0.2000001 })).toBe(0);
+    expect(invoicedReturnedQty({ received: 10, returned: 0.25, billed: 9.75 })).toBe(0);
+    expect(invoicedReturnedQty({ received: 10, returned: 0.26, billed: 9.75 })).toBe(0.01);
   });
 });

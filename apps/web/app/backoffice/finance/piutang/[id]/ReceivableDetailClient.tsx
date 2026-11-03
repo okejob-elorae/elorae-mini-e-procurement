@@ -152,7 +152,9 @@ export function ReceivableDetailClient({
           ? "detail.primaryActionDisabledPaid"
           : status === "WRITTEN_OFF"
             ? "detail.primaryActionDisabledWrittenOff"
-            : "detail.primaryActionDisabledVoided",
+            : r.source.kind === "CONSIGNMENT_CYCLE"
+              ? "detail.primaryActionDisabledVoidedCycle"
+              : "detail.primaryActionDisabledVoided",
       )
     : t("recordPaymentAction");
   const isOverdue = isOverdueDisplay(status, r.daysOverdue);
@@ -163,14 +165,16 @@ export function ReceivableDetailClient({
    * (server-resolved) already stays false for a SELL_THROUGH row, so this is a defensive narrow, not
    * the real gate. Sell-through journals are retried from the report's own page. */
   const deliveryId = r.source.kind === "DELIVERY" ? r.source.deliveryId : null;
-  /* A MANUAL/IMPORT invoice has no source document of its own, so it opens on the receivables book
-   * filtered to its number. */
+  /* A konsi cycle bill opens on its consignment cycle. A MANUAL/IMPORT invoice has no source document
+   * of its own, so it opens on the receivables book filtered to its number. */
   const sourceHref =
     r.source.kind === "DELIVERY"
       ? `/backoffice/field-sales-orders/${r.source.orderId}`
       : r.source.kind === "SELL_THROUGH"
         ? `/backoffice/konsi-sell-through/${r.source.sellThroughId}`
-        : `/backoffice/piutang?cari=${encodeURIComponent(r.source.docNo)}`;
+        : r.source.kind === "CONSIGNMENT_CYCLE"
+          ? `/backoffice/konsinyasi/${encodeURIComponent(r.source.cycleId)}`
+          : `/backoffice/piutang?cari=${encodeURIComponent(r.source.docNo)}`;
 
   /**
    * `stillPending` is read from the action's own returned outcome, never from re-checking
@@ -217,6 +221,7 @@ export function ReceivableDetailClient({
           {r.source.kind === "SELL_THROUGH" && (
             <Badge variant="outline">{t("detail.sourceSellThrough")}</Badge>
           )}
+          {r.source.kind === "CONSIGNMENT_CYCLE" && <Badge variant="outline">{t("detail.sourceCycle")}</Badge>}
           <Badge className={STATUS_BADGE_CLASS[status]}>{t(STATUS_LABEL_KEY[status])}</Badge>
           {canManagePayments && (
             <Button className="h-10" disabled={isSettled} onClick={() => setSheetOpen(true)}>
@@ -235,6 +240,19 @@ export function ReceivableDetailClient({
             className="inline-flex items-center gap-1 font-medium hover:underline"
           >
             {r.source.docNo}
+            <ExternalLink className="h-3 w-3" />
+          </Link>
+        </p>
+      )}
+
+      {status === "VOIDED" && r.source.kind === "CONSIGNMENT_CYCLE" && (
+        <p className="text-sm text-muted-foreground">
+          {t("detail.primaryActionDisabledVoidedCycle")}{" "}
+          <Link
+            href={`/backoffice/konsinyasi/${encodeURIComponent(r.source.cycleId)}`}
+            className="inline-flex items-center gap-1 font-medium hover:underline"
+          >
+            {t("detail.sourceCycle")}
             <ExternalLink className="h-3 w-3" />
           </Link>
         </p>

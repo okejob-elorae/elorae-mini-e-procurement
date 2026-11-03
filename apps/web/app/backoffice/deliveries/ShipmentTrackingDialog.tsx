@@ -7,7 +7,6 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import {
@@ -23,9 +22,14 @@ import {
   updateShipmentTrackingAction,
   reassignShipmentCarrierAction,
   shipShipmentAction,
-  cancelShipmentAction,
 } from "@/app/actions/delivery-shipments";
-import { formatDateOnlyJakarta } from "@/lib/date-only";
+
+/** "1,5" or "1.5" → 1.5; "" → null (clears); anything else → NaN (the server refuses it). */
+function bacaBerat(v: string): number | null {
+  const t = v.trim().replace(",", ".");
+  if (t === "") return null;
+  return /^\d+(\.\d{1,2})?$/.test(t) ? Number(t) : Number.NaN;
+}
 
 type Props = {
   shipmentId: string;
@@ -51,10 +55,13 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
   /* The carrier on the row as loaded: the "Change carrier" button stays disabled until the selection differs. */
   const [savedCarriedById, setSavedCarriedById] = useState("");
   const [status, setStatus] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState("");
-  const [dueDate, setDueDate] = useState("");
   const [isKonsi, setIsKonsi] = useState(false);
-  /* Gates the whole form, and with it the putus date block: until the detail arrives, `isKonsi` is a default, not a fact. */
+  /* Weight (kg) and the handover-to-courier photo showing it: both mandatory before an expedition leaves (P35, P43). */
+  const [berat, setBerat] = useState("");
+  const [adaFotoSerah, setAdaFotoSerah] = useState(false);
+  const [fotoSerah, setFotoSerah] = useState<{ url: string; key: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  /* Gates the whole form: until the detail arrives, `isKonsi` is a default, not a fact. */
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
   const [loadAttempt, setLoadAttempt] = useState(0);
   const detailLoaded = loadState.status === "loaded";
@@ -83,9 +90,10 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
         setCarriedById(detail.carriedById ?? "");
         setSavedCarriedById(detail.carriedById ?? "");
         setStatus(detail.status ?? "");
-        setInvoiceDate(detail.invoiceDate ? formatDateOnlyJakarta(detail.invoiceDate) : "");
-        setDueDate(detail.dueDate ? formatDateOnlyJakarta(detail.dueDate) : "");
         setIsKonsi(detail.orderType === "KONSI");
+        setBerat(detail.weightKg !== null && detail.weightKg !== undefined ? String(detail.weightKg) : "");
+        setAdaFotoSerah(Boolean(detail.adaFotoSerah));
+        setFotoSerah(null);
         setLoadState({ status: "loaded" });
       })
       .catch(() => {
@@ -103,17 +111,46 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
    * read either. The action layer's `mapError` returns a named reason for everything it can
    * classify; these catches cover the rest.
    */
+  function trackingPayload() {
+    return {
+      shipmentId,
+      carrierName: isExpedition ? carrierName : undefined,
+      resiNumber: isExpedition ? resiNumber : undefined,
+      carriedById: carriedById || undefined,
+      weightKg: isExpedition ? bacaBerat(berat) : undefined,
+      ...(isExpedition && fotoSerah ? { handoverPhotoUrl: fotoSerah.url, handoverPhotoR2Key: fotoSerah.key } : {}),
+    };
+  }
+
+  async function uploadFotoSerah(file: File): Promise<void> {
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("shipmentId", shipmentId);
+      const res = await fetch("/backoffice/api/upload/delivery-handover", { method: "POST", body: form });
+      if (!res.ok) {
+        toast.error(t(res.status === 413 ? "err.FILE_TOO_LARGE" : "err.UNEXPECTED"));
+        return;
+      }
+      const body = (await res.json()) as { url?: string; key?: string };
+      if (!body.url || !body.key) {
+        toast.error(t("err.UNEXPECTED"));
+        return;
+      }
+      setFotoSerah({ url: body.url, key: body.key });
+      setAdaFotoSerah(true);
+    } catch {
+      toast.error(t("err.UNEXPECTED"));
+    } finally {
+      setUploading(false);
+    }
+  }
+
   function handleSave(): void {
     startTransition(async () => {
       try {
-        const result = await updateShipmentTrackingAction({
-          shipmentId,
-          carrierName: isExpedition ? carrierName : undefined,
-          resiNumber: isExpedition ? resiNumber : undefined,
-          carriedById: carriedById || undefined,
-          invoiceDate: invoiceDate || undefined,
-          dueDate: dueDate || undefined,
-        });
+        const result = await updateShipmentTrackingAction(trackingPayload());
         if (!result.ok) {
           toast.error(t(`err.${result.reason}` as any));
           return;
@@ -127,49 +164,30 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
   }
 
   function handleShip(): void {
-    /* A konsi order raises no invoice, so it carries no nota dates — only the carrier is required. */
-    if (method === "SALESMAN_CARRY") {
-      if (!carriedById) {
-        toast.error(t("err.MISSING_CARRIER"));
-        return;
-      }
-      if (!isKonsi && !invoiceDate) {
-        toast.error(t("invoiceDateRequired"));
-        return;
-      }
-      if (!isKonsi && !dueDate) {
-        toast.error(t("dueDateRequired"));
-        return;
-      }
-    }
-    /**
-     * Fail fast on a reversed pair rather than letting the action refuse it, because this is the
-     * last moment the pair is editable at all: `updateShipmentTracking` is PACKED-gated, so once
-     * this dialog ships the shipment the dates freeze and the salesman meets them in the field.
-     * Both values are `YYYY-MM-DD` strings straight out of `TanggalInput`, so a plain
-     * string comparison is exactly a chronological one — no `Date` round-trip needed. Self-gating
-     * on both being non-empty, which is why it needs no `method`/`isKonsi` check of its own: the
-     * date inputs only render for a non-konsi SALESMAN_CARRY shipment, and the server-side guard
-     * covers the rest.
-     */
-    if (invoiceDate && dueDate && dueDate < invoiceDate) {
-      toast.error(t("dueDateBeforeInvoice"));
+    /* The nota (putus) was issued when the shipment was created; nothing about dates is asked here. */
+    if (method === "SALESMAN_CARRY" && !carriedById) {
+      toast.error(t("err.MISSING_CARRIER"));
       return;
     }
     if (isExpedition && !resiNumber) {
       toast.error(t("shipMissingResi"));
       return;
     }
+    if (isExpedition && bacaBerat(berat) === null) {
+      toast.error(t("err.MISSING_WEIGHT"));
+      return;
+    }
+    if (isExpedition && Number.isNaN(bacaBerat(berat))) {
+      toast.error(t("err.INVALID_WEIGHT"));
+      return;
+    }
+    if (isExpedition && !adaFotoSerah) {
+      toast.error(t("err.MISSING_HANDOVER_PHOTO"));
+      return;
+    }
     startTransition(async () => {
       try {
-        const trackingResult = await updateShipmentTrackingAction({
-          shipmentId,
-          carrierName: isExpedition ? carrierName : undefined,
-          resiNumber: isExpedition ? resiNumber : undefined,
-          carriedById: carriedById || undefined,
-          invoiceDate: invoiceDate || undefined,
-          dueDate: dueDate || undefined,
-        });
+        const trackingResult = await updateShipmentTrackingAction(trackingPayload());
         if (!trackingResult.ok) {
           toast.error(t(`err.${trackingResult.reason}` as any));
           return;
@@ -209,22 +227,6 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
     });
   }
 
-  function handleCancel(): void {
-    if (!confirm(t("cancelConfirm"))) return;
-    startTransition(async () => {
-      try {
-        const result = await cancelShipmentAction({ shipmentId });
-        if (!result.ok) {
-          toast.error(t(`err.${result.reason}` as any));
-          return;
-        }
-        onOpenChange(false);
-        onDone();
-      } catch {
-        toast.error(t("err.UNEXPECTED"));
-      }
-    });
-  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -275,6 +277,27 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
                   <Label htmlFor="resiNumber">{t("resiNumberLabel")}</Label>
                   <Input id="resiNumber" value={resiNumber} onChange={(e) => setResiNumber(e.target.value)} />
                 </div>
+                <div>
+                  <Label htmlFor="weightKg">{t("weightLabel")}</Label>
+                  <Input id="weightKg" inputMode="decimal" value={berat} onChange={(e) => setBerat(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="handoverPhoto">{t("handoverPhotoLabel")}</Label>
+                  <Input
+                    id="handoverPhoto"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={uploading || isPending}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void uploadFotoSerah(file);
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {uploading ? t("uploading") : adaFotoSerah ? t("handoverPhotoSaved") : t("handoverPhotoHint")}
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground">{t("shipRequirementsHint")}</p>
               </>
             )}
             {method === "SALESMAN_CARRY" && (
@@ -294,32 +317,12 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
                     <p className="mt-2 text-xs text-muted-foreground">{t("changeCarrierHint")}</p>
                   )}
                 </div>
-                {!isKonsi && !isReassignOnly && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor="invoiceDate">{t("invoiceDateLabel")}</Label>
-                      <TanggalInput
-                        id="invoiceDate"
-                        value={invoiceDate}
-                        onChange={(e) => setInvoiceDate(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="dueDate2">{t("dueDateLabel2")}</Label>
-                      <TanggalInput id="dueDate2" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-                    </div>
-                  </div>
-                )}
               </>
             )}
           </div>
         )}
         <DialogFooter className="flex-wrap gap-2">
-          {!isReassignOnly && (
-            <Button variant="destructive" onClick={handleCancel} disabled={isPending || !detailLoaded}>
-              {t("cancel")}
-            </Button>
-          )}
+          {/* "Tidak jadi dikirim" lives on the register row, gated on the permission its document needs. */}
           {isReassignOnly ? (
             <Button
               className="min-h-10"
@@ -334,7 +337,7 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
               <Button variant="outline" onClick={handleSave} disabled={isPending || !detailLoaded}>
                 {t("save")}
               </Button>
-              <Button onClick={handleShip} disabled={isPending || !detailLoaded}>
+              <Button onClick={handleShip} disabled={isPending || !detailLoaded || uploading}>
                 {t("ship")}
               </Button>
             </>

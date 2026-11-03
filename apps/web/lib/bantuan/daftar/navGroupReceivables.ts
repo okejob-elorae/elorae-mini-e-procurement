@@ -20,7 +20,8 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "receivables.judulHalaman" },
     isi: [
       { kunci: "receivables.pageDescription" },
-      "Sisa piutang tidak pernah diketik: setiap kali ada klaim, retur, atau keputusan baru, sisanya dihitung ulang dari seluruh klaim yang menyentuh faktur itu. Toko konsinyasi tidak pernah muncul di sini.",
+      "Sisa piutang tidak pernah diketik: setiap kali ada klaim, retur, atau keputusan baru, sisanya dihitung ulang dari seluruh klaim yang menyentuh faktur itu.",
+      "Tagihan konsinyasi ikut di sini. Tagihan siklus lahir saat angka terjual siklus dikunci: bernomor konsi, atas nama sales pemegang toko saat dikunci, jatuh tempo = tanggal dikunci + tempo toko. Utang konsinyasi untuk bulan sebelum bulan siklus pertama di sistem masuk lewat impor atau faktur manual. Semua dilunasi lewat BKM yang dicek keuangan. Saringan Jenis memisahkan Konsinyasi dan Non-konsinyasi.",
       "Setiap nota tagihan pengiriman putus otomatis menjadi faktur di sini, dan sekaligus masuk antrean faktur pajak. Impor faktur dan Faktur manual hanya untuk memindahkan tagihan LAMA, bertanggal sebelum tanggal mulai buku besar: keduanya tidak membawa barang, jadi stok tidak berkurang dan HPP-nya tidak ada. Sejak tanggal mulai, tagihan barang dibuat lewat pesanan dan pengiriman; kedua pintu itu menolak tanggal pada atau sesudahnya.",
       "Faktur lunas disembunyikan dari daftar bawaan; buka lewat saringan Lunas, atau cari nomor fakturnya. Kotak cari mencocokkan nomor faktur, nama toko, dan nama salesman.",
     ],
@@ -136,7 +137,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "tugasTagih.judulHalaman" },
     isi: [
       { kunci: "tugasTagih.pageDescription" },
-      "Orang yang ditugaskan ikut melihat faktur itu di daftar tagihan HP-nya; pemegang toko tetap bisa menagihnya juga. Membuat tugas butuh izin mengelola piutang.",
+      "Orang yang ditugaskan ikut melihat faktur itu di daftar tagihan HP-nya; pemegang toko tetap bisa menagihnya juga. Tagihan konsinyasi hanya bisa ditugaskan ke sales pemegang toko, dan tugas yang dibuat sebelum toko berganti pemegang tidak lagi menampilkan tagihan konsinyasinya di HP pemegang lama — batalkan atau tugaskan ulang. Membuat tugas butuh izin mengelola piutang.",
     ],
   },
   {
@@ -157,7 +158,9 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "storeReturns.pageDescription" },
       "Setiap retur adalah dua dokumen: nota retur toko (NRT) yang nomornya milik toko, dan hitungan gudang (NRI) yang nomornya milik kita. Barang bisa tiba lewat ekspedisi mendahului notanya; hitungan gudang seperti itu dijodohkan ke notanya belakangan.",
-      "Mencatat nota retur butuh izin mengelola piutang; menghitung barang yang datang butuh izin menghitung opname. Menetapkan dan mengalihkan siapa menanggung selisihnya adalah keputusan manager, dengan izinnya sendiri (memutuskan penanggung) yang bawaannya hanya dipegang admin.",
+      "Mencatat nota retur butuh izin mengelola piutang; menghitung barang yang datang butuh izin menghitung opname. Menetapkan dan mengalihkan siapa menanggung selisihnya adalah keputusan manager dengan izinnya sendiri, Putuskan penanggung selisih retur (bawaannya hanya admin) — terpisah dari izin memutuskan penanggung barang hilang. Menjadikan atau melepas barang susulan butuh izin mengelola piutang.",
+      "Kalau hitungan gudang kurang dari nota toko, salesman yang SEKARANG memegang toko itu diberi tahu dan wajib menanyakan ke toko dan ke SPG toko itu, lalu melapor dari HP: barang ditemukan atau tidak ditemukan. Barang yang ditemukan dikirim balik dan gudang menghitungnya tanpa melihat nota (hitungan susulan) — selisihnya berkurang sendiri, tanpa nota retur baru. Penerimaan gudang tanpa nota yang ternyata berisi barang itu bisa dijadikan barang susulan. Daftar menyebut giliran siapa: salesman menanyakan, gudang menunggu barang dikirim balik, atau kantor memutuskan.",
+      "Kantor memutuskan siapa menanggung sisanya: sales (yang menanggung adalah pemegang toko pada tanggal nota retur, sebesar nilai di nota retur), toko (selisihnya tetap terbuka di nota asal dan ditagih sales; belum bisa untuk toko konsinyasi), gudang, atau perusahaan. Selama belum diputuskan, bagian yang dipotong toko tetap ditahan di fakturnya.",
       "Nota retur yang dilaporkan SPG di toko yang belum punya salesman pemegang membunyikan lonceng pengelola piutang, karena tidak ada orang lapangan yang menindaklanjutinya.",
       "Hitungan gudang buta: bagi orang yang boleh menghitung, klaim toko pada nota yang belum dihitung tidak ditampilkan — tidak di daftar, rincian, maupun dialog Jodohkan, dan nilai tertahan di kepala halaman tidak ikut menjumlahkannya — sampai hitungannya tersimpan. Pelapor nota tetap melihat klaimnya, tetapi tidak boleh menghitung notanya sendiri; tombol Cek fisiknya mati dengan alasan.",
       "Daftar bawaan berisi retur yang masih perlu dikerjakan. Kartu angka di atas sekaligus saringan per langkah; Semua menampilkan yang sudah selesai dan batal.",
@@ -204,7 +207,8 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "bebanSelisih.pageDescription" },
       { kunci: "bebanSelisih.explain" },
-      "Menetapkan dan mengalihkan penanggung butuh izin memutuskan penanggung — keputusan manager, bawaannya hanya admin. Pengelola piutang tetap melihat daftar ini dan menandai penggantiannya.",
+      "Menetapkan dan mengalihkan penanggung butuh izin Putuskan penanggung selisih retur — keputusan manager, bawaannya hanya admin. Pengelola piutang tetap melihat daftar ini dan menandai penggantian beban gudang atau perusahaan.",
+      "Beban ke sales dipotong dari komisinya di Laporan → Komisi salesman (Tandai dipotong). Komisi salesman dibayar di luar sistem, jadi potongannya dicatat di sana tiap bulan, boleh sebagian. Kalau barangnya ketemu sesudah dipotong, kelebihannya dikembalikan lewat komisi berikutnya (Tandai dikembalikan). Beban ke toko tidak bisa ditandai lunas — dibayar lewat nota asalnya.",
     ],
   },
   {

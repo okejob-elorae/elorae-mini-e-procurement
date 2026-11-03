@@ -58,6 +58,8 @@ export type DetailPesananView = {
   orderDiscountAmount: number | null;
   appliedOrderPromoName: string | null;
   total: number | null;
+  /** Konsinyasi menunggu persetujuan: perkiraan dari harga retail toko (P18). */
+  perkiraan?: { nilai: number; lengkap: boolean } | null;
   jumlahPcs: number;
   kreditDitahan: boolean;
   /** Pesanan jarak jauh (WA/TELEPON/LAINNYA); null = diambil saat kunjungan. */
@@ -225,7 +227,18 @@ export function DetailPesananClient({
       {p.total === null && p.status === "REJECTED" ? null : (
       <section className="beranda-kartu">
         <h2 className="beranda-judul">{td("totalsTitle")}</h2>
-        {p.total === null ? (
+        {p.total === null && p.perkiraan ? (
+          <dl className="mt-2 space-y-1 text-sm">
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="font-semibold">{td("totalKonsi")}</dt>
+              <dd className="text-lg font-bold tabular-nums">{t("perkiraan", { value: formatIDR(p.perkiraan.nilai) })}</dd>
+            </div>
+            <p className="text-xs leading-snug text-muted-foreground">{td("perkiraanCatatan")}</p>
+            {!p.perkiraan.lengkap ? (
+              <p className="text-xs leading-snug text-muted-foreground">{td("perkiraanSebagian")}</p>
+            ) : null}
+          </dl>
+        ) : p.total === null ? (
           <p className="mt-2 text-sm text-muted-foreground">{td("konsiHidden")}</p>
         ) : (
           <dl className="mt-2 space-y-1 text-sm">
@@ -238,7 +251,7 @@ export function DetailPesananClient({
               />
             ) : null}
             <div className="flex items-baseline justify-between gap-3 border-t pt-2">
-              <dt className="font-semibold">{td("total")}</dt>
+              <dt className="font-semibold">{p.orderType === "KONSI" ? td("totalKonsi") : td("total")}</dt>
               <dd className={cn("text-lg font-bold tabular-nums", p.status === "REJECTED" && "text-muted-foreground line-through")}>
                 {formatIDR(p.total)}
               </dd>
@@ -434,6 +447,10 @@ function BarisBarang({ b, terbagi, lama }: { b: BarisDetailPesananSaya; terbagi:
 
       {b.unitPrice !== null ? (
         <p className="text-xs tabular-nums text-muted-foreground">{td("perPcs", { price: formatIDR(b.unitPrice) })}</p>
+      ) : b.perkiraanHarga != null ? (
+        <p className="text-xs tabular-nums text-muted-foreground">
+          {td("perPcs", { price: formatIDR(b.perkiraanHarga) })} · {td("perkiraanLabel")}
+        </p>
       ) : null}
 
       {bagian.length > 0 ? (

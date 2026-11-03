@@ -104,6 +104,10 @@ async function retur(no: string, spgSaleId: string, iso: string, spgSaleLineId: 
       reason: "uji",
       idempotencyKey: `${tag}-${no}`,
       createdAt: pada(iso),
+      // Disetujui kantor: hanya retur DISETUJUI yang berlaku (`returPembeliBerlaku`); bawaannya MENUNGGU.
+      status: "DISETUJUI",
+      decidedAt: pada(iso),
+      decidedById: orangId,
       lines: { create: [{ spgSaleLineId, itemId, qty: 1, condition: "LAYAK" }] },
     },
   });

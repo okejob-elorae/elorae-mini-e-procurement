@@ -35,6 +35,12 @@ d("ajukanKeJubelio (test bed only)", () => {
     await fx.bersihkan();
   });
 
+  it("Toko offline saja tidak pernah diajukan (P3a)", async () => {
+    const id = await fx.barang({ salesChannel: "OFFLINE" });
+    expect(await ajukanKeJubelio([id], fx.keadaan.userId)).toEqual([{ itemId: id, hasil: "SALURAN_OFFLINE" }]);
+    expect((await fx.baca(id)).diajukanPada).toBeNull();
+  });
+
   it("menandai barang jadi ERP yang belum di Jubelio; pengajuan kedua → SUDAH_DIAJUKAN", async () => {
     const id = await fx.barang({});
     expect(await ajukanKeJubelio([id], fx.keadaan.userId)).toEqual([{ itemId: id, hasil: "DIAJUKAN" }]);

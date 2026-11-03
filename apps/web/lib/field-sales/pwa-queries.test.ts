@@ -12,6 +12,7 @@ import {
   nilaiTampil,
   pesananSaya,
   pesananSayaById,
+  salinanDariDetail,
   susunLinimasa,
   syaratTab,
   tahapPesanan,
@@ -131,12 +132,21 @@ describe("pembacaan alamat", () => {
 });
 
 describe("nilai & harga", () => {
-  it("nilai konsi tidak pernah tampil di HP; putus selalu tampil", () => {
+  it("P18: nilai konsi yang sudah disetujui tampil di HP salesman; sebelum itu dan yang ditolak tidak", () => {
     expect(nilaiTampil({ orderType: "KONSI", status: "PENDING_APPROVAL" }, 0)).toBeNull();
     expect(nilaiTampil({ orderType: "KONSI", status: "REJECTED" }, 0)).toBeNull();
-    // Juga sesudah disetujui: nilai konsinyasi tidak pernah tampil di aplikasi HP.
-    expect(nilaiTampil({ orderType: "KONSI", status: "APPROVED" }, 5000)).toBeNull();
+    expect(nilaiTampil({ orderType: "KONSI", status: "APPROVED" }, 5000)).toBe(5000);
     expect(nilaiTampil({ orderType: "PUTUS", status: "PENDING_APPROVAL" }, 7000)).toBe(7000);
+  });
+
+  it("surat jalan yang dikemas / di jalan dibaca lebih dulu untuk pesanan disetujui", () => {
+    const o = { status: "APPROVED", orderType: "PUTUS", deliveryStatus: "PENDING" } as const;
+    expect(keadaanPesanan({ ...o, pengirimanTerbuka: "DIKEMAS" })).toBe("DIKEMAS");
+    expect(keadaanPesanan({ ...o, pengirimanTerbuka: "DALAM_PERJALANAN" })).toBe("DALAM_PERJALANAN");
+    expect(keadaanPesanan({ ...o, pengirimanTerbuka: null })).toBe("BELUM_DIKIRIM");
+    expect(tahapPesanan({ ...o, pengirimanTerbuka: "DALAM_PERJALANAN" } as never)).toBe("disetujui");
+    // Pesanan yang belum disetujui tidak pernah dibaca "dikemas".
+    expect(keadaanPesanan({ ...o, status: "PENDING_APPROVAL", pengirimanTerbuka: "DIKEMAS" })).toBe("MENUNGGU");
   });
 
   it("hasil banding harga", () => {
@@ -328,7 +338,7 @@ d("pesananSaya & pesananSayaById (test bed only)", () => {
       await prisma.store.create({ data: { code: `TEST-PSY-P-${token}`, name: "Toko Putus Uji", address: "x", termsType: "PUTUS" } })
     ).id;
     tokoKonsiId = (
-      await prisma.store.create({ data: { code: `TEST-PSY-K-${token}`, name: "Toko Konsi Uji", address: "x", termsType: "KONSI" } })
+      await prisma.store.create({ data: { code: `TEST-PSY-K-${token}`, name: "Toko Konsi Uji", address: "x", termsType: "KONSI", markupPercent: 20 } })
     ).id;
 
     await pesanan("menunggu", {
@@ -413,14 +423,15 @@ d("pesananSaya & pesananSayaById (test bed only)", () => {
     expect(ditolak.baris[0]).toMatchObject({ id: id.ditolak, rejectReason: "Harga tidak disetujui", keadaan: "DITOLAK" });
   });
 
-  it("baris membawa jumlah barang, tanda banding, dan nilai konsi yang disembunyikan", async () => {
+  it("baris membawa jumlah barang, tanda banding, nilai konsi disetujui, dan perkiraan konsi menunggu (P18)", async () => {
     const { baris } = await pesananSaya(salesAId);
     const byId = new Map(baris.map((b) => [b.id, b]));
     expect(byId.get(id.menunggu)).toMatchObject({ jumlahBaris: 2, jumlahPcs: 3, adaBanding: true, total: 30000, storeName: "Toko Putus Uji" });
     expect(byId.get(id.siapKirim)).toMatchObject({ adaBanding: false, keadaan: "BELUM_DIKIRIM" });
     expect(byId.get(id.konsiMenunggu)?.total).toBeNull();
-    expect(byId.get(id.konsiDisetujui)).toMatchObject({ total: null, keadaan: "KONSI_DISETUJUI" });
+    expect(byId.get(id.konsiDisetujui)).toMatchObject({ total: 55000, keadaan: "KONSI_DISETUJUI", perkiraan: null });
     expect(typeof byId.get(id.menunggu)?.total).toBe("number");
+    expect(byId.get(id.menunggu)?.perkiraan).toBeNull();
   });
 
   it("batas memotong daftar dan menandai ada lagi", async () => {
@@ -456,12 +467,29 @@ d("pesananSaya & pesananSayaById (test bed only)", () => {
     expect(dtl!.linimasa.map((l) => l.jenis)).toEqual(["DIBUAT", "DISETUJUI", "DIKIRIM"]);
   });
 
-  it("detail konsi belum disetujui menyembunyikan semua harga dan tidak membawa catatan kredit", async () => {
+  it("detail konsi belum disetujui: harga tersimpan kosong, perkiraan harga retail, tanpa catatan kredit", async () => {
     const dtl = await pesananSayaById(id.konsiMenunggu, salesAId);
     expect(dtl!.total).toBeNull();
     expect(dtl!.subtotal).toBeNull();
     expect(dtl!.baris[0].unitPrice).toBeNull();
     expect(dtl!.baris[0].lineTotal).toBeNull();
     expect(dtl!.kreditCatatan).toBeNull();
+    // Markup toko 20%: harga retail 10.000 → 12.000, × 5 pcs.
+    expect(dtl!.baris[0].perkiraanHarga).toBe(12000);
+    expect(dtl!.perkiraan).toEqual({ nilai: 60000, lengkap: true });
+  });
+
+  it("detail konsi disetujui menampilkan nilai yang dibekukan kantor (P18)", async () => {
+    const dtl = await pesananSayaById(id.konsiDisetujui, salesAId);
+    expect(dtl!.total).toBe(55000);
+    expect(dtl!.baris[0].unitPrice).toBe(11000);
+    expect(dtl!.perkiraan).toBeNull();
+  });
+
+  it("salinan WhatsApp pesanan konsi yang disetujui tetap tanpa harga (P58)", async () => {
+    const dtl = await pesananSayaById(id.konsiDisetujui, salesAId);
+    const wa = await salinanDariDetail(dtl!, salesAId);
+    expect(wa).not.toBeNull();
+    expect(wa!.teks).not.toMatch(/Rp/);
   });
 });

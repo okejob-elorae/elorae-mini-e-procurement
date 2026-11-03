@@ -262,6 +262,7 @@ d("stok toko dari antrean HP (test bed only)", () => {
     return { id: s.id, baris: s.lines[0].id };
   }
 
+  /* Dengan foto barang di folder laporannya (P14) dan jawaban uang: belum dikembalikan (P13a). */
   const kembalikan = (n: { id: string; baris: string }, kunci: string, waktuTangkap?: Date) =>
     catatReturPembeli({
       spgSaleId: n.id,
@@ -270,6 +271,8 @@ d("stok toko dari antrean HP (test bed only)", () => {
       baris: [{ saleLineId: n.baris, qty: 1, condition: "LAYAK" }],
       alasan: "ukuran",
       idempotencyKey: kunci,
+      fotoBarangKey: `spg-sale-returns/${tokoId}/${kunci}/barang.jpg`,
+      uangSudahDikembalikan: false,
       waktuTangkap,
     });
 
@@ -281,7 +284,7 @@ d("stok toko dari antrean HP (test bed only)", () => {
   const bukuRetur = (id: string) =>
     prisma.storeStockMovement.findMany({ where: { storeId: tokoId, kind: "RETUR_PEMBELI", refId: id }, select: { qty: true, createdAt: true } });
 
-  it("an offline shopper return waits for approval, then lands on the book dated when it happened — an offline opname counted after it does not count it twice", async () => {
+  it("an offline shopper return waits for approval, then lands on the book dated when it happened — an offline opname counted while the piece was set aside sees no false shortage", async () => {
     await bukaBuku(3, new Date(Date.now() - 2 * 86_400_000));
     const n = await jualKemarin(2);
     const dikembalikan = new Date(Date.now() - 3 * 3_600_000);
@@ -298,11 +301,12 @@ d("stok toko dari antrean HP (test bed only)", () => {
     // Bertanggal saat dilaporkan, bukan saat disetujui.
     expect((await bukuRetur(r.returnId)).map((m) => [m.qty, m.createdAt.getTime()])).toEqual([[1, dikembalikan.getTime()]]);
 
-    // Opname tanpa sinyal SESUDAH retur itu: rak 4 (termasuk barang yang dikembalikan).
+    // Opname tanpa sinyal SESUDAH laporan itu tetapi SEBELUM disetujui: barangnya disisihkan,
+    // tidak di rak (P12) — rak 3. Acuannya tidak mengharapkan potong itu (`kurangiReturBelumDiRak`).
     const op = await catatOpname({
       storeId: tokoId,
       userId: spgId,
-      baris: [{ itemId: kemeja, variantSku: null, qtyCounted: 4 }],
+      baris: [{ itemId: kemeja, variantSku: null, qtyCounted: 3 }],
       idempotencyKey: `${tag}-op-sesudah-retur`,
       waktuTangkap: new Date(Date.now() - 2 * 3_600_000),
     });
@@ -310,33 +314,37 @@ d("stok toko dari antrean HP (test bed only)", () => {
     expect(await saldo()).toBe(4);
   });
 
-  it("a shopper return approved after a newer opname adds nothing to the book — the opname already saw it on the shelf", async () => {
+  it("a shopper return approved after a newer opname still lands on the book — the opname did not count the piece set aside (P12)", async () => {
     await bukaBuku(3, new Date(Date.now() - 2 * 86_400_000));
     const n = await jualKemarin(2);
     const r = await kembalikan(n, `${tag}-rp-2`, new Date(Date.now() - 3 * 3_600_000));
     if (!r.ok) throw new Error(r.alasan);
-    const op = await catatOpname({ storeId: tokoId, userId: spgId, baris: [{ itemId: kemeja, variantSku: null, qtyCounted: 4 }] });
+    // Rak 3: potong yang dikembalikan disisihkan selama laporannya menunggu.
+    const op = await catatOpname({ storeId: tokoId, userId: spgId, baris: [{ itemId: kemeja, variantSku: null, qtyCounted: 3 }] });
     if (!op.ok) throw new Error(op.alasan);
-    expect(await saldo()).toBe(4);
+    expect(op).toMatchObject({ ok: true, selisih: 0 });
+    expect(await saldo()).toBe(3);
     expect((await setujui(r.returnId)).ok).toBe(true);
-    // Tidak ada +1 kedua: opname sudah menghitung barangnya di rak.
+    // Persetujuan SELALU menulis buku: potongnya kembali ke rak.
     expect(await saldo()).toBe(4);
-    // Notanya tetap tahu barangnya kembali (komisi, laporan, target memakai angka bersih).
+    // Notanya tahu barangnya kembali (komisi, laporan, target memakai angka bersih).
     const baris = await prisma.spgSaleLine.findUniqueOrThrow({ where: { id: n.baris }, select: { returnedQty: true } });
     expect(baris.returnedQty).toBe(1);
   });
 
-  it("an opname counted after the report but synced after the approval ends exactly at the counted quantity", async () => {
+  it("an opname counted while the piece was set aside, synced after the approval, records no false shortage", async () => {
     await bukaBuku(3, new Date(Date.now() - 2 * 86_400_000));
     const n = await jualKemarin(2);
     const r = await kembalikan(n, `${tag}-rp-4`, new Date(Date.now() - 3 * 3_600_000));
     if (!r.ok) throw new Error(r.alasan);
     expect((await setujui(r.returnId)).ok).toBe(true);
     expect(await saldo()).toBe(4);
+    // Dihitung 2 jam lalu (laporan sudah ada, belum disetujui): rak 3. Tanpa `kurangiReturBelumDiRak`
+    // acuannya 4 dan opname ini mencatat kurang 1 — barang hilang palsu.
     const op = await catatOpname({
       storeId: tokoId,
       userId: spgId,
-      baris: [{ itemId: kemeja, variantSku: null, qtyCounted: 4 }],
+      baris: [{ itemId: kemeja, variantSku: null, qtyCounted: 3 }],
       idempotencyKey: `${tag}-op-sesudah-setuju`,
       waktuTangkap: new Date(Date.now() - 2 * 3_600_000),
     });

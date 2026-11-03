@@ -159,6 +159,30 @@ describe("resolveReceivableSource", () => {
     const row: ReceivableSourceRow = { invoiceNo: "DLV/0001", source: "DELIVERY", delivery: null, sellThrough: null };
     expect(() => resolveReceivableSource(row)).toThrow(ReceivableSourceMissingError);
   });
+
+  it("resolves a konsi cycle bill to its cycle, named by the receivable's own invoice number", () => {
+    const row: ReceivableSourceRow = {
+      invoiceNo: "KONSI/2026/10/0007",
+      source: "DELIVERY",
+      salesmanId: null,
+      salesman: null,
+      delivery: null,
+      sellThrough: null,
+      consignmentCycle: { id: "cycle-1", noKonsi: "KONSI/2026/10/0007", periodYear: 2026, periodMonth: 10 },
+    };
+    expect(resolveReceivableSource(row)).toEqual({
+      kind: "CONSIGNMENT_CYCLE",
+      cycleId: "cycle-1",
+      docNo: "KONSI/2026/10/0007",
+      periodYear: 2026,
+      periodMonth: 10,
+      salesmanId: null,
+      salesmanName: null,
+    });
+    // A voided bill keeps its "(batal)" invoice number; the docNo follows the receivable, not the cycle.
+    expect(resolveReceivableSource({ ...row, invoiceNo: "KONSI/2026/10/0007 (batal)" }).docNo).toBe("KONSI/2026/10/0007 (batal)");
+    expect(resolveReceivableSource({ ...row, invoiceNo: undefined }).docNo).toBe("KONSI/2026/10/0007");
+  });
 });
 
 describe("tryResolveReceivableSource", () => {

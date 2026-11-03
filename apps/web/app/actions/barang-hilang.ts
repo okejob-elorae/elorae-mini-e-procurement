@@ -7,14 +7,17 @@ import { cariTeks } from "@/lib/db/cari-teks";
 import { auth } from "@/lib/auth";
 import { parseItemVariants } from "@/lib/items/variants";
 import { labelVarian } from "@/lib/konsinyasi/stok-di-toko";
-import { bolehMemutuskanBeban, bolehMengelola } from "@/lib/receivables/izin";
+import { bolehMemutuskanBeban, bolehMemverifikasi, bolehMengelola } from "@/lib/receivables/izin";
 import {
   batalkanBarangHilang,
   buatBarangHilang,
+  periksaKlaimEkspedisi,
   putuskanBarangHilang,
+  putuskanKlaimEkspedisi,
   tandaiSalesDipotong,
   tandaiTokoDitagih,
   ubahKeputusanHilang,
+  ubahNilaiKlaimEkspedisi,
 } from "@/lib/spg/hilang-writer";
 
 /**
@@ -25,6 +28,13 @@ import {
  * 2026-11-01) — pemisahan tugas itulah yang membuat potongan gaji/komisi bisa
  * dipertanggungjawabkan. Melihat cukup `spg_sales:view` (halaman memagari
  * dirinya). Aksi mengembalikan `{ ok:false, code }`, tidak pernah melempar.
+ *
+ * Klaim ke ekspedisi (barang hilang di jalan, P36): mencatat jawaban ekspedisi
+ * (dibayar lewat transfer/tunai/potong ongkir, atau ditolak) = `receivables:manage`;
+ * uangnya baru diakui setelah dicek ke mutasi rekening oleh pemegang
+ * `payments:verify` (`bolehMemverifikasi`, keputusan 11 — 29 Okt); mengubah nilai
+ * klaim yang masih diajukan = keputusan penanggung, `receivables:decide_bearer`.
+ * Tombol di halaman memakai izin yang SAMA.
  */
 
 type Gagal = { ok: false; code: string };
@@ -162,6 +172,98 @@ export async function batalkanBarangHilangAction(input: { lossId: string; alasan
   // Keputusan yang dibatalkan: jurnalnya dibalik (generasi penyesuaian), tidak dihapus.
   await kaitBarangHilang(r.id, userId);
   segarkan(r.id);
+  return { ok: true };
+}
+
+/**
+ * Jawaban ekspedisi atas klaimnya: `DIBAYAR` = pembayarannya DICATAT (cara wajib;
+ * nomor tagihan ongkir wajib untuk potong ongkir) dan menunggu cek Keuangan;
+ * `DITOLAK` = ekspedisi menolak (alasan wajib) — kantor lalu memilih penanggung
+ * lain lewat "Ubah keputusan". Belum ada uang yang diakui, jadi belum ada jurnal.
+ */
+export async function putuskanKlaimEkspedisiAction(input: {
+  shareId: string;
+  hasil: "DIBAYAR" | "DITOLAK";
+  cara?: string | null;
+  referensi?: string | null;
+  catatan?: string | null;
+}): Promise<{ ok: true } | Gagal> {
+  const s = await sesi();
+  if ("ok" in s) return s;
+  if (typeof input?.shareId !== "string" || !input.shareId) return { ok: false, code: "TIDAK_DITEMUKAN" };
+  if (input.hasil !== "DIBAYAR" && input.hasil !== "DITOLAK") return { ok: false, code: "INVALID" };
+  try {
+    const r = await putuskanKlaimEkspedisi({
+      shareId: input.shareId,
+      hasil: input.hasil,
+      cara: input.cara,
+      referensi: input.referensi,
+      catatan: input.catatan,
+      olehUserId: s.userId,
+    });
+    if (!r.ok) return { ok: false, code: r.kode };
+    segarkan(r.lossId);
+    return { ok: true };
+  } catch (err) {
+    console.error("putuskanKlaimEkspedisi gagal:", err);
+    return { ok: false, code: "GAGAL" };
+  }
+}
+
+/**
+ * Cek pembayaran klaim ekspedisi ke mutasi rekening (`payments:verify`): `SAH` →
+ * bagian ekspedisi lunas dan pemulihan bebannya dijurnal sesudah commit;
+ * `KEMBALIKAN` (catatan wajib) → kembali diajukan supaya pencatatnya merevisi.
+ * Pencatat pembayarannya tidak pernah memeriksanya sendiri (`PEMERIKSA_SAMA`, di
+ * penulis).
+ */
+export async function periksaKlaimEkspedisiAction(input: {
+  shareId: string;
+  hasil: "SAH" | "KEMBALIKAN";
+  catatan?: string | null;
+}): Promise<{ ok: true; dibayar: boolean } | Gagal> {
+  const s = await sesi(bolehMemverifikasi);
+  if ("ok" in s) return s;
+  if (typeof input?.shareId !== "string" || !input.shareId) return { ok: false, code: "TIDAK_DITEMUKAN" };
+  if (input.hasil !== "SAH" && input.hasil !== "KEMBALIKAN") return { ok: false, code: "INVALID" };
+  let hasil: Awaited<ReturnType<typeof periksaKlaimEkspedisi>>;
+  try {
+    hasil = await periksaKlaimEkspedisi({ shareId: input.shareId, hasil: input.hasil, catatan: input.catatan, olehUserId: s.userId });
+  } catch (err) {
+    console.error("periksaKlaimEkspedisi gagal:", err);
+    return { ok: false, code: "GAGAL" };
+  }
+  if (!hasil.ok) return { ok: false, code: hasil.kode };
+  // Uang klaim sudah terlihat di rekening: pemulihan beban (sesudah commit, tidak pernah melempar).
+  if (hasil.dibayar) await kaitBarangHilang(hasil.lossId, s.userId);
+  segarkan(hasil.lossId);
+  return { ok: true, dibayar: hasil.dibayar };
+}
+
+/**
+ * Nilai klaim ekspedisi diubah sesuai kesepakatan dengan ekspedisi selama masih
+ * diajukan (alasan wajib). Bawaannya nilai jual di nota / surat jalan; mengubahnya
+ * mengubah keputusan penanggung, jadi izinnya `receivables:decide_bearer`. Jurnal
+ * catatannya diselaraskan sesudah commit, sama seperti "Ubah keputusan".
+ */
+export async function ubahNilaiKlaimEkspedisiAction(input: {
+  shareId: string;
+  nilai: number;
+  catatan?: string | null;
+}): Promise<{ ok: true } | Gagal> {
+  const s = await sesi(bolehMemutuskanBeban);
+  if ("ok" in s) return s;
+  if (typeof input?.shareId !== "string" || !input.shareId) return { ok: false, code: "TIDAK_DITEMUKAN" };
+  let hasil: Awaited<ReturnType<typeof ubahNilaiKlaimEkspedisi>>;
+  try {
+    hasil = await ubahNilaiKlaimEkspedisi({ shareId: input.shareId, nilai: input.nilai, catatan: input.catatan, olehUserId: s.userId });
+  } catch (err) {
+    console.error("ubahNilaiKlaimEkspedisi gagal:", err);
+    return { ok: false, code: "GAGAL" };
+  }
+  if (!hasil.ok) return { ok: false, code: hasil.kode };
+  await kaitBarangHilang(hasil.lossId, s.userId);
+  segarkan(hasil.lossId);
   return { ok: true };
 }
 

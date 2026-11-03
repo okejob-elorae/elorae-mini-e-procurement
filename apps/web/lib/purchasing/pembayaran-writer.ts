@@ -34,6 +34,8 @@ import {
 import { bacaHutangPemasok, keadaanBayarPo, petaSisaDokumen } from "./pembayaran-hutang-queries";
 import { AWALAN_KUNCI_POTONG_UANG_MUKA, kunciPotongUangMuka, rencanaPotongPenerapan } from "./pembayaran-uang-muka";
 import { adaJurnalTandaiLunasBerdiri } from "./supplier-payment-journal";
+import { SARING_PEMBAYARAN_DOKUMEN } from "./pembayaran-dokumen-po";
+import { penerimaanKoreksiMenunggu } from "@/lib/vendor-billing/koreksi-utang-queries";
 
 /**
  * Penulis pembayaran pemasok (dokumen) — KHUSUS SERVER. Pembayaran adalah
@@ -45,7 +47,10 @@ import { adaJurnalTandaiLunasBerdiri } from "./supplier-payment-journal";
  *
  * Penjaga: alokasi tidak melebihi sisa dokumen (dibaca ulang DI DALAM
  * transaksi serializable), dokumen milik pemasok itu, PO yang ditandai lunas
- * dengan tombol lama tidak dibayar lagi lewat dokumen. Sesudah menulis, PO yang
+ * dengan tombol lama tidak dibayar lagi lewat dokumen, dan penerimaan yang
+ * selisih harga invoicenya masih MENUNGGU keputusan tidak dibayar sama sekali
+ * (`KOREKSI_MENUNGGU`, keputusan pemilik 2026-11-02, P50: seluruh penerimaan
+ * itu menunggu; penerimaan lain pemasok yang sama tetap bisa dibayar). Sesudah menulis, PO yang
  * hutangnya habis dan tidak menunggu barang lagi (CLOSED/OVER) ditandai lunas
  * otomatis (`paidAt` = tanggal bayar, riwayat PO "Lunas lewat pembayaran …");
  * pembatalan membukanya lagi — kecuali tanda lunasnya milik tombol lama.
@@ -154,7 +159,7 @@ function labelDokumen(jenis: string, id: string, nomor: Map<string, string>): st
  * yang tidak menunggu barang lagi (CLOSED/OVER) yang ditandai lunas; tanda
  * lunas milik tombol lama tidak pernah dibuka di sini.
  */
-async function selaraskanLunasPo(tx: Prisma.TransactionClient, poIds: string[], olehUserId: string, nomor: string, tanggalBayar: Date | null) {
+export async function selaraskanLunasPo(tx: Prisma.TransactionClient, poIds: string[], olehUserId: string, nomor: string, tanggalBayar: Date | null) {
   if (poIds.length === 0) return;
   const keadaan = await keadaanBayarPo(poIds, tx);
   const pos = await tx.purchaseOrder.findMany({ where: { id: { in: poIds } }, select: { id: true, status: true, paidAt: true, docNumber: true } });
@@ -179,6 +184,39 @@ async function selaraskanLunasPo(tx: Prisma.TransactionClient, poIds: string[], 
       }
     }
   }
+}
+
+/**
+ * Selaraskan tanda lunas PO sesudah utangnya bergerak TANPA pembayaran — selisih harga invoice yang
+ * diterima (utang naik atau turun) atau dibatalkan bersama tagihannya. Utang naik → tanda lunas
+ * dokumen dibuka; utang turun sampai habis → ditandai lunas pada tanggal pembayaran dokumen
+ * terakhirnya. Tanda lunas tombol lama tidak pernah disentuh (`selaraskanLunasPo`).
+ */
+export async function selaraskanLunasPoSesudahKoreksi(tx: Prisma.TransactionClient, poIds: string[], olehUserId: string, nomor: string) {
+  for (const poId of [...new Set(poIds)]) {
+    const grn = await tx.gRN.findMany({ where: { poId }, select: { id: true } });
+    let tanggal: Date | null = null;
+    if (grn.length > 0) {
+      const terakhir = await tx.supplierPaymentAllocation.findFirst({
+        where: { targetType: "GRN", targetId: { in: grn.map((g) => g.id) }, payment: SARING_PEMBAYARAN_DOKUMEN },
+        orderBy: { payment: { date: "desc" } },
+        select: { payment: { select: { date: true } } },
+      });
+      tanggal = terakhir?.payment.date ?? null;
+    }
+    await selaraskanLunasPo(tx, [poId], olehUserId, nomor, tanggal);
+  }
+}
+
+/** Alokasi ke penerimaan yang selisih harga invoicenya masih menunggu keputusan → `KOREKSI_MENUNGGU` (baris pertama). */
+async function tolakKoreksiMenunggu(tx: Prisma.TransactionClient, alokasi: readonly AlokasiSah[]) {
+  const kunci = alokasi.filter((a) => a.jenis === "GRN" || a.jenis === "WO_STEP").map((a) => kunciDokumenHutang(a.jenis, a.id));
+  if (kunci.length === 0) return;
+  const menunggu = await penerimaanKoreksiMenunggu(tx, kunci);
+  if (menunggu.size === 0) return;
+  alokasi.forEach((a, i) => {
+    if (menunggu.has(kunciDokumenHutang(a.jenis, a.id))) throw new Tolak("KOREKSI_MENUNGGU", i + 1);
+  });
 }
 
 function petaGalat(e: unknown): HasilPembayaranPemasok | null {
@@ -241,6 +279,7 @@ export async function catatPembayaranPemasok(input: IsianCatatPembayaran): Promi
       const sisa = petaSisaDokumen(milik);
       const cek = periksaAlokasiTerhadapSisa(p.alokasi, sisa);
       if (!cek.ok) throw new Tolak(cek.kode, cek.baris);
+      await tolakKoreksiMenunggu(tx, p.alokasi);
       const poPerGrn = await poDariAlokasi(tx, p.alokasi);
       await tolakPoDitandaiLunas(tx, p.alokasi, poPerGrn);
 
@@ -505,6 +544,7 @@ export async function terapkanUangMuka(input: { pembayaranId: string; alokasi: u
       const sisa = petaSisaDokumen(milik);
       const cek = periksaAlokasiTerhadapSisa(alokasi, sisa);
       if (!cek.ok) return { ok: false, kode: cek.kode, baris: cek.baris };
+      await tolakKoreksiMenunggu(tx, alokasi);
       const poPerGrn = await poDariAlokasi(tx, alokasi);
       await tolakPoDitandaiLunas(tx, alokasi, poPerGrn);
       const nomorDok = new Map((milik?.dokumen ?? []).map((d) => [kunciDokumenHutang(d.jenis, d.id), d.nomor]));

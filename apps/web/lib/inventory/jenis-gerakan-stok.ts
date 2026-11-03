@@ -42,6 +42,13 @@ export const SUMBER_PENYESUAIAN = [
   "VAN_RETURN",
   "STORE_RETURN_RECEIVE",
   "KONSI_TRANSFER",
+  // Barang kiriman yang kembali ke Gudang Utama: ditolak di pintu toko ("retur langsung", P24/P40)
+  // atau seluruh kiriman "tidak jadi dikirim" (P16) — konsi (lib/field-sales/konsi-transfer/writer.ts)
+  // dan nota putus (lib/field-sales/delivery/koreksi-nota.ts).
+  "KONSI_TRANSFER_RETURN",
+  "FIELD_SALES_CONSUME_RETURN",
+  "FIELD_RETURN",
+  "SUPERSEDED_ITEM_RETIRE",
   "STORE_EXCHANGE_OUT",
   "STORE_EXCHANGE_IN",
   "KOL_SEEDING",

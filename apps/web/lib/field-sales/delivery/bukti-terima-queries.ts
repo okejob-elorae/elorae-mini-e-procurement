@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { STATUS_PENGIRIMAN_BERANGKAT } from "@/lib/spg/kiriman";
 import { batasAwalTerima, keadaanBuktiTerima, type KeadaanBuktiTerima } from "./bukti-terima";
 
 export type KirimanBuktiTerima = {
@@ -18,10 +19,21 @@ export type KirimanBuktiTerima = {
  * Pengiriman satu pesanan beserta bukti terimanya, HANYA bila pesanan itu
  * milik salesman ini — pesanan orang lain menghasilkan daftar kosong, sama
  * dengan pesanan yang belum pernah dikirim.
+ *
+ * Hanya nota yang boleh diberi bukti terima (R23, aturan yang sama dengan
+ * `catatBuktiTerima`): nota sebuah pengiriman setelah barangnya BERANGKAT, atau
+ * nota lama yang dicatat tangan (tanpa pengiriman). Nota yang dibatalkan, dan
+ * nota yang pengirimannya masih dikemas atau dibatalkan, tidak tampil — HP tidak
+ * menawarkan bukti terima yang akan ditolak.
  */
 export async function kirimanPesananSaya(orderId: string, salesmanId: string): Promise<KirimanBuktiTerima[]> {
   const rows = await prisma.fieldSalesDelivery.findMany({
-    where: { orderId, order: { salesmanId } },
+    where: {
+      orderId,
+      order: { salesmanId },
+      voidedAt: null,
+      OR: [{ shipment: { is: null } }, { shipment: { is: { status: { in: [...STATUS_PENGIRIMAN_BERANGKAT] } } } }],
+    },
     orderBy: { deliveredAt: "asc" },
     select: {
       id: true,

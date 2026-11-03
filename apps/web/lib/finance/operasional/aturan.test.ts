@@ -7,7 +7,6 @@ import {
   barisBarangHilang,
   barisBayarBiayaPerjalanan,
   barisBayarKomisi,
-  barisBayarTokoKonsi,
   barisBiayaPerjalanan,
   barisGudangRusak,
   barisKomisi,
@@ -27,6 +26,15 @@ import {
   SEMUA_SUMBER_OPERASIONAL,
   sumberOperasionalDariJenis,
   tanggalPeriode,
+  barisBarangHilangGudang,
+  barisPemulihanKlaim,
+  rataRataKirimBersih,
+  barisPenerimaanUtangSpg,
+  barisPotongUtangDanBeban,
+  barisBayarKomisiSpg,
+  barisBayarTambahanSpg,
+  barisBebanSpgDipotong,
+  barisKembaliBebanSpg,
 } from "./aturan";
 import { putarGudangRusak } from "./nilai-rusak";
 
@@ -265,14 +273,6 @@ describe("komisi", () => {
   });
 });
 
-describe("pembayaran toko konsinyasi", () => {
-  it("tunai ke kas, transfer/giro ke bank; dibatalkan → kosong", () => {
-    expect(per(barisBayarTokoKonsi({ storeId: "s1", nilai: 500_000, cara: "tunai", batal: false }))).toEqual({ CASH: 50_000_000, AR_CONSIGNMENT: -50_000_000 });
-    expect(per(barisBayarTokoKonsi({ storeId: "s1", nilai: 500_000, cara: "giro", batal: false }))).toEqual({ BANK: 50_000_000, AR_CONSIGNMENT: -50_000_000 });
-    expect(barisBayarTokoKonsi({ storeId: "s1", nilai: 500_000, cara: "transfer", batal: true })).toEqual([]);
-  });
-});
-
 describe("barang hilang", () => {
   it("beban sebesar biaya, konsinyasi berkurang", () => {
     const b = barisBarangHilang({ storeId: "s1", biaya: 120_000 });
@@ -364,5 +364,106 @@ describe("putar gudang rusak", () => {
     expect(r.keluarSen.get("k1")).toBe(900);
     expect(r.keluarSen.get("k2")).toBe(700);
     expect(r).toMatchObject({ qty: 2, sen: 2_400 });
+  });
+});
+
+describe("pengiriman gudang → toko", () => {
+  it("barang putus hilang di perjalanan: beban rugi kanal putus / persediaan gudang pada biaya konsumsinya", () => {
+    expect(per(barisBarangHilangGudang({ storeId: "s1", keluar: [{ tipeBarang: "FINISHED_GOOD", nilai: 30_000 }] }))).toEqual({
+      LOSS_EXPENSE: 3_000_000,
+      INVENTORY_FG: -3_000_000,
+    });
+    expect(barisBarangHilangGudang({ storeId: "s1", keluar: [] })).toEqual([]);
+  });
+
+  it("penggantian ekspedisi yang sudah dicek: transfer ke bank, tunai ke kas; tanpa klaim → kosong", () => {
+    expect(per(barisPemulihanKlaim([{ nilai: 50_000, cara: "transfer" }], { storeId: "s1", kanal: "PUTUS" }))).toEqual({
+      BANK: 5_000_000,
+      LOSS_RECOVERY: -5_000_000,
+    });
+    expect(per(barisPemulihanKlaim([{ nilai: 20_000, cara: "tunai" }], { storeId: null, kanal: null }))).toEqual({
+      CASH: 2_000_000,
+      LOSS_RECOVERY: -2_000_000,
+    });
+    expect(barisPemulihanKlaim([], { storeId: "s1", kanal: "PUTUS" })).toEqual([]);
+  });
+
+  it("biaya konsinyasi mengurangkan barang yang kembali pada biaya keluarnya sendiri", () => {
+    // 10 dikirim @100 + 10 @200, 5 dari kiriman @200 ditolak di pintu → (1000 + 2000 − 1000) / 15.
+    expect(rataRataKirimBersih([{ qty: 10, biaya: 100 }, { qty: 10, biaya: 200 }], [{ qty: 5, biaya: 200 }])).toBeCloseTo(2000 / 15, 6);
+    expect(rataRataKirimBersih([{ qty: 5, biaya: 100 }], [{ qty: 5, biaya: 100 }])).toBeNull();
+  });
+});
+
+describe("utang SPG yang berhenti", () => {
+  it("penerimaan: kas/bank, koreksi mengurangi beban komisi, beban hilang/retur menjadi pemulihan", () => {
+    expect(
+      per(
+        barisPenerimaanUtangSpg([
+          { jumlah: 10_000, jenis: "KOREKSI", storeId: "s1", kanal: "PUTUS", cara: "transfer" },
+          { jumlah: 5_000, jenis: "BARANG_HILANG", storeId: "s1", kanal: "KONSINYASI", cara: "tunai" },
+        ]),
+      ),
+    ).toEqual({ BANK: 1_000_000, CASH: 500_000, SPG_COMMISSION_EXPENSE: -1_000_000, LOSS_RECOVERY: -500_000 });
+  });
+
+  it("imbang dari komisi: hutang komisi berkurang", () => {
+    expect(per(barisPotongUtangDanBeban([{ jumlah: 7_000, jenis: "RETUR_PEMBELI", storeId: "s1", kanal: "PUTUS" }]))).toEqual({
+      COMMISSION_PAYABLE: 700_000,
+      LOSS_RECOVERY: -700_000,
+    });
+  });
+
+  it("pembayaran tambahan: bank = amount yang sudah bersih dari imbangan — imbangan tidak dikurangi dua kali", () => {
+    // Koreksi plus 25.000: 15.000 mengimbangi utang barang hilang, 10.000 dibayar tunai.
+    const b = barisBayarTambahanSpg({
+      koreksi: [{ jumlah: 25_000, storeId: "s1", kanal: "PUTUS" }],
+      imbang: [{ jumlah: 15_000, jenis: "BARANG_HILANG", storeId: "s1", kanal: "PUTUS" }],
+      tunai: 10_000,
+      cara: "tunai",
+    });
+    // Hutang komisi: −25.000 (koreksi) + 15.000 (imbang) + 10.000 (tunai) = 0, jadi barisnya hilang.
+    expect(per(b)).toEqual({ SPG_COMMISSION_EXPENSE: 2_500_000, LOSS_RECOVERY: -1_500_000, CASH: -1_000_000 });
+    expect(seimbang(b)).toBe(0);
+  });
+});
+
+describe("pembayaran gaji/komisi SPG dengan pengurang (R15, P79)", () => {
+  it("beban retur dipotong: hutang komisi → pemulihan rugi, pada toko beban + kanal baris yang dibayar", () => {
+    expect(barisBebanSpgDipotong([{ jumlah: 30_000, storeId: "s1", kanal: "PUTUS" }, { jumlah: 0, storeId: "s2", kanal: "PUTUS" }])).toEqual([
+      { role: "COMMISSION_PAYABLE", sen: 3_000_000, channel: null, storeId: null },
+      { role: "LOSS_RECOVERY", sen: -3_000_000, channel: "PUTUS", storeId: "s1" },
+    ]);
+  });
+
+  it("uang beban dikembalikan (KEMBALI_STOK): pemulihannya dibalik, keluar lewat hutang komisi", () => {
+    expect(barisKembaliBebanSpg([{ jumlah: 12_500, storeId: "s1", kanal: "KONSINYASI" }])).toEqual([
+      { role: "LOSS_RECOVERY", sen: 1_250_000, channel: "KONSINYASI", storeId: "s1" },
+      { role: "COMMISSION_PAYABLE", sen: -1_250_000, channel: null, storeId: null },
+    ]);
+  });
+
+  it("bank = neto + koreksi − beban − utang + pengembalian; hutang komisi tetap lunas sebesar neto", () => {
+    const b = barisBayarKomisiSpg({
+      neto: 300_000,
+      koreksi: [{ jumlah: 17_500, storeId: "konsi", kanal: "KONSINYASI" }],
+      beban: [{ jumlah: 30_000, storeId: "s1", kanal: "PUTUS" }],
+      utang: [{ jumlah: 20_000, jenis: "BARANG_HILANG", storeId: "konsi", kanal: "KONSINYASI" }],
+      kembali: [{ jumlah: 12_500, storeId: "s1", kanal: "PUTUS" }],
+    });
+    // 300.000 + 17.500 − 30.000 − 20.000 + 12.500 = 280.000 yang keluar dari bank.
+    expect(per(b)).toEqual({ SPG_COMMISSION_EXPENSE: 1_750_000, COMMISSION_PAYABLE: 30_000_000, LOSS_RECOVERY: -3_750_000, BANK: -28_000_000 });
+    expect(seimbang(b)).toBe(0);
+  });
+
+  it("tanpa pengurang sama dengan sebelumnya: neto + koreksi ke bank", () => {
+    const b = barisBayarKomisiSpg({ neto: 250_000, koreksi: [{ jumlah: -2_500, storeId: "p", kanal: "PUTUS" }], beban: [], utang: [], kembali: [] });
+    expect(per(b)).toEqual({ SPG_COMMISSION_EXPENSE: -250_000, COMMISSION_PAYABLE: 25_000_000, BANK: -24_750_000 });
+  });
+
+  it("pengurang menghabiskan seluruh bayaran: tidak ada baris bank, hutang komisi tetap lunas", () => {
+    const b = barisBayarKomisiSpg({ neto: 50_000, koreksi: [], beban: [{ jumlah: 50_000, storeId: "s1", kanal: "PUTUS" }], utang: [], kembali: [] });
+    expect(per(b)).toEqual({ COMMISSION_PAYABLE: 5_000_000, LOSS_RECOVERY: -5_000_000 });
+    expect(b.some((x) => x.role === "BANK")).toBe(false);
   });
 });

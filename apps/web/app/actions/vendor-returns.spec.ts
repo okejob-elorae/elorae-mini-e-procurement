@@ -8,6 +8,8 @@ const {
   mockVrUpdate,
   mockVrFindUnique,
   mockTxVrFindUnique,
+  mockGrnFindUnique,
+  mockRollFindMany,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockFindFirst: vi.fn(),
@@ -16,6 +18,8 @@ const {
   mockVrUpdate: vi.fn(),
   mockVrFindUnique: vi.fn(),
   mockTxVrFindUnique: vi.fn(),
+  mockGrnFindUnique: vi.fn(),
+  mockRollFindMany: vi.fn(),
 }));
 
 const tx = {
@@ -33,6 +37,8 @@ vi.mock("@elorae/db", () => ({
   prisma: {
     $transaction: (fn: (t: typeof tx) => unknown) => fn(tx),
     vendorReturn: { findUnique: mockVrFindUnique },
+    gRN: { findUnique: mockGrnFindUnique },
+    fabricRoll: { findMany: mockRollFindMany },
   },
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -104,6 +110,43 @@ describe("vendor return line valuation on a null-spelled variantless inventory r
     mockFindFirst.mockResolvedValue(null);
     await createVendorReturn(input, "u1");
     expect(valuedLines(mockVrCreate.mock.calls[0][0])[0].costValue).toBe(0);
+  });
+});
+
+describe("vendor return against a GRN without a PO (P51a)", () => {
+  const grn = (keadaan: { requiresNoPoConfirmation: boolean; noPoConfirmedAt: Date | null }) => ({
+    items: JSON.stringify([{ itemId: "i1", qty: 10 }]),
+    poId: null,
+    requiresOwnerApproval: false,
+    ownerApprovedAt: null,
+    ...keadaan,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+    tx.item.findUnique.mockResolvedValue({ nameId: "Button" });
+    mockFindFirst.mockResolvedValue(null);
+    mockVrCreate.mockResolvedValue({ id: "r1", docNumber: "RET-1" });
+    mockVrUpdate.mockResolvedValue({ id: "r1", docNumber: "RET-1" });
+    mockTxVrFindUnique.mockResolvedValue({ status: "DRAFT" });
+    mockRollFindMany.mockResolvedValue([]);
+  });
+
+  it("refuses a return from a GRN still waiting for the admin's confirmation — nothing of it entered stock", async () => {
+    mockGrnFindUnique.mockResolvedValue(grn({ requiresNoPoConfirmation: true, noPoConfirmedAt: null }));
+    await expect(createVendorReturn({ ...input, grnId: "g1" }, "u1")).rejects.toThrow("still waiting for the admin's confirmation");
+    await expect(updateVendorReturn("r1", { ...input, grnId: "g1" }, "u1")).rejects.toThrow("still waiting for the admin's confirmation");
+    expect(mockVrCreate).not.toHaveBeenCalled();
+    expect(mockVrUpdate).not.toHaveBeenCalled();
+  });
+
+  it("caps a confirmed GRN without a PO at what it received, like any other GRN", async () => {
+    mockGrnFindUnique.mockResolvedValue(grn({ requiresNoPoConfirmation: true, noPoConfirmedAt: new Date() }));
+    await createVendorReturn({ ...input, grnId: "g1" }, "u1");
+    expect(mockVrCreate).toHaveBeenCalledTimes(1);
+    const lebih = { ...input, grnId: "g1", lines: [{ ...input.lines[0], qty: 11 }] };
+    await expect(createVendorReturn(lebih, "u1")).rejects.toThrow("exceeds amount received on this GRN");
   });
 });
 

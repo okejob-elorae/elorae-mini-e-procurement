@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { tanggalPeriode } from "@/lib/finance/operasional/aturan";
 import {
   bandingkanLaporan,
   giliranTahap,
+  jatuhTempoSiklus,
   stokTitipan,
   tahapSiklus,
   type BahanTahap,
@@ -147,5 +149,30 @@ describe('stokTitipan', () => {
     // pertanyaan yang harus terlihat, bukan disembunyikan jadi nol.
     const hasil = stokTitipan([{ itemName: 'Blus', qty: 5 }], [{ itemName: 'Blus', qty: 8 }]);
     expect(hasil[0].sisa).toBe(-3);
+  });
+});
+
+describe("jatuhTempoSiklus (P54)", () => {
+  // Tanggal tagihan seperti yang dipakai `kunciAngka`: akhir bulan siklus (tanggal jurnalnya).
+  const tagihan = (tahun: number, bulan: number, dikunci: string) => tanggalPeriode(tahun, bulan, new Date(dikunci));
+
+  it("contoh pemilik: siklus Oktober dikunci 5 November, tempo 30 hari → jatuh tempo 30 November (bukan 5 Desember)", () => {
+    const t = tagihan(2026, 10, "2026-11-05T10:00:00+07:00");
+    expect(t.toISOString()).toBe(new Date("2026-10-31T00:00:00+07:00").toISOString());
+    expect(jatuhTempoSiklus(t, 30).toISOString()).toBe(new Date("2026-11-30T00:00:00+07:00").toISOString());
+  });
+
+  it("tidak bergantung pada kapan dikunci: siklus September dikunci 3 atau 20 Oktober, tempo 14 → 14 Oktober", () => {
+    const harapan = new Date("2026-10-14T00:00:00+07:00").toISOString();
+    expect(jatuhTempoSiklus(tagihan(2026, 9, "2026-10-03T09:00:00+07:00"), 14).toISOString()).toBe(harapan);
+    expect(jatuhTempoSiklus(tagihan(2026, 9, "2026-10-20T09:00:00+07:00"), 14).toISOString()).toBe(harapan);
+  });
+
+  it("tempo kosong, negatif, atau bukan angka = jatuh tempo di hari tagihan itu", () => {
+    const t = tagihan(2026, 10, "2026-11-05T10:00:00+07:00");
+    const hariTagihan = new Date("2026-10-31T00:00:00+07:00").toISOString();
+    expect(jatuhTempoSiklus(t, 0).toISOString()).toBe(hariTagihan);
+    expect(jatuhTempoSiklus(t, -5).toISOString()).toBe(hariTagihan);
+    expect(jatuhTempoSiklus(t, Number.NaN).toISOString()).toBe(hariTagihan);
   });
 });

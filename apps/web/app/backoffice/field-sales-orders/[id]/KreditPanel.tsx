@@ -20,7 +20,15 @@ function teksAlasan(a: AlasanKredit, t: T): string {
     case "LEWAT_JANJI":
       return t("alasanLewatJanji", { nilai: formatIDR(a.nilai), faktur: a.faktur });
     case "MELEBIHI_BATAS_NILAI":
-      return t("alasanBatasNilai", { sisa: formatIDR(a.sisaSesudah), batas: formatIDR(a.batas) });
+      return a.belumDinota !== undefined && a.belumDinota > 0
+        ? t("alasanBatasNilaiRinci", {
+            sisa: formatIDR(a.sisaSesudah),
+            batas: formatIDR(a.batas),
+            faktur: formatIDR(a.sisaFaktur ?? 0),
+            belumDinota: formatIDR(a.belumDinota),
+            pesanan: formatIDR(a.pesanan ?? 0),
+          })
+        : t("alasanBatasNilai", { sisa: formatIDR(a.sisaSesudah), batas: formatIDR(a.batas) });
     case "MELEBIHI_BATAS_FAKTUR":
       return t("alasanBatasFaktur", { faktur: a.faktur, batas: a.batas });
   }
@@ -117,7 +125,14 @@ export function KreditPanel({
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
                 <div>
                   <dt className="text-xs text-muted-foreground">{t("sisa")}</dt>
-                  <dd className="font-medium tabular-nums">{formatIDR(sekarang.keadaan.sisa)}</dd>
+                  <dd className="font-medium tabular-nums">
+                    {formatIDR(sekarang.keadaan.sisa)}
+                    {sekarang.keadaan.belumDinota > 0 && (
+                      <span className="block text-xs font-normal text-muted-foreground">
+                        {t("belumDinota", { nilai: formatIDR(sekarang.keadaan.belumDinota) })}
+                      </span>
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">{t("lewatJanji")}</dt>

@@ -350,3 +350,37 @@ describe("susunRiwayatHpp — gabungan dan halaman", () => {
     expect(hppTerbaruDari(r.baris)).toBeNull();
   });
 });
+
+/*
+ * Jawaban pemilik P49 (2026-11-02): "HPP harus real" — selisih harga invoice yang DITERIMA menaikkan
+ * HPP penerimaan itu, dan HPP terbaru memakai angka yang sudah dikoreksi.
+ */
+describe("susunRiwayatHpp — selisih harga invoice yang diterima", () => {
+  it("menambahkan bagian persediaan ÷ pcs ke HPP baris dan dokumennya, dengan catatan dan HPP sebelumnya", () => {
+    const r = susunRiwayatHpp(
+      masukan({
+        penerimaan: [terima({ id: "r1" })],
+        entriPenerimaan: [entri({ id: "e1", refId: "r1" })],
+        koreksi: [{ dokumen: "FG_RECEIPT", dokumenId: "r1", variantSku: null, persediaan: 20_000 }],
+      }),
+    );
+    expect(r.baris[0]).toMatchObject({ hppPerPcs: 52_000, hppDokumen: 52_000, hppSebelumKoreksi: 50_000, catatan: "DIKOREKSI_INVOICE" });
+    expect(hppTerbaruDari(r.baris)).toMatchObject({ perPcs: 52_000, dokumen: "RCPT/r1" });
+  });
+
+  it("koreksi dokumen lain atau GRN dengan id sama tidak menyentuh baris ini; catatan lama dipertahankan", () => {
+    const r = susunRiwayatHpp(
+      masukan({
+        penerimaan: [terima({ id: "r1", materialCost: 0, totalCostValue: 0 })],
+        entriPenerimaan: [entri({ id: "e1", refId: "r1" })],
+        koreksi: [
+          { dokumen: "GRN", dokumenId: "r1", variantSku: null, persediaan: 99_000 },
+          { dokumen: "FG_RECEIPT", dokumenId: "r1", variantSku: null, persediaan: 10_000 },
+        ],
+      }),
+    );
+    expect(r.baris[0]).toMatchObject({ hppPerPcs: 51_000, catatan: "TANPA_BAHAN" });
+    // Tanpa bahan tetap bukan dasar HPP terbaru.
+    expect(hppTerbaruDari(r.baris)).toBeNull();
+  });
+});

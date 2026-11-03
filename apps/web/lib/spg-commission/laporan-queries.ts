@@ -37,20 +37,24 @@ export async function commissionRates(client: Client = prisma): Promise<Commissi
 }
 
 /**
- * Every SPG sale (+qty) and APPROVED shopper return (−qty) of the given stores in one WIB month,
- * per store, each credited to the SPG who wrote the original note. A sale counts in the month of
- * its note and a return in the month it was reported (`SpgSaleReturn.createdAt`), and only once the
- * office has approved it (`returPembeliBerlaku`, the one spelling of "approved", owned by the
- * shopper-return module): a reported return changes nothing until then, a rejected or withdrawn one
- * never. A return approved after its month's commission was paid lowers that month's per-SPG figure;
- * the difference reaches the SPG as a correction on her next payout (`lib/spg/koreksi.ts`), never by
- * changing what was paid. A return of an earlier month's note only reduces the same SPG's same item
- * this month, never below zero (`toCommissionReport`). The category is the item's category as it
- * stands now.
+ * Every SPG sale (+qty) and APPROVED shopper return (−qty) of the given stores' notes of one WIB
+ * SALES month, per store, each credited to the SPG who wrote the original note.
  *
- * Sales are read AGGREGATED per store × seller × item in the database (one row each, not one per
- * line): the commission pages, the payment writers and the SPG phone all read many store-months,
- * and only these sums enter the computation. Returns are rare and read per line.
+ * - A sale counts in the month of its note (`SpgSale.createdAt`).
+ * - A shopper return counts in the month of its ORIGINAL note, whenever it was reported or approved
+ *   (owner 2026-11-02, P9: "komisi di kurangi untuk bulan Oktober"), and only once the office has
+ *   approved it (`returPembeliBerlaku`, the one spelling of "approved"): a reported return changes
+ *   nothing until then, a rejected or withdrawn one never. When the original month is already
+ *   paid, the difference reaches the SPG as a correction on her next payout (`lib/spg/koreksi.ts`),
+ *   never by changing what was paid. Only COMMISSION reads returns this way — the store stock book,
+ *   laku bersih and the day close still date a return at its report.
+ * - The category is the one STORED ON THE LINE at sale time (`SpgSaleLine.categoryId`, P8), never
+ *   the item's category now. A line sold with no category gets the item's category once, when the
+ *   item first receives one (`isiKategoriPenjualanSpg`, P69); until then it earns nothing.
+ *
+ * Sales are read AGGREGATED per store × seller × item × line category in the database (one row
+ * each, not one per line): the commission pages, the payment writers and the SPG phone all read
+ * many store-months, and only these sums enter the computation. Returns are rare and read per line.
  */
 export async function spgSaleMovements(
   client: Client,
@@ -66,22 +70,24 @@ export async function spgSaleMovements(
       SELECT s.${sqlId("storeId")} AS ${sqlId("storeId")},
              s.${sqlId("salesmanId")} AS ${sqlId("salesmanId")},
              l.${sqlId("itemId")} AS ${sqlId("itemId")},
-             i.${sqlId("categoryId")} AS ${sqlId("categoryId")},
+             l.${sqlId("categoryId")} AS ${sqlId("categoryId")},
              SUM(l.${sqlId("qty")}) AS ${sqlId("qty")}
       FROM ${sqlId("SpgSaleLine")} l
       JOIN ${sqlId("SpgSale")} s ON s.${sqlId("id")} = l.${sqlId("spgSaleId")}
-      JOIN ${sqlId("Item")} i ON i.${sqlId("id")} = l.${sqlId("itemId")}
       WHERE s.${sqlId("storeId")} IN (${Prisma.join(ids)})
         AND s.${sqlId("createdAt")} >= ${start} AND s.${sqlId("createdAt")} < ${end}
-      GROUP BY s.${sqlId("storeId")}, s.${sqlId("salesmanId")}, l.${sqlId("itemId")}, i.${sqlId("categoryId")}
+      GROUP BY s.${sqlId("storeId")}, s.${sqlId("salesmanId")}, l.${sqlId("itemId")}, l.${sqlId("categoryId")}
     `),
     client.spgSaleReturnLine.findMany({
-      where: { saleReturn: returPembeliBerlaku({ storeId: { in: ids }, createdAt: { gte: start, lt: end } }) },
+      where: {
+        saleReturn: returPembeliBerlaku({ storeId: { in: ids } }),
+        saleLine: { spgSale: { createdAt: { gte: start, lt: end } } },
+      },
       select: {
         itemId: true,
         qty: true,
         saleReturn: { select: { storeId: true } },
-        saleLine: { select: { item: { select: { categoryId: true } }, spgSale: { select: { salesmanId: true } } } },
+        saleLine: { select: { categoryId: true, spgSale: { select: { salesmanId: true } } } },
       },
     }),
   ]);
@@ -94,7 +100,7 @@ export async function spgSaleMovements(
     result.get(r.saleReturn.storeId)?.push({
       salesmanId: r.saleLine.spgSale.salesmanId,
       itemId: r.itemId,
-      categoryId: r.saleLine.item.categoryId,
+      categoryId: r.saleLine.categoryId ?? null,
       qty: -r.qty,
     });
   }
@@ -254,10 +260,12 @@ export type StoredPutusCommission = {
   storeId: string;
   period: string;
   unitsSold: number;
-  /* Gross whole rupiah; what the SPG receives is `commission − deduction`. */
+  /* Gross whole rupiah; what the SPG receives is `baseSalary + commission − deduction` (plus corrections). */
   commission: number;
   deduction: number;
   basis: string;
+  /* Base salary snapshot (P63): putus SPGs are paid base salary through the system too. */
+  baseSalary: number;
   lockedAt: Date;
   paidAt: Date | null;
   note: string | null;
@@ -265,7 +273,7 @@ export type StoredPutusCommission = {
 
 export type PutusPayoutReport = SalesReport & {
   kind: "PUTUS";
-  /* The check that puts the month in this payout month; null for a commission set under the old rule without one. */
+  /* The check that puts the month in this payout month. */
   check: { id: string; checkedAt: Date; checkedById: string } | null;
   /* The month's stored rows; empty while a checked month is not set yet ("belum ditetapkan"). */
   stored: StoredPutusCommission[];
@@ -275,39 +283,19 @@ const pairKey = (storeId: string, period: string) => `${storeId}\u0000${period}`
 
 /**
  * Every putus store × sales month PAID in one payout month, with its stored `SpgCommission` rows:
- * each month checked in it (`SpgSalesCheck.checkedAt`), plus each commission set under the old
- * rule without a check in any month, which belongs to the payout month its rows were last set in
- * (`lockedAt`). Komisi SPG and the recap both read through here, so the two list the same months
- * with the same stored figures. `storeIds` limits the stores read (an empty array reads none).
+ * each month checked in it (`SpgSalesCheck.checkedAt`). A putus row is payable only once its store
+ * × month is checked (owner 2026-11-01, decision 7), so payout months come from checks alone —
+ * the old-rule rows set without a check are gone with the old rule (no real SPG pay ever ran).
+ * Komisi SPG and the recap both read through here, so the two list the same months with the same
+ * stored figures. `storeIds` limits the stores read (an empty array reads none).
  */
 export async function putusPayoutReports(
   client: Client,
   where: { paidIn: { start: Date; end: Date }; storeIds?: string[] },
 ): Promise<PutusPayoutReport[]> {
   const { paidIn, storeIds } = where;
-  const storeFilter = storeIds !== undefined ? { storeId: { in: storeIds } } : {};
-  const [checked, setInMonth] = await Promise.all([
-    checkedPutusReports(client, { checkedIn: paidIn, storeIds }),
-    client.spgCommission.findMany({
-      where: { lockedAt: { gte: paidIn.start, lt: paidIn.end }, ...storeFilter },
-      select: { storeId: true, period: true },
-    }),
-  ]);
-
-  const checkedPairs = new Set(checked.map((r) => pairKey(r.storeId, r.salesMonth)));
-  const candidates = [
-    ...new Map(setInMonth.map((r) => [pairKey(r.storeId, r.period), { storeId: r.storeId, period: r.period }])).values(),
-  ].filter((p) => !checkedPairs.has(pairKey(p.storeId, p.period)));
-  const checkedElsewhere = candidates.length
-    ? await client.spgSalesCheck.findMany({
-        where: { OR: candidates.map((p) => ({ storeId: p.storeId, period: p.period })) },
-        select: { storeId: true, period: true },
-      })
-    : [];
-  const elsewhere = new Set(checkedElsewhere.map((c) => pairKey(c.storeId, c.period)));
-  const unchecked = candidates.filter((p) => !elsewhere.has(pairKey(p.storeId, p.period)));
-
-  const pairs = [...checked.map((r) => ({ storeId: r.storeId, period: r.salesMonth })), ...unchecked];
+  const checked = await checkedPutusReports(client, { checkedIn: paidIn, storeIds });
+  const pairs = checked.map((r) => ({ storeId: r.storeId, period: r.salesMonth }));
   const rows = pairs.length
     ? await client.spgCommission.findMany({
         where: { OR: pairs.map((p) => ({ storeId: p.storeId, period: p.period })) },
@@ -321,6 +309,7 @@ export async function putusPayoutReports(
           commission: true,
           deduction: true,
           basis: true,
+          baseSalary: true,
           lockedAt: true,
           paidAt: true,
           note: true,
@@ -330,17 +319,12 @@ export async function putusPayoutReports(
   const storedByPair = new Map<string, StoredPutusCommission[]>();
   for (const r of rows) {
     const key = pairKey(r.storeId, r.period);
-    storedByPair.set(key, [...(storedByPair.get(key) ?? []), { ...r, commission: Number(r.commission), deduction: Number(r.deduction) }]);
+    storedByPair.set(key, [
+      ...(storedByPair.get(key) ?? []),
+      { ...r, commission: Number(r.commission), deduction: Number(r.deduction), baseSalary: Number(r.baseSalary) },
+    ]);
   }
   const storedOf = (storeId: string, period: string) => storedByPair.get(pairKey(storeId, period)) ?? [];
-
-  // An old-rule month belongs to the payout month its rows were LAST set in — one month, never two.
-  const oldRule = unchecked.flatMap((p) => {
-    const lastSet = storedOf(p.storeId, p.period).reduce<Date | null>((t, r) => (t === null || r.lockedAt > t ? r.lockedAt : t), null);
-    if (lastSet === null || lastSet < paidIn.start || lastSet >= paidIn.end) return [];
-    return [{ storeId: p.storeId, salesMonth: p.period, checkedAt: lastSet }];
-  });
-  const oldRuleReports = await putusReportsOf(client, oldRule);
 
   return [
     ...checked.map(
@@ -356,6 +340,5 @@ export async function putusPayoutReports(
         stored: storedOf(r.storeId, r.salesMonth),
       }),
     ),
-    ...oldRuleReports.map((r): PutusPayoutReport => ({ ...r, kind: "PUTUS", check: null, stored: storedOf(r.storeId, r.salesMonth) })),
   ];
 }

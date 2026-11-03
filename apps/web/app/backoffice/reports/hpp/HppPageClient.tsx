@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -23,6 +22,8 @@ import { formatRupiah } from "@/lib/format/rupiah";
 import { getStatusMeta } from "@/lib/ui/status-map";
 import { updateWOHppAdjustments } from "@/app/actions/production";
 import type { HPPBreakdown } from "@/app/actions/hpp";
+import { formatPersenSatuDesimal, formatRupiahSen, type HasilRekomendasi } from "@/lib/items/rekomendasi-harga";
+import { formatDisplayDate } from "@/lib/date-only";
 import {
   alamatSaringanHpp,
   formatQty,
@@ -32,19 +33,19 @@ import {
   type SaringanStatusHpp,
 } from "./hpp-tampil";
 
-export type BarisHpp = HPPBreakdown & { status: string };
+/** Satu WO + SATU rekomendasi harga barang jadinya (jawaban pemilik P4a, 2026-11-02). */
+export type BarisHpp = HPPBreakdown & { status: string; rekomendasi: HasilRekomendasi };
 
 type Pilihan = { value: string; label: string };
 
-const fmtPersen = (n: number | null | undefined) =>
-  n != null ? `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 }).format(n)}%` : "—";
 const fmtUang = (n: number | null | undefined) => (n != null ? formatRupiah(n) : "—");
 
 /**
- * HPP per perintah kerja. Satu angka HPP/pcs untuk satu WO — biaya tercatat, dasar
- * harga jual — di tabel maupun rincian; angka "bila semua biaya termasuk PPN"
- * hanya di rincian dan selalu berlabel (`hppSatuan`). "Markup", bukan "margin": harga jual = HPP ×
- * (1 + markup) + biaya tambahan.
+ * HPP per perintah kerja. Satu angka HPP/pcs untuk satu WO — biaya tercatat — di tabel maupun
+ * rincian; angka "bila semua biaya termasuk PPN" hanya di rincian dan selalu berlabel
+ * (`hppSatuan`). Isian markup per WO dihapus (P4a): kolom "Rekomendasi harga barang" menampilkan
+ * rekomendasi barang jadinya — markup/margin dan bantalan margin dari pengaturan barang, dari HPP
+ * terbaru barang itu — sama dengan formulir barang. Biaya tambahan WO tetap (biaya produksi).
  */
 export function HppPageClient({
   rows,
@@ -67,18 +68,12 @@ export function HppPageClient({
 
   const [detailId, setDetailId] = useState<string | null>(null);
   const detailRow = rows.find((r) => r.woId === detailId) ?? null;
-  const [editMargin, setEditMargin] = useState("");
   const [editAdditional, setEditAdditional] = useState("");
   const [savingAdjustments, setSavingAdjustments] = useState(false);
-  const [selectedWoIds, setSelectedWoIds] = useState<Set<string>>(new Set());
-  const [bulkMarginOpen, setBulkMarginOpen] = useState(false);
-  const [bulkMarginValue, setBulkMarginValue] = useState("");
-  const [bulkSaving, setBulkSaving] = useState(false);
 
   /** Saringan ditulis ke alamat; halaman server memuat ulang datanya. */
   const ubahSaringan = (ubah: Partial<SaringanHpp>) => {
     const baru = { ...saringan, ...ubah };
-    setSelectedWoIds(new Set());
     mulai(() => router.replace(`${pathname}${alamatSaringanHpp(baru)}`, { scroll: false }));
   };
 
@@ -86,61 +81,35 @@ export function HppPageClient({
 
   const openDetail = (row: BarisHpp) => {
     setDetailId(row.woId);
-    setEditMargin(row.marginPercent != null ? String(row.marginPercent) : "");
     setEditAdditional(row.additionalCost != null ? String(row.additionalCost) : "");
   };
 
-  const toggleSelectWo = (woId: string) => {
-    setSelectedWoIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(woId)) next.delete(woId);
-      else next.add(woId);
-      return next;
-    });
-  };
-
-  const semuaTerpilih = rows.length > 0 && selectedWoIds.size === rows.length;
-  const toggleSelectAll = () => setSelectedWoIds(semuaTerpilih ? new Set() : new Set(rows.map((r) => r.woId)));
-
-  const handleBulkSetMargin = async () => {
-    if (!bolehAtur || selectedWoIds.size === 0) return;
-    const margin = bulkMarginValue.trim() === "" ? undefined : parseFloat(bulkMarginValue);
-    if (margin !== undefined && (Number.isNaN(margin) || margin < 0)) {
-      toast.error(t("marginInvalid"));
-      return;
+  /** "Rp 152.000 · markup 50,0% (= margin 33,3%) · HPP terbaru RCPT/…", atau yang kurang. */
+  const tampilRekomendasi = (r: HasilRekomendasi) => {
+    if (!r.ada) {
+      return { harga: null, keterangan: t("rekomendasiBarangBelum", { kurang: r.kurang.length > 1 ? "KEDUANYA" : (r.kurang[0] ?? "HPP") }) };
     }
-    setBulkSaving(true);
-    try {
-      for (const woId of selectedWoIds) {
-        await updateWOHppAdjustments(woId, { hppMarginPercent: margin });
-      }
-      toast.success(t("marginSetSuccess", { count: selectedWoIds.size }));
-      setBulkMarginOpen(false);
-      setBulkMarginValue("");
-      setSelectedWoIds(new Set());
-      router.refresh();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t("marginSetFailed"));
-    } finally {
-      setBulkSaving(false);
-    }
+    return {
+      harga: formatRupiahSen(r.harga),
+      keterangan: t("rekomendasiBarangDari", {
+        markup: r.markup != null ? formatPersenSatuDesimal(r.markup) : "—",
+        margin: formatPersenSatuDesimal(r.margin),
+        dokumen: r.dokumen,
+        tanggal: formatDisplayDate(r.tanggal),
+      }),
+    };
   };
 
   const handleSaveAdjustments = async () => {
     if (!detailRow || !bolehAtur) return;
-    const margin = editMargin === "" ? undefined : parseFloat(editMargin);
     const additional = editAdditional === "" ? undefined : parseFloat(editAdditional);
-    if (margin !== undefined && (Number.isNaN(margin) || margin < 0)) {
-      toast.error(t("marginInvalid"));
-      return;
-    }
     if (additional !== undefined && (Number.isNaN(additional) || additional < 0)) {
       toast.error(t("additionalCostInvalid"));
       return;
     }
     setSavingAdjustments(true);
     try {
-      await updateWOHppAdjustments(detailRow.woId, { hppMarginPercent: margin, hppAdditionalCost: additional });
+      await updateWOHppAdjustments(detailRow.woId, { hppAdditionalCost: additional });
       toast.success(t("adjustmentsSaved"));
       // Baris (dan rincian yang terbuka) ikut diperbarui dari server.
       router.refresh();
@@ -221,25 +190,10 @@ export function HppPageClient({
             <EmptyState icon={Calculator} title={t("noRows")} />
           ) : (
             <div className="space-y-2">
-              {bolehAtur && selectedWoIds.size > 0 && (
-                <div className="flex items-center gap-2">
-                  <Button variant="default" size="sm" onClick={() => setBulkMarginOpen(true)}>
-                    {t("setMarginSelected", { count: selectedWoIds.size })}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setSelectedWoIds(new Set())}>
-                    {t("clearSelection")}
-                  </Button>
-                </div>
-              )}
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      {bolehAtur && (
-                        <TableHead className="w-10">
-                          <Checkbox checked={semuaTerpilih} onCheckedChange={toggleSelectAll} aria-label={t("selectAll")} />
-                        </TableHead>
-                      )}
                       <TableHead>{t("woDocNumber")}</TableHead>
                       <TableHead>{t("colStatus")}</TableHead>
                       <TableHead>{t("articleFg")}</TableHead>
@@ -250,9 +204,8 @@ export function HppPageClient({
                       <TableHead className="text-right whitespace-normal 2xl:hidden">{t("costComponentsPcs")}</TableHead>
                       <TableHead className="text-right whitespace-normal">{t("hppPcs")}</TableHead>
                       <TableHead className="hidden 2xl:table-cell">{t("ppnStatus")}</TableHead>
-                      <TableHead className="text-right whitespace-normal">{t("marginPercent")}</TableHead>
-                      {/* Hitungan markup WO, bukan harga jual barang (harga jual diketik di halaman barang). */}
-                      <TableHead className="text-right whitespace-normal">{t("hargaRekomendasi")}</TableHead>
+                      {/* Satu rekomendasi barang jadinya, bukan harga jual (harga jual diketik di halaman barang). */}
+                      <TableHead className="text-right whitespace-normal">{t("rekomendasiBarang")}</TableHead>
                       <TableHead className="sticky right-0 bg-card">
                         <span className="sr-only">{t("detail")}</span>
                       </TableHead>
@@ -261,15 +214,6 @@ export function HppPageClient({
                   <TableBody>
                     {rows.map((row) => (
                       <TableRow key={row.woId}>
-                        {bolehAtur && (
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedWoIds.has(row.woId)}
-                              onCheckedChange={() => toggleSelectWo(row.woId)}
-                              aria-label={t("selectRow", { docNo: row.woDocNumber })}
-                            />
-                          </TableCell>
-                        )}
                         <TableCell className="font-medium">{row.woDocNumber}</TableCell>
                         <TableCell>
                           <StatusPill tone={getStatusMeta("workOrder", row.status).tone}>{labelStatus(row.status)}</StatusPill>
@@ -299,8 +243,17 @@ export function HppPageClient({
                             {row.hasMixedPPN ? t("ppnMixed") : t("ppnOk")}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">{fmtPersen(row.marginPercent)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{fmtUang(row.sellingPrice)}</TableCell>
+                        <TableCell className="min-w-[180px] whitespace-normal text-right tabular-nums">
+                          {(() => {
+                            const r = tampilRekomendasi(row.rekomendasi);
+                            return (
+                              <>
+                                <div className="font-medium">{r.harga ?? "—"}</div>
+                                <div className="text-xs text-muted-foreground">{r.keterangan}</div>
+                              </>
+                            );
+                          })()}
+                        </TableCell>
                         <TableCell className="sticky right-0 bg-card">
                           <Button
                             variant="outline"
@@ -322,38 +275,6 @@ export function HppPageClient({
           )}
         </CardContent>
       </Card>
-
-      <Dialog open={bulkMarginOpen} onOpenChange={(open) => !open && setBulkMarginOpen(false)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("bulkMarginTitle")}</DialogTitle>
-            <DialogDescription className="sr-only">{t("bulkDesc")}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="hpp-markup-massal">{t("bulkMarginLabel")}</Label>
-              <Input
-                id="hpp-markup-massal"
-                type="number"
-                min={0}
-                step={0.01}
-                value={bulkMarginValue}
-                onChange={(e) => setBulkMarginValue(e.target.value)}
-                placeholder={t("bulkMarginPlaceholder")}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setBulkMarginOpen(false)}>
-                {t("cancel")}
-              </Button>
-              <Button onClick={handleBulkSetMargin} disabled={bulkSaving}>
-                {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {t("applyToCount", { count: selectedWoIds.size })}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={!!detailRow} onOpenChange={(open) => !open && setDetailId(null)}>
         <DialogContent className="max-w-2xl lg:max-w-5xl max-h-[90vh] overflow-y-auto">
@@ -405,18 +326,6 @@ export function HppPageClient({
               </div>
               {bolehAtur && (
                 <div className="grid gap-4 sm:grid-cols-2 pt-4 border-t">
-                  <div className="space-y-2">
-                    <Label htmlFor="hpp-markup">{t("marginPercentEdit")}</Label>
-                    <Input
-                      id="hpp-markup"
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      value={editMargin}
-                      onChange={(e) => setEditMargin(e.target.value)}
-                      placeholder="0"
-                    />
-                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="hpp-tambahan">{t("additionalCostEdit")}</Label>
                     <Input

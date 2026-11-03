@@ -20,7 +20,6 @@ const simpan = (salesmanId: string, commission: number, overrides: Partial<Store
   salesmanId,
   commission,
   pieces: null,
-  oldRule: false,
   paid: false,
   ...overrides,
 });
@@ -61,7 +60,7 @@ const ringkas = (lines: ReturnType<typeof payoutLinesOf>) =>
 describe("rekap komisi per SPG: angka per SPG, dibayar, koreksi, selisih", () => {
   it("siklus aturan lama yang SUDAH dibayar bagi rata 22.500 / 22.500: selisih +17.500 dan −2.500 menunggu pembayaran berikutnya", () => {
     const lines = payoutLinesOf([
-      konsi({ stored: [simpan("ani", 22_500, { paid: true, oldRule: true }), simpan("sari", 22_500, { paid: true, oldRule: true })] }),
+      konsi({ stored: [simpan("ani", 22_500, { paid: true }), simpan("sari", 22_500, { paid: true })] }),
     ]);
     expect(ringkas(lines)).toEqual([
       ["ani", "DIBAYAR", 40_000, 22_500, 22_500, 17_500, false],
@@ -76,7 +75,7 @@ describe("rekap komisi per SPG: angka per SPG, dibayar, koreksi, selisih", () =>
   it("sesudah koreksinya diterapkan, selisih laporan itu 0 — tidak diterapkan dua kali", () => {
     const lines = payoutLinesOf([
       konsi({
-        stored: [simpan("ani", 22_500, { paid: true, oldRule: true }), simpan("sari", 22_500, { paid: true, oldRule: true })],
+        stored: [simpan("ani", 22_500, { paid: true }), simpan("sari", 22_500, { paid: true })],
         appliedBySalesman: new Map([
           ["ani", 17_500],
           ["sari", -2_500],
@@ -91,13 +90,13 @@ describe("rekap komisi per SPG: angka per SPG, dibayar, koreksi, selisih", () =>
 
   it("koreksi minus yang baru sebagian diterapkan (lantai Rp 0) menyisakan selisihnya", () => {
     const [sari] = payoutLinesOf([
-      konsi({ stored: [simpan("sari", 22_500, { paid: true, oldRule: true })], computed: [hitung("sari", 10, 20_000)], appliedBySalesman: new Map([["sari", -2_000]]) }),
+      konsi({ stored: [simpan("sari", 22_500, { paid: true })], computed: [hitung("sari", 10, 20_000)], appliedBySalesman: new Map([["sari", -2_000]]) }),
     ]);
     expect(sari.pendingDifference).toBe(-500);
   });
 
   it("baris yang belum dibayar: tidak ada selisih (dibayar dengan angka per SPG), angka tersimpan yang berbeda ditandai diganti", () => {
-    const lines = payoutLinesOf([konsi({ stored: [simpan("ani", 22_500, { oldRule: true }), simpan("sari", 20_000)] })]);
+    const lines = payoutLinesOf([konsi({ stored: [simpan("ani", 22_500), simpan("sari", 20_000)] })]);
     expect(ringkas(lines)).toEqual([
       ["ani", "DITETAPKAN", 40_000, 22_500, 0, 0, true],
       ["sari", "DITETAPKAN", 20_000, 20_000, 0, 0, false],
@@ -111,9 +110,9 @@ describe("rekap komisi per SPG: angka per SPG, dibayar, koreksi, selisih", () =>
     expect(payoutTotalsBySpg(lines).get("dewi")).toMatchObject({ unpaidAmount: 14_000, hasUnset: true, paidAmount: 0 });
   });
 
-  it("toko putus aturan lama: potong yang berbeda atau dasar lama menandai baris belum dibayar diganti", () => {
-    const lines = payoutLinesOf([putus({ stored: [simpan("dewi", 14_000, { pieces: 7, oldRule: true })] })]);
-    expect(lines[0]).toMatchObject({ status: "DITETAPKAN", differs: true });
+  it("toko putus: potong yang berbeda menandai baris belum dibayar diganti; yang sama tidak", () => {
+    const lines = payoutLinesOf([putus({ stored: [simpan("dewi", 14_000, { pieces: 7 })] })]);
+    expect(lines[0]).toMatchObject({ status: "DITETAPKAN", differs: false });
     const potongBeda = payoutLinesOf([putus({ stored: [simpan("dewi", 14_000, { pieces: 6 })] })]);
     expect(potongBeda[0].differs).toBe(true);
   });
@@ -131,7 +130,7 @@ describe("rekap komisi per SPG: angka per SPG, dibayar, koreksi, selisih", () =>
   it("unit yang ditahan menunggu keputusan pemilik: tanpa selisih otomatis", () => {
     const lines = payoutLinesOf([
       konsi({
-        stored: [simpan("ani", 22_500, { paid: true, oldRule: true })],
+        stored: [simpan("ani", 22_500, { paid: true })],
         computed: [hitung("ani", 20, 0, 20)],
         heldSalesmen: new Set(["ani"]),
       }),
@@ -143,7 +142,7 @@ describe("rekap komisi per SPG: angka per SPG, dibayar, koreksi, selisih", () =>
     const lines = payoutLinesOf([
       putus({
         closed: true,
-        stored: [simpan("ani", 22_500, { pieces: 15, oldRule: true, paid: true }), simpan("sari", 22_500, { pieces: 15, oldRule: true })],
+        stored: [simpan("ani", 22_500, { pieces: 15, paid: true }), simpan("sari", 22_500, { pieces: 15 })],
         computed: [hitung("ani", 20, 0, 20), hitung("sari", 10, 0, 10)],
         heldSalesmen: new Set(["ani", "sari"]),
       }),

@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   BATAS_UMUR_HITUNG_MS,
   dilewatiKarenaLebihBaru,
+  kurangiReturBelumDiRak,
   saldoAcuan,
   tanpaAngkaSistem,
   umurHitungMs,
@@ -57,6 +58,62 @@ describe("saldoAcuan", () => {
     expect(hasil.get("a::")).toBe(10);
     // `b` tanpa waktu hitung: saldo dasar apa adanya.
     expect(hasil.get("b::")).toBe(4);
+  });
+});
+
+describe("kurangiReturBelumDiRak", () => {
+  const tc = new Date(dasar.getTime() - 30 * MENIT);
+  const laporan = new Date(dasar.getTime() - 60 * MENIT);
+
+  it("a report filed before the count and approved after it: its pieces were set aside, not on the shelf (P12)", () => {
+    const hasil = kurangiReturBelumDiRak(
+      new Map([["a::", 7]]),
+      [{ itemId: "a", variantSku: "", qty: 2, createdAt: laporan, diRakSejak: new Date(dasar.getTime() - 10 * MENIT) }],
+      new Map([["a::", tc]]),
+      dasar,
+    );
+    expect(hasil.get("a::")).toBe(5);
+  });
+
+  it("a report approved before the count: its pieces were back on the shelf, nothing changes", () => {
+    const hasil = kurangiReturBelumDiRak(
+      new Map([["a::", 7]]),
+      [{ itemId: "a", variantSku: "", qty: 2, createdAt: laporan, diRakSejak: new Date(dasar.getTime() - 40 * MENIT) }],
+      new Map([["a::", tc]]),
+      dasar,
+    );
+    expect(hasil.get("a::")).toBe(7);
+  });
+
+  it("a movement dated after the count is left to saldoAcuan, never subtracted twice", () => {
+    const hasil = kurangiReturBelumDiRak(
+      new Map([["a::", 7]]),
+      [{ itemId: "a", variantSku: "", qty: 2, createdAt: new Date(dasar.getTime() - 20 * MENIT), diRakSejak: new Date(dasar.getTime() - 10 * MENIT) }],
+      new Map([["a::", tc]]),
+      dasar,
+    );
+    expect(hasil.get("a::")).toBe(7);
+  });
+
+  it("a line with no count age is judged at `dasar`", () => {
+    const hasil = kurangiReturBelumDiRak(
+      new Map([["b::M", 3]]),
+      [{ itemId: "b", variantSku: "M", qty: 1, createdAt: laporan, diRakSejak: new Date(dasar.getTime() + MENIT) }],
+      new Map(),
+      dasar,
+    );
+    expect(hasil.get("b::M")).toBe(2);
+  });
+
+  it("does not touch the map it was given", () => {
+    const saldo = new Map([["a::", 7]]);
+    kurangiReturBelumDiRak(
+      saldo,
+      [{ itemId: "a", variantSku: null, qty: 2, createdAt: laporan, diRakSejak: dasar }],
+      new Map([["a::", tc]]),
+      dasar,
+    );
+    expect(saldo.get("a::")).toBe(7);
   });
 });
 

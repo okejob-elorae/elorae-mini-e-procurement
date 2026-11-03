@@ -28,6 +28,10 @@ import { KehadiranSpgToko } from "./KehadiranSpgToko";
 import { LaporDariToko } from "./UbinLapor";
 import { bacaPesananKonsiCadanganLama, muatPenerimaToko } from "@/lib/field-sales/konsi-transfer/pesanan-lama";
 import { PesananLamaToko } from "./PesananLamaToko";
+import { perkiraanPesananKonsi } from "@/lib/field-sales/perkiraan-konsi-queries";
+import { hargaKonsiHp } from "@/lib/field-sales/perkiraan-konsi";
+import { jumlahSpgToko, kirimanMenunggu } from "@/lib/spg/kiriman";
+import { KirimanMenungguToko } from "./KirimanMenungguToko";
 
 export const dynamic = "force-dynamic";
 
@@ -132,6 +136,35 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
         return null;
       });
 
+  // Kiriman gudang yang sudah diserahkan ke toko TANPA SPG (SPG-nya berhenti, P45/P45a) tetapi
+  // belum diterima: salesman pemegang mencatat penerimaannya saat berkunjung. Kartu pelengkap —
+  // kalau gagal dimuat, halaman toko tetap tampil tanpa kartu ini.
+  const kirimanPemegang =
+    !tokoTetap && activeForStore && store.salesmanId === session.user.id
+      ? await (async () => {
+          if ((await jumlahSpgToko(prisma, store.id)) > 0) return null;
+          const kiriman = (await kirimanMenunggu(store.id, sekarang)).filter(
+            (k) => (k.sourceType === "KONSI_TRANSFER" || k.sourceType === "PUTUS_DELIVERY") && k.diserahkan === true,
+          );
+          if (kiriman.length === 0) return null;
+          return (
+            <KirimanMenungguToko
+              storeId={store.id}
+              kiriman={kiriman.map((k) => ({
+                sourceType: k.sourceType as "KONSI_TRANSFER" | "PUTUS_DELIVERY",
+                sourceId: k.sourceId,
+                docNo: k.docNo,
+                tanggalLabel: formatDisplayDate(k.tanggal),
+                pcs: k.lines.reduce((s, l) => s + l.qty, 0),
+              }))}
+            />
+          );
+        })().catch((e: unknown) => {
+          console.error("[toko] kiriman menunggu pemegang gagal dimuat", e);
+          return null;
+        })
+      : null;
+
   // Tautan portal pesan mandiri: hanya pemegang toko yang membagikannya ke tokonya sendiri.
   const portalToko =
     !tokoTetap && store.salesmanId === session.user.id ? (
@@ -146,6 +179,25 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
           return null;
         })
       : null;
+  // Harga retail konsi per barang untuk lembar isi ulang (P18, R26). Kartu stoknya
+  // sendiri hanya membawa jumlah — baris stok tetap tanpa nilai — jadi harganya
+  // dibaca di sini, dengan rumus yang sama dengan katalog dan persetujuan kantor.
+  // Hanya salesman: `stokKonsi` selalu null untuk SPG. Gagal dibaca = tanpa harga.
+  const hargaStokKonsi: Record<string, number | null> = {};
+  if (stokKonsi && stokKonsi.baris.length > 0) {
+    const barang = await prisma.item
+      .findMany({
+        where: { id: { in: [...new Set(stokKonsi.baris.map((b) => b.itemId))] } },
+        select: { id: true, sellingPrice: true },
+      })
+      .catch((e: unknown) => {
+        console.error("[toko] harga stok konsi gagal dimuat", e);
+        return [];
+      });
+    for (const b of barang) {
+      hargaStokKonsi[b.id] = hargaKonsiHp(b.sellingPrice == null ? null : Number(b.sellingPrice), store.markupPercent);
+    }
+  }
   // "Yang perlu ditawarkan" — hanya salesman keliling. Kartu pelengkap: kalau
   // kuerinya gagal, halaman toko tetap tampil tanpa kartu ini.
   const saranTawar = tokoTetap
@@ -155,14 +207,22 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
         return null;
       });
 
+  // P18: pesanan konsinyasi yang sudah disetujui menampilkan nilainya di HP
+  // salesman; yang masih menunggu menampilkan perkiraan dari harga retail toko.
+  // SPG tidak mendapat daftar pesanan sama sekali (`orderRows` kosong).
+  const perkiraanKonsi = await perkiraanPesananKonsi(
+    orderRows.filter((o) => o.orderType === "KONSI" && o.status === "PENDING_APPROVAL").map((o) => o.id),
+  );
   const orders = orderRows.map(o => ({
     id: o.id,
     orderNo: o.orderNo,
     orderType: o.orderType,
     status: o.status,
-    total: o.orderType === "KONSI" ? null : o.total,
+    total: o.orderType === "KONSI" && o.status !== "APPROVED" ? null : o.total,
+    perkiraan: perkiraanKonsi.get(o.id) ?? null,
     createdLabel: formatDisplayDateTime(o.createdAtIso),
   }));
+  const pemegang = !tokoTetap && store.salesmanId === session.user.id;
 
   /*
    * Semua tanggal di halaman ini diformat DI SERVER: format tanggal di klien
@@ -180,9 +240,11 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
               fakturLewatJanji: ringkasan.tagihan.fakturLewatJanji,
               lebih: ringkasan.tagihan.lebih,
               bolehLihat: ringkasan.tagihan.bolehLihat,
+              belumDinota: ringkasan.tagihan.belumDinota,
               faktur: ringkasan.tagihan.faktur.map((f) => ({ ...f, tanggal: formatDisplayDate(f.tanggal) })),
             }
           : null,
+        tagihanHanyaPemegang: ringkasan.tagihanHanyaPemegang,
         favorit: ringkasan.favorit.map((f) => ({ itemId: f.itemId, nama: f.nama, pcs: f.pcs })),
         pesananTerakhir: ringkasan.pesananTerakhir
           ? {
@@ -191,6 +253,7 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
               tanggal: formatDisplayDate(ringkasan.pesananTerakhir.tanggal),
               keadaan: ringkasan.pesananTerakhir.keadaan,
               total: ringkasan.pesananTerakhir.total,
+              perkiraan: ringkasan.pesananTerakhir.perkiraan,
               milikSaya: ringkasan.pesananTerakhir.milikSaya,
             }
           : null,
@@ -261,15 +324,19 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
          */
         catatanToko={
           <>
+            {kirimanPemegang}
             {pesananLama}
-            {!tokoTetap && !activeForStore ? <LaporDariToko storeId={store.id} termsType={store.termsType} /> : null}
+            {!tokoTetap && !activeForStore ? (
+              <LaporDariToko storeId={store.id} termsType={store.termsType} pemegang={pemegang} />
+            ) : null}
             <KehadiranSpgToko baris={tampilKehadiran(kehadiranSpg)} />
             {catatanToko}
           </>
         }
-        stokDiToko={stokKonsi ? <StokDiToko data={stokKonsi} storeId={store.id} visitId={activeForStore?.id ?? null} /> : null}
+        stokDiToko={stokKonsi ? <StokDiToko data={stokKonsi} hargaKonsi={hargaStokKonsi} storeId={store.id} visitId={activeForStore?.id ?? null} /> : null}
         saranTawar={saranTawar ? <SaranTawar storeId={store.id} data={saranTawar} /> : null}
         spg={!!tokoTetap}
+        pemegang={pemegang}
         saran={{
           pola: { hariSejak: pola.hariSejak, jedaMedian: pola.jedaMedian, waktunya: pola.waktunya },
           terakhir: saran.terakhir

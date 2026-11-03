@@ -3,10 +3,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 /*
  * Basis data sungguhan, dari aksi sampai penulis pesanan: hanya sesi, rasio
  * pack, dan revalidasi yang ditirukan. Dipasak untuk toko KONSINYASI — draf yang
- * keluar dari server tidak membawa harga apa pun (JSON terserialisasinya), dan
- * mengirimnya mencatat pesanan konsinyasi lewat `createFieldSalesOrder` biasa:
- * harga 0, tanpa minimum, menunggu persetujuan kantor, dan kiriman ulang dengan
- * kunci draf yang sama tidak membuat pesanan kedua.
+ * keluar dari server membawa harga retail konsi per baris untuk tampilan HP
+ * salesman (pemilik P18: konsi lengkap di HP salesman; `hargaKonsiHp`, rumus
+ * `computeStorePrice` KONSI) tetapi tidak pernah anggaran, dan mengirimnya
+ * mencatat pesanan konsinyasi lewat `createFieldSalesOrder` biasa: harga 0,
+ * tanpa minimum, menunggu persetujuan kantor, dan kiriman ulang dengan kunci
+ * draf yang sama tidak membuat pesanan kedua.
  *
  * Teardown: semua lewat id seed tes ini; baris AdminNotification yang ditulis
  * penulis pesanan dihapus berdasarkan `metadata.orderId` pesanan tes (dicocokkan
@@ -26,6 +28,7 @@ vi.mock("@/app/actions/settings/pack-ratio", () => ({
 }));
 
 import { prisma, seededId, seededIds } from "@elorae/db";
+import { hargaKonsiHp } from "@/lib/field-sales/perkiraan-konsi";
 import { bangunRencanaKirimAction, kirimRencanaKirimAction } from "./actions";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -61,7 +64,7 @@ d("rencana kirim — toko konsinyasi (test bed only)", () => {
           uomId,
           isActive: true,
           categoryId,
-          // Harga jual SENGAJA ada: draf konsinyasi tetap tidak boleh membawanya.
+          // Harga jual konsi di draf = harga ini dinaikkan markup toko (25%).
           sellingPrice: 87_654,
           variants: [
             { sku: `${tag}-A-S`, size: "S", color: "Hitam" },
@@ -129,11 +132,12 @@ d("rencana kirim — toko konsinyasi (test bed only)", () => {
     anggaran: 1,
   });
 
-  it("builds a consignment draft whose serialized JSON has no price, total or rupiah", async () => {
+  it("builds a consignment draft whose every line carries the konsi retail price, and no budget", async () => {
     const r = await bangunRencanaKirimAction(kriteria());
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.konsi).toBe(true);
+    // Anggaran 1 rupiah dari HP tidak berlaku untuk konsinyasi: artikelnya tetap disusun.
     expect(r.artikel).toHaveLength(1);
     expect(r.artikel[0]).toMatchObject({ itemId, nama: "Kaos Uji", alasan: [{ jenis: "BELUM_DIKIRIM" }] });
     expect(r.artikel[0].baris.map((b) => [b.label, b.qty])).toEqual([
@@ -141,12 +145,14 @@ d("rencana kirim — toko konsinyasi (test bed only)", () => {
       ["Hitam · M", 4],
     ]);
 
+    // 87654 × (1 + 25%) = 109.567,5 — harga retail konsi, bukan harga jual katalog.
+    const hargaKonsi = hargaKonsiHp(87_654, 25);
+    expect(hargaKonsi).toBe(109_567.5);
+    expect(r.artikel[0].baris.map((b) => b.hargaSatuan)).toEqual([hargaKonsi, hargaKonsi]);
+
+    // Tidak ada anggaran, juga tidak ada sebab dilewati "melebihi anggaran".
     const json = JSON.stringify(r);
-    expect(json).not.toMatch(/harga|price|total|nilai|anggaran|budget|rupiah/i);
-    expect(json).not.toContain("Rp");
-    expect(json).not.toContain("87654");
-    // 87654 × (1 + 25%) = 109.567,5 — harga konsinyasi naik — juga tidak ada.
-    expect(json).not.toContain("109567");
+    expect(json).not.toMatch(/anggaran|budget/i);
   });
 
   it("sends the reviewed draft through the normal writer: konsi, price 0, pending approval, replay-safe", async () => {

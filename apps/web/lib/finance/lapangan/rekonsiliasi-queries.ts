@@ -4,7 +4,6 @@ import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mappin
 import { SARING_JURNAL_BERLAKU } from "@/lib/finance/journals/status-jurnal";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { readReceivableJournalStates } from "@/lib/finance/ar/store-receivable-role";
-import { idBebanDariCatatan } from "@/lib/receivables/penanda-beban";
 import { daftarPiutang } from "@/lib/receivables/queries";
 import { keSen, SUMBER_LAPANGAN } from "./aturan";
 import { bacaNilaiReturBanyak } from "./jurnal";
@@ -13,8 +12,8 @@ import { ringkasRekonsiliasi, type BarisRekonsiliasiToko, type RekonsiliasiPiuta
 /*
  * Rekonsiliasi piutang toko — KHUSUS SERVER. Membandingkan saldo akun
  * `AR_STORE` di buku besar (per toko, dari `JournalLine.storeId`) dengan Σ sisa
- * piutang modul piutang (`daftarPiutang`: dihitung ulang dari nol, tanpa toko
- * konsinyasi, dan sudah dikurangi uang yang masuk lewat pembayaran kantor —
+ * piutang modul piutang (`daftarPiutang`: dihitung ulang dari nol, dan sudah
+ * dikurangi uang yang masuk lewat pembayaran kantor —
  * `Receivable.paidAmount`, yang dikredit jurnal penerimaannya ke akun yang
  * sama) — dalam batas pembulatan rupiah per faktur, angka yang sama dengan
  * `outstandingAmount` yang ditulis `kolomPembayaranKantor`.
@@ -22,7 +21,11 @@ import { ringkasRekonsiliasi, type BarisRekonsiliasiToko, type RekonsiliasiPiuta
  * Faktur yang jurnal fakturnya mendebit akun LAIN (bentuk lama di AR, laporan
  * laku konsinyasi di AR_CONSIGNMENT — `readReceivableJournalStates`) tidak ikut:
  * setiap pelunasannya dikredit ke akun itu juga, jadi saldonya memang tidak
- * pernah ada di AR_STORE.
+ * pernah ada di AR_STORE. Tagihan KONSINYASI (`BarisPiutang.konsi` —
+ * `Receivable.isConsignment`) juga tidak pernah ikut, berjurnal atau belum: ia
+ * berdiri di AR_CONSIGNMENT (jurnal siklusnya, atau saldo awal akun itu), dan
+ * BKM yang melunasinya mengkredit akun itu. Tanpa ini tagihan siklus yang
+ * jurnalnya belum berdiri terhitung modul AR_STORE dan tokonya tampil tidak cocok.
  *
  * Keduanya sengaja tidak sama persis: jurnal retur mengkredit piutang sebesar
  * barang yang SAMPAI begitu gudang menghitungnya, sedangkan modul baru
@@ -56,7 +59,8 @@ async function nriBukuBesar(storeIds: string[] | null, mulai: Date | null): Prom
 
 /**
  * `storeIds` membatasi ke toko tertentu (tes di basis data bersama, atau
- * rincian satu toko); tanpa itu seluruh toko non-konsinyasi.
+ * rincian satu toko); tanpa itu seluruh toko — tagihan konsinyasi di dalamnya
+ * dilewati per tagihan.
  */
 export async function rekonsiliasiPiutangToko(opsi: { storeIds?: string[] } = {}): Promise<RekonsiliasiPiutang> {
   const lingkup = opsi.storeIds && opsi.storeIds.length > 0 ? opsi.storeIds : null;
@@ -86,17 +90,9 @@ export async function rekonsiliasiPiutangToko(opsi: { storeIds?: string[] } = {}
 
   // Modul: sisa setiap piutang, dihitung ulang.
   const piutang = lingkup ? (await Promise.all(lingkup.map((storeId) => daftarPiutang({ storeId })))).flat() : await daftarPiutang();
-  const detail = piutang.length
-    ? await prisma.receivable.findMany({
-        where: { id: { in: piutang.map((p) => p.id) } },
-        select: { id: true, note: true, source: true },
-      })
-    : [];
-  const detailPer = new Map(detail.map((d) => [d.id, d]));
   // Akun yang didebit jurnal faktur setiap piutang: jurnal nota, jurnal `STORE_INVOICE` faktur
-  // manual/impor (generasi pertama = id faktur), atau separuh pendapatan bentuk lama. Faktur
-  // beban retur tidak punya jurnal sendiri dan terbaca AR_STORE begitu tanggal mulai diisi.
-  const jurnalFaktur = await readReceivableJournalStates(prisma, piutang.map((p) => p.id));
+  // manual/impor (generasi pertama = id faktur), atau separuh pendapatan bentuk lama.
+  const jurnalFaktur = await readReceivableJournalStates(prisma, piutang.filter((p) => !p.konsi).map((p) => p.id));
 
   type Akumulasi = { nama: string; modul: number; diLuar: number; jumlah: number; kredit: number };
   const per = new Map<string, Akumulasi>();
@@ -109,15 +105,14 @@ export async function rekonsiliasiPiutangToko(opsi: { storeIds?: string[] } = {}
     return a;
   };
   for (const p of piutang) {
+    if (p.konsi) continue;
     const peran = jurnalFaktur.get(p.id)?.role ?? null;
     if (peran !== null && peran !== "AR_STORE") continue;
     const a = ambil(p.storeId, p.storeName);
-    const d = detailPer.get(p.id);
     const sisa = keSen(p.outstanding);
     a.modul += sisa;
     a.jumlah += 1;
-    const fakturBeban = d?.source === "MANUAL" && idBebanDariCatatan(d.note) !== null;
-    if (peran === null && !fakturBeban) a.diLuar += sisa;
+    if (peran === null) a.diLuar += sisa;
   }
 
   // Kredit retur yang belum dipotong toko, per toko.

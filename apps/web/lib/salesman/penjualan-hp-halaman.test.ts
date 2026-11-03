@@ -10,12 +10,11 @@ import { tokoMenurunHp } from "./toko-menurun-queries";
  * Payload tiga halaman HP salesman terhadap basis data sungguhan: Peringkat,
  * Target saya, dan toko menurun di beranda.
  *
- * Aturan mutlak pemilik: harga dan total konsinyasi tidak pernah sampai ke
- * aplikasi salesman — tidak di layar, tidak di payload, dan tidak lewat angka
- * turunan (capaian × target − putus − van = konsi). Omzet konsi = barang LAKU
- * di toko konsinyasi yang sales A pegang: 4 pcs bersih × 10.309,25 = 41.237,
- * sengaja angka yang bisa dicari di JSON; omzet resmi sales A dengan konsi =
- * 49.500 + 41.237 + 10.000 = 100.737 (capaian resmi 100,7% dari 100.000).
+ * Jawaban pemilik 2026-11-02 (P56 "tampilkan semuanya saja"): angka di HP
+ * salesman = angka kantor, rupiah konsinyasi ikut. Omzet konsi = barang LAKU di
+ * toko konsinyasi yang sales A pegang: 4 pcs bersih × 10.309,25 = 41.237; omzet
+ * resmi sales A = 49.500 + 41.237 + 10.000 = 100.737 (capaian 100,7% dari
+ * 100.000).
  *
  * Bulan acak jauh di masa lalu; pengaturan bersama (`SystemSetting`) tidak
  * pernah ditulis — target total dan aturan peringkat lewat `opsi`. Teardown
@@ -38,14 +37,7 @@ const HARI_MS = 86_400_000;
 /** Siang WIB, `n` hari sebelum HARI_INI. */
 const mundur = (n: number) => new Date(tgl(20, "12:00").getTime() - n * HARI_MS);
 
-/** Payload yang sampai ke HP tidak boleh memuat rupiah konsi atau angka yang memuatnya. */
-function bersih(payload: unknown, terlarang: readonly string[]) {
-  const json = JSON.stringify(payload);
-  for (const angka of terlarang) expect(json, `payload memuat ${angka}`).not.toContain(angka);
-  expect(json).not.toMatch(/"konsi":/);
-}
-
-d("payload Peringkat, Target, dan toko menurun di HP tanpa rupiah konsinyasi (test bed only)", () => {
+d("payload Peringkat, Target, dan toko menurun di HP = angka kantor (test bed only)", () => {
   let uomId = "";
   let katA = "";
   let i1 = "";
@@ -249,7 +241,7 @@ d("payload Peringkat, Target, dan toko menurun di HP tanpa rupiah konsinyasi (te
     await prisma.user.deleteMany({ where: { id: { in: seededIds([salesA, salesB].filter(Boolean)) } } });
   });
 
-  it("peringkat: diurutkan dan dihitung atas putus + van; omzet dan pcs konsi hanya milik sendiri", async () => {
+  it("peringkat: atas omzet resmi (konsinyasi ikut); omzet dan pcs konsi hanya milik sendiri", async () => {
     const baris = await peringkatHp(BULAN, salesA, {
       peserta: [
         { id: salesA, nama: "Sales A" },
@@ -259,32 +251,30 @@ d("payload Peringkat, Target, dan toko menurun di HP tanpa rupiah konsinyasi (te
       aturan: { tampilkanNama: true },
       hariIni: HARI_INI,
     });
-    // Resmi (dengan konsi) A 100,7% di atas B 70%. Di HP A 59,5% — di bawah B.
+    // Resmi (dengan konsi) A 100,7% di atas B 70% — sama dengan papan kantor.
     expect(baris).toEqual([
-      { peringkat: 1, posisi: 1, nama: "Sales B", persen: 70, omzet: null, pcsKonsi: null, adaTarget: true, diriSendiri: false },
-      { peringkat: 2, posisi: 2, nama: "Sales A", persen: 59.5, omzet: 59_500, pcsKonsi: 4, adaTarget: true, diriSendiri: true },
+      { peringkat: 1, posisi: 1, nama: "Sales A", persen: 100.7, omzet: 100_737, pcsKonsi: 4, adaTarget: true, diriSendiri: true },
+      { peringkat: 2, posisi: 2, nama: "Sales B", persen: 70, omzet: null, pcsKonsi: null, adaTarget: true, diriSendiri: false },
     ]);
-    bersih(baris, ["41237", "100737", "100.7"]);
   });
 
-  it("target saya: total, kategori, dan barang dalam rupiah tanpa konsi; pcs tetap menghitung konsi", async () => {
+  it("target saya: total, kategori, dan barang dalam rupiah memuat konsinyasi; pcs tetap", async () => {
     const r = await targetSayaHp(salesA, BULAN, HARI_INI);
-    expect(r.omzet).toBe(59_500);
+    expect(r.omzet).toBe(100_737);
     expect(r.baris.map((b) => b.scope)).toEqual(["KATEGORI", "BARANG", "BARANG"]);
     const kat = r.baris.find((b) => b.scope === "KATEGORI")!;
-    expect(kat).toMatchObject({ measure: "NILAI", tanpaKonsi: true, target: 200_000, capai: 59_500, kurang: 140_500 });
+    expect(kat).toMatchObject({ measure: "NILAI", target: 200_000, capai: 100_737, kurang: 99_263 });
     const nilaiKonsi = r.baris.find((b) => b.kunci === `BARANG:${i2}`)!;
-    expect(nilaiKonsi).toMatchObject({ measure: "NILAI", tanpaKonsi: true, capai: 0, kurang: 50_000 });
+    expect(nilaiKonsi).toMatchObject({ measure: "NILAI", capai: 41_237, kurang: 8_763 });
     const pcs = r.baris.find((b) => b.kunci === `BARANG:${i1}`)!;
-    expect(pcs).toMatchObject({ measure: "PCS", tanpaKonsi: false, capai: 6 });
+    expect(pcs).toMatchObject({ measure: "PCS", capai: 6 });
 
     // Target total dirakit halaman dari `omzet` yang sama.
-    const total = { omzet: r.omzet, kemajuan: kemajuanTarget(100_000, r.omzet, HARI_INI) };
-    expect(total.kemajuan).toMatchObject({ capai: 59_500, persen: 60, sisa: 40_500 });
-    bersih({ ...r, total }, ["41237", "100737", "41236", "41238"]);
+    const total = kemajuanTarget(100_000, r.omzet, HARI_INI);
+    expect(total).toMatchObject({ capai: 100_737, sisa: 0, tercapai: true });
   });
 
-  it("toko menurun: tanpa rupiah; toko dengan nilai konsi tanpa rasio, toko lain tetap 'turun X%'", async () => {
+  it("toko menurun: tanpa rupiah; toko konsinyasi dan campuran mendapat 'turun X%' seperti toko lain (P56)", async () => {
     const hp = await tokoMenurunHp(
       [
         { storeId: tokoTurun, nama: "Toko T" },
@@ -295,16 +285,10 @@ d("payload Peringkat, Target, dan toko menurun di HP tanpa rupiah konsinyasi (te
       ],
       HARI_INI,
     );
-    // Yang punya rasio dulu, lalu yang tanpa rasio menurut nama.
-    expect(hp.map((m) => m.storeId)).toEqual([tokoVan, tokoCampur, tokoTurun]);
+    // Yang paling tajam dulu: M (0,1875), T (0,1922), V (0,2501).
+    expect(hp.map((m) => m.storeId)).toEqual([tokoCampur, tokoTurun, tokoVan]);
     for (const m of hp) expect(m).toMatchObject({ alasan: "NILAI_TURUN", nilai90: null, nilai90Sebelumnya: null });
-    expect(hp[0].rasioNilai).toBe(0.2501);
-    expect(persenTurun(hp[0])).toBe(75);
-    // Konsi saja (T) dan campuran konsi + van (M): tanpa angka di HP.
-    expect(hp[1].rasioNilai).toBeNull();
-    expect(hp[2].rasioNilai).toBeNull();
-    expect(persenTurun(hp[1])).toBeNull();
-    expect(persenTurun(hp[2])).toBeNull();
-    bersih(hp, ["21150", "110040", "60013", "50027", "11119", "10031", "80012", "40009", "40003", "0.1875", "0.1922"]);
+    expect(hp.map((m) => m.rasioNilai)).toEqual([0.1875, 0.1922, 0.2501]);
+    expect(hp.map((m) => persenTurun(m))).toEqual([81, 81, 75]);
   });
 });

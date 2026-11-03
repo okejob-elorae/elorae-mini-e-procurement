@@ -8,7 +8,7 @@ import type { AlasanKredit, HasilKredit, ModeKredit } from "@/lib/salesman/kredi
  * Penilaiannya sendiri (`nilaiKredit`) ada di `lib/salesman/kredit.ts` dan
  * dipakai bersama layar HP serta layar persetujuan. Berkas ini hanya
  * menerjemahkan hasil penilaian menjadi apa yang ditulis penulis pesanan.
- * Toko konsinyasi tidak pernah sampai ke sini — mereka tidak punya piutang.
+ * Pesanan konsinyasi tidak dinilai lapis ini (lihat `kredit-toko.ts`).
  */
 
 /** Mode BLOKIR menolak pesanan sejak dibuat. Membawa alasannya supaya HP bisa menyebut angkanya. */
@@ -37,6 +37,9 @@ export function teksAlasanKredit(a: AlasanKredit): string {
     case "LEWAT_JANJI":
       return `tagihan lewat janji ${formatIDR(a.nilai)} (${a.faktur} faktur)`;
     case "MELEBIHI_BATAS_NILAI":
+      if ((a.belumDinota ?? 0) > 0) {
+        return `sisa ${formatIDR(a.sisaSesudah)} (faktur ${formatIDR(a.sisaFaktur ?? 0)} + disetujui belum dinota ${formatIDR(a.belumDinota ?? 0)} + pesanan ini ${formatIDR(a.pesanan ?? 0)}), dari batas ${formatIDR(a.batas)}`;
+      }
       return `sisa ${formatIDR(a.sisaSesudah)} termasuk pesanan ini, dari batas ${formatIDR(a.batas)}`;
     case "MELEBIHI_BATAS_FAKTUR":
       return `${a.faktur} faktur belum lunas dari batas ${a.batas}`;

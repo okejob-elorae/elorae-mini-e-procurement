@@ -95,6 +95,9 @@ model User {
   vanReconciles VanReconcile[] @relation("VanReconcileCanvasser")
   vanReconcilesDone VanReconcile[] @relation("VanReconcileBy")
   assignedStoreId String?
+  spgStartedOn    String?   @db.VarChar(10)
+  spgEndedOn      String?   @db.VarChar(10)
+  spgEndedStoreId String?
   spgSales      SpgSale[] @relation("SpgSaleSalesman")
   spgSalesCreated SpgSale[] @relation("SpgSaleCreatedBy")
   konsiTransfers KonsiTransfer[] @relation("KonsiTransferUser")
@@ -127,6 +130,8 @@ model User {
   warehouseReturnsCounted WarehouseReturn[] @relation("WarehouseReturnCounter")
   returnChargesBorne     ReturnCharge[]    @relation("ReturnChargeBearer")
   returnChargesDecided   ReturnCharge[]    @relation("ReturnChargeDecider")
+  returnChargesChecked   ReturnCharge[]    @relation("ReturnChargeChecker")
+  returnChargeDeductionsCreated ReturnChargeDeduction[] @relation("ReturnChargeDeductionCreator")
   fotoDiunggah           Foto[]            @relation("FotoUploader")
   konsiDikunci           ConsignmentCycle[] @relation("KonsiLocker")
   konsiDilaporkan        ConsignmentReport[] @relation("KonsiReporter")
@@ -145,6 +150,7 @@ model User {
   @@index([roleId])
   @@index([themePantoneTcx])
   @@index([assignedStoreId])
+  @@index([spgEndedStoreId])
 }
 
 model VerificationToken {
@@ -617,6 +623,10 @@ model FieldSalesDelivery {
   receivedByName String?
   receivedAt     DateTime?
   podPhotoUrl    String?
+  voidedAt       DateTime?
+  voidedById     String?
+  voidReason     String?                  @db.Text
+  correctedAt    DateTime?
   @@index([orderId])
   @@index([deliveredAt])
 }
@@ -632,6 +642,8 @@ model FieldSalesDeliveryLine {
   unitPrice      Decimal?            @db.Decimal(15, 2)
   discountAmount Decimal             @default(0) @db.Decimal(15, 2)
   lineTotal      Decimal?            @db.Decimal(15, 2)
+  returnedQty    Int                 @default(0)
+  lostQty        Int                 @default(0)
   delivery       FieldSalesDelivery  @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   orderLine      FieldSalesOrderLine @relation(fields: [orderLineId], references: [id])
   item           Item                @relation(fields: [itemId], references: [id])
@@ -668,6 +680,11 @@ model DeliveryShipment {
   completedOfflineAt DateTime?
   cancelledAt     DateTime?
   cancelledById   String?
+  idempotencyKey  String?                 @unique
+  cancelReason    String?                 @db.Text
+  weightKg        Decimal?                @db.Decimal(10, 2)
+  handoverPhotoUrl String?                @db.Text
+  handoverPhotoR2Key String?
   createdAt       DateTime                @default(now())
   order           FieldSalesOrder         @relation(fields: [orderId], references: [id])
   packedBy        User                    @relation("DeliveryShipmentPackedBy", fields: [packedById], references: [id])
@@ -691,6 +708,8 @@ model DeliveryShipmentLine {
   variantSku   String            @default("")
   plannedQty   Int
   deliveredQty Int?
+  returnedQty  Int?
+  lostQty      Int?
   shipment     DeliveryShipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
   @@index([shipmentId])
 }
@@ -753,6 +772,9 @@ model Receivable {
   collectionLinks CollectionNoteReceivable[]
   claimLinks     PaymentClaimReceivable[]
   items          ReceivableItem[]
+  consignmentCycleId String?
+  isConsignment      Boolean           @default(false)
+  consignmentCycle   ConsignmentCycle? @relation(fields: [consignmentCycleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([storeId, status])
   @@index([status, dueDate])
@@ -760,6 +782,7 @@ model Receivable {
   @@index([collectorId, status])
   @@index([storeId, outstanding])
   @@index([salesmanId])
+  @@index([consignmentCycleId])
 }
 
 enum ReceivableStatus {
@@ -1051,6 +1074,13 @@ model KonsiTransfer {
   note            String?             @db.Text
   shipmentId      String?             @unique
   oldOrderArrival Boolean             @default(false)
+  status          KonsiTransferStatus @default(RECEIVED)
+  receivedAt      DateTime?
+  receivedById    String?
+  cancelledAt     DateTime?
+  cancelledById   String?
+  cancelReason    String?             @db.Text
+  adjustedAt      DateTime?
   createdAt       DateTime            @default(now())
   order           FieldSalesOrder     @relation(fields: [orderId], references: [id])
   store           Store               @relation(fields: [storeId], references: [id])
@@ -1060,6 +1090,13 @@ model KonsiTransfer {
 
   @@index([storeId, createdAt])
   @@index([orderId])
+  @@index([storeId, status])
+}
+
+enum KonsiTransferStatus {
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED
 }
 
 model KonsiTransferLine {
@@ -1072,6 +1109,9 @@ model KonsiTransferLine {
   qty         Decimal       @db.Decimal(10, 2)
   unitCost    Decimal       @db.Decimal(15, 2)
   mainCountedByOpnameId String?
+  returnedQty Int           @default(0)
+  receivedQty Int?
+  unitPrice   Decimal?      @db.Decimal(15, 2)
   transfer    KonsiTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
   item        Item          @relation(fields: [itemId], references: [id])
 
@@ -1436,7 +1476,14 @@ model Item {
   jubelioConfirmedById       String?
   jubelioCreateRequestedAt   DateTime?
   jubelioCreateRequestedById String?
+  jubelioObservedPriceMax    Decimal?          @db.Decimal(14,2)
+  jubelioObservedPriceMin    Decimal?          @db.Decimal(14,2)
+  jubelioObservedAt          DateTime?
+  jubelioObservedChangedAt   DateTime?
+  jubelioPriceDecidedAt      DateTime?
+  salesChannel     ItemSalesChannel  @default(BOTH)
   targetMarginPercent Decimal?       @db.Decimal(5,2)
+  priceRuleBasis   PriceRuleBasis    @default(MARKUP)
   additionalCost   Decimal?          @db.Decimal(15,2)
   defaultPpnIncluded Boolean         @default(true)
   minOrderQty      Int?
@@ -1688,12 +1735,17 @@ model GRN {
   vendorReturns VendorReturn[]
   ppnAmount     Decimal?  @db.Decimal(15,2)
   idempotencyKey String?  @unique
+  requiresNoPoConfirmation Boolean @default(false)
+  noPoConfirmedAt DateTime?
+  noPoConfirmedById String?
+  vendorBillLines VendorBillLine[]
   @@index([poId])
   @@index([supplierId])
   @@index([grnDate])
   @@index([docNumber])
   @@index([ownerApprovedById])
   @@index([ownerDeclinedById])
+  @@index([requiresNoPoConfirmation, noPoConfirmedAt])
 }
 
 model FabricRoll {
@@ -2502,6 +2554,17 @@ enum ItemSource {
   JUBELIO_INGEST
 }
 
+enum ItemSalesChannel {
+  MARKETPLACE
+  OFFLINE
+  BOTH
+}
+
+enum PriceRuleBasis {
+  MARKUP
+  MARGIN
+}
+
 enum ItemTypeGroup {
   RAW
   FINISHED
@@ -2766,8 +2829,12 @@ model SpgSaleLine {
   storeDiscount  Decimal @default(0) @db.Decimal(15, 2)
   counterPromoId String?
   promoName      String?
+  categoryId          String?
+  categoryAt          DateTime?
+  categoryFilledLater Boolean   @default(false)
   returnLines SpgSaleReturnLine[]
   @@index([spgSaleId])
+  @@index([itemId])
 }
 
 model SpgCommissionRate {
@@ -3053,6 +3120,7 @@ model JubelioPushDefaults {
   useSerialNumber          Boolean  @default(false)
   buyPrice                 Decimal  @default(0) @db.Decimal(15,2)
   defaultMarginPercent     Decimal? @db.Decimal(5,2)
+  defaultPriceRuleBasis    PriceRuleBasis @default(MARKUP)
   defaultAdditionalCost    Decimal? @db.Decimal(15,2)
   updatedAt                DateTime @updatedAt
   updatedById              String?
@@ -3636,6 +3704,10 @@ model VendorBillLine {
   poItem   POItem?            @relation(fields: [poItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   woStepId String?
   woStep   WorkOrderStep?     @relation(fields: [woStepId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  grnId    String?
+  grn      GRN?               @relation(fields: [grnId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  itemId   String?
+  variantSku String?
   qty      Decimal            @db.Decimal(10, 2)
   price    Decimal            @db.Decimal(15, 2)
   /// qty x price, stored.
@@ -3646,6 +3718,8 @@ model VendorBillLine {
   @@index([billId])
   @@index([poItemId])
   @@index([woStepId])
+  @@index([grnId])
+  @@index([grnId, itemId])
 }
 
 model VendorPayment {
@@ -3691,6 +3765,102 @@ enum VendorBillStatus {
 enum VendorBillLineType {
   PO_ITEM
   WO_STEP
+  GRN_ITEM
+}
+
+model SupplierPayableCorrection {
+  id              String    @id @default(cuid())
+  billId          String
+  billLineId      String    @unique
+  supplierId      String
+  sourceType      String    @db.VarChar(10)
+  sourceId        String
+  itemId          String?
+  variantSku      String?
+  qty             Decimal   @db.Decimal(10, 2)
+  recordedPrice   Decimal   @db.Decimal(15, 2)
+  invoicePrice    Decimal   @db.Decimal(15, 2)
+  amount          Decimal   @db.Decimal(15, 2)
+  dppAmount       Decimal   @db.Decimal(15, 2)
+  ppnInputAmount  Decimal   @db.Decimal(15, 2)
+  inventoryAmount Decimal   @db.Decimal(15, 2)
+  stockAmount     Decimal?  @db.Decimal(15, 2)
+  soldAmount      Decimal?  @db.Decimal(15, 2)
+  breakdown       Json
+  status          String    @default("MENUNGGU") @db.VarChar(20)
+  decidedAt       DateTime?
+  decidedById     String?
+  decisionNote    String?   @db.Text
+  cancelledAt     DateTime?
+  cancelReason    String?   @db.Text
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([sourceType, sourceId, status])
+  @@index([status, createdAt])
+  @@index([billId])
+}
+
+model SupplierInvoiceRequest {
+  id                String    @id @default(cuid())
+  supplierId        String
+  channel           String    @db.VarChar(20)
+  note              String?   @db.Text
+  requestedById     String
+  requestedAt       DateTime  @default(now())
+  lastRequestedById String
+  lastRequestedAt   DateTime  @default(now())
+  askCount          Int       @default(1)
+  remindedAt        DateTime?
+  closedAt          DateTime?
+  closedByBillId    String?
+  cancelledAt       DateTime?
+  cancelledById     String?
+  cancelReason      String?   @db.Text
+  idempotencyKey    String?   @unique @db.VarChar(100)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  lines             SupplierInvoiceRequestLine[]
+
+  @@index([supplierId, cancelledAt, closedAt])
+  @@index([cancelledAt, closedAt, lastRequestedAt])
+}
+
+model SupplierInvoiceRequestLine {
+  id            String                 @id @default(cuid())
+  requestId     String
+  sourceType    String                 @db.VarChar(10)
+  sourceId      String
+  label         String
+  receivedQty   Decimal                @db.Decimal(12, 2)
+  billedQty     Decimal                @db.Decimal(12, 2)
+  qty           Decimal                @db.Decimal(12, 2)
+  amount        Decimal                @db.Decimal(15, 2)
+  amountUnknown Boolean                @default(false)
+  request       SupplierInvoiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, sourceType, sourceId])
+  @@index([sourceType, sourceId])
+}
+
+model SupplierInvoiceWaiver {
+  id            String    @id @default(cuid())
+  supplierId    String
+  sourceType    String    @db.VarChar(10)
+  sourceId      String
+  itemId        String?
+  variantSku    String?
+  qty           Decimal   @db.Decimal(12, 2)
+  reason        String    @db.Text
+  createdById   String
+  createdAt     DateTime  @default(now())
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?   @db.Text
+
+  @@index([sourceType, sourceId, cancelledAt])
+  @@index([supplierId, cancelledAt])
 }
 
 enum VendorPaymentMethod {
@@ -3746,10 +3916,15 @@ model SpgSaleReturn {
   reason         String   @db.Text
   idempotencyKey String   @unique
   createdAt      DateTime @default(now())
-  status         SpgSaleReturnStatus @default(DISETUJUI)
+  status         SpgSaleReturnStatus @default(MENUNGGU)
   decidedById    String?
   decidedAt      DateTime?
   rejectReason   String?  @db.Text
+  goodsPhotoR2Key  String?
+  refundedAt       DateTime?
+  refundSlipR2Key  String?
+  refundMarkedById String?
+  refundMarkReason String?  @db.Text
 
   spgSale        SpgSale  @relation(fields: [spgSaleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   lines          SpgSaleReturnLine[]
@@ -3757,6 +3932,66 @@ model SpgSaleReturn {
   @@index([spgSaleId])
   @@index([storeId, createdAt])
   @@index([status, createdAt])
+  @@index([storeId, refundedAt])
+}
+
+model SpgCharge {
+  id                 String    @id @default(cuid())
+  spgUserId          String
+  storeId            String
+  sourceKind         String    @db.VarChar(10)
+  source             String    @db.VarChar(40)
+  sourceId           String
+  sourceDocNo        String
+  spgSaleId          String
+  reportedAt         DateTime
+  computedAmount     Decimal   @db.Decimal(15, 2)
+  amount             Decimal   @db.Decimal(15, 2)
+  amountReason       String?   @db.Text
+  settledAmount      Decimal   @default(0) @db.Decimal(15, 2)
+  settledAt          DateTime?
+  status             String    @default("TERBUKA") @db.VarChar(10)
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelReason       String?   @db.Text
+  goodsDecision      String?   @db.VarChar(12)
+  goodsDecidedAt     DateTime?
+  goodsDecidedById   String?
+  goodsDecisionNote  String?   @db.Text
+  paybackAmount      Decimal   @default(0) @db.Decimal(15, 2)
+  paybackPaidAt      DateTime?
+  paybackPaidRefType String?   @db.VarChar(40)
+  paybackPaidRefId   String?
+  paybackPayoutMonth String?   @db.VarChar(7)
+  note               String    @db.Text
+  createdById        String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  deductions         SpgChargeDeduction[]
+
+  @@unique([source, sourceId])
+  @@index([spgUserId, status])
+  @@index([spgUserId, paybackPaidAt])
+  @@index([status, goodsDecision])
+}
+
+model SpgChargeDeduction {
+  id             String    @id @default(cuid())
+  chargeId       String
+  amount         Decimal   @db.Decimal(15, 2)
+  fromCommission Decimal   @db.Decimal(15, 2)
+  fromSalary     Decimal   @db.Decimal(15, 2)
+  paidRefType    String    @db.VarChar(40)
+  paidRefId      String
+  payoutMonth    String    @db.VarChar(7)
+  createdById    String
+  createdAt      DateTime  @default(now())
+
+  charge         SpgCharge @relation(fields: [chargeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([chargeId, paidRefType, paidRefId])
+  @@index([paidRefType, paidRefId])
 }
 
 model SpgSaleReturnLine {
@@ -4304,7 +4539,7 @@ model ConsignmentCycle {
   reports       ConsignmentReport[]
   sold          ConsignmentSold[]
   commissions   ConsignmentCommission[]
-  payments      ConsignmentPayment[]
+  receivables   Receivable[]
 
   @@unique([storeId, periodYear, periodMonth])
   @@index([storeId])
@@ -4390,25 +4625,6 @@ model ConsignmentSold {
   @@index([itemId])
 }
 
-model ConsignmentPayment {
-  id            String    @id @default(cuid())
-  cycleId       String
-  amount        Decimal   @db.Decimal(15, 2)
-  paidOn        DateTime
-  method        String    @default("transfer")
-  note          String?   @db.Text
-  recordedById  String
-  cancelledAt   DateTime?
-  cancelledById String?
-  cancelReason  String?   @db.Text
-  idempotencyKey String?  @unique
-  createdAt     DateTime  @default(now())
-
-  cycle         ConsignmentCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-
-  @@index([cycleId])
-}
-
 model ConsignmentCommission {
   id         String    @id @default(cuid())
   cycleId    String
@@ -4418,6 +4634,7 @@ model ConsignmentCommission {
   total      Decimal   @default(0) @db.Decimal(15, 2)
   deduction  Decimal   @default(0) @db.Decimal(15, 2)
   salaried   Boolean   @default(true)
+  salaryDetail Json?
   paidAt     DateTime?
   paidById   String?
   note       String?   @db.MediumText
@@ -4487,6 +4704,12 @@ enum ReturnChargeStatus {
   LUNAS
 }
 
+enum ReturnShortfallCheck {
+  DITANYAKAN
+  DITEMUKAN
+  TIDAK_DITEMUKAN
+}
+
 model StoreReturn {
   id             String    @id @default(cuid())
   noNrt          String
@@ -4507,7 +4730,8 @@ model StoreReturn {
   store          Store @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   salesman       User? @relation("StoreReturnSalesman", fields: [salesmanId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   items          StoreReturnItem[]
-  warehouseReturn WarehouseReturn?
+  warehouseReturn WarehouseReturn? @relation("StoreReturnCount")
+  followUps      WarehouseReturn[] @relation("StoreReturnFollowUps")
   charges        ReturnCharge[]
   deductions     PaymentClaimDeduction[]
 
@@ -4541,6 +4765,7 @@ model WarehouseReturn {
   noNri           String    @unique
   storeId         String?
   storeReturnId   String?   @unique
+  followUpOfStoreReturnId String?
   warehouseUserId String
   receivedAt      DateTime
   deliveryMethod  ReturnDeliveryMethod @default(SALES)
@@ -4553,7 +4778,8 @@ model WarehouseReturn {
   updatedAt       DateTime  @updatedAt
 
   store           Store? @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  storeReturn     StoreReturn? @relation(fields: [storeReturnId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  storeReturn     StoreReturn? @relation("StoreReturnCount", fields: [storeReturnId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  followUpOf      StoreReturn? @relation("StoreReturnFollowUps", fields: [followUpOfStoreReturnId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   warehouseUser   User @relation("WarehouseReturnCounter", fields: [warehouseUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   items           WarehouseReturnItem[]
   charges         ReturnCharge[]
@@ -4561,6 +4787,7 @@ model WarehouseReturn {
   @@index([storeId, status])
   @@index([status])
   @@index([receivedAt])
+  @@index([followUpOfStoreReturnId])
 }
 
 model WarehouseReturnItem {
@@ -4594,6 +4821,11 @@ model ReturnCharge {
   decidedById       String?
   decidedAt         DateTime?
   settledAt         DateTime?
+  checkStatus       ReturnShortfallCheck @default(DITANYAKAN)
+  checkNote         String?   @db.MediumText
+  checkedById       String?
+  checkedAt         DateTime?
+  settledAmount     Decimal   @default(0) @db.Decimal(15, 2)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -4602,12 +4834,31 @@ model ReturnCharge {
   store             Store? @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   bearerUser        User? @relation("ReturnChargeBearer", fields: [bearerUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   decidedBy         User? @relation("ReturnChargeDecider", fields: [decidedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  checkedBy         User? @relation("ReturnChargeChecker", fields: [checkedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  deductions        ReturnChargeDeduction[]
 
   @@index([status])
   @@index([storeId, status])
   @@index([bearerUserId, status])
   @@index([storeReturnId])
   @@index([warehouseReturnId])
+}
+
+model ReturnChargeDeduction {
+  id          String   @id @default(cuid())
+  chargeId    String
+  amount      Decimal  @db.Decimal(15, 2)
+  refType     String
+  refId       String
+  note        String?  @db.MediumText
+  createdById String
+  createdAt   DateTime @default(now())
+
+  charge      ReturnCharge @relation(fields: [chargeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdBy   User @relation("ReturnChargeDeductionCreator", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([chargeId])
+  @@index([refType, refId])
 }
 
 enum DeductionMethod {
@@ -5430,6 +5681,10 @@ model StoreReceipt {
   receivedAt   DateTime @default(now())
   idempotencyKey String? @unique
   note         String?  @db.MediumText
+  receivedVia  String?
+  picName      String?
+  photoUrl     String?  @db.Text
+  photoR2Key   String?
 
   store        Store @relation(fields: [storeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   lines        StoreReceiptLine[]
@@ -5446,6 +5701,7 @@ model StoreReceiptLine {
   productName String
   qtySent     Int
   qtyReceived Int
+  qtyRefused  Int     @default(0)
   qtyDamaged         Int       @default(0)
   damageNote         String?   @db.Text
   damagePhotoUrl     String?
@@ -6067,6 +6323,8 @@ model SpgCommission {
   commission  Decimal   @db.Decimal(15, 2)
   deduction   Decimal   @default(0) @db.Decimal(15, 2)
   basis       String
+  baseSalary   Decimal  @default(0) @db.Decimal(15, 2)
+  salaryDetail Json?
   lockedById  String
   lockedAt    DateTime  @default(now())
   paidAt      DateTime?
@@ -6099,6 +6357,7 @@ model SpgCommissionCorrection {
   sourceStoreId    String
   sourceSalesMonth String   @db.VarChar(7)
   amount           Decimal  @db.Decimal(15, 2)
+  salaryAmount     Decimal  @default(0) @db.Decimal(15, 2)
   difference       Decimal  @db.Decimal(15, 2)
   figure           Decimal  @db.Decimal(15, 2)
   paidBefore       Decimal  @db.Decimal(15, 2)
@@ -6114,6 +6373,153 @@ model SpgCommissionCorrection {
   @@unique([paidRefType, paidRefId, sourceKey])
   @@index([spgUserId, sourceKey])
   @@index([payoutMonth])
+}
+
+model SpgMonthSchedule {
+  id            String    @id @default(cuid())
+  userId        String
+  storeId       String
+  month         String    @db.VarChar(7)
+  status        String    @default("DRAF") @db.VarChar(10)
+  version       Int       @default(0)
+  submittedAt   DateTime?
+  submittedById String?
+  decidedAt     DateTime?
+  decidedById   String?
+  rejectReason  String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([userId, month])
+  @@index([storeId, month])
+  @@index([status])
+}
+
+model SpgSalary {
+  id            String   @id @default(cuid())
+  userId        String
+  monthlyAmount Decimal  @db.Decimal(15, 2)
+  effectiveFrom String   @db.VarChar(7)
+  createdById   String
+  updatedById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, effectiveFrom])
+}
+
+model SpgAttendanceRecord {
+  id           String    @id @default(cuid())
+  userId       String
+  storeId      String
+  month        String    @db.VarChar(7)
+  status       String    @db.VarChar(15)
+  version      Int       @default(1)
+  source       String    @db.VarChar(10)
+  fileR2Key    String?   @db.VarChar(191)
+  enteredById  String
+  enteredAt    DateTime
+  checkedById  String?
+  checkedAt    DateTime?
+  returnNote   String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  days         SpgAttendanceRecordDay[]
+
+  @@unique([userId, month])
+  @@index([status])
+  @@index([storeId, month])
+}
+
+model SpgAttendanceRecordDay {
+  id       String              @id @default(cuid())
+  recordId String
+  day      String              @db.VarChar(10)
+  kind     String              @db.VarChar(10)
+  present  Boolean
+  note     String?             @db.Text
+  record   SpgAttendanceRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@unique([recordId, day])
+}
+
+model SpgDebt {
+  id               String    @id @default(cuid())
+  spgUserId        String
+  kind             String    @db.VarChar(15)
+  sourceKey        String    @db.VarChar(191)
+  sourceStoreId    String?
+  sourceSalesMonth String?   @db.VarChar(7)
+  amount           Decimal   @db.Decimal(15, 2)
+  settledAmount    Decimal   @default(0) @db.Decimal(15, 2)
+  status           String    @default("TERBUKA") @db.VarChar(10)
+  createdRefType   String    @db.VarChar(40)
+  createdRefId     String
+  note             String    @db.Text
+  createdById      String
+  createdAt        DateTime  @default(now())
+  settledAt        DateTime?
+
+  @@unique([createdRefType, createdRefId, kind, sourceKey])
+  @@index([spgUserId, status])
+  @@index([status, createdAt])
+}
+
+model SpgDebtSettlement {
+  id          String    @id @default(cuid())
+  debtId      String
+  amount      Decimal   @db.Decimal(15, 2)
+  kind        String    @db.VarChar(10)
+  refType     String    @db.VarChar(40)
+  refId       String
+  createdById String
+  createdAt   DateTime  @default(now())
+  voidedAt    DateTime?
+  voidedById  String?
+
+  @@unique([debtId, refType, refId])
+  @@index([refType, refId])
+}
+
+model SpgDebtPayment {
+  id             String    @id @default(cuid())
+  spgUserId      String
+  amount         Decimal   @db.Decimal(15, 2)
+  method         String    @db.VarChar(10)
+  receivedOn     String    @db.VarChar(10)
+  photoR2Key     String?
+  note           String?   @db.Text
+  status         String    @default("MENUNGGU_CEK") @db.VarChar(15)
+  version        Int       @default(1)
+  idempotencyKey String    @unique
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  checkedById    String?
+  checkedAt      DateTime?
+  returnNote     String?   @db.Text
+  voidedAt       DateTime?
+  voidedById     String?
+  voidReason     String?   @db.Text
+
+  @@index([spgUserId, status])
+  @@index([status])
+}
+
+model SpgExtraPayout {
+  id             String   @id @default(cuid())
+  spgUserId      String
+  amount         Decimal  @db.Decimal(15, 2)
+  offsetAmount   Decimal  @default(0) @db.Decimal(15, 2)
+  method         String?  @db.VarChar(10)
+  paidOn         String   @db.VarChar(10)
+  photoR2Key     String?
+  note           String?  @db.Text
+  idempotencyKey String   @unique
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  @@index([spgUserId])
 }
 
 model DamagedStockMovement {
@@ -6151,6 +6557,8 @@ model StockLoss {
   decisionNote   String?   @db.Text
   createdById    String
   idempotencyKey String?   @unique
+  shipmentId     String?
+  claimValue     Decimal?  @db.Decimal(15, 2)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -6160,6 +6568,7 @@ model StockLoss {
   @@index([storeId, status])
   @@index([source, sourceId])
   @@index([status, createdAt])
+  @@index([shipmentId])
 }
 
 model StockLossLine {
@@ -6187,12 +6596,22 @@ model StockLossShare {
   settledAt    DateTime?
   settledById  String?
   settleNote   String?   @db.Text
+  claimStatus       String?
+  claimSubmittedAt  DateTime?
+  claimRecordedAt   DateTime?
+  claimRecordedById String?
+  claimPaidMethod   String?
+  claimReference    String?
+  claimDecidedAt    DateTime?
+  claimDecidedById  String?
+  claimNote         String?   @db.Text
 
   loss         StockLoss @relation(fields: [lossId], references: [id], onDelete: Cascade)
 
   @@index([lossId])
   @@index([bearerUserId, settledAt])
   @@index([bearer, settledAt])
+  @@index([bearer, claimStatus])
 }
 
 model SpgVisitorCount {

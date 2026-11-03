@@ -9,10 +9,10 @@ import {
   tokoUntukRetur,
 } from "@/lib/receivables/return-queries";
 import { prisma } from "@elorae/db";
-import { bolehMembacaRetur } from "@/lib/receivables/izin";
+import { bolehMembacaRetur, bolehMemutuskanSelisihRetur } from "@/lib/receivables/izin";
 import { koreksiTertunda } from "@/lib/receivables/koreksi";
 import { ReturTokoClient } from "./ReturTokoClient";
-import { bacaSaringRetur, butakan, calonUntukPenonton, saringKerjaRetur } from "./buta";
+import { bacaSaringRetur, butakan, calonUntukPenonton, saringKerjaRetur, type LingkupButa } from "./buta";
 import { bacaCari, bacaHalaman, potongHalaman } from "../piutang/_daftar/halaman";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +57,46 @@ export default async function ReturTokoPage(props?: {
     saringKerjaRetur(semua, { saring, cari, koreksi: new Set(koreksi.keys()) }),
     bacaHalaman(sp.halaman),
   );
-  const lingkupButa = { bolehMenghitung, penggunaId };
+
+  /*
+   * Orang-orang yang tidak pernah menghitung barang susulan sebuah nota (dua tangan) —
+   * selain mereka, penghitung tidak melihat klaim dan selisih nota yang masih bisa menerima
+   * barang susulan. Giliran siapa (hasil cek sales pemegang toko) sudah dibaca
+   * `daftarKerjaRetur` sendiri.
+   */
+  const idBeban = semua.filter((b) => b.jenis === "NRT" && b.bebanId).map((b) => b.id);
+  const tindak = idBeban.length
+    ? await prisma.storeReturn.findMany({
+        where: { id: { in: idBeban } },
+        select: {
+          id: true,
+          salesmanId: true,
+          store: { select: { salesmanId: true } },
+          charges: {
+            orderBy: { createdAt: "asc" },
+            take: 1,
+            select: { amount: true, status: true, settledAmount: true, checkedById: true, bearerUserId: true },
+          },
+        },
+      })
+    : [];
+  const tanganSusulan = new Map<string, string[]>();
+  for (const n of tindak) {
+    const c = n.charges[0];
+    if (!c) continue;
+    if (Number(c.amount) > 0 && c.status !== "LUNAS" && Number(c.settledAmount) === 0) {
+      tanganSusulan.set(
+        n.id,
+        [n.salesmanId, c.checkedById, c.bearerUserId, n.store.salesmanId].filter((x): x is string => Boolean(x)),
+      );
+    }
+  }
+  const lingkupButa: LingkupButa = {
+    bolehMenghitung,
+    penggunaId,
+    bolehMemutuskan: bolehMemutuskanSelisihRetur(izin),
+    tanganSusulan,
+  };
 
   return (
     <ReturTokoClient

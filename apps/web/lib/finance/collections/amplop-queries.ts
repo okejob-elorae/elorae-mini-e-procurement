@@ -40,8 +40,8 @@ export type Amplop = {
  * rather than the salesman who actually visits the store; keying on `deliveredById` would file
  * stores into that admin's amplop and silently drop them from the salesman's.
  *
- * A konsi receivable never appears, a sell-through report's included (`RECEIVABLES_ON_PHONE`): its
- * total is a konsi figure, and those stay off the phone. A MANUAL/IMPORT receivable assigned to the
+ * A konsi receivable never appears — a cycle bill, a sell-through report's, or one at a KONSI store
+ * (`RECEIVABLES_ON_PHONE`): the phone's one konsi payment path is the BKM, not this amplop. A MANUAL/IMPORT receivable assigned to the
  * user reads its own invoice number as `docNo`, which is why the select carries the receivable's
  * own invoice fields and not only its `delivery`.
  *

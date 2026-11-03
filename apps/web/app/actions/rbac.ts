@@ -9,6 +9,8 @@ import { z } from 'zod';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { perannyaSpg, tolakAkunSistem, type KodeAkunSistem } from '@/lib/users/validasi';
 import { peranLamaDari } from "@/lib/users/peran-lama";
+import { tolakPerubahanSpg } from "@/lib/users/spg-berhenti";
+import { adaRiwayatSpg } from "@/lib/users/spg-berhenti-writer";
 
 /** Batas kolom VARCHAR(191) di MariaDB untuk keterangan peran. */
 const roleSchema = z.object({
@@ -333,7 +335,7 @@ export type AssignUserRoleResult =
   | { ok: true }
   | {
       ok: false;
-      code: KodeAkunSistem | "PERAN_SENDIRI" | "TIDAK_DITEMUKAN" | "PERAN_TIDAK_DITEMUKAN" | "TOKO_WAJIB";
+      code: KodeAkunSistem | "PERAN_SENDIRI" | "TIDAK_DITEMUKAN" | "PERAN_TIDAK_DITEMUKAN" | "TOKO_WAJIB" | "SPG_GUNAKAN_BERHENTI";
     };
 
 /**
@@ -359,6 +361,12 @@ export type AssignUserRoleResult =
  * Kolom peran lama (`User.role`) ikut ditulis, diturunkan dari peran baru
  * (`peranLamaDari`), dan masuk jejak sebagai `legacyRole` bila berubah — sama
  * dengan Pengaturan → Pengguna.
+ *
+ * SPG (fakta pemilik 2026-11-02 "SPG tidak mungkin pindah toko", P66): SPG aktif
+ * yang sudah punya riwayat di tokonya tidak diganti perannya di sini
+ * (`SPG_GUNAKAN_BERHENTI` — pakai "SPG berhenti" di Pengaturan → Pengguna), dan
+ * SPG yang sudah berhenti tidak wajib punya toko tetap — aturan yang sama dengan
+ * formulir Pengguna (`tolakPerubahanSpg`).
  */
 export async function assignUserRole(userId: string, roleId: string): Promise<AssignUserRoleResult> {
   const session = await auth();
@@ -373,7 +381,14 @@ export async function assignUserRole(userId: string, roleId: string): Promise<As
       tx.user.findUnique({ where: { id: pelakuId }, select: { roleDefinition: { select: { isSystem: true } } } }),
       tx.user.findUnique({
         where: { id: userId },
-        select: { id: true, role: true, roleId: true, assignedStoreId: true, roleDefinition: { select: { isSystem: true } } },
+        select: {
+          id: true,
+          role: true,
+          roleId: true,
+          assignedStoreId: true,
+          spgEndedOn: true,
+          roleDefinition: { select: { isSystem: true, permissions: { select: { permission: { select: { code: true } } } } } },
+        },
       }),
       tx.roleDefinition.findUnique({
         where: { id: roleId },
@@ -392,13 +407,30 @@ export async function assignUserRole(userId: string, roleId: string): Promise<As
     if (target.roleId === peran.id) return { ok: true };
 
     let tokoBaru: string | null = null;
-    if (perannyaSpg(kodeIzin(peran.permissions), peran.isSystem)) {
+    const spgBaru = perannyaSpg(kodeIzin(peran.permissions), peran.isSystem);
+    // SPG yang sudah berhenti: tokonya sudah dilepas, dan hanya kembali lewat "Batalkan berhenti".
+    const berhenti = target.spgEndedOn != null;
+    if (spgBaru && !berhenti) {
       const tokoAktif = target.assignedStoreId
         ? await tx.store.count({ where: { id: target.assignedStoreId, isActive: true } })
         : 0;
       if (!tokoAktif) return { ok: false, code: 'TOKO_WAJIB' };
       tokoBaru = target.assignedStoreId;
     }
+    const spgLama = perannyaSpg(kodeIzin(target.roleDefinition?.permissions ?? []), target.roleDefinition?.isSystem === true);
+    const riwayatPenting = !berhenti && spgLama && target.assignedStoreId !== null && !spgBaru;
+    const tolakSpg = tolakPerubahanSpg({
+      berhenti,
+      // Riwayat dibaca lewat transaksi ini, supaya check-in atau penjualan pertama yang masuk di
+      // sela-selanya tidak lolos dari penjaga.
+      adaRiwayat: riwayatPenting ? await adaRiwayatSpg(target.id, target.assignedStoreId as string, tx) : false,
+      tokoLama: target.assignedStoreId,
+      tokoBaru,
+      spgLama,
+      spgBaru,
+    });
+    // Toko baru di sini selalu toko lama atau kosong, jadi hanya pergantian peran yang bisa ditolak.
+    if (tolakSpg === "SPG_GUNAKAN_BERHENTI") return { ok: false, code: tolakSpg };
     // Toko tetap dan peran lama hanya masuk jejak bila berubah — jejak lama berbentuk roleId saja.
     const tokoBerubah = target.assignedStoreId !== tokoBaru;
     const peranLama = peranLamaDari(peran);

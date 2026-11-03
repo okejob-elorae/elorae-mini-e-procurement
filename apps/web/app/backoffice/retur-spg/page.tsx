@@ -17,7 +17,8 @@ type PageProps = {
  * ROUTE_PERMISSIONS) melihat; menyetujui dan menolak = `spg_returns:approve`,
  * diperiksa di halaman rincian dan di aksinya. Saringan hidup di URL
  * (`?status=&toko=&cari=&halaman=`): halaman server membacanya, klien hanya
- * mendorong URL.
+ * mendorong URL. Tab `KEPUTUSAN_BARANG`: beban SPG yang sudah diganti penuh
+ * dan barangnya menunggu keputusan kantor (P79).
  */
 export default async function ReturPembeliSpgPage({ searchParams }: PageProps) {
   const session = await auth();
@@ -42,7 +43,8 @@ export default async function ReturPembeliSpgPage({ searchParams }: PageProps) {
     diputuskanOleh: b.diputuskanOleh,
     diputuskan: b.diputuskanPada ? formatDisplayDateTime(b.diputuskanPada) : null,
     alasanTolak: b.alasanTolak,
-    langsungBerlaku: b.langsungBerlaku,
+    uang: b.uang,
+    beban: b.beban ? { keadaan: b.beban.keadaan, jumlah: b.beban.jumlah, sisa: b.beban.sisa } : null,
   }));
 
   return (
@@ -51,6 +53,7 @@ export default async function ReturPembeliSpgPage({ searchParams }: PageProps) {
       baris={baris}
       total={data.total}
       perStatus={data.perStatus}
+      keputusanBarang={data.keputusanBarang}
       toko={toko}
       bolehMemutuskan={hasPermission(izin, PERMISSIONS.SPG_RETURNS_APPROVE)}
     />

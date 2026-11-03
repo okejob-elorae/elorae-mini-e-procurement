@@ -335,6 +335,21 @@ export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: Input
             storeDiscount: h ? h.potonganToko : 0,
             counterPromoId: h?.promoId ?? null,
             promoName: h?.promoName ?? null,
+            /*
+             * Kategori barang SAAT terjual, beserta tanggalnya (pemilik P8: komisi memakai
+             * kategori saat terjual, "dan anda harus menyimpan data tanggalnya"). Barang tanpa
+             * kategori tetap mendapat tanggal; kategorinya diisi sekali begitu barang itu diberi
+             * kategori (`isiKategoriPenjualanSpg`, P69), dan baris itu ditandai diisi kemudian.
+             *
+             * `categoryAt` = saat kategori itu DIBACA (`sekarang`), bukan `waktu`: kategorinya
+             * dibaca dari master barang di transaksi ini, jadi nota dari antrean HP yang baru
+             * sampai berhari-hari kemudian menyimpan kategori hari sampainya — tanggal itulah
+             * yang benar untuknya. Waktu jualnya sendiri tetap di `SpgSale.createdAt`. Sama
+             * dengan isi kemudian, yang mencatat saat kategorinya diisi (tinjauan rancangan B1).
+             */
+            categoryId: p.item.categoryId ?? null,
+            categoryAt: sekarang,
+            categoryFilledLater: false,
           };
         }),
       },

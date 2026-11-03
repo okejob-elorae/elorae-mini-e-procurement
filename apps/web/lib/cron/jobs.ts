@@ -16,6 +16,9 @@ import { kirimPengumumanTerjadwal } from "@/lib/pengumuman/writer";
 import { ingatkanMutasiMacet, kabarkanKirimanMenunggu } from "@/lib/spg/mutasi-pengingat";
 import { ingatkanTutupHari } from "@/lib/spg/tutup-hari-pengingat";
 import { susunAntrean as susunAntreanPantau } from "@/lib/creative/pantau-writer";
+import { runInvoiceRequestReminderSweep } from "@/lib/vendor-billing/permintaan-invoice-pengingat";
+import { runJubelioPriceDiffBellSweep } from "@/lib/jubelio/harga/bell-sweep";
+import { lepaskanKirimanHargaTertahan } from "@/lib/jubelio/harga/lepas-tahanan";
 
 let registered = false;
 
@@ -48,9 +51,10 @@ export function registerCronJobs(): void {
       try {
         const r = await runOverdueSweep();
         console.log(
-          "[cron] piutang-overdue done — scanned=%d announced=%d deferred=%d collectorNotified=%d unassigned=%d failed=%d skipped=%j",
+          "[cron] piutang-overdue done — scanned=%d announced=%d partlyHeld=%d deferred=%d collectorNotified=%d unassigned=%d failed=%d skipped=%j",
           r.scanned,
           r.announced,
+          r.partlyHeld,
           r.deferred,
           r.collectorNotified,
           r.unassigned,
@@ -87,6 +91,75 @@ export function registerCronJobs(): void {
       }
     },
     { timezone: "Asia/Jakarta" },
+  );
+
+  /**
+   * Daily 08:45 Asia/Jakarta — supplier invoice requests still unanswered after 7 days (owner
+   * decision P19, 2026-11-02: a reminder when no invoice has arrived in 7 days). Its own job, log
+   * line and catch; 08:45 keeps it off the 08:30 PO payment reminder. One reminder per request per
+   * ask — `remindedAt` is the marker, written in the same transaction as its bell row, so a restart
+   * or a second tick the same day reminds nothing twice.
+   */
+  cron.schedule(
+    "45 8 * * *",
+    async () => {
+      console.log("[cron] invoice-request-reminder tick");
+      try {
+        const r = await runInvoiceRequestReminderSweep();
+        console.log(
+          "[cron] invoice-request-reminder done — scanned=%d reminded=%d closed=%d failed=%d",
+          r.scanned,
+          r.reminded,
+          r.closed,
+          r.failed,
+        );
+      } catch (err) {
+        console.error("[cron] invoice-request-reminder failed:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  /**
+   * Every 5 minutes — Jubelio price differences (owner answers P2 and P75, 2026-11-02): first the
+   * bell for every item whose price read from Jubelio differs from the ERP's ("langsung ada warning
+   * alert"), then one fresh product push for every push held on `price_differs_held` whose item no
+   * longer differs. Each step has its own catch, so a failed bell sweep never stops the release,
+   * and each logs only when it did something. `noOverlap` skips a tick while the previous one is
+   * still running: the bell reads its dedup set once per run.
+   */
+  cron.schedule(
+    "*/5 * * * *",
+    async () => {
+      try {
+        const r = await runJubelioPriceDiffBellSweep();
+        if (r.announced > 0 || r.deferred > 0 || r.failed > 0) {
+          console.log(
+            "[cron] jubelio-price-diff-bell done — scanned=%d announced=%d deferred=%d failed=%d",
+            r.scanned,
+            r.announced,
+            r.deferred,
+            r.failed,
+          );
+        }
+      } catch (err) {
+        console.error("[cron] jubelio-price-diff-bell failed:", err);
+      }
+      try {
+        const r = await lepaskanKirimanHargaTertahan();
+        if (r.dilepas > 0 || r.gagal > 0) {
+          console.log(
+            "[cron] jubelio-price-held-release done — released=%d skipped=%d failed=%d",
+            r.dilepas,
+            r.dilewati,
+            r.gagal,
+          );
+        }
+      } catch (err) {
+        console.error("[cron] jubelio-price-held-release failed:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta", noOverlap: true },
   );
 
   /**

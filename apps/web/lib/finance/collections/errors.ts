@@ -10,7 +10,9 @@ export type CollectionErrorCode =
   | "NOT_PENDING"
   | "MISSING_REASON"
   | "INVALID_METHOD"
-  | "INVALID_PROOF";
+  | "INVALID_PROOF"
+  /** A konsi bill (`isKonsiBill`): paid only through a BKM, never collected or assigned here. */
+  | "KONSI_LEWAT_BKM";
 
 export class CollectionError extends Error {
   code: CollectionErrorCode;

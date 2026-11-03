@@ -177,6 +177,8 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
   const tToasts = useTranslations('toasts');
   const tTolak = useTranslations('grnErrors');
   const tUmum = useTranslations('common');
+  // GRN tanpa PO menunggu konfirmasi admin sebelum masuk stok dan menjadi utang (P51a).
+  const tTanpaPo = useTranslations('inventory.grnTanpaPo');
   const locale = useLocale();
   const daring = useSyncExternalStore(langgananSinyal, sinyalSekarang, () => true);
   const alasanSimpan = alasanTidakBisaSimpanGrn({ daring });
@@ -817,7 +819,13 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
       }
       await selesaikanDraf();
       // Kiriman ulang (jawaban sebelumnya hilang): GRN sudah tercatat, tidak ada yang masuk dua kali.
-      toast.success(hasil.ulang ? t('sudahTercatat', { doc: hasil.docNumber }) : t('createdToast'));
+      toast.success(
+        hasil.ulang
+          ? t('sudahTercatat', { doc: hasil.docNumber })
+          : hasil.menungguKonfirmasi
+            ? tTanpaPo('tercatatMenunggu', { nomor: hasil.docNumber })
+            : t('createdToast')
+      );
       onSuccess?.();
     } catch (err: unknown) {
       // Sambungan putus: GRN mungkin sudah tercatat, mungkin belum — jangan menebak.
@@ -971,6 +979,7 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
                 searchPlaceholder={t('cariPo')}
                 triggerClassName="min-h-[44px] w-full"
               />
+              {!poId && <p className="text-xs text-muted-foreground">{tTanpaPo('catatanForm')}</p>}
             </div>
             <div className="space-y-2 w-full">
               <Label htmlFor="supplierId">{t('supplier')} *</Label>

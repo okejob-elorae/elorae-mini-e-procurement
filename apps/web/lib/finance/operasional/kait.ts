@@ -19,7 +19,8 @@ import { idKomisiSpg, SUMBER_OPERASIONAL, type SumberOperasional } from "./atura
  * - komisi SPG toko putus ditetapkan/dibayar (pembayaran gaji/komisi SPG: akrualnya
  *   diselaraskan dulu oleh `postingJurnalOperasionalAman` — pembayaran bisa menghitung
  *   ulang angkanya, dan sapuan yang menyelamatkan kait yang mati melakukan hal yang sama);
- * - keputusan barang hilang (putuskan/ubah/batal), potongan beban sales;
+ * - keputusan barang hilang (putuskan/ubah/batal), potongan beban sales (barang hilang dan
+ *   selisih retur);
  * - keputusan gudang rusak, penyesuaian stok manual, retur pemasok selesai;
  * - biaya perjalanan disetujui/dibayar.
  */
@@ -60,13 +61,11 @@ export function kaitKirimTitipan(shipmentId: string, userId: string): Promise<vo
 }
 
 /**
- * Pengiriman pesanan konsinyasi SELESAI (`completeShipmentAction`,
- * `completePodAction`): jurnal pindah barang untuk setiap `KonsiTransfer`
- * pengiriman itu (satu per pengiriman). Idempoten — dipanggil di SETIAP cabang
- * yang menyelesaikan pengiriman KONSI, termasuk ulangan (replay) yang tidak
- * memindahkan stok lagi: ulangan itu yang menyelamatkan jurnal bila kait
- * pertama mati sebelum sempat memposting. Pengiriman tanpa transfer (putus,
- * atau konsi tanpa barang terkirim) tidak menjurnal apa pun.
+ * Pengiriman pesanan konsinyasi DIBUAT, diterima toko (penolakan di pintu), atau tidak jadi
+ * dikirim (`createShipmentAction`, `completeShipmentAction`, `completePodAction`,
+ * `cancelShipmentAction`): jurnal pindah barang setiap `KonsiTransfer` pengiriman itu
+ * (satu per pengiriman), DISELARASKAN — generasi berikutnya membukukan selisihnya. Idempoten;
+ * pengiriman tanpa transfer (putus) tidak menjurnal apa pun.
  */
 export function kaitPindahKonsiPengiriman(shipmentId: string, userId: string): Promise<void> {
   if (!shipmentId) return Promise.resolve();
@@ -118,10 +117,6 @@ export function kaitBayarGajiKonsi(commissionId: string, userId: string): Promis
   return satu("gaji SPG konsinyasi", SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, commissionId, userId);
 }
 
-export function kaitBayarTokoKonsi(paymentId: string, userId: string): Promise<void> {
-  return satu("pembayaran toko konsinyasi", SUMBER_OPERASIONAL.BAYAR_TOKO_KONSI, paymentId, userId);
-}
-
 export function kaitKomisiSpg(storeId: string, periode: string, userId: string): Promise<void> {
   return aman("komisi SPG", async () => {
     await posting(SUMBER_OPERASIONAL.KOMISI_SPG, idKomisiSpg(storeId, periode), userId);
@@ -150,6 +145,19 @@ export function kaitPotongSales(refId: string, userId: string): Promise<void> {
   });
 }
 
+/**
+ * Potongan beban SELISIH RETUR sales (atau pengembaliannya) yang baru ditulis
+ * (`tandaiBebanReturDipotong` / `tandaiKelebihanReturDikembalikan`): satu jurnal per baris
+ * `ReturnChargeDeduction` dengan rujukan layar ini. Kiriman ulang hanya menyusulkan yang belum.
+ */
+export function kaitPotongSalesRetur(refId: string, userId: string): Promise<void> {
+  return aman("potongan sales selisih retur", async () => {
+    const { prisma } = await import("@elorae/db");
+    const baris = await prisma.returnChargeDeduction.findMany({ where: { refType: "KomisiSalesman", refId }, select: { id: true } });
+    for (const b of baris) await posting(SUMBER_OPERASIONAL.POTONG_SALES_RETUR, b.id, userId);
+  });
+}
+
 export function kaitGudangRusak(gerakId: string, userId: string): Promise<void> {
   return satu("gudang rusak", SUMBER_OPERASIONAL.GUDANG_RUSAK, gerakId, userId);
 }
@@ -168,4 +176,14 @@ export function kaitBiayaPerjalanan(claimId: string, keadaan: "DISETUJUI" | "DIB
     await posting(SUMBER_OPERASIONAL.BIAYA_PERJALANAN, claimId, userId);
     if (keadaan === "DIBAYAR") await posting(SUMBER_OPERASIONAL.BAYAR_BIAYA_PERJALANAN, claimId, userId);
   });
+}
+
+/** Penerimaan utang SPG dicek (sah, dikembalikan, atau dibatalkan): jurnalnya diselaraskan. */
+export function kaitPenerimaanUtangSpg(paymentId: string, userId: string): Promise<void> {
+  return satu("penerimaan utang SPG", SUMBER_OPERASIONAL.BAYAR_UTANG_SPG, paymentId, userId);
+}
+
+/** Pembayaran tambahan SPG yang berhenti dicatat. */
+export function kaitBayarTambahanSpg(payoutId: string, userId: string): Promise<void> {
+  return satu("pembayaran tambahan SPG", SUMBER_OPERASIONAL.BAYAR_TAMBAHAN_SPG, payoutId, userId);
 }

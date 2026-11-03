@@ -11,6 +11,8 @@ import { ItemGalleryEditor } from '@/components/items/ItemGalleryEditor';
 import { bacaHppBarang } from "@/lib/items/hpp-barang-queries";
 import { bacaHppTerbaru, bacaRiwayatHpp } from "@/lib/items/riwayat-hpp-queries";
 import { bacaHargaJubelioBarang } from "@/lib/jubelio/harga/queries";
+import { alasanTidakBisaDiaktifkan, alasanTidakBisaDinonaktifkan, hargaKeTeks } from "@/lib/jubelio/harga/aturan";
+import { aturanDariKolom } from "@/lib/items/rekomendasi-harga";
 import { formatDisplayDateTime } from "@/lib/date-only";
 
 export const dynamic = 'force-dynamic';
@@ -44,7 +46,9 @@ export default async function ItemDetailPage({
     sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : undefined,
     targetMarginPercent:
       item.targetMarginPercent != null ? Number(item.targetMarginPercent) : undefined,
+    priceRuleBasis: item.priceRuleBasis,
     additionalCost: item.additionalCost != null ? Number(item.additionalCost) : undefined,
+    salesChannel: item.type === ItemType.FINISHED_GOOD ? item.salesChannel : undefined,
     pantone: item.pantone
       ? { ...item.pantone, hex: item.pantone.hex.startsWith('#') ? item.pantone.hex : `#${item.pantone.hex}` }
       : null,
@@ -98,12 +102,15 @@ export default async function ItemDetailPage({
   const bolehLihatHpp = hasPermission(perms, PERMISSIONS.ITEMS_VIEW);
   const riwayatHppAwal = bolehLihatHpp ? await bacaRiwayatHpp(prisma, item.id) : null;
   const hppTerbaru = riwayatHppAwal ? await bacaHppTerbaru(prisma, item.id, riwayatHppAwal) : null;
-  // Margin dan biaya tambahan bawaan (Pengaturan Jubelio) — dipakai rekomendasi bila barang tidak punya sendiri.
+  // Pasangan markup/margin bawaan dan bantalan margin bawaan (Pengaturan Jubelio) — dipakai
+  // rekomendasi bila barang tidak punya sendiri; pasangan bawaan dipakai utuh (P4).
   const bawaan = barangJadi
-    ? await prisma.jubelioPushDefaults.findFirst({ select: { defaultMarginPercent: true, defaultAdditionalCost: true } })
+    ? await prisma.jubelioPushDefaults.findFirst({
+        select: { defaultMarginPercent: true, defaultPriceRuleBasis: true, defaultAdditionalCost: true },
+      })
     : null;
   const bawaanRekomendasi = {
-    margin: bawaan?.defaultMarginPercent != null ? Number(bawaan.defaultMarginPercent) : null,
+    aturan: aturanDariKolom(bawaan?.defaultMarginPercent, bawaan?.defaultPriceRuleBasis),
     biaya: bawaan?.defaultAdditionalCost != null ? Number(bawaan.defaultAdditionalCost) : null,
   };
   const canManage = hasPermission(perms, PERMISSIONS.ITEMS_MANAGE);
@@ -112,14 +119,47 @@ export default async function ItemDetailPage({
     : null;
   // Kartu "Harga di Jubelio" (keputusan pemilik 2026-11-02): harga yang terakhir dikonfirmasi untuk
   // Jubelio dan apakah ada harga baru yang menunggu. Tanggal diformat di server.
-  const hargaJubelioBaca = barangJadi && bolehLihatHpp ? await bacaHargaJubelioBarang(item.id) : null;
-  const hargaJubelio = hargaJubelioBaca
-    ? {
-        ...hargaJubelioBaca,
-        dikonfirmasiPadaTampil: hargaJubelioBaca.dikonfirmasiPada ? formatDisplayDateTime(hargaJubelioBaca.dikonfirmasiPada) : null,
-        kirimanTerakhirTampil: hargaJubelioBaca.kirimanTerakhir ? formatDisplayDateTime(hargaJubelioBaca.kirimanTerakhir.waktu) : null,
+  const hargaJubelioBaca = barangJadi ? await bacaHargaJubelioBarang(item.id) : null;
+  const hargaJubelio =
+    hargaJubelioBaca && bolehLihatHpp
+      ? {
+          ...hargaJubelioBaca,
+          dikonfirmasiPadaTampil: hargaJubelioBaca.dikonfirmasiPada ? formatDisplayDateTime(hargaJubelioBaca.dikonfirmasiPada) : null,
+          kirimanTerakhirTampil: hargaJubelioBaca.kirimanTerakhir ? formatDisplayDateTime(hargaJubelioBaca.kirimanTerakhir.waktu) : null,
+          terbacaPadaTampil: hargaJubelioBaca.terbacaPada ? formatDisplayDateTime(hargaJubelioBaca.terbacaPada) : null,
+          bedaTerbacaPadaTampil: hargaJubelioBaca.beda ? formatDisplayDateTime(hargaJubelioBaca.beda.terbacaPada) : null,
+        }
+      : null;
+  /*
+   * Centang saluran jual (P3/P72): kapan melepas Marketplace pada produk yang sudah di Jubelio harus
+   * dikunci, dihitung di server dengan aturan yang sama dengan penulisnya (`lib/items/mutations.ts`).
+   */
+  let saluranInfo:
+    | {
+        terpetakan: boolean;
+        beda: boolean;
+        alasanNonaktif: ReturnType<typeof alasanTidakBisaDinonaktifkan>;
+        alasanAktif: ReturnType<typeof alasanTidakBisaDiaktifkan>;
       }
-    : null;
+    | undefined = undefined;
+  if (barangJadi && hargaJubelioBaca) {
+    const [kategoriTerpetakan, bawaanAda] = await Promise.all([
+      item.categoryId
+        ? prisma.jubelioCategoryMapping.count({ where: { itemCategoryId: item.categoryId } }).then((n) => n > 0)
+        : Promise.resolve(false),
+      prisma.jubelioPushDefaults.count().then((n) => n > 0),
+    ]);
+    saluranInfo = {
+      terpetakan: hargaJubelioBaca.terpetakan,
+      beda: hargaJubelioBaca.beda != null,
+      alasanNonaktif: alasanTidakBisaDinonaktifkan({
+        hargaTerkonfirmasi: hargaKeTeks(item.jubelioConfirmedPrice),
+        kategoriTerpetakan,
+        bawaanAda,
+      }),
+      alasanAktif: alasanTidakBisaDiaktifkan({ kategoriTerpetakan, bawaanAda }),
+    };
+  }
   const bolehKonfirmasiHarga = hasPermission(perms, PERMISSIONS.JUBELIO_PRICES_CONFIRM);
   const itemVariants = (item.variants as Array<Record<string, string>> | null | undefined) ?? [];
   const variantSkus = itemVariants
@@ -129,7 +169,7 @@ export default async function ItemDetailPage({
 
   return (
     <ItemDetailClient
-      initialData={initialData}
+      initialData={{ ...initialData, saluranInfo }}
       hpp={hpp}
       hppTerbaru={hppTerbaru}
       riwayatHppAwal={riwayatHppAwal}

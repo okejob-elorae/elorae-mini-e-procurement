@@ -8,6 +8,7 @@ import {
   klaimDisembunyikan,
   pelaporNota,
   saringKerjaRetur,
+  selisihDisembunyikan,
 } from "./buta";
 
 /*
@@ -39,6 +40,8 @@ const nrt = (p: Partial<BarisKerjaRetur> = {}): BarisKerjaRetur => ({
   penanggung: null,
   jumlahPotongan: 1,
   nilaiDipotong: 640_000,
+  cekSelisih: null,
+  jumlahSusulan: 0,
   ...p,
 });
 
@@ -155,5 +158,41 @@ describe("ringkasan kepala atas baris yang dibutakan", () => {
     const tampil = ringkasKerjaRetur(butakan(semua, { bolehMenghitung: true, penggunaId: "gudang-1" }));
     expect(tampil.nilaiTertahan).toBe(0);
     expect(tampil.perLangkah.cek).toBe(1);
+  });
+});
+
+describe("selisihDisembunyikan — hitungan barang susulan juga buta", () => {
+  const berselisih = nrt({ langkah: "keputusan", nilaiFisik: 400_000, selisih: 240_000, bebanId: "c1", bebanStatus: "TERBUKA" });
+  const tangan = new Map([["nrt-1", ["budi", "pemegang", "sales-cek"]]]);
+  const gudang = { bolehMenghitung: true, penggunaId: "gudang-1", tanganSusulan: tangan };
+
+  it("penghitung yang bisa menghitung susulannya tidak menerima klaim dan selisihnya", () => {
+    expect(selisihDisembunyikan(berselisih, gudang)).toBe(true);
+    const [b] = butakan([berselisih], gudang);
+    expect(b).toMatchObject({ nilaiKlaim: null, selisih: 0, nilaiDipotong: 0, jumlahPotongan: 0, klaimTersembunyi: true });
+  });
+
+  it("yang dikecualikan dua tangan tidak pernah menghitung susulannya — tidak dibutakan", () => {
+    for (const penggunaId of ["budi", "pemegang", "sales-cek"]) {
+      expect(selisihDisembunyikan(berselisih, { ...gudang, penggunaId })).toBe(false);
+    }
+  });
+
+  it("yang memutuskan penanggung harus melihat selisihnya", () => {
+    expect(selisihDisembunyikan(berselisih, { ...gudang, bolehMemutuskan: true })).toBe(false);
+  });
+
+  it("nota yang tidak lagi menerima susulan (penanggungnya sudah membayar) tidak dibutakan", () => {
+    expect(selisihDisembunyikan(berselisih, { ...gudang, tanganSusulan: new Map() })).toBe(false);
+  });
+
+  it("yang tidak boleh menghitung tetap melihat", () => {
+    expect(selisihDisembunyikan(berselisih, { ...gudang, bolehMenghitung: false })).toBe(false);
+  });
+
+  it("giliran yang dibaca daftar kerja (hasil cek sales) tidak diubah oleh pembutaan", () => {
+    const sales = { ...berselisih, giliran: "sales" as const, cekSelisih: "DITANYAKAN" as const };
+    expect(butakan([sales], gudang)[0].giliran).toBe("sales");
+    expect(butakan([sales], { bolehMenghitung: false, penggunaId: "keuangan" })[0].giliran).toBe("sales");
   });
 });

@@ -5,8 +5,21 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  * Hutang jasa produksi per pemasok, per langkah WO — bahan untuk pembayaran
  * pemasok. Basis data uji nyata, data sendiri, dibatasi `woIds`. Pengaturan PPN
  * ditiru (tes tidak menulis SystemSetting bersama). Jurnal tagihan vendor ditulis
- * langsung dengan akun uji, tanpa mengubah pemetaan akun bersama.
+ * langsung dengan akun uji, tanpa mengubah pemetaan akun bersama. Peran AP ditiru
+ * (kosong = belum dipetakan) supaya koreksi selisih harga dibaca dari akun uji saja.
  */
+
+const peta = vi.hoisted(() => ({ ap: "" }));
+vi.mock("@/lib/finance/journals/mapping", async (asli) => {
+  const m = await asli<typeof import("@/lib/finance/journals/mapping")>();
+  return {
+    ...m,
+    resolveAccount: vi.fn(async (role: string) => {
+      if (role === "AP" && peta.ap) return peta.ap;
+      throw new m.UnmappedRoleError(role);
+    }),
+  };
+});
 
 vi.mock("@/lib/finance/pajak/ppn-pengaturan", () => ({
   bacaPengaturanPpn: async () => ({
@@ -40,6 +53,7 @@ d("hutang jasa produksi (basis data uji)", () => {
   const extraBillIds: string[] = [];
   const vendorPaymentIds: string[] = [];
   const accountIds: string[] = [];
+  const koreksiIds: string[] = [];
 
   beforeAll(async () => {
     userId = "";
@@ -140,6 +154,12 @@ d("hutang jasa produksi (basis data uji)", () => {
       await prisma.journal.deleteMany({ where: { sourceType: { in: ["VENDOR_BILL", "VENDOR_BILL_REVERSAL"] }, sourceId: { in: seededIds(extraBillIds) } } });
       await prisma.vendorBillLine.deleteMany({ where: { billId: { in: seededIds(extraBillIds) } } });
       await prisma.vendorBill.deleteMany({ where: { id: { in: seededIds(extraBillIds) } } });
+    }
+    if (koreksiIds.length > 0) {
+      await prisma.journal.deleteMany({
+        where: { sourceType: { in: ["SUPPLIER_PAYABLE_CORRECTION", "SUPPLIER_PAYABLE_CORRECTION_REVERSAL"] }, sourceId: { in: seededIds(koreksiIds) } },
+      });
+      await prisma.supplierPayableCorrection.deleteMany({ where: { id: { in: seededIds(koreksiIds) } } });
     }
     if (accountIds.length > 0) await prisma.chartAccount.deleteMany({ where: { id: { in: seededIds(accountIds) } } });
     await prisma.fGReceipt.deleteMany({ where: { woId: seededId(woId) } });
@@ -359,5 +379,79 @@ d("hutang jasa produksi (basis data uji)", () => {
     expect(jahit.langkah).toHaveLength(1);
     // 666.000 dari penerimaan + 150.000 dari tagihan pertama — tagihan kedua tidak menambah hutang.
     expect(jahit.langkah[0]).toMatchObject({ stepId: stepJahit, qtyTerhutang: 50, hutang: 816_000, dibayar: 500_000, sisa: 316_000 });
+  });
+
+  it("selisih harga invoice yang diterima menambah hutang dan DPP langkahnya; pembaliknya mengembalikan (buku pembantu = buku besar)", async () => {
+    const akun = async (n: number, type: "HPP" | "LIABILITAS") => {
+      const id = (await prisma.chartAccount.create({ data: { code: `9HJ${token}${n}`, name: `Akun uji ${token}`, type, depth: 1 }, select: { id: true } })).id;
+      accountIds.push(id);
+      return id;
+    };
+    const jasaId = await akun(5, "HPP");
+    const apId = await akun(6, "LIABILITAS");
+    peta.ap = apId;
+    try {
+      const [awal] = await daftarHutangJasa({ woIds: [woId], supplierId: jahitId });
+      const sebelum = awal.langkah[0];
+      expect(sebelum.hutangTanpaKoreksi).toBe(sebelum.hutang);
+      // 40 pcs ditagih 16.000 terhadap harga WO 15.000: DPP +40.000, PPN pemasok +4.400 (tarif efektif 11%).
+      const k = (
+        await prisma.supplierPayableCorrection.create({
+          data: {
+            billId: `vb-hj-${token}`,
+            billLineId: `vbl-hj-${token}`,
+            supplierId: jahitId,
+            sourceType: "WO_STEP",
+            sourceId: stepJahit,
+            itemId,
+            variantSku: null,
+            qty: 40,
+            recordedPrice: 15_000,
+            invoicePrice: 16_000,
+            amount: 44_400,
+            dppAmount: 40_000,
+            ppnInputAmount: 0,
+            inventoryAmount: 44_400,
+            breakdown: [],
+            status: "DITERIMA",
+            decidedAt: new Date("2004-05-25T03:00:00.000Z"),
+            decidedById: userId,
+            createdById: userId,
+          },
+          select: { id: true },
+        })
+      ).id;
+      koreksiIds.push(k);
+      const jurnal = (sourceType: string, debit: string, credit: string) =>
+        prisma.journal.create({
+          data: {
+            date: new Date("2004-05-25T03:00:00.000Z"),
+            description: `Koreksi uji ${token}`,
+            sourceType,
+            sourceId: k,
+            postedById: userId,
+            lines: { create: [{ chartAccountId: debit, debit: 44_400, credit: 0 }, { chartAccountId: credit, debit: 0, credit: 44_400 }] },
+          },
+        });
+      await jurnal("SUPPLIER_PAYABLE_CORRECTION", jasaId, apId);
+      const [diterima] = await daftarHutangJasa({ woIds: [woId], supplierId: jahitId });
+      expect(diterima.langkah[0]).toMatchObject({
+        hutangTanpaKoreksi: sebelum.hutangTanpaKoreksi,
+        hutang: sebelum.hutang + 44_400,
+        dasarPotong: sebelum.dasarPotong + 40_000,
+        ppn: sebelum.ppn + 4_400,
+        dibayar: sebelum.dibayar,
+        sisa: sebelum.sisa + 44_400,
+      });
+      expect(diterima.hutang).toBe(awal.hutang + 44_400);
+
+      // Tagihannya dibatalkan: koreksi DIBATALKAN dengan jurnal pembaliknya — hutang, DPP, PPN kembali.
+      await prisma.supplierPayableCorrection.update({ where: { id: seededId(k) }, data: { status: "DIBATALKAN", cancelledAt: new Date(), cancelReason: "uji" } });
+      await jurnal("SUPPLIER_PAYABLE_CORRECTION_REVERSAL", apId, jasaId);
+      const [dibalik] = await daftarHutangJasa({ woIds: [woId], supplierId: jahitId });
+      expect(dibalik.langkah[0]).toMatchObject({ hutang: sebelum.hutang, hutangTanpaKoreksi: sebelum.hutangTanpaKoreksi, dasarPotong: sebelum.dasarPotong, ppn: sebelum.ppn, sisa: sebelum.sisa });
+    } finally {
+      peta.ap = "";
+    }
   });
 });

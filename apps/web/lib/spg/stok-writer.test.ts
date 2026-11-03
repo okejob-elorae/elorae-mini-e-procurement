@@ -24,9 +24,11 @@ const state = {
 };
 
 vi.mock("./kiriman", () => ({
-  JENIS_KIRIMAN: ["PUTUS_DELIVERY", "KONSI_ORDER", "KONSI_SHIPMENT", "MUTASI", "MUTASI_KEMBALI"],
+  JENIS_KIRIMAN: ["PUTUS_DELIVERY", "KONSI_TRANSFER", "KONSI_ORDER", "KONSI_SHIPMENT", "MUTASI", "MUTASI_KEMBALI"],
   dariMutasi: (j: string) => j === "MUTASI" || j === "MUTASI_KEMBALI",
   muatKiriman: vi.fn(async () => state.kiriman),
+  /* Only warehouse shipments have a shipment state; the sources these unit tests drive are always SIAP. */
+  keadaanKiriman: vi.fn(async () => "SIAP"),
 }));
 
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
@@ -82,15 +84,26 @@ vi.mock("@elorae/db", () => ({
       code = "P2002";
     },
   },
+  /* Read by `alasanGalatPenerimaan` when a receipt transaction throws. */
+  ReservationReopenError: class extends Error {},
+  InventoryValueMissingError: class extends Error {},
 }));
 
-const { terimaKiriman, catatOpname, ubahStatusPermintaan } = await import("./stok-writer");
+const { terimaKiriman, catatOpname, ubahStatusPermintaan, alasanGalatPenerimaan } = await import("./stok-writer");
+const { KonsiTransferNotInTransitError } = await import("@/lib/field-sales/konsi-transfer/writer");
+const { DeliveryShipmentError } = await import("@/lib/delivery/errors");
 
 beforeEach(() => {
+  /*
+   * A legacy consignment shipment (titipan): an SPG-received document with no shipment state. The
+   * warehouse shipments (putus nota, konsi transfer) also correct the nota / land the transfer and
+   * open lost goods, which needs the real tables — those receipts are covered against the test bed
+   * in `lib/delivery/shipment-writer.test.ts` and `lib/delivery/konsi-shipment-stock.test.ts`.
+   */
   state.kiriman = {
-    sourceType: "PUTUS_DELIVERY",
+    sourceType: "KONSI_SHIPMENT",
     sourceId: "d1",
-    docNo: "DLV/2026/0001",
+    docNo: "KRM/2026/0001",
     tanggal: new Date("2026-09-20T03:00:00Z"),
     lines: [
       { lineId: "L1", itemId: "i1", variantSku: "i1-M", productName: "Kemeja M", qty: 6 },
@@ -109,7 +122,7 @@ beforeEach(() => {
 const TERIMA = {
   storeId: "t1",
   userId: "spg1",
-  sourceType: "PUTUS_DELIVERY" as const,
+  sourceType: "KONSI_SHIPMENT" as const,
   sourceId: "d1",
   diterima: [
     { lineId: "L1", qtyReceived: 5 },
@@ -122,7 +135,7 @@ describe("terimaKiriman", () => {
     expect(await terimaKiriman(TERIMA)).toEqual({ ok: true, receiptId: "r1" });
     const baris = (state.receipt[0].lines as { create: Record<string, unknown>[] }).create;
     expect(baris[0]).toMatchObject({ itemId: "i1", qtySent: 6, qtyReceived: 5 });
-    expect(state.receipt[0]).toMatchObject({ sourceDocNo: "DLV/2026/0001", receivedById: "spg1" });
+    expect(state.receipt[0]).toMatchObject({ sourceDocNo: "KRM/2026/0001", receivedById: "spg1" });
   });
 
   it("moves stock by the RECEIVED quantity, and only for catalogue items", async () => {
@@ -153,6 +166,21 @@ describe("terimaKiriman", () => {
       ok: false,
       alasan: "JUMLAH_TIDAK_VALID",
     });
+  });
+});
+
+describe("alasanGalatPenerimaan (R9)", () => {
+  it("turns what the in-transaction corrections throw into a refusal the phone can show", () => {
+    expect(alasanGalatPenerimaan(new KonsiTransferNotInTransitError("t1", "CANCELLED"))).toBe("KIRIMAN_DIBATALKAN");
+    expect(alasanGalatPenerimaan(new KonsiTransferNotInTransitError("t1", "RECEIVED"))).toBe("SUDAH_DITERIMA");
+    expect(alasanGalatPenerimaan(new DeliveryShipmentError("INVALID_STATE"))).toBe("KIRIMAN_DIBATALKAN");
+    expect(alasanGalatPenerimaan(new DeliveryShipmentError("CONSUME_RECORD_MISSING"))).toBe("CATATAN_STOK_TIDAK_COCOK");
+    expect(alasanGalatPenerimaan(new DeliveryShipmentError("OVER_PLANNED"))).toBe("CATATAN_STOK_TIDAK_COCOK");
+  });
+
+  it("leaves anything else to be rethrown", () => {
+    expect(alasanGalatPenerimaan(new Error("koneksi putus"))).toBeNull();
+    expect(alasanGalatPenerimaan("bukan galat")).toBeNull();
   });
 });
 

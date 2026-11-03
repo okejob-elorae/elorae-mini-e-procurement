@@ -1,12 +1,12 @@
 import type { Prisma, PrismaClient } from "@elorae/db";
-import { rataRataKirim } from "./aturan";
+import { rataRataKirim, rataRataKirimBersih } from "./aturan";
 
 /*
  * Biaya per potong barang di toko konsinyasi — KHUSUS SERVER.
  *
  * Barang keluar dari gudang utama ke toko konsinyasi lewat penyesuaian stok
- * `KONSI_TRANSFER` (kiriman titipan, pengiriman pesanan konsinyasi yang
- * selesai — `issueKonsiTransfer`, satu per baris transfer — dan pesanan lama
+ * `KONSI_TRANSFER` (kiriman titipan, pengiriman pesanan konsinyasi saat DIBUAT
+ * — `issueKonsiTransfer`, satu per baris transfer — dan pesanan lama
  * yang stoknya pindah saat disetujui), masing-masing sebesar qty × harga
  * rata-rata saat itu (`prevAvgCost`). Itulah
  * yang didebit ke `INVENTORY_CONSIGNMENT`, jadi barang yang keluar dari toko
@@ -44,9 +44,29 @@ export async function biayaSatuanKonsi(client: Klien, itemIds: readonly string[]
     daftar.push({ qty: Number(k.qtyChange), biaya: Number(k.prevAvgCost) });
     perBarang.set(k.itemId, daftar);
   }
+  /*
+   * Barang yang kembali ke gudang sebelum sampai di toko (ditolak di pintu, atau pengiriman yang
+   * tidak jadi dikirim) dikurangkan pada biaya keluarnya sendiri (R28): ia tidak pernah ada di toko.
+   */
+  const kembali = await client.konsiTransferLine.findMany({
+    where: {
+      itemId: { in: ids },
+      returnedQty: { gt: 0 },
+      transfer: { OR: [{ cancelledAt: { lte: sampai } }, { adjustedAt: { lte: sampai } }] },
+    },
+    select: { itemId: true, returnedQty: true, unitCost: true },
+  });
+  const kembaliPerBarang = new Map<string, { qty: number; biaya: number }[]>();
+  for (const k of kembali) {
+    const daftar = kembaliPerBarang.get(k.itemId) ?? [];
+    daftar.push({ qty: k.returnedQty, biaya: Number(k.unitCost) });
+    kembaliPerBarang.set(k.itemId, daftar);
+  }
   const tanpa: string[] = [];
   for (const id of ids) {
-    const rata = rataRataKirim(perBarang.get(id) ?? []);
+    const rata = kembaliPerBarang.has(id)
+      ? rataRataKirimBersih(perBarang.get(id) ?? [], kembaliPerBarang.get(id) ?? [])
+      : rataRataKirim(perBarang.get(id) ?? []);
     if (rata !== null) hasil.set(id, { biaya: rata, sumber: "KIRIMAN" });
     else tanpa.push(id);
   }

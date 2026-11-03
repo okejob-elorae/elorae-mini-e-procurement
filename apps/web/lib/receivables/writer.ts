@@ -1,7 +1,6 @@
 import { prisma, Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
 import {
-  batasPotongNota,
   hitungSisaPiutang,
   returTerpakaiMelebihi,
   sisaBolehDilunasi,
@@ -10,7 +9,6 @@ import {
   type StatusKlaim,
 } from './rules';
 import { PILIH_POTONGAN, potonganRetur } from './deductions';
-import { idBebanDariCatatan, penandaBebanRetur } from './penanda-beban';
 import { catatJejak, JEJAK } from './jejak';
 import { giroMenahanVerifikasi, STATUS_GIRO } from './giro';
 
@@ -62,6 +60,7 @@ async function bacaRincianSisa(
       amount: true,
       paidBeforeImport: true,
       paidAmount: true,
+      status: true,
       claimLinks: {
         select: {
           settledAmount: true,
@@ -77,6 +76,13 @@ async function bacaRincianSisa(
     },
   });
   if (!piutang) return null;
+  // Piutang yang dibatalkan (nota tidak jadi dikirim, kunci siklus konsinyasi
+  // dibuka) atau dihapusbukukan tidak lagi berutang apa pun: penulis kontrabon
+  // dan tugas tagih membacanya sebagai lunas, dan kolom cache `outstanding`-nya
+  // tetap nol. Kontrak bersama dengan `penghalangBatalPiutang`.
+  if (piutang.status === "VOIDED" || piutang.status === "WRITTEN_OFF") {
+    return { sisa: 0, sisaSebelumKantor: 0, tertahan: 0 };
+  }
 
   const klaimList = piutang.claimLinks.map((link) => ({
     status: link.paymentClaim.status as StatusKlaim,
@@ -208,9 +214,10 @@ export async function hitungUlangDariKlaim(client: Klien, paymentClaimId: string
 
 export type PemakaianRetur = {
   /**
-   * Batas potong NRT ini di seluruh BKM hidup (`batasPotongNota`): nilai
-   * klaimnya, atau — sesudah bebannya ditetapkan ke TOKO — fisik + yang
-   * ditagih balik lewat faktur beban.
+   * Batas potong NRT ini di seluruh BKM hidup: nilai klaimnya. Faktur beban
+   * toko (`BEBAN/<NRT>`) yang dulu menurunkan batas ini dicabut keputusan 1
+   * (2026-11-02, P84) — selisih yang ditanggung toko tetap terbuka di nota
+   * asalnya.
    */
   nilai: number;
   /** Nilai yang diklaim toko di NRT. */
@@ -244,43 +251,12 @@ export async function pemakaianRetur(
 
   const retur = await client.storeReturn.findMany({
     where: { id: { in: unik } },
-    select: {
-      id: true,
-      claimedAmount: true,
-      warehouseReturn: { select: { physicalAmount: true, status: true } },
-      // Beban yang sudah ditetapkan ke toko menurunkan batas potongnya.
-      charges: { where: { bearer: 'TOKO', status: { not: 'TERBUKA' } }, select: { id: true } },
-    },
+    select: { id: true, claimedAmount: true },
   });
 
-  // Yang ditagih ke toko = faktur bebannya (penanda di catatan). Beban toko
-  // tanpa faktur berarti tidak ada yang ditagih: toko tidak memotong lebih dari
-  // barang yang sampai.
-  const idBebanToko = retur.flatMap((r) => r.charges.map((c) => c.id));
-  const ditagih = new Map<string, number>();
-  if (idBebanToko.length > 0) {
-    const faktur = await client.receivable.findMany({
-      where: { source: 'MANUAL', OR: idBebanToko.map((id) => ({ note: { contains: penandaBebanRetur(id) } })) },
-      select: { amount: true, note: true },
-    });
-    for (const f of faktur) {
-      const id = idBebanDariCatatan(f.note);
-      if (id) ditagih.set(id, (ditagih.get(id) ?? 0) + angka(f.amount));
-    }
-  }
-
   for (const r of retur) {
-    const nri = r.warehouseReturn;
     const nilaiKlaim = angka(r.claimedAmount);
-    hasil.set(r.id, {
-      nilai: batasPotongNota({
-        nilaiKlaim,
-        nilaiFisik: nri && nri.status === 'FINAL' ? angka(nri.physicalAmount) : null,
-        bebanTokoDitagih: r.charges.length > 0 ? r.charges.reduce((s, c) => s + (ditagih.get(c.id) ?? 0), 0) : null,
-      }),
-      nilaiKlaim,
-      terpakai: 0,
-    });
+    hasil.set(r.id, { nilai: nilaiKlaim, nilaiKlaim, terpakai: 0 });
   }
 
   const potongan = await client.paymentClaimDeduction.findMany({
@@ -337,7 +313,8 @@ export type HasilKoreksi =
         | 'SUDAH_DIBATALKAN'
         | 'ALASAN_WAJIB'
         | 'RETUR_BEDA_TOKO'
-        | 'RETUR_TERPAKAI';
+        | 'RETUR_TERPAKAI'
+        | 'RETUR_TOKO_KONSI';
     };
 
 /**
@@ -428,12 +405,25 @@ export async function tautkanUlangPotongan(input: {
         name: true,
         amount: true,
         storeReturnId: true,
-        paymentClaim: { select: { id: true, docNo: true, storeId: true, status: true } },
+        paymentClaim: {
+          select: {
+            id: true,
+            docNo: true,
+            storeId: true,
+            status: true,
+            receivableLinks: { select: { receivable: { select: { isConsignment: true } } } },
+          },
+        },
       },
     });
     if (!potongan) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
 
     if (input.storeReturnId) {
+      // Tagihan konsinyasi tidak dipotong retur: barang titipan yang kembali
+      // memang tidak pernah ditagih. Melepas tautan selalu boleh.
+      if (potongan.paymentClaim.receivableLinks.some((l) => l.receivable.isConsignment)) {
+        return { ok: false as const, alasan: "RETUR_TOKO_KONSI" as const };
+      }
       const retur = await tx.storeReturn.findUnique({
         where: { id: input.storeReturnId },
         select: { storeId: true },
@@ -500,7 +490,8 @@ export type HasilVerifikasi =
         | 'PEMERIKSA_SAMA'
         | 'MELEBIHI_SISA'
         | 'RETUR_DITAHAN'
-        | 'RETUR_TERPAKAI';
+        | 'RETUR_TERPAKAI'
+        | "PIUTANG_DIBATALKAN";
     };
 
 /**
@@ -586,8 +577,13 @@ export async function putuskanKlaim(input: {
        */
       const tautan = await tx.paymentClaimReceivable.findMany({
         where: { paymentClaimId: klaim.id },
-        select: { receivableId: true, settledAmount: true },
+        select: { receivableId: true, settledAmount: true, receivable: { select: { status: true } } },
       });
+      // Tagihannya dibatalkan sejak BKM dilaporkan (nota tidak jadi dikirim,
+      // kunci siklus konsinyasi dibuka): tidak ada yang bisa dilunasi lagi.
+      if (tautan.some((t) => t.receivable?.status === "VOIDED" || t.receivable?.status === "WRITTEN_OFF")) {
+        return { ok: false, alasan: "PIUTANG_DIBATALKAN" as const };
+      }
       for (const t of tautan) {
         const baca = await bacaSisaDanTahanan(tx, t.receivableId);
         if (baca === null) continue;

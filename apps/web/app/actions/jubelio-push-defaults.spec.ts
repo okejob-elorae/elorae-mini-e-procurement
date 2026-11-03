@@ -53,6 +53,7 @@ const BARIS = {
   // Prisma mengembalikan Decimal; tiruannya cukup objek ber-toString.
   buyPrice: { toString: () => "0" },
   defaultMarginPercent: { toString: () => "40" },
+  defaultPriceRuleBasis: "MARKUP",
   defaultAdditionalCost: { toString: () => "2000" },
   updatedAt: new Date("2003-01-02T03:00:00.000Z"),
   updatedById: null,
@@ -140,6 +141,34 @@ describe("nilai bawaan push Jubelio: margin dan biaya tambahan sebagai bahan rek
     expect(r).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
     expect(prisma.jubelioPushDefaults.update).not.toHaveBeenCalled();
     tidakAdaHargaYangDisentuh();
+  });
+
+  /* Jawaban pemilik P4 (2026-11-02): persen bawaan diisi sebagai markup ATAU margin; batasnya per dasar. */
+  it("menyimpan dasar aturan; margin dibatasi 99,99 dan markup 999,99", async () => {
+    await aksi.saveJubelioPushDefaults(isianDari({ defaultMarginPercent: 40, defaultPriceRuleBasis: "MARGIN" }));
+    const data = fn(prisma.jubelioPushDefaults.update).mock.calls[0][0].data as Record<string, unknown>;
+    expect(data).toMatchObject({ defaultMarginPercent: 40, defaultPriceRuleBasis: "MARGIN" });
+
+    expect(await aksi.saveJubelioPushDefaults(isianDari({ defaultMarginPercent: 100, defaultPriceRuleBasis: "MARGIN" }))).toMatchObject({
+      ok: false,
+      code: "ISIAN_TIDAK_SAH",
+    });
+    expect(await aksi.saveJubelioPushDefaults(isianDari({ defaultMarginPercent: 999.99, defaultPriceRuleBasis: "MARKUP" }))).toMatchObject({ ok: true });
+    expect(await aksi.saveJubelioPushDefaults(isianDari({ defaultPriceRuleBasis: "PERSEN" }))).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
+    tidakAdaHargaYangDisentuh();
+  });
+
+  it("layar lama yang tidak mengirim dasar tidak mengosongkannya, dan persennya diperiksa dengan dasar tersimpan", async () => {
+    fn(prisma.jubelioPushDefaults.findFirst).mockResolvedValue({ ...BARIS, defaultPriceRuleBasis: "MARGIN" });
+    const lama = { ...(isianDari({ defaultMarginPercent: 150 }) as Record<string, unknown>) };
+    delete lama.defaultPriceRuleBasis;
+    expect(await aksi.saveJubelioPushDefaults(lama as never)).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
+
+    const baik = { ...(isianDari({ defaultMarginPercent: 40 }) as Record<string, unknown>) };
+    delete baik.defaultPriceRuleBasis;
+    await aksi.saveJubelioPushDefaults(baik as never);
+    const data = fn(prisma.jubelioPushDefaults.update).mock.calls[0][0].data as Record<string, unknown>;
+    expect(data).not.toHaveProperty("defaultPriceRuleBasis");
   });
 
   it("penghitung barang yang ikut margin bawaan (untuk hitung ulang massal) tetap tidak ada", () => {

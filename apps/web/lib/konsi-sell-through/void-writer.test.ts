@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, seededIds } from "@elorae/db";
 import { createSellThrough, cancelSellThrough } from "./writer";
 import { voidSellThrough } from "./void-writer";
+import { SellThroughError } from "./errors";
 import { createSellThroughFixtures } from "./test-fixtures";
+import { buatKlaimPembayaran } from "@/lib/receivables/claim-writer";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -21,10 +23,16 @@ d("konsi sell-through void (test bed only)", () => {
 
   let settlementIds: string[] = [];
   let submissionIds: string[] = [];
+  let claimIds: string[] = [];
+  let noteIds: string[] = [];
+  let taskIds: string[] = [];
 
   beforeEach(async () => {
     settlementIds = [];
     submissionIds = [];
+    claimIds = [];
+    noteIds = [];
+    taskIds = [];
     await fx.beforeEach();
   });
 
@@ -33,6 +41,13 @@ d("konsi sell-through void (test bed only)", () => {
       await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: settlementIds.map((id) => seededId(id)) } } });
       await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds.map((id) => seededId(id)) } } });
       await prisma.collectionSubmission.deleteMany({ where: { id: { in: submissionIds.map((id) => seededId(id)) } } });
+      /* Payment reports, kontrabon and tasks point at the receivable, which the fixture deletes by store. */
+      await prisma.auditLog.deleteMany({ where: { entityType: "PaymentClaim", entityId: { in: seededIds(claimIds) } } });
+      await prisma.paymentClaimReceivable.deleteMany({ where: { paymentClaimId: { in: seededIds(claimIds) } } });
+      await prisma.paymentClaim.deleteMany({ where: { id: { in: seededIds(claimIds) } } });
+      await prisma.collectionNoteReceivable.deleteMany({ where: { collectionNoteId: { in: seededIds(noteIds) } } });
+      await prisma.collectionNote.deleteMany({ where: { id: { in: seededIds(noteIds) } } });
+      await prisma.collectionTask.deleteMany({ where: { id: { in: seededIds(taskIds) } } });
     } finally {
       await fx.afterEach();
     }
@@ -192,6 +207,90 @@ d("konsi sell-through void (test bed only)", () => {
     });
     submissionIds.push(submission.id);
     await expect(voidIt(id)).rejects.toMatchObject({ code: "COLLECTION_PENDING" });
+  }, SLOW);
+
+  /* A BKM from the store's holder on the report's receivable — the path P31 opens on the phone. */
+  const lapor = (receivableId: string) =>
+    buatKlaimPembayaran({
+      storeId: state.storeId,
+      salesmanId: state.salesmanId,
+      createdById: state.salesmanId,
+      claimedTransferAt: new Date(),
+      method: "transfer",
+      pelunasan: [{ receivableId, nilai: 60000 }],
+      transferPhotoUrl: `/api/foto/void-${state.run}`,
+    });
+
+  const keadaanSesudahTolak = async (id: string) => {
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("APPROVED");
+    expect((await receivableOf(id)).status).toBe("OUTSTANDING");
+  };
+
+  it("refuses ADA_BKM, ADA_KONTRABON and ADA_TUGAS_TAGIH in turn (penghalangBatalPiutang), changing nothing, and voids once each is undone", async () => {
+    const { id } = await invoicedReport();
+    const r = await receivableOf(id);
+
+    const bkm = await lapor(r.id);
+    if (!bkm.ok) throw new Error(bkm.alasan);
+    claimIds.push(bkm.id);
+    await expect(voidIt(id)).rejects.toMatchObject({ code: "ADA_BKM" });
+    await keadaanSesudahTolak(id);
+    /* Checked or not (P33a): a verified BKM holds the receivable just the same. */
+    await prisma.paymentClaim.update({ where: { id: seededId(bkm.id) }, data: { status: "TERVERIFIKASI" } });
+    await expect(voidIt(id)).rejects.toMatchObject({ code: "ADA_BKM" });
+    await prisma.paymentClaim.update({ where: { id: seededId(bkm.id) }, data: { status: "DITOLAK" } });
+
+    const note = await prisma.collectionNote.create({
+      data: {
+        docNo: `TEST-KB-${state.run}`,
+        storeId: state.storeId,
+        salesmanId: state.salesmanId,
+        handoverDate: new Date(),
+        promisedDate: new Date(),
+        amount: 160000,
+        receivableLinks: { create: [{ receivableId: r.id, amount: 160000 }] },
+      },
+    });
+    noteIds.push(note.id);
+    await expect(voidIt(id)).rejects.toMatchObject({ code: "ADA_KONTRABON" });
+    await keadaanSesudahTolak(id);
+    await prisma.collectionNote.update({ where: { id: seededId(note.id) }, data: { status: "BATAL" } });
+
+    const task = await prisma.collectionTask.create({
+      data: { assigneeId: state.salesmanId, storeId: state.storeId, receivableIds: [r.id], createdById: state.userId },
+    });
+    taskIds.push(task.id);
+    await expect(voidIt(id)).rejects.toMatchObject({ code: "ADA_TUGAS_TAGIH" });
+    await keadaanSesudahTolak(id);
+    await prisma.collectionTask.update({ where: { id: seededId(task.id) }, data: { status: "DIBATALKAN" } });
+
+    await expect(voidIt(id)).resolves.toMatchObject({ id });
+    expect((await receivableOf(id)).status).toBe("VOIDED");
+  }, SLOW);
+
+  it("race: a void and a BKM on the same receivable — exactly one wins, never a VOIDED receivable with a live BKM", async () => {
+    const { id } = await invoicedReport();
+    const r = await receivableOf(id);
+
+    /* The BKM starts a few ms later so the shorter writer cannot always reach its write first. */
+    const [hasilVoid, bkm] = await Promise.all([
+      voidIt(id).then(
+        () => "OK" as const,
+        (e: unknown) => (e instanceof SellThroughError ? e.code : "GAGAL"),
+      ),
+      new Promise((selesai) => setTimeout(selesai, 10)).then(() => lapor(r.id)),
+    ]);
+    if (bkm.ok) claimIds.push(bkm.id);
+
+    const voidMenang = hasilVoid === "OK" && !bkm.ok && bkm.alasan === "PIUTANG_DIBATALKAN";
+    const bkmMenang = bkm.ok && hasilVoid === "ADA_BKM";
+    expect(voidMenang !== bkmMenang).toBe(true);
+
+    const akhir = await prisma.receivable.findUniqueOrThrow({
+      where: { id: seededId(r.id) },
+      select: { status: true, claimLinks: { where: { paymentClaim: { status: { in: ["DIKIRIM", "TERVERIFIKASI"] } } }, select: { paymentClaimId: true } } },
+    });
+    expect(akhir.status === "VOIDED" && akhir.claimLinks.length > 0).toBe(false);
   }, SLOW);
 
   it("after a void, the same count creates a report chained to the report before, and its approve invoices afresh", async () => {

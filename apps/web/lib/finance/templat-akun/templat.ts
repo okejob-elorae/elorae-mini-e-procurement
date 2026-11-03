@@ -90,6 +90,8 @@ export const TEMPLAT_DAGANG_FESYEN: readonly AkunTemplat[] = [
   // ── HPP ──
   { kode: "5", nama: "HPP", induk: null, tipe: "HPP" },
   { kode: "5101", nama: "HPP barang terjual", induk: "5", peran: ["COGS"] },
+  // Selisih harga invoice pemasok yang diterima atas barang yang sudah keluar dari Gudang Utama (P49).
+  { kode: "5102", nama: "Selisih harga beli", induk: "5", peran: ["PURCHASE_PRICE_VARIANCE"] },
 
   // ── Beban ──
   { kode: "6", nama: "Beban", induk: null, tipe: "BEBAN" },
@@ -114,6 +116,13 @@ export const TEMPLAT_DAGANG_FESYEN: readonly AkunTemplat[] = [
   { kode: "6206", nama: "Beban barang hilang & rusak", induk: "62", peran: ["LOSS_EXPENSE"] },
   { kode: "6207", nama: "Beban penyusutan", induk: "62", peran: ["DEPRECIATION_EXPENSE"] },
   { kode: "6208", nama: "Biaya administrasi bank", induk: "62", peran: ["BANK_CHARGES"] },
+  // 6301–6303: kode dan induk (`6`) sama dengan bagan prod dan `packages/db/prisma/seeds/coa-sak-emkm.json`.
+  { kode: "6301", nama: "Biaya program dagang", induk: "6", peran: ["TRADE_PROGRAM_EXPENSE"] },
+  { kode: "6302", nama: "Biaya administrasi pelunasan", induk: "6", peran: ["ADMIN_FEE_EXPENSE"] },
+  { kode: "6303", nama: "Biaya selisih pembulatan", induk: "6", peran: ["ROUNDING_EXPENSE"] },
+  // Jasa proses WO dari penerimaan barang jadi lama yang tidak membukukan CMT (`lib/vendor-billing/bill-journal.ts`);
+  // akun beban, seperti keterangan perannya di Pemetaan Akun.
+  { kode: "6304", nama: "Biaya jasa produksi (CMT)", induk: "6", peran: ["PRODUCTION_SERVICE_COST"] },
 ];
 
 /** Tipe akun templat: tipe akun puncaknya (anak selalu mewarisi tipe induk). */

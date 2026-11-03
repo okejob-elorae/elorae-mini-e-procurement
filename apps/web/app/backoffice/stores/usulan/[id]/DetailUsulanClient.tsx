@@ -91,6 +91,7 @@ const KOLOM: Record<GalatPersetujuan, string> = {
   KODE_TERLALU_PANJANG: "code",
   TEMPO_TIDAK_SAH: "paymentTempo",
   MARKUP_TIDAK_SAH: "markupPercent",
+  PEMEGANG_WAJIB_KONSI: "salesmanId",
 };
 
 export function DetailUsulanClient({
@@ -462,6 +463,7 @@ function FormulirPersetujuan({ usulan, formulir }: { usulan: Usulan; formulir: F
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">{t("holderHint")}</p>
+            {pesan("salesmanId")}
           </div>
         </div>
 

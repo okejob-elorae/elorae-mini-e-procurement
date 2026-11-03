@@ -29,4 +29,8 @@ export const OUTBOX_SKIP_REASONS = {
   STOCK_PUSH_DISABLED: "stock_push_disabled",
   /** No confirmed Jubelio price, or a new product still waiting for one (owner decision 2026-11-02). */
   PRICE_NOT_CONFIRMED: "price_not_confirmed",
+  /** An unmapped "Toko offline saja" item: never sent to Jubelio (owner answer P3a, 2026-11-02). */
+  SALES_CHANNEL_OFFLINE: "sales_channel_offline",
+  /** Jubelio shows a price other than the confirmed one and no admin decided it yet; nothing sent (P75). */
+  PRICE_DIFFERS_HELD: "price_differs_held",
 } as const;

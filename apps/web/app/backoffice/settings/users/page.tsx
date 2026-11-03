@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { bulanGajiDibayar } from "@/lib/spg/gaji-pokok-queries";
 import { perannyaSpg } from "@/lib/users/validasi";
 import { bacaBukaAwal } from "./aturan-pengguna";
 import { PenggunaClient } from "./PenggunaClient";
@@ -31,7 +32,17 @@ export default async function PenggunaPage({ searchParams }: PageProps) {
   const [users, roles, stores] = await Promise.all([
     prisma.user.findMany({
       orderBy: [{ name: "asc" }, { email: "asc" }],
-      select: { id: true, name: true, email: true, roleId: true, assignedStoreId: true, passwordHash: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        roleId: true,
+        assignedStoreId: true,
+        passwordHash: true,
+        spgStartedOn: true,
+        spgEndedOn: true,
+        spgEndedStoreId: true,
+      },
     }),
     prisma.roleDefinition.findMany({
       orderBy: { name: "asc" },
@@ -39,6 +50,15 @@ export default async function PenggunaPage({ searchParams }: PageProps) {
     }),
     prisma.store.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true } }),
   ]);
+  // Bulan kerja yang gajinya sudah dibayar, untuk akun SPG (bertugas atau sudah berhenti): dialog
+  // "SPG berhenti" memberi tahu kalau hari terakhirnya jatuh di bulan itu.
+  const idSpg = users.filter((u) => u.assignedStoreId || u.spgEndedStoreId).map((u) => u.id);
+  const dibayar = await bulanGajiDibayar(prisma, idSpg);
+  // Toko tempat SPG berhenti bisa sudah nonaktif — namanya tetap disebut.
+  const tokoBerhentiIds = [...new Set(users.map((u) => u.spgEndedStoreId).filter((x): x is string => Boolean(x)))];
+  const tokoBerhenti = tokoBerhentiIds.length
+    ? new Map((await prisma.store.findMany({ where: { id: { in: tokoBerhentiIds } }, select: { id: true, name: true } })).map((s) => [s.id, s.name]))
+    : new Map<string, string>();
 
   return (
     <PenggunaClient
@@ -53,6 +73,10 @@ export default async function PenggunaPage({ searchParams }: PageProps) {
         tokoId: u.assignedStoreId,
         // Hanya penanda ada/tidak — hash sandi tidak pernah dikirim ke layar.
         punyaSandi: u.passwordHash !== null,
+        spgMulai: u.spgStartedOn,
+        spgBerhenti: u.spgEndedOn,
+        spgTokoBerhenti: u.spgEndedStoreId ? (tokoBerhenti.get(u.spgEndedStoreId) ?? null) : null,
+        spgBulanDibayar: [...(dibayar.get(u.id) ?? [])].sort(),
       }))}
       peran={roles.map((r) => ({
         id: r.id,

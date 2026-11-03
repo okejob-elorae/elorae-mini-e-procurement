@@ -10,11 +10,12 @@ const url = process.env.DATABASE_URL ?? "";
 const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.skip : describe;
 
 /**
- * Baris Beranda "komisi SPG toko putus bulan lalu belum ditetapkan": toko putus yang punya nota
- * SPG bulan lalu yang masih mengonfirmasi potong (bukan yang seluruhnya dikembalikan pembeli) dan
- * laporannya belum dicek, atau sudah dicek tapi belum ditetapkan. Definisinya
- * sama dengan antrean "menunggu dicek" di halaman Komisi SPG, dan tokonya keluar begitu keuangan
- * menetapkannya. Data uji diseed di sini dan dihapus lewat `seededId(s)`.
+ * Baris Beranda "gaji & komisi SPG toko putus bulan lalu belum ditetapkan": toko putus × bulan lalu
+ * yang mengonfirmasi potong ATAU punya peserta gaji (`laporanPerluDicek`, B20 — penjual bulan itu
+ * selalu peserta gaji, walau seluruh potongnya dikembalikan pembeli), dan laporannya belum dicek,
+ * atau sudah dicek tapi belum ditetapkan. Definisinya sama dengan antrean "menunggu dicek" di
+ * halaman Komisi SPG dan dengan penolakan `TANPA_PESERTA` penulisnya; tokonya keluar begitu
+ * keuangan menetapkannya. Data uji diseed di sini dan dihapus lewat `seededId(s)`.
  */
 d("antrean komisi SPG toko putus (test bed only)", () => {
   const tag = `KAN${Math.random().toString(36).slice(2, 8)}`;
@@ -100,7 +101,8 @@ d("antrean komisi SPG toko putus (test bed only)", () => {
         changeGiven: 0,
         createdById: salesmanId,
         createdAt: tengahBulanLalu,
-        lines: { create: [{ itemId: kaos, productName: "uji", qty, unitPrice: 50_000, lineTotal: 50_000 * qty }] },
+        // Kategori komisi disimpan di BARIS nota saat terjual (P8), seperti yang ditulis kasir.
+        lines: { create: [{ itemId: kaos, categoryId: katId, categoryAt: tengahBulanLalu, productName: "uji", qty, unitPrice: 50_000, lineTotal: 50_000 * qty }] },
       },
       select: { id: true, lines: { select: { id: true } } },
     });
@@ -157,21 +159,22 @@ d("antrean komisi SPG toko putus (test bed only)", () => {
     expect(await jumlahKomisiPutusBelumDitetapkan(sekarang)).toBe(sebelum - 1);
   });
 
-  it("toko putus yang seluruh penjualannya dikembalikan di bulan yang sama tidak masuk antrean maupun Beranda — dicek pun ditolak", async () => {
+  it("toko putus tanpa penjualan dan tanpa peserta gaji tidak masuk antrean dan ditolak TANPA_PESERTA; yang seluruh penjualannya dikembalikan tetap menunggu dicek", async () => {
     const sebelum = await jumlahKomisiPutusBelumDitetapkan(sekarang);
-    const nota3 = await jual(spgDiam, putusTanpaJual, 3);
-    await kembalikan(nota3, putusTanpaJual, 3);
-
+    // Tanpa nota, tanpa jadwal bulanan, tanpa catatan check-in, dan SPG-nya belum bertanggal mulai:
+    // tidak ada yang digaji bulan itu — satu definisi dengan penulisnya.
     expect(milikUji(await tokoKomisiPutusBelumDitetapkan(periode))).toEqual([]);
     expect(milikUji(await menungguMenurutHalaman())).toEqual([]);
-    expect(await jumlahKomisiPutusBelumDitetapkan(sekarang)).toBe(sebelum);
-    // Satu definisi dengan penulisnya: tombol "Tandai laporan dicek" memang akan gagal di sini.
-    expect(await tandaiLaporanDicek({ storeId: putusTanpaJual, periode, olehUserId: kantor, sekarang })).toEqual({ ok: false, code: "TANPA_PENJUALAN" });
+    expect(await tandaiLaporanDicek({ storeId: putusTanpaJual, periode, olehUserId: kantor, sekarang })).toEqual({ ok: false, code: "TANPA_PESERTA" });
 
-    // Satu potong saja yang tersisa: toko itu kembali menunggu dicek.
-    await jual(spgDiam, putusTanpaJual, 1);
+    // Seluruh potongnya dikembalikan pembeli: komisinya nol, tetapi penjualnya peserta gaji bulan
+    // itu (B19) — gaji pokoknya tetap harus dibayar, jadi bulan itu menunggu dicek.
+    const nota3 = await jual(spgDiam, putusTanpaJual, 3);
+    await kembalikan(nota3, putusTanpaJual, 3);
     expect(milikUji(await tokoKomisiPutusBelumDitetapkan(periode))).toEqual([putusTanpaJual]);
     expect(milikUji(await menungguMenurutHalaman())).toEqual([putusTanpaJual]);
+    expect(await jumlahKomisiPutusBelumDitetapkan(sekarang)).toBe(sebelum + 1);
+    expect((await tandaiLaporanDicek({ storeId: putusTanpaJual, periode, olehUserId: kantor, sekarang })).ok).toBe(true);
   });
 
   it("retur pembeli yang masih menunggu atau ditolak kantor tidak mengurangi apa pun: bulannya tetap di antrean dengan potongnya", async () => {
@@ -189,9 +192,12 @@ d("antrean komisi SPG toko putus (test bed only)", () => {
       await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(nota) } } });
       nota.length = 0;
     }
-    // Disetujui: seluruh potongnya kembali, jadi bulan itu keluar dari antrean (TANPA_PENJUALAN).
+    // Disetujui: seluruh potongnya kembali (komisinya nol), tetapi penjualnya tetap peserta gaji,
+    // jadi bulan itu tetap menunggu dicek — dengan nol potong.
     const n = await jual(spgDiam, putusTanpaJual, 3);
     await kembalikan(n, putusTanpaJual, 3, "DISETUJUI");
-    expect(milikUji(await tokoKomisiPutusBelumDitetapkan(periode))).toEqual([]);
+    expect(milikUji(await tokoKomisiPutusBelumDitetapkan(periode))).toEqual([putusTanpaJual]);
+    const halaman = (await daftarKomisiKantor(bulanWib(sekarang), sekarang)).menungguCek.find((m) => m.storeId === putusTanpaJual && m.bulanJual === periode);
+    expect(halaman?.potongToko).toBe(0);
   });
 });

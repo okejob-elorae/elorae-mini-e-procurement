@@ -19,12 +19,13 @@ const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.s
  * (`returPembeliBerlaku`), terhadap basis data uji. Satu nota 6 potong di satu
  * toko konsinyasi, empat laporan di bulan yang sama:
  *
- * - R1 ditulis TANPA status (baris lama / isian bawaan kolom) → DISETUJUI:
- *   1 LAYAK (dengan baris buku RETUR_PEMBELI seperti yang ditulis persetujuan)
- *   + 1 RUSAK. `returnedQty` nota = 2.
- * - R2 MENUNGGU: 1 RUSAK + 1 LAYAK.
- * - R3 DITOLAK: 1 RUSAK.
+ * - R1 DISETUJUI (status dan `decidedAt` ditulis eksplisit, seperti persetujuan),
+ *   uangnya dikembalikan hari ini: 1 LAYAK (dengan baris buku RETUR_PEMBELI
+ *   seperti yang ditulis persetujuan) + 1 RUSAK. `returnedQty` nota = 2.
+ * - R2 MENUNGGU, uangnya telanjur dikembalikan hari ini: 1 RUSAK + 1 LAYAK.
+ * - R3 DITOLAK tanpa uang dikembalikan: 1 RUSAK.
  * - R4 DIBATALKAN (ditarik SPG): 1 LAYAK.
+ * - R5 ditulis TANPA status: isian bawaan kolomnya MENUNGGU (gagal-aman).
  *
  * Kalau satu pembaca ikut menghitung R2–R4, angkanya berubah: setiap angka di
  * bawah adalah angka "hanya R1". Pembaca dipanggil dengan cakupan toko uji
@@ -80,7 +81,13 @@ d("pembaca retur pembeli hanya menghitung yang disetujui (test bed only)", () =>
       data: { storeId, itemId, variantSku: varian, qty: -6, kind: "JUAL", refType: "SpgSale", refId: saleId, createdById: spgId },
     });
 
-    const retur = async (kunci: string, status: "MENUNGGU" | "DITOLAK" | "DIBATALKAN" | null, baris: ("LAYAK" | "RUSAK")[]) =>
+    const sekarang = new Date();
+    const retur = async (
+      kunci: string,
+      status: "DISETUJUI" | "MENUNGGU" | "DITOLAK" | "DIBATALKAN" | null,
+      baris: ("LAYAK" | "RUSAK")[],
+      tambahan: { refundedAt?: Date; decidedAt?: Date } = {},
+    ) =>
       prisma.spgSaleReturn.create({
         data: {
           spgSaleId: saleId,
@@ -89,18 +96,20 @@ d("pembaca retur pembeli hanya menghitung yang disetujui (test bed only)", () =>
           reason: `uji ${kunci}`,
           idempotencyKey: `${tag}-${kunci}`,
           ...(status ? { status } : {}),
+          ...tambahan,
           lines: { create: baris.map((condition) => ({ spgSaleLineId: lineId, itemId, variantSku: varian, qty: 1, condition })) },
         },
         select: { id: true, lines: { select: { id: true, condition: true } } },
       });
-    const r1 = await retur("r1", null, ["LAYAK", "RUSAK"]);
+    const r1 = await retur("r1", "DISETUJUI", ["LAYAK", "RUSAK"], { decidedAt: sekarang, refundedAt: sekarang });
     // Yang ditulis persetujuan untuk barang LAYAK: kembali ke rak.
     await prisma.storeStockMovement.create({
       data: { storeId, itemId, variantSku: varian, qty: 1, kind: "RETUR_PEMBELI", refType: "SpgSaleReturn", refId: r1.id, createdById: spgId },
     });
-    const r2 = await retur("r2", "MENUNGGU", ["RUSAK", "LAYAK"]);
-    const r3 = await retur("r3", "DITOLAK", ["RUSAK"]);
-    await retur("r4", "DIBATALKAN", ["LAYAK"]);
+    const r2 = await retur("r2", "MENUNGGU", ["RUSAK", "LAYAK"], { refundedAt: sekarang });
+    const r3 = await retur("r3", "DITOLAK", ["RUSAK"], { decidedAt: sekarang });
+    await retur("r4", "DIBATALKAN", ["LAYAK"], { decidedAt: sekarang });
+    await retur("r5", null, ["LAYAK"]);
     rusak.R1 = r1.lines.find((l) => l.condition === "RUSAK")!.id;
     rusak.R2 = r2.lines.find((l) => l.condition === "RUSAK")!.id;
     rusak.R3 = r3.lines.find((l) => l.condition === "RUSAK")!.id;
@@ -121,9 +130,9 @@ d("pembaca retur pembeli hanya menghitung yang disetujui (test bed only)", () =>
     if (storeId) await prisma.store.delete({ where: { id: seededId(storeId) } });
   });
 
-  it("the row written without a status is approved (the column default is the backfill)", async () => {
-    const r1 = await prisma.spgSaleReturn.findUniqueOrThrow({ where: { idempotencyKey: `${tag}-r1` } });
-    expect([r1.status, r1.decidedAt, r1.decidedById]).toEqual(["DISETUJUI", null, null]);
+  it("a row written without a status is a pending report, never an approved one without effects", async () => {
+    const r5 = await prisma.spgSaleReturn.findUniqueOrThrow({ where: { idempotencyKey: `${tag}-r5` } });
+    expect([r5.status, r5.decidedAt, r5.decidedById]).toEqual(["MENUNGGU", null, null]);
   });
 
   it("SPG commission movements: 6 sold, only the approved 2 returned", async () => {
@@ -159,10 +168,11 @@ d("pembaca retur pembeli hanya menghitung yang disetujui (test bed only)", () =>
     expect(jumlah.get(storeId)?.get(`${itemId}::${varian}`)).toBe(-4);
   });
 
-  it("day close: approved returns reduce net sales; pending pieces are carried separately", async () => {
+  it("day close: approved returns refunded today reduce net sales; money refunded before approval is carried separately", async () => {
     const bahan = await bahanTutupHari(storeId, hariIniWib());
     expect(bahan?.retur.reduce((s, r) => s + r.qty, 0)).toBe(2);
-    expect(bahan?.potongReturMenunggu).toBe(2);
+    // R2 (menunggu, uang telanjur kembali hari ini) — R3 ditolak tanpa uang tidak ikut, R5 belum dikembalikan.
+    expect(bahan?.potongUangKembaliBelumBerlaku).toBe(2);
   });
 
   it("damaged goods from shoppers: only the approved return can be sent back to the warehouse", async () => {
@@ -170,7 +180,7 @@ d("pembaca retur pembeli hanya menghitung yang disetujui (test bed only)", () =>
     expect((await barisReturPembeliUntukRetur(storeId, [rusak.R1, rusak.R2, rusak.R3])).map((r) => r.id)).toEqual([rusak.R1]);
   });
 
-  it("the Beranda count includes the one MENUNGGU report", async () => {
-    expect(await jumlahReturPembeliMenunggu()).toBeGreaterThanOrEqual(1);
+  it("the Beranda count includes the MENUNGGU reports", async () => {
+    expect(await jumlahReturPembeliMenunggu()).toBeGreaterThanOrEqual(2);
   });
 });

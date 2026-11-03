@@ -18,7 +18,7 @@ import {
   tanggalPeriode,
   type SumberOperasional,
 } from "./aturan";
-import { AWALAN_STOK_AWAL_UMKM, sasaranKomisiKonsi, sasaranKomisiSpg } from "./jurnal";
+import { AWALAN_STOK_AWAL_UMKM, sasaranBarangHilang, sasaranKomisiKonsi, sasaranKomisiSpg, sasaranPindahKonsi } from "./jurnal";
 import { postingJurnalOperasionalAman } from "./tertunda";
 
 /*
@@ -31,8 +31,13 @@ import { postingJurnalOperasionalAman } from "./tertunda";
  *
  * "Tanpa jurnal" = belum punya jurnal GENERASI PERTAMA (sourceId = id dokumen).
  * Jurnal bergenerasi yang tertinggal dari keadaan dokumennya diselaraskan oleh
- * kait pasca-commit dan tombol "Posting ulang", bukan oleh sapuan ini — kecuali
- * akrual gaji/komisi SPG yang digeser pembayarannya:
+ * kait pasca-commit dan tombol "Posting ulang"; sapuan ini hanya menangkap yang
+ * kaitnya mati untuk perubahan yang tidak meninggalkan tanda lain (R18):
+ *  - pindah barang konsinyasi yang barangnya kembali di pintu toko atau "tidak
+ *    jadi dikirim" sesudah dijurnal (`cariPindahKonsiTertinggal`);
+ *  - barang hilang yang klaim ekspedisinya dicek sah sesudah dijurnal
+ *    (`cariBarangHilangTertinggal`, berkunci `claimDecidedAt`);
+ *  - akrual gaji/komisi SPG yang digeser pembayarannya:
  *  - pembayaran yang disapu diposting lewat `postingJurnalOperasionalAman`,
  *    yang menyelaraskan akrual barisnya DULU (pembayaran bisa menghitung ulang
  *    angkanya), sama dengan kaitnya;
@@ -111,11 +116,74 @@ export function cariPindahKonsiTanpaJurnal(opsi: OpsiCariSapuan) {
     sourceType: SUMBER_OPERASIONAL.PINDAH_KONSI,
     tanggal: d("createdAt"),
     kolomLabel: "docNo",
-    syarat: Prisma.sql`AND EXISTS (
+    // Transfer yang DIBATALKAN sebelum dijurnal tidak punya apa pun untuk dijurnal (sasarannya kosong).
+    syarat: Prisma.sql`AND d.${sqlId("status")} <> 'CANCELLED' AND EXISTS (
       SELECT 1 FROM ${sqlId("KonsiTransferLine")} l
-      WHERE l.${sqlId("transferId")} = d.${sqlId("id")} AND l.${sqlId("qty")} > 0 AND l.${sqlId("unitCost")} > 0
+      WHERE l.${sqlId("transferId")} = d.${sqlId("id")} AND l.${sqlId("qty")} - l.${sqlId("returnedQty")} > 0 AND l.${sqlId("unitCost")} > 0
     )`,
     opsi,
+  });
+}
+
+/**
+ * Pindah barang konsinyasi yang SUDAH dijurnal lalu berubah — barang kembali di pintu toko
+ * (`adjustedAt`) atau "tidak jadi dikirim" (`cancelledAt`) — dan jurnalnya belum mengikuti (kait
+ * pasca-commitnya mati). Dibandingkan ISINYA dengan penyusun yang sama dengan penyelarasnya.
+ */
+export async function cariPindahKonsiTertinggal(opsi: OpsiCariSapuan, kecuali: readonly DokumenTanpaJurnal[] = []): Promise<DokumenTanpaJurnal[]> {
+  if (opsi.ids?.length === 0) return [];
+  const rentang = { gte: opsi.sejak, lte: opsi.sampai };
+  const rows = await prisma.konsiTransfer.findMany({
+    where: {
+      shipmentId: { not: null },
+      OR: [{ adjustedAt: rentang }, { cancelledAt: rentang }],
+      ...(opsi.ids ? { id: { in: [...opsi.ids] } } : {}),
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, docNo: true, adjustedAt: true, cancelledAt: true },
+  });
+  const kandidat = rows.map((r) => ({
+    id: r.id,
+    tanggal: (r.cancelledAt ?? r.adjustedAt) as Date,
+    label: `${r.docNo} (${LABEL_DIKOREKSI})`,
+  }));
+  return tertinggalDariTerposting({
+    sourceType: SUMBER_OPERASIONAL.PINDAH_KONSI,
+    kandidat,
+    sasaran: async (id) => (await sasaranPindahKonsi(prisma, id, null)).sasaran,
+    kecuali,
+    batas: opsi.batas,
+  });
+}
+
+/**
+ * Barang hilang yang SUDAH dijurnal lalu klaim ekspedisinya dicek sah (`claimDecidedAt`, R18/R20)
+ * dan jurnalnya belum membawa penggantiannya (kait pasca-commit `kaitBarangHilang` mati). Klaim
+ * yang dibayar dengan memotong tagihan ongkir tidak mengubah sasarannya, jadi tidak pernah tampil.
+ */
+export async function cariBarangHilangTertinggal(opsi: OpsiCariSapuan, kecuali: readonly DokumenTanpaJurnal[] = []): Promise<DokumenTanpaJurnal[]> {
+  if (opsi.ids?.length === 0) return [];
+  const bagian = await prisma.stockLossShare.findMany({
+    where: {
+      bearer: "EKSPEDISI",
+      claimStatus: "DIBAYAR",
+      claimDecidedAt: { gte: opsi.sejak, lte: opsi.sampai },
+      ...(opsi.ids ? { lossId: { in: [...opsi.ids] } } : {}),
+    },
+    orderBy: [{ claimDecidedAt: "asc" }, { id: "asc" }],
+    select: { lossId: true, claimDecidedAt: true, loss: { select: { sourceDocNo: true } } },
+  });
+  const perLoss = new Map<string, DokumenTanpaJurnal>();
+  for (const b of bagian) {
+    if (!b.claimDecidedAt) continue;
+    perLoss.set(b.lossId, { id: b.lossId, tanggal: b.claimDecidedAt, label: `${b.loss.sourceDocNo ?? b.lossId} (${LABEL_KLAIM_DIBAYAR})` });
+  }
+  return tertinggalDariTerposting({
+    sourceType: SUMBER_OPERASIONAL.BARANG_HILANG,
+    kandidat: [...perLoss.values()],
+    sasaran: async (id) => (await sasaranBarangHilang(prisma, id, null)).sasaran,
+    kecuali,
+    batas: opsi.batas,
   });
 }
 
@@ -138,20 +206,54 @@ const kirimanKonsiBarang = (syarat: Prisma.Sql) => Prisma.sql`EXISTS (
     AND a.${sqlId("createdAt")} <= d.${sqlId("approvedAt")} AND a.${sqlId("qtyChange")} <> 0 ${syarat}
 )`;
 
+/** Σ kiriman konsinyasi barang `l` sampai `d.approvedAt`: `nilai` = |qty| (qty) atau |qty| × biaya keluar (nilai). */
+const jumlahKirimanKonsi = (nilai: "qty" | "nilai") => Prisma.sql`(
+  SELECT COALESCE(SUM(ABS(a.${sqlId("qtyChange")})${nilai === "nilai" ? Prisma.sql` * a.${sqlId("prevAvgCost")}` : Prisma.empty}), 0)
+  FROM ${sqlId("StockAdjustment")} a
+  WHERE a.${sqlId("source")} = 'KONSI_TRANSFER' AND a.${sqlId("itemId")} = l.${sqlId("itemId")}
+    AND a.${sqlId("createdAt")} <= d.${sqlId("approvedAt")} AND a.${sqlId("qtyChange")} <> 0
+)`;
+
+/**
+ * Baris transfer konsinyasi barang `l` yang barangnya kembali ke gudang sebelum sampai di toko
+ * (ditolak di pintu, "tidak jadi dikirim") sampai `d.approvedAt` — syarat yang sama dengan
+ * `biayaSatuanKonsi` (R28).
+ */
+const kembaliKonsiDari = Prisma.sql`FROM ${sqlId("KonsiTransferLine")} k
+  JOIN ${sqlId("KonsiTransfer")} t ON t.${sqlId("id")} = k.${sqlId("transferId")}
+  WHERE k.${sqlId("itemId")} = l.${sqlId("itemId")} AND k.${sqlId("returnedQty")} > 0
+    AND (t.${sqlId("cancelledAt")} <= d.${sqlId("approvedAt")} OR t.${sqlId("adjustedAt")} <= d.${sqlId("approvedAt")})`;
+const adaKembaliKonsi = Prisma.sql`EXISTS (SELECT 1 ${kembaliKonsiDari})`;
+const jumlahKembaliKonsi = (nilai: "qty" | "nilai") => Prisma.sql`(
+  SELECT COALESCE(SUM(k.${sqlId("returnedQty")}${nilai === "nilai" ? Prisma.sql` * k.${sqlId("unitCost")}` : Prisma.empty}), 0) ${kembaliKonsiDari}
+)`;
+
+/** Cadangan biaya konsinyasi barang `l` di atas nol: harga rata-rata gudang terakhir sebelum `d.approvedAt`, lalu yang sekarang. */
+const cadanganKonsiPositif = Prisma.sql`(
+  EXISTS (
+    SELECT 1 FROM ${sqlId("StockAdjustment")} c
+    WHERE c.${sqlId("itemId")} = l.${sqlId("itemId")} AND c.${sqlId("createdAt")} <= d.${sqlId("approvedAt")} AND c.${sqlId("newAvgCost")} > 0
+  )
+  OR EXISTS (SELECT 1 FROM ${sqlId("InventoryValue")} v WHERE v.${sqlId("itemId")} = l.${sqlId("itemId")} AND v.${sqlId("avgCost")} > 0)
+)`;
+
 /**
  * Biaya konsinyasi barang `l` pada `d.approvedAt` di atas nol — cabang yang sama dengan
- * `biayaSatuanKonsi`: rata-rata kirimannya bila ada kiriman (nol kalau semuanya
- * dikirim pada harga nol, tanpa cadangan); kalau tidak ada kiriman sama sekali,
- * cadangannya (harga rata-rata gudang terakhir sebelum saat itu, lalu yang sekarang).
+ * `biayaSatuanKonsi`:
+ *  - tanpa barang yang kembali (`rataRataKirim`): rata-rata kirimannya bila ada kiriman (nol kalau
+ *    semuanya dikirim pada harga nol, tanpa cadangan); tanpa kiriman sama sekali, cadangannya;
+ *  - dengan barang yang kembali sebelum sampai di toko (`rataRataKirimBersih`, R28): kiriman
+ *    dikurangi yang kembali pada biaya keluarnya sendiri — positif bila qty bersih dan nilai
+ *    bersihnya di atas nol; qty bersih nol atau kurang → cadangannya.
  */
 const biayaKonsiBarangPositif = Prisma.sql`(
-  ${kirimanKonsiBarang(Prisma.sql`AND a.${sqlId("prevAvgCost")} > 0`)}
-  OR (NOT ${kirimanKonsiBarang(Prisma.empty)} AND (
-    EXISTS (
-      SELECT 1 FROM ${sqlId("StockAdjustment")} c
-      WHERE c.${sqlId("itemId")} = l.${sqlId("itemId")} AND c.${sqlId("createdAt")} <= d.${sqlId("approvedAt")} AND c.${sqlId("newAvgCost")} > 0
-    )
-    OR EXISTS (SELECT 1 FROM ${sqlId("InventoryValue")} v WHERE v.${sqlId("itemId")} = l.${sqlId("itemId")} AND v.${sqlId("avgCost")} > 0)
+  (NOT ${adaKembaliKonsi} AND (
+    ${kirimanKonsiBarang(Prisma.sql`AND a.${sqlId("prevAvgCost")} > 0`)}
+    OR (NOT ${kirimanKonsiBarang(Prisma.empty)} AND ${cadanganKonsiPositif})
+  ))
+  OR (${adaKembaliKonsi} AND (
+    (${jumlahKirimanKonsi("qty")} - ${jumlahKembaliKonsi("qty")} > 0 AND ${jumlahKirimanKonsi("nilai")} - ${jumlahKembaliKonsi("nilai")} > 0)
+    OR (${jumlahKirimanKonsi("qty")} - ${jumlahKembaliKonsi("qty")} <= 0 AND ${cadanganKonsiPositif})
   ))
 )`;
 
@@ -266,9 +368,32 @@ async function akrualTertinggal(input: {
     kandidat.set(a.id, { id: a.id, tanggal: j.createdAt, label: a.label });
   }
 
-  // Jurnal terakhir per akrual (semua generasi). Tanpa jurnal = urusan jalur generasi pertama;
-  // berjurnal SESUDAH jejaknya = sudah diselaraskan sesudah pembayaran itu.
-  const ids = [...kandidat.keys()];
+  return tertinggalDariTerposting({ sourceType, kandidat: [...kandidat.values()], sasaran: input.sasaran, kecuali: [], batas });
+}
+
+/**
+ * Dari kandidat (`tanggal` = saat dokumennya berubah): yang SUDAH berjurnal, tanpa jurnal
+ * sesudah perubahannya, dan yang sasarannya sekarang berbeda dari yang terposting. Dibandingkan
+ * ISINYA, bukan waktunya saja, jadi dokumen yang sudah diselaraskan (atau yang perubahannya tidak
+ * menggeser angka) tidak pernah tampil selamanya. Dokumen tanpa jurnal sama sekali urusan jalur
+ * generasi pertama, bukan di sini.
+ */
+async function tertinggalDariTerposting(input: {
+  sourceType: SumberOperasional;
+  kandidat: readonly DokumenTanpaJurnal[];
+  sasaran: (id: string) => Promise<BarisBertanda[] | null>;
+  kecuali: readonly DokumenTanpaJurnal[];
+  batas: number;
+}): Promise<DokumenTanpaJurnal[]> {
+  const { sourceType } = input;
+  const batas = input.batas - input.kecuali.length;
+  if (batas <= 0) return [];
+  const sudah = new Set(input.kecuali.map((k) => k.id));
+  const kandidat = input.kandidat.filter((k) => !sudah.has(k.id));
+
+  // Jurnal terakhir per dokumen (semua generasi). Tanpa jurnal = urusan jalur generasi pertama;
+  // berjurnal SESUDAH perubahannya = sudah diselaraskan sesudah perubahan itu.
+  const ids = kandidat.map((k) => k.id);
   const terakhir = new Map<string, number>();
   for (let i = 0; i < ids.length; i += 100) {
     const potong = ids.slice(i, i + 100);
@@ -282,7 +407,7 @@ async function akrualTertinggal(input: {
       if (milik) terakhir.set(milik, Math.max(terakhir.get(milik) ?? 0, j.createdAt.getTime()));
     }
   }
-  const urut = [...kandidat.values()]
+  const urut = kandidat
     .filter((k) => {
       const t = terakhir.get(k.id);
       return t !== undefined && t < k.tanggal.getTime();
@@ -306,6 +431,8 @@ async function petaPerPotong<T>(ids: string[], baca: (potong: string[]) => Promi
 }
 
 const LABEL_TERTINGGAL = "penyesuaian saat dibayar";
+const LABEL_DIKOREKSI = "dikoreksi sesudah dijurnal";
+const LABEL_KLAIM_DIBAYAR = "klaim ekspedisi dibayar";
 
 export async function cariKomisiKonsiTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpaJurnal[]> {
   const pertama = await siklusTerkunci(opsi, { commissions: { some: { total: { gt: 0 } } } }, SUMBER_OPERASIONAL.KOMISI_KONSI);
@@ -344,34 +471,36 @@ const membawaKoreksi = (paidRefType: typeof REF_KOMISI_KONSI | typeof REF_KOMISI
   HAVING SUM(c.${sqlId("amount")}) <> 0
 )`;
 
+/**
+ * Pembayaran `d` yang ikut membayarkan uang beban retur pembeli yang dikembalikan ke SPG
+ * (`SpgCharge.paybackPaidRef*`, P79 KEMBALI_STOK): jurnalnya ada walau neto barisnya sendiri nol —
+ * bank sebesar pengembaliannya (`barisBayarKomisiSpg`). Potongan beban dan utang hanya bisa
+ * mengurangi bayaran, jadi tidak pernah membuat jurnal pada baris yang netonya nol.
+ */
+const membawaKembaliBeban = (paidRefType: typeof REF_KOMISI_KONSI | typeof REF_KOMISI_SPG_PUTUS) => Prisma.sql`EXISTS (
+  SELECT 1 FROM ${sqlId("SpgCharge")} c
+  WHERE c.${sqlId("paybackPaidRefType")} = ${paidRefType} AND c.${sqlId("paybackPaidRefId")} = d.${sqlId("id")}
+    AND c.${sqlId("paybackAmount")} > 0
+)`;
+
 export function cariBayarGajiKonsiTanpaJurnal(opsi: OpsiCariSapuan) {
   return cariTanpaJurnalSql({
     tabel: "ConsignmentCommission",
     sourceType: SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI,
     tanggal: d("paidAt"),
     kolomLabel: "id",
-    syarat: Prisma.sql`AND d.${sqlId("paidAt")} IS NOT NULL AND (d.${sqlId("total")} - d.${sqlId("deduction")} > 0 OR ${membawaKoreksi(REF_KOMISI_KONSI)})`,
-    opsi,
-  });
-}
-
-export function cariBayarTokoKonsiTanpaJurnal(opsi: OpsiCariSapuan) {
-  return cariTanpaJurnalSql({
-    tabel: "ConsignmentPayment",
-    sourceType: SUMBER_OPERASIONAL.BAYAR_TOKO_KONSI,
-    tanggal: d("paidOn"),
-    kolomLabel: "id",
-    syarat: Prisma.sql`AND d.${sqlId("cancelledAt")} IS NULL AND d.${sqlId("amount")} > 0`,
+    syarat: Prisma.sql`AND d.${sqlId("paidAt")} IS NOT NULL AND (d.${sqlId("total")} - d.${sqlId("deduction")} > 0 OR ${membawaKoreksi(REF_KOMISI_KONSI)} OR ${membawaKembaliBeban(REF_KOMISI_KONSI)})`,
     opsi,
   });
 }
 
 export async function cariKomisiSpgTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpaJurnal[]> {
-  const grup = await prisma.spgCommission.groupBy({ by: ["storeId", "period"], _sum: { commission: true } });
+  // Bruto akrualnya = komisi + gaji pokok (`sasaranKomisiSpg`): toko × bulan yang hanya bergaji pokok tetap dicari.
+  const grup = await prisma.spgCommission.groupBy({ by: ["storeId", "period"], _sum: { commission: true, baseSalary: true } });
   const kandidat: DokumenTanpaJurnal[] = [];
   for (const g of grup) {
     const p = bacaPeriode(g.period);
-    if (!p || !(Number(g._sum.commission ?? 0) > 0)) continue;
+    if (!p || !(Number(g._sum.commission ?? 0) + Number(g._sum.baseSalary ?? 0) > 0)) continue;
     const tanggal = akhirBulanWib(p[0], p[1]);
     if (tanggal.getTime() < opsi.sejak.getTime() || tanggal.getTime() > opsi.sampai.getTime()) continue;
     kandidat.push({ id: idKomisiSpg(g.storeId, g.period), tanggal, label: `Komisi SPG ${g.period}` });
@@ -406,10 +535,18 @@ export function cariBayarKomisiSpgTanpaJurnal(opsi: OpsiCariSapuan) {
     sourceType: SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG,
     tanggal: d("paidAt"),
     kolomLabel: "period",
-    syarat: Prisma.sql`AND d.${sqlId("paidAt")} IS NOT NULL AND (d.${sqlId("commission")} - d.${sqlId("deduction")} > 0 OR ${membawaKoreksi(REF_KOMISI_SPG_PUTUS)})`,
+    // Neto = komisi + gaji pokok − potongan barang hilang, sama dengan `postJurnalBayarKomisiSpg`.
+    syarat: Prisma.sql`AND d.${sqlId("paidAt")} IS NOT NULL AND (d.${sqlId("commission")} + d.${sqlId("baseSalary")} - d.${sqlId("deduction")} > 0 OR ${membawaKoreksi(REF_KOMISI_SPG_PUTUS)} OR ${membawaKembaliBeban(REF_KOMISI_SPG_PUTUS)})`,
     opsi,
   });
 }
+
+/** Barang hilang `d` dari penerimaan toko atas nota putus sebuah pengiriman. */
+const hilangNotaPengiriman = Prisma.sql`(d.${sqlId("source")} = 'PENERIMAAN' AND EXISTS (
+  SELECT 1 FROM ${sqlId("StoreReceipt")} r
+  JOIN ${sqlId("DeliveryShipment")} s ON s.${sqlId("deliveryId")} = r.${sqlId("sourceId")}
+  WHERE r.${sqlId("id")} = d.${sqlId("sourceId")} AND r.${sqlId("sourceType")} = 'PUTUS_DELIVERY'
+))`;
 
 export function cariBarangHilangTanpaJurnal(opsi: OpsiCariSapuan) {
   return cariTanpaJurnalSql({
@@ -417,11 +554,25 @@ export function cariBarangHilangTanpaJurnal(opsi: OpsiCariSapuan) {
     sourceType: SUMBER_OPERASIONAL.BARANG_HILANG,
     tanggal: Prisma.sql`COALESCE(d.${sqlId("decidedAt")}, d.${sqlId("createdAt")})`,
     kolomLabel: "id",
-    syarat: Prisma.sql`AND d.${sqlId("status")} IN ('DITETAPKAN', 'SELESAI') AND ${tokoKonsi(d("storeId"))} AND EXISTS (
+    // Toko konsinyasi, ATAU barang putus yang hilang di perjalanan sebuah pengiriman (penerimaan
+    // nota pengiriman, R18) — cabang yang sama dengan `sasaranBarangHilang`.
+    syarat: Prisma.sql`AND d.${sqlId("status")} IN ('DITETAPKAN', 'SELESAI') AND (${tokoKonsi(d("storeId"))} OR ${hilangNotaPengiriman}) AND EXISTS (
       SELECT 1 FROM ${sqlId("StockLossLine")} l WHERE l.${sqlId("lossId")} = d.${sqlId("id")} AND l.${sqlId("itemId")} IS NOT NULL AND l.${sqlId("qty")} > 0
     )`,
     opsi,
   });
+}
+
+/** Barang hilang: generasi pertama, lalu yang tertinggal dari klaim ekspedisinya. */
+async function cariBarangHilangSapuan(opsi: OpsiCariSapuan): Promise<DokumenTanpaJurnal[]> {
+  const pertama = await cariBarangHilangTanpaJurnal(opsi);
+  return [...pertama, ...(await cariBarangHilangTertinggal(opsi, pertama))];
+}
+
+/** Pindah barang konsinyasi: generasi pertama, lalu yang tertinggal dari koreksinya. */
+async function cariPindahKonsiSapuan(opsi: OpsiCariSapuan): Promise<DokumenTanpaJurnal[]> {
+  const pertama = await cariPindahKonsiTanpaJurnal(opsi);
+  return [...pertama, ...(await cariPindahKonsiTertinggal(opsi, pertama))];
 }
 
 export function cariPotongSalesTanpaJurnal(opsi: OpsiCariSapuan) {
@@ -431,6 +582,18 @@ export function cariPotongSalesTanpaJurnal(opsi: OpsiCariSapuan) {
     tanggal: d("createdAt"),
     kolomLabel: "refId",
     syarat: Prisma.sql`AND d.${sqlId("refType")} = 'KomisiSalesman' AND d.${sqlId("amount")} > 0`,
+    opsi,
+  });
+}
+
+/** Potongan/pengembalian beban selisih retur sales; nilai nol tidak berjurnal. */
+export function cariPotongSalesReturTanpaJurnal(opsi: OpsiCariSapuan) {
+  return cariTanpaJurnalSql({
+    tabel: "ReturnChargeDeduction",
+    sourceType: SUMBER_OPERASIONAL.POTONG_SALES_RETUR,
+    tanggal: d("createdAt"),
+    kolomLabel: "refId",
+    syarat: Prisma.sql`AND d.${sqlId("refType")} = 'KomisiSalesman' AND d.${sqlId("amount")} <> 0`,
     opsi,
   });
 }
@@ -503,26 +666,51 @@ export function cariBayarBiayaPerjalananTanpaJurnal(opsi: OpsiCariSapuan) {
   });
 }
 
+export function cariPenerimaanUtangSpgTanpaJurnal(opsi: OpsiCariSapuan) {
+  return cariTanpaJurnalSql({
+    tabel: "SpgDebtPayment",
+    sourceType: SUMBER_OPERASIONAL.BAYAR_UTANG_SPG,
+    tanggal: Prisma.sql`COALESCE(d.${sqlId("checkedAt")}, d.${sqlId("createdAt")})`,
+    kolomLabel: "receivedOn",
+    syarat: Prisma.sql`AND d.${sqlId("status")} = 'TERVERIFIKASI' AND d.${sqlId("voidedAt")} IS NULL AND d.${sqlId("amount")} > 0`,
+    opsi,
+  });
+}
+
+export function cariBayarTambahanSpgTanpaJurnal(opsi: OpsiCariSapuan) {
+  return cariTanpaJurnalSql({
+    tabel: "SpgExtraPayout",
+    sourceType: SUMBER_OPERASIONAL.BAYAR_TAMBAHAN_SPG,
+    tanggal: d("createdAt"),
+    kolomLabel: "paidOn",
+    // Yang seluruhnya diimbangkan dengan utang (`amount` 0) tetap berjurnal: koreksinya dan imbangannya.
+    syarat: Prisma.sql`AND (d.${sqlId("amount")} > 0 OR d.${sqlId("offsetAmount")} > 0)`,
+    opsi,
+  });
+}
+
 /** Pencari per sumber — satu tempat untuk registri sapuan dan layar rekonsiliasi persediaan. */
 export const PENCARI_OPERASIONAL: Readonly<Record<SumberOperasional, (opsi: OpsiCariSapuan) => Promise<DokumenTanpaJurnal[]>>> = {
   CONSIGNMENT_SHIPMENT: cariKirimKonsiTanpaJurnal,
   CONSIGNMENT_ORDER: cariPesananKonsiTanpaJurnal,
-  CONSIGNMENT_TRANSFER: cariPindahKonsiTanpaJurnal,
+  CONSIGNMENT_TRANSFER: cariPindahKonsiSapuan,
   CONSIGNMENT_RETURN: cariReturKonsiTanpaJurnal,
   CONSIGNMENT_FIELD_RETURN: cariReturLapanganKonsiTanpaJurnal,
   CONSIGNMENT_CYCLE: cariSiklusKonsiTanpaJurnal,
   CONSIGNMENT_COMMISSION: cariKomisiKonsiTanpaJurnal,
   CONSIGNMENT_COMMISSION_PAYMENT: cariBayarGajiKonsiTanpaJurnal,
-  CONSIGNMENT_PAYMENT: cariBayarTokoKonsiTanpaJurnal,
   SPG_COMMISSION: cariKomisiSpgTanpaJurnal,
   SPG_COMMISSION_PAYMENT: cariBayarKomisiSpgTanpaJurnal,
-  STOCK_LOSS: cariBarangHilangTanpaJurnal,
+  STOCK_LOSS: cariBarangHilangSapuan,
   LOSS_SALES_DEDUCTION: cariPotongSalesTanpaJurnal,
+  RETURN_SALES_DEDUCTION: cariPotongSalesReturTanpaJurnal,
   DAMAGED_STOCK: cariGudangRusakTanpaJurnal,
   STOCK_ADJUSTMENT: cariStokManualTanpaJurnal,
   VENDOR_RETURN: cariReturPemasokTanpaJurnal,
   TRAVEL_CLAIM: cariBiayaPerjalananTanpaJurnal,
   TRAVEL_CLAIM_PAYMENT: cariBayarBiayaPerjalananTanpaJurnal,
+  SPG_DEBT_PAYMENT: cariPenerimaanUtangSpgTanpaJurnal,
+  SPG_EXTRA_PAYOUT: cariBayarTambahanSpgTanpaJurnal,
 };
 
 /**
@@ -551,22 +739,24 @@ async function postingSapuan(sumber: SumberOperasional, id: string, olehUserId: 
 const LABEL_SAPUAN: Readonly<Record<SumberOperasional, string>> = {
   CONSIGNMENT_SHIPMENT: "Kiriman titipan konsinyasi",
   CONSIGNMENT_ORDER: "Pesanan konsinyasi lama (stok pindah saat disetujui)",
-  CONSIGNMENT_TRANSFER: "Pindah barang konsinyasi (pengiriman selesai)",
+  CONSIGNMENT_TRANSFER: "Pindah barang konsinyasi (pengiriman dibuat)",
   CONSIGNMENT_RETURN: "Retur toko konsinyasi (NRI)",
   CONSIGNMENT_FIELD_RETURN: "Retur lapangan toko konsinyasi (disetujui)",
   CONSIGNMENT_CYCLE: "Penjualan siklus konsinyasi",
   CONSIGNMENT_COMMISSION: "Gaji & komisi SPG konsinyasi",
   CONSIGNMENT_COMMISSION_PAYMENT: "Pembayaran gaji SPG konsinyasi",
-  CONSIGNMENT_PAYMENT: "Pembayaran toko konsinyasi",
   SPG_COMMISSION: "Komisi SPG toko putus",
   SPG_COMMISSION_PAYMENT: "Pembayaran komisi SPG toko putus",
-  STOCK_LOSS: "Barang hilang di toko konsinyasi",
+  STOCK_LOSS: "Barang hilang di toko konsinyasi atau di perjalanan pengiriman",
   LOSS_SALES_DEDUCTION: "Potongan beban barang hilang sales",
+  RETURN_SALES_DEDUCTION: "Potongan beban selisih retur sales",
   DAMAGED_STOCK: "Keputusan gudang barang rusak",
   STOCK_ADJUSTMENT: "Penyesuaian stok manual",
   VENDOR_RETURN: "Retur ke pemasok",
   TRAVEL_CLAIM: "Biaya perjalanan disetujui",
   TRAVEL_CLAIM_PAYMENT: "Pembayaran biaya perjalanan",
+  SPG_DEBT_PAYMENT: "Penerimaan utang SPG (dicek)",
+  SPG_EXTRA_PAYOUT: "Pembayaran tambahan SPG",
 };
 
 for (const sumber of Object.values(SUMBER_OPERASIONAL)) {

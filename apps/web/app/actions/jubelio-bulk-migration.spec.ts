@@ -66,6 +66,7 @@ describe("jubelio-bulk-migration server actions", () => {
         where: expect.objectContaining({
           type: "FINISHED_GOOD",
           source: "ERP",
+          salesChannel: { not: "OFFLINE" },
           jubelioProductMappings: { none: {} },
         }),
       }));
@@ -120,6 +121,17 @@ describe("jubelio-bulk-migration server actions", () => {
       const r = await requestBulkMigration(["i1", "ghost"]);
       expect(r).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
       expect(r.ok ? "" : r.rincian).toMatch(/not eligible/i);
+      expect(ajukanKeJubelio).not.toHaveBeenCalled();
+    });
+
+    it("never accepts a Toko offline saja item: the eligibility read excludes it (P3a)", async () => {
+      (auth as any).mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+      (prisma.item.findMany as any).mockResolvedValue([]);
+      const r = await requestBulkMigration(["offline-1"]);
+      expect(prisma.item.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ salesChannel: { not: "OFFLINE" } }) }),
+      );
+      expect(r).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
       expect(ajukanKeJubelio).not.toHaveBeenCalled();
     });
 

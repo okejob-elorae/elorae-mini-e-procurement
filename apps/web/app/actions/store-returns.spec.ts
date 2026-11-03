@@ -25,6 +25,8 @@ vi.mock("@/lib/salesman/queries", () => ({ tokoTerkunci: vi.fn(async () => state
 vi.mock("@/lib/notifications/kabar-pengguna", () => ({ JENIS_KABAR: {}, kabariPengguna: vi.fn() }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 vi.mock("@/lib/receivables/koreksi", () => ({}));
+vi.mock("@/lib/receivables/potong-beban-retur", () => ({}));
+vi.mock("@/lib/finance/operasional/kait", () => ({ kaitPotongSalesRetur: vi.fn(async () => {}) }));
 vi.mock("@/lib/receivables/return-writer", () => ({
   catatReturToko: vi.fn(async (input: Record<string, unknown>) => {
     state.dicatat.push(input);
@@ -134,5 +136,11 @@ describe("catatReturTokoAction — toko ditetapkan server", () => {
   it("refuses without a session", async () => {
     state.sesi = null;
     expect(await catatReturTokoAction(DASAR)).toEqual({ ok: false, kode: "TANPA_AKSES" });
+  });
+
+  it("passes the 'retur lain' statement through only as an explicit true", async () => {
+    await catatReturTokoAction(DASAR);
+    await catatReturTokoAction({ ...DASAR, returLain: true });
+    expect(state.dicatat.map((d) => d.returLain)).toEqual([false, true]);
   });
 });

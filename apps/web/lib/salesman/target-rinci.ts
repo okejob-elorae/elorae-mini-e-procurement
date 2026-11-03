@@ -267,9 +267,8 @@ export type Capaian = { nilai: number; pcs: number };
 
 export type CapaianRinci = {
   /**
-   * Semua saluran, TERMASUK konsinyasi — angka kantor; untuk SPG = penjualan
-   * bersih notanya. HP salesman memakai `totalUntukHp` (putus + van, sama
-   * dengan kartu "Bulan ini").
+   * Semua saluran, TERMASUK konsinyasi — angka kantor, juga di HP salesman
+   * (P56); untuk SPG = penjualan bersih notanya.
    */
   total: number;
   kanal: Record<JenisDokumen, number>;
@@ -277,9 +276,9 @@ export type CapaianRinci = {
   kategori: Record<string, Capaian>;
   /** Per `itemId`. */
   barang: Record<string, Capaian>;
-  /** Per `itemId`, hanya dari konsinyasi — untuk `capaianUntukHp`. */
+  /** Per `itemId`, hanya dari konsinyasi — berapa dari capaiannya yang konsinyasi. */
   barangKonsi: Record<string, Capaian>;
-  /** Per kategori, hanya dari konsinyasi — untuk `capaianUntukHp`. */
+  /** Per kategori, hanya dari konsinyasi. */
   kategoriKonsi: Record<string, Capaian>;
 };
 
@@ -366,43 +365,6 @@ export function dokumenSpg(nota: {
     return { itemId: l.itemId, qty: qty - kembali, bobotSen: nilai - potong, bonus: false };
   });
   return { jenis: "spg", totalSen: Math.max(0, keSen(nota.total) - kembaliSen), baris };
-}
-
-/**
- * Setiap target dalam RUPIAH di HP dihitung TANPA konsinyasi — total, kategori,
- * maupun barang.
- *
- * Aplikasi salesman tidak pernah menampilkan harga atau total konsinyasi:
- * - barang: nilai konsi satu barang ÷ pcs lakunya = harga satuan konsi;
- * - kategori: nilai kategori − putus − van kategori itu = total konsi
- *   kategori itu (kartu "Bulan ini" di beranda kini putus + van saja, jadi
- *   nilai gabungan kategori tidak lagi "sudah tampil" di mana pun).
- * Target dalam pcs tidak terdampak: jumlah barang tidak memuat harga.
- * Layar kantor tetap memakai `capaianUntuk` (semua saluran).
- */
-export function tanpaKonsiDiHp(t: Pick<BarisTarget, "scope" | "measure">): boolean {
-  return t.measure === "NILAI";
-}
-
-export function capaianUntukHp(
-  c: Pick<CapaianRinci, "kategori" | "barang" | "barangKonsi" | "kategoriKonsi">,
-  t: Pick<BarisTarget, "scope" | "refId" | "measure">,
-): number {
-  if (!tanpaKonsiDiHp(t)) return capaianUntuk(c, t);
-  const kategori = t.scope === "KATEGORI";
-  const semua = (kategori ? c.kategori : c.barang)[t.refId]?.nilai ?? 0;
-  const konsi = (kategori ? c.kategoriKonsi : c.barangKonsi)[t.refId]?.nilai ?? 0;
-  return Math.round((semua - konsi) * 100) / 100;
-}
-
-/**
- * Total omzet untuk target total di HP: putus + van (+ SPG untuk SPG), dalam
- * sen supaya pecahan rupiah tidak bergeser. `c.total` memuat konsinyasi dan
- * hanya untuk kantor: total − putus − van = konsi.
- */
-export function totalUntukHp(c: Pick<CapaianRinci, "kanal">): number {
-  const sen = (n: number) => Math.round(n * 100);
-  return (sen(c.kanal.putus) + sen(c.kanal.van) + sen(c.kanal.spg)) / 100;
 }
 
 /** Capaian yang dibandingkan dengan satu target: ukurannya dari target itu sendiri. */

@@ -38,3 +38,27 @@ describe("normalizeItemPayload — bahan rekomendasi harga", () => {
     expect(p.additionalCost).toBeUndefined();
   });
 });
+
+/*
+ * Jawaban pemilik 2026-11-02: P4 (persen rekomendasi diisi sebagai markup ATAU margin) dan P3
+ * (saluran jual dipilih dengan dua centang). Keduanya hanya untuk barang jadi.
+ */
+describe("normalizeItemPayload — dasar aturan harga dan saluran jual", () => {
+  it("dasar MARKUP/MARGIN dibaca; tidak dikirim → tidak disentuh; nilai lain ditolak", () => {
+    expect(normalizeItemPayload({ ...dasar, priceRuleBasis: "MARGIN" }).priceRuleBasis).toBe("MARGIN");
+    expect(normalizeItemPayload(dasar).priceRuleBasis).toBeUndefined();
+    expect(() => normalizeItemPayload({ ...dasar, priceRuleBasis: "PERSEN" })).toThrow(/priceRuleBasis/);
+  });
+
+  it("saluran jual dibaca; kosong → tidak disentuh; nilai lain ditolak", () => {
+    expect(normalizeItemPayload({ ...dasar, salesChannel: "OFFLINE" }).salesChannel).toBe("OFFLINE");
+    expect(normalizeItemPayload({ ...dasar, salesChannel: "" }).salesChannel).toBeUndefined();
+    expect(() => normalizeItemPayload({ ...dasar, salesChannel: "TOKO" })).toThrow(/salesChannel/);
+  });
+
+  it("bahan dan aksesori: dasar dan saluran tidak disentuh", () => {
+    const p = normalizeItemPayload({ ...dasar, type: "FABRIC", salesChannel: "TOKO", priceRuleBasis: "X" });
+    expect(p.salesChannel).toBeUndefined();
+    expect(p.priceRuleBasis).toBeUndefined();
+  });
+});

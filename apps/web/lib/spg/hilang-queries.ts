@@ -69,6 +69,8 @@ export async function daftarHilangKantor(saring: {
   status: StatusHilang | null;
   storeId: string | null;
   sumber: SumberHilang | null;
+  /** Klaim ekspedisi (R31): DIAJUKAN | MENUNGGU_CEK | DITOLAK pada bagian EKSPEDISI. */
+  klaim?: "DIAJUKAN" | "MENUNGGU_CEK" | "DITOLAK" | null;
   sekarang?: Date;
 }): Promise<DaftarHilangKantor> {
   const sekarang = saring.sekarang ?? new Date();
@@ -76,6 +78,7 @@ export async function daftarHilangKantor(saring: {
     ...(saring.status ? { status: saring.status } : {}),
     ...(saring.storeId ? { storeId: saring.storeId } : {}),
     ...(saring.sumber ? { source: saring.sumber } : {}),
+    ...(saring.klaim ? { shares: { some: { bearer: "EKSPEDISI", claimStatus: saring.klaim } } } : {}),
   };
   const [rows, grup, tokoGrup] = await Promise.all([
     prisma.stockLoss.findMany({
@@ -141,9 +144,24 @@ export async function daftarHilangKantor(saring: {
 
 export type PotonganRincian = { id: string; jumlah: number; refType: string; refId: string; catatan: string | null; pada: string; oleh: string };
 
+/** Status dan isian klaim bagian EKSPEDISI (R19/R20). */
+export type KlaimBagian = {
+  status: string | null;
+  diajukanPada: string | null;
+  cara: string | null;
+  referensi: string | null;
+  dicatatOleh: { id: string; nama: string } | null;
+  dicatatPada: string | null;
+  diputuskanOleh: string | null;
+  diputuskanPada: string | null;
+  catatan: string | null;
+};
+
 export type BagianRincian = {
   id: string;
   bearer: Penanggung;
+  /** Hanya bagian EKSPEDISI. */
+  klaim: KlaimBagian | null;
   orang: { id: string; nama: string } | null;
   nilai: number;
   dipotong: number;
@@ -174,6 +192,12 @@ export type RincianHilangKantor = {
   totalQty: number;
   nilaiBarang: number;
   total: number;
+  /**
+   * Total bawaan dialog "Ubah keputusan": sesudah klaim ekspedisi DITOLAK, Σ nilai baris (penanggung
+   * lain dinilai menurut pengaturan barang hilang, P42/R19) — `total` masih nilai klaimnya; selain
+   * itu `total`. Sama dengan bawaan penulisnya (`ubahKeputusanHilang`).
+   */
+  totalBawaanUbah: number;
   adaBarisTanpaNilai: boolean;
   keputusan: { oleh: string; pada: string; catatan: string | null } | null;
   /** Keringanan diskon pegawai pada keputusan yang berlaku (dari jejaknya), atau null. */
@@ -196,6 +220,30 @@ export type RincianHilangKantor = {
   /** Ada potongan/tagihan atas bagian toko/orang — keputusan tidak bisa diubah/dibatalkan lagi. */
   terkunci: boolean;
   riwayat: { id: string; action: string; oleh: string; pada: string; alasan: string | null }[];
+  /**
+   * Bukti klaim ekspedisi untuk barang hilang di perjalanan sebuah pengiriman (R19): pengiriman,
+   * ekspedisi, resi, berat, foto serah ke kurir dan foto terima di toko (P43), penerimaannya, dan
+   * nilai klaim bawaan (nilai jual di nota / surat jalan). Null bila catatan ini tidak berasal dari
+   * pengiriman.
+   */
+  buktiKlaim: {
+    shipmentId: string;
+    docNo: string;
+    cara: "EXPEDITION" | "SALESMAN_CARRY";
+    ekspedisi: string | null;
+    resi: string | null;
+    beratKg: number | null;
+    fotoSerahKey: string | null;
+    fotoTerimaKey: string | null;
+    nilaiKlaim: number | null;
+    penerimaan: {
+      via: string | null;
+      oleh: string;
+      pada: string;
+      namaPj: string | null;
+      baris: { productName: string; variantSku: string; dikirim: number; ditolak: number; tiba: number }[];
+    } | null;
+  } | null;
 };
 
 async function tautanSumber(sumber: string, sourceId: string | null, storeId: string | null): Promise<string | null> {
@@ -248,6 +296,7 @@ export async function rincianHilangKantor(id: string): Promise<RincianHilangKant
     loss.decidedById,
     toko?.salesmanId,
     ...loss.shares.map((s) => s.bearerUserId),
+    ...loss.shares.flatMap((s) => [s.claimRecordedById, s.claimDecidedById]),
     ...potongan.map((p) => p.createdById),
     ...jejak.map((j) => j.userId),
   ]);
@@ -258,6 +307,20 @@ export async function rincianHilangKantor(id: string): Promise<RincianHilangKant
     return {
       id: s.id,
       bearer: s.bearer as Penanggung,
+      klaim:
+        s.bearer === "EKSPEDISI"
+          ? {
+              status: s.claimStatus,
+              diajukanPada: s.claimSubmittedAt ? formatDisplayDateTime(s.claimSubmittedAt) : null,
+              cara: s.claimPaidMethod,
+              referensi: s.claimReference,
+              dicatatOleh: s.claimRecordedById ? { id: s.claimRecordedById, nama: nama.get(s.claimRecordedById) ?? s.claimRecordedById } : null,
+              dicatatPada: s.claimRecordedAt ? formatDisplayDateTime(s.claimRecordedAt) : null,
+              diputuskanOleh: s.claimDecidedById ? (nama.get(s.claimDecidedById) ?? s.claimDecidedById) : null,
+              diputuskanPada: s.claimDecidedAt ? formatDisplayDateTime(s.claimDecidedAt) : null,
+              catatan: s.claimNote,
+            }
+          : null,
       orang: s.bearerUserId ? { id: s.bearerUserId, nama: nama.get(s.bearerUserId) ?? s.bearerUserId } : null,
       nilai: dariSen(nilaiSen),
       dipotong: dariSen(dipotongSen),
@@ -279,6 +342,7 @@ export async function rincianHilangKantor(id: string): Promise<RincianHilangKant
     };
   });
   const terkunci = bagian.some((b) => b.bearer !== "ELORAE" && (b.dipotong > 0 || b.potongan.length > 0));
+  const buktiKlaim = loss.shipmentId ? await muatBuktiKlaim(loss.shipmentId, loss.source, loss.sourceId, loss.claimValue) : null;
 
   // Keputusan yang berlaku = jejak keputusan/perubahan TERAKHIR (bagian dihapus dan ditulis ulang setiap kali).
   const jejakKeputusan = [...jejak].reverse().find((j) => j.action === JEJAK_HILANG.DIPUTUSKAN || j.action === JEJAK_HILANG.DIUBAH);
@@ -309,6 +373,7 @@ export async function rincianHilangKantor(id: string): Promise<RincianHilangKant
     totalQty: loss.totalQty,
     nilaiBarang,
     total: angka(loss.totalAmount),
+    totalBawaanUbah: loss.shares.some((b) => b.bearer === "EKSPEDISI" && b.claimStatus === "DITOLAK") ? nilaiBarang : angka(loss.totalAmount),
     adaBarisTanpaNilai: loss.lines.some((l) => keSen(angka(l.unitValue)) === 0),
     keputusan: loss.decidedAt
       ? { oleh: loss.decidedById ? (nama.get(loss.decidedById) ?? loss.decidedById) : "—", pada: formatDisplayDateTime(loss.decidedAt), catatan: loss.decisionNote }
@@ -333,7 +398,73 @@ export async function rincianHilangKantor(id: string): Promise<RincianHilangKant
       pada: formatDisplayDateTime(j.createdAt),
       alasan: j.reason,
     })),
+    buktiKlaim,
   };
+}
+
+/** Bukti klaim ekspedisi sebuah catatan barang hilang di perjalanan (R19). Kunci foto saja — URL bertanda tangan dibuat halamannya. */
+async function muatBuktiKlaim(
+  shipmentId: string,
+  sumber: string,
+  sourceId: string | null,
+  claimValue: unknown,
+): Promise<RincianHilangKantor["buktiKlaim"]> {
+  const s = await prisma.deliveryShipment.findUnique({
+    where: { id: shipmentId },
+    select: { id: true, docNo: true, method: true, carrierName: true, resiNumber: true, weightKg: true, handoverPhotoR2Key: true, proofPhotoR2Key: true },
+  });
+  if (!s) return null;
+  const r =
+    sumber === "PENERIMAAN" && sourceId
+      ? await prisma.storeReceipt.findUnique({
+          where: { id: sourceId },
+          select: {
+            receivedVia: true,
+            receivedById: true,
+            receivedAt: true,
+            picName: true,
+            lines: { select: { productName: true, variantSku: true, qtySent: true, qtyRefused: true, qtyReceived: true } },
+          },
+        })
+      : null;
+  const penerima = r ? await prisma.user.findUnique({ where: { id: r.receivedById }, select: { name: true, email: true } }) : null;
+  return {
+    shipmentId: s.id,
+    docNo: s.docNo,
+    cara: s.method,
+    ekspedisi: s.carrierName,
+    resi: s.resiNumber,
+    beratKg: s.weightKg === null ? null : Number(s.weightKg),
+    fotoSerahKey: s.handoverPhotoR2Key,
+    fotoTerimaKey: s.proofPhotoR2Key,
+    nilaiKlaim: claimValue === null || claimValue === undefined ? null : angka(claimValue),
+    penerimaan: r
+      ? {
+          via: r.receivedVia,
+          oleh: penerima?.name ?? penerima?.email ?? r.receivedById,
+          pada: formatDisplayDateTime(r.receivedAt),
+          namaPj: r.picName,
+          baris: r.lines.map((l) => ({
+            productName: l.productName,
+            variantSku: l.variantSku,
+            dikirim: l.qtySent + l.qtyRefused,
+            ditolak: l.qtyRefused,
+            tiba: l.qtyReceived,
+          })),
+        }
+      : null,
+  };
+}
+
+/** Jumlah klaim ekspedisi per status untuk baris Beranda (R31). */
+export async function jumlahKlaimEkspedisi(): Promise<{ diajukan: number; menungguCek: number; ditolak: number }> {
+  const grup = await prisma.stockLossShare.groupBy({
+    by: ["claimStatus"],
+    where: { bearer: "EKSPEDISI", claimStatus: { in: ["DIAJUKAN", "MENUNGGU_CEK", "DITOLAK"] }, loss: { status: "DITETAPKAN" } },
+    _count: { _all: true },
+  });
+  const jumlah = (k: string) => grup.find((g) => g.claimStatus === k)?._count._all ?? 0;
+  return { diajukan: jumlah("DIAJUKAN"), menungguCek: jumlah("MENUNGGU_CEK"), ditolak: jumlah("DITOLAK") };
 }
 
 const kunciBaris = (itemId: string | null, variantSku: string | null) => `${itemId ?? ""}\u0000${variantSku ?? ""}`;

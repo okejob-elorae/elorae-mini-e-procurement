@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  ATURAN_BEBAN_TOKO,
-  batasPotongNota,
   bebanDitagihKeToko,
   sisaBolehDilunasi,
   tertahanPiutang,
@@ -14,62 +12,25 @@ import {
  * 100.000 — selisih 200.000.
  */
 
-describe("bebanDitagihKeToko — toko hanya ditagih yang benar-benar ia ambil", () => {
+// Aturan beban toko sementara (2026-10-06: faktur beban `BEBAN/<NRT>` dan batas
+// potong NRT) dicabut oleh keputusan 1 (2026-11-02, P84): selisih yang ditanggung
+// toko tetap terbuka di nota asalnya, tidak ditagih lewat faktur baru.
+
+// `bebanDitagihKeToko` tinggal sebagai pembantu USANG untuk pratinjau lama di
+// `return-queries.ts`; perilakunya dikunci di sini sampai pemanggil itu dibuang.
+describe("bebanDitagihKeToko (usang) — perilakunya tidak berubah", () => {
   const nota = { nilaiKlaim: 300_000, nilaiFisik: 100_000 };
 
-  it("aturan yang berlaku adalah 'yang dipotong'", () => {
-    expect(ATURAN_BEBAN_TOKO).toBe("YANG_DIPOTONG");
-  });
-
-  it("toko memotong NRT penuh 300.000 → ditagih seluruh selisih 200.000", () => {
+  it("hanya bagian yang dipotong melebihi barang yang sampai, tidak pernah melebihi selisih", () => {
     expect(bebanDitagihKeToko({ ...nota, sudahDipotong: 300_000 })).toBe(200_000);
-  });
-
-  it("toko baru memotong 150.000 → ditagih 50.000 (yang melebihi barang yang sampai)", () => {
     expect(bebanDitagihKeToko({ ...nota, sudahDipotong: 150_000 })).toBe(50_000);
-  });
-
-  it("toko belum memotong apa pun → tidak ada yang ditagih (dulu 200.000: faktur 1 jt + beban 200 rb = 1,2 jt)", () => {
     expect(bebanDitagihKeToko({ ...nota, sudahDipotong: 0 })).toBe(0);
-  });
-
-  it("toko memotong tidak lebih dari barang yang sampai → nol", () => {
-    expect(bebanDitagihKeToko({ ...nota, sudahDipotong: 100_000 })).toBe(0);
-    expect(bebanDitagihKeToko({ ...nota, sudahDipotong: 80_000 })).toBe(0);
-  });
-
-  it("tidak pernah melebihi selisih, dan nol kalau fisik ≥ klaim", () => {
     expect(bebanDitagihKeToko({ nilaiKlaim: 300_000, nilaiFisik: 300_000, sudahDipotong: 300_000 })).toBe(0);
-    expect(bebanDitagihKeToko({ nilaiKlaim: 300_000, nilaiFisik: 0, sudahDipotong: 300_000 })).toBe(300_000);
   });
 
-  it("dihitung dalam sen — pecahan desimal tidak menambah atau mengurangi satu sen", () => {
+  it("dihitung dalam sen, dan aturan seluruh-selisih tetap bisa dipilih", () => {
     expect(bebanDitagihKeToko({ nilaiKlaim: 100.3, nilaiFisik: 0.1, sudahDipotong: 50.2 })).toBe(50.1);
-  });
-
-  it("aturan lama (SELURUH_SELISIH) tetap bisa dipilih di satu tempat", () => {
     expect(bebanDitagihKeToko({ ...nota, sudahDipotong: 0 }, "SELURUH_SELISIH")).toBe(200_000);
-  });
-});
-
-describe("batasPotongNota — berapa sebuah NRT boleh dipotong di seluruh BKM hidup", () => {
-  it("selama beban belum ditetapkan ke toko: sebesar klaim NRT", () => {
-    expect(batasPotongNota({ nilaiKlaim: 300_000, nilaiFisik: null, bebanTokoDitagih: null })).toBe(300_000);
-    expect(batasPotongNota({ nilaiKlaim: 300_000, nilaiFisik: 100_000, bebanTokoDitagih: null })).toBe(300_000);
-  });
-
-  it("sesudah ditetapkan ke toko tanpa tagihan: hanya sebesar barang yang sampai", () => {
-    // Faktur 1 jt − potongan 100 rb = 900 rb: yang memang seharusnya dibayar toko.
-    expect(batasPotongNota({ nilaiKlaim: 300_000, nilaiFisik: 100_000, bebanTokoDitagih: 0 })).toBe(100_000);
-  });
-
-  it("sesudah ditetapkan ke toko dengan tagihan 50.000: fisik + yang ditagih balik", () => {
-    expect(batasPotongNota({ nilaiKlaim: 300_000, nilaiFisik: 100_000, bebanTokoDitagih: 50_000 })).toBe(150_000);
-  });
-
-  it("tagihan penuh mengembalikan batas ke nilai klaim, tidak lebih", () => {
-    expect(batasPotongNota({ nilaiKlaim: 300_000, nilaiFisik: 100_000, bebanTokoDitagih: 200_000 })).toBe(300_000);
-    expect(batasPotongNota({ nilaiKlaim: 300_000, nilaiFisik: 100_000, bebanTokoDitagih: 999_000 })).toBe(300_000);
   });
 });
 

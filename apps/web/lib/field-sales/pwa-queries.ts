@@ -13,6 +13,9 @@ import { catatanUntukDiubah, dibatalkanSalesman, kunciBaris } from "./ganti-pesa
 import { pesanPesananWa } from "./pesan-pesanan-wa";
 import { tautanWhatsApp } from "@/lib/salesman/dasbor";
 import { hitungSelisihTerima, type SelisihTerima } from "@/lib/spg/selisih-terima";
+import { hargaKonsiHp, perkiraanNilaiKonsi, type PerkiraanKonsi } from "./perkiraan-konsi";
+import { perkiraanPesananKonsi } from "./perkiraan-konsi-queries";
+import { tahapPengirimanPesanan } from "@/lib/delivery/tahap-pesanan";
 
 /**
  * "Pesanan saya" — pesanan lapangan milik SATU salesman, untuk aplikasi HP.
@@ -42,7 +45,11 @@ export type KeadaanPesanan =
   | "DIKIRIM_SEBAGIAN"
   | "TERKIRIM"
   | "DITUTUP"
-  | "KONSI_DISETUJUI";
+  | "KONSI_DISETUJUI"
+  /** Ada surat jalan yang sedang dikemas gudang (`DeliveryShipment` PACKED). */
+  | "DIKEMAS"
+  /** Ada surat jalan yang sudah berangkat dan belum sampai (IN_TRANSIT). */
+  | "DALAM_PERJALANAN";
 
 export const TAB_PESANAN = ["semua", "menunggu", "disetujui", "dikirim", "ditolak"] as const;
 export type TabPesanan = (typeof TAB_PESANAN)[number];
@@ -54,9 +61,18 @@ type BentukPesanan = {
   deliveryStatus: FieldSalesDeliveryStatus;
 };
 
-export function keadaanPesanan(o: BentukPesanan): KeadaanPesanan {
+/**
+ * `pengirimanTerbuka` (dari surat jalan pesanan, `tahapPengirimanPesanan`):
+ * pesanan disetujui yang barangnya sedang dikemas atau di jalan dibaca dengan
+ * tahap itu lebih dulu — "Belum dikirim" padahal barangnya sudah di mobil
+ * membuat sales menjanjikan ulang ke toko.
+ */
+export function keadaanPesanan(
+  o: BentukPesanan & { pengirimanTerbuka?: "DIKEMAS" | "DALAM_PERJALANAN" | null },
+): KeadaanPesanan {
   if (o.status === "PENDING_APPROVAL") return "MENUNGGU";
   if (o.status === "REJECTED") return "DITOLAK";
+  if (o.status === "APPROVED" && o.pengirimanTerbuka) return o.pengirimanTerbuka;
   switch (o.deliveryStatus) {
     case "PARTIAL":
       return "DIKIRIM_SEBAGIAN";
@@ -88,6 +104,8 @@ export function tahapPesanan(o: BentukPesanan): TahapPesanan {
     case "BELUM_DIKIRIM":
     case "DIKIRIM_SEBAGIAN":
     case "KONSI_DISETUJUI":
+    case "DIKEMAS":
+    case "DALAM_PERJALANAN":
       return "disetujui";
     default:
       return "dikirim";
@@ -141,14 +159,18 @@ export function hitungPerTab(kelompok: Array<BentukPesanan & { jumlah: number }>
 }
 
 /**
- * Nilai pesanan KONSI TIDAK PERNAH tampil di aplikasi HP — juga sesudah
- * disetujui. Itu aturan tetap aplikasi salesman (katalog konsi mengosongkan
- * harga sejak dari server, "Pesanan terakhir" di halaman toko juga): harga
- * konsinyasi adalah urusan kantor dan toko. Sebelum disetujui pun baris konsi
- * berharga 0, jadi "Rp 0" akan menyatakan sesuatu yang tidak benar.
+ * Nilai pesanan di HP SALESMAN (P18, jawaban pemilik 2026-11-02 "berikan
+ * selengkapnya saja, tidak masalah jika kelihatan nama toko, pcs dan nominalnya
+ * juga"): pesanan KONSI yang sudah DISETUJUI menampilkan nilainya (harga retail
+ * toko yang dibekukan kantor saat menyetujui). Sebelum disetujui baris konsi
+ * masih berharga 0 — "Rp 0" menyatakan sesuatu yang tidak benar, jadi nilainya
+ * null dan layar menampilkan `perkiraan` (`perkiraanNilaiKonsi`). Pesanan konsi
+ * yang ditolak atau dibatalkan tidak bernilai, sama seperti sebelumnya.
+ * HP SPG dan portal toko tetap tanpa harga konsinyasi (P18a) — keduanya tidak
+ * membaca fungsi ini.
  */
 export function nilaiTampil(o: { orderType: FieldSalesOrderType; status: FieldSalesOrderStatus }, nilai: number): number | null {
-  return o.orderType === "KONSI" ? null : nilai;
+  return o.orderType === "KONSI" && o.status !== "APPROVED" ? null : nilai;
 }
 
 // ── Daftar ────────────────────────────────────────────────────────────────
@@ -181,6 +203,8 @@ export type BarisPesananSaya = {
   deliveryStatus: FieldSalesDeliveryStatus;
   keadaan: KeadaanPesanan;
   total: number | null;
+  /** Pesanan KONSI yang menunggu persetujuan: perkiraan nilai retailnya (null bila tidak ada harga). */
+  perkiraan: PerkiraanKonsi | null;
   createdAt: Date;
   approvedAt: Date | null;
   rejectedAt: Date | null;
@@ -231,6 +255,7 @@ export async function pesananSaya(
         replacesOrderId: true,
         store: { select: { name: true } },
         lines: { select: { qty: true, requestedUnitPrice: true } },
+        shipments: { where: { status: { in: ["PACKED", "IN_TRANSIT"] } }, select: { status: true } },
       },
     }),
     prisma.fieldSalesOrder.groupBy({
@@ -241,7 +266,11 @@ export async function pesananSaya(
   ]);
 
   const tampil = rows.slice(0, batas);
-  const [jendela, ganti] = await Promise.all([lencanaIndenById(tampil.map((r) => r.preorderWindowId)), petaGanti(tampil)]);
+  const [jendela, ganti, perkiraan] = await Promise.all([
+    lencanaIndenById(tampil.map((r) => r.preorderWindowId)),
+    petaGanti(tampil),
+    perkiraanPesananKonsi(tampil.filter((r) => r.orderType === "KONSI" && r.status === "PENDING_APPROVAL").map((r) => r.id)),
+  ]);
   const baris = tampil.map((r) => ({
     id: r.id,
     orderNo: r.orderNo,
@@ -250,8 +279,9 @@ export async function pesananSaya(
     orderType: r.orderType,
     status: r.status,
     deliveryStatus: r.deliveryStatus,
-    keadaan: keadaanPesanan(r),
+    keadaan: keadaanPesanan({ ...r, pengirimanTerbuka: tahapPengirimanPesanan(r.shipments) }),
     total: nilaiTampil(r, Number(r.total)),
+    perkiraan: perkiraan.get(r.id) ?? null,
     createdAt: r.createdAt,
     approvedAt: r.approvedAt,
     rejectedAt: r.rejectedAt,
@@ -323,7 +353,15 @@ function bacaAlasan(x: unknown): AlasanKredit | null {
     return { kode: "LEWAT_JANJI", nilai: a.nilai, faktur: a.faktur };
   }
   if (a.kode === "MELEBIHI_BATAS_NILAI" && angkaSah(a.sisaSesudah) && angkaSah(a.batas)) {
-    return { kode: "MELEBIHI_BATAS_NILAI", sisaSesudah: a.sisaSesudah, batas: a.batas };
+    // Rinciannya (faktur, belum dinota, pesanan ini) dibawa kalau tercatat.
+    return {
+      kode: "MELEBIHI_BATAS_NILAI",
+      sisaSesudah: a.sisaSesudah,
+      batas: a.batas,
+      ...(angkaSah(a.sisaFaktur) ? { sisaFaktur: a.sisaFaktur } : {}),
+      ...(angkaSah(a.belumDinota) ? { belumDinota: a.belumDinota } : {}),
+      ...(angkaSah(a.pesanan) ? { pesanan: a.pesanan } : {}),
+    };
   }
   if (a.kode === "MELEBIHI_BATAS_FAKTUR" && angkaSah(a.faktur) && angkaSah(a.batas)) {
     return { kode: "MELEBIHI_BATAS_FAKTUR", faktur: a.faktur, batas: a.batas };
@@ -404,8 +442,10 @@ export type BarisDetailPesananSaya = {
   deliveredQty: number;
   cancelledQty: number;
   outstanding: number;
-  /** null untuk KONSI (lihat `nilaiTampil`). */
+  /** null untuk KONSI yang belum disetujui (lihat `nilaiTampil`). */
   unitPrice: number | null;
+  /** KONSI menunggu persetujuan: perkiraan harga retail per pcs, null bila tanpa harga. */
+  perkiraanHarga: number | null;
   lineTotal: number | null;
   discountAmount: number | null;
   appliedPromoName: string | null;
@@ -442,6 +482,8 @@ export type DetailPesananSaya = {
   orderDiscountAmount: number | null;
   appliedOrderPromoName: string | null;
   total: number | null;
+  /** KONSI menunggu persetujuan: perkiraan nilai retail di toko (`perkiraanNilaiKonsi`). */
+  perkiraan: PerkiraanKonsi | null;
   jumlahPcs: number;
   kreditDitahan: boolean;
   /** Pesanan jarak jauh (WA/TELEPON/LAINNYA); null = diambil saat kunjungan. */
@@ -492,8 +534,14 @@ async function penerimaanTokoPesanan(
   deliveryIds: string[],
 ): Promise<PenerimaanTokoPesanan[]> {
   // Antaran pengiriman, dan konfirmasi sampai pesanan lama (tanpa pengiriman) yang diterima SPG.
+  // Antaran yang dibatalkan (tidak jadi dikirim / ditolak toko di pintu) tidak ikut.
   const antaran = await prisma.konsiTransfer.findMany({
-    where: { orderId: order.id, storeId, OR: [{ shipmentId: { not: null } }, { oldOrderArrival: true }] },
+    where: {
+      orderId: order.id,
+      storeId,
+      status: { not: "CANCELLED" },
+      OR: [{ shipmentId: { not: null } }, { oldOrderArrival: true }],
+    },
     select: { id: true },
   });
   const antaranIds = antaran.map((t) => t.id);
@@ -552,7 +600,11 @@ export async function pesananSayaById(orderId: string, salesmanId: string): Prom
       storeId: true,
       kreditDitahan: true,
       kreditCatatan: true,
-      lines: { select: { id: true, deliveredQty: true, cancelledQty: true } },
+      store: { select: { markupPercent: true } },
+      lines: { select: { id: true, deliveredQty: true, cancelledQty: true, item: { select: { sellingPrice: true } } } },
+      shipments: { where: { status: { in: ["PACKED", "IN_TRANSIT"] } }, select: { status: true } },
+      // Nota yang dibatalkan ("tidak jadi dikirim") tidak lagi dihitung terkirim.
+      deliveries: { where: { voidedAt: { not: null } }, select: { id: true } },
     },
   });
   if (!milik) return null;
@@ -561,6 +613,16 @@ export async function pesananSayaById(orderId: string, salesmanId: string): Prom
 
   const qtyPerBaris = new Map(milik.lines.map((l) => [l.id, l]));
   const tampil = (n: number) => nilaiTampil(o, n);
+  // KONSI menunggu persetujuan: perkiraan dari harga retail toko sekarang —
+  // angka yang sama dengan yang dibekukan kantor saat menyetujui (P18).
+  const konsiMenunggu = o.orderType === "KONSI" && o.status === "PENDING_APPROVAL";
+  const markup = milik.store?.markupPercent == null ? null : Number(milik.store.markupPercent);
+  const hargaPerkiraan = (lineId: string): number | null => {
+    if (!konsiMenunggu) return null;
+    const jual = qtyPerBaris.get(lineId)?.item?.sellingPrice;
+    return hargaKonsiHp(jual == null ? null : Number(jual), markup);
+  };
+  const notaBatal = new Set(milik.deliveries.map((d) => d.id));
 
   // Serializer backoffice tidak mengurutkan baris; HP butuh urutan yang tetap antar-muat.
   const barisUrut = [...o.lines].sort(
@@ -578,6 +640,7 @@ export async function pesananSayaById(orderId: string, salesmanId: string): Prom
       cancelledQty: q?.cancelledQty ?? 0,
       outstanding: l.outstanding,
       unitPrice: tampil(l.unitPrice),
+      perkiraanHarga: l.isBonus ? null : hargaPerkiraan(l.id),
       lineTotal: tampil(l.lineTotal),
       discountAmount: tampil(l.discountAmount),
       appliedPromoName: l.appliedPromoName,
@@ -594,7 +657,11 @@ export async function pesananSayaById(orderId: string, salesmanId: string): Prom
     };
   });
 
-  const pengiriman = o.deliveries.map((d) => ({
+  const perkiraan = konsiMenunggu
+    ? perkiraanNilaiKonsi(baris.filter((b) => !b.isBonus).map((b) => ({ qty: b.qty, harga: b.perkiraanHarga })))
+    : null;
+
+  const pengiriman = o.deliveries.filter((d) => !notaBatal.has(d.id)).map((d) => ({
     id: d.id,
     docNo: d.docNo,
     deliveredAt: d.deliveredAt,
@@ -604,7 +671,7 @@ export async function pesananSayaById(orderId: string, salesmanId: string): Prom
   const penerimaanToko = await penerimaanTokoPesanan(
     milik.storeId,
     { id: o.id, orderNo: o.orderNo },
-    o.deliveries.map((d) => d.id),
+    o.deliveries.filter((d) => !notaBatal.has(d.id)).map((d) => d.id),
   );
 
   return {
@@ -615,7 +682,7 @@ export async function pesananSayaById(orderId: string, salesmanId: string): Prom
     orderType: o.orderType,
     status: o.status,
     deliveryStatus: o.deliveryStatus,
-    keadaan: keadaanPesanan(o),
+    keadaan: keadaanPesanan({ ...o, pengirimanTerbuka: tahapPengirimanPesanan(milik.shipments) }),
     note: o.note,
     createdAt: o.createdAt,
     approvedAt: o.approvedAt,
@@ -628,6 +695,7 @@ export async function pesananSayaById(orderId: string, salesmanId: string): Prom
     orderDiscountAmount: tampil(o.orderDiscountAmount),
     appliedOrderPromoName: o.appliedOrderPromoName,
     total: tampil(o.total),
+    perkiraan,
     jumlahPcs: o.lines.reduce((n, l) => n + l.qty, 0),
     kreditDitahan: milik.kreditDitahan,
     remoteChannel: o.remoteChannel ?? null,
@@ -729,7 +797,9 @@ export type SalinanPesananWa = {
 /**
  * Salinan pesanan untuk dikirim ke toko lewat WhatsApp, HANYA untuk pemiliknya,
  * dan tidak untuk pesanan yang ditolak/dibatalkan (null). Harga PUTUS dari
- * server (sesudah promo); KONSI tanpa harga sama sekali (dibuang pembangunnya).
+ * server (sesudah promo); KONSI tanpa harga sama sekali — juga sesudah disetujui,
+ * walau HP salesman sendiri kini menampilkan nilainya (P58: teks WhatsApp dari
+ * sales ke toko konsinyasi tetap tanpa harga).
  */
 export async function salinanPesananSaya(orderId: string, salesmanId: string): Promise<SalinanPesananWa | null> {
   const d = await pesananSayaById(orderId, salesmanId);

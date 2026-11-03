@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = {
   tokoPkp: false,
   jenis: [] as { id: string; method: string; noteRequired: boolean; pkpOnly: boolean }[],
-  piutang: [] as { id: string; storeId: string }[],
+  piutang: [] as { id: string; storeId: string; status?: string; isConsignment?: boolean }[],
   retur: [] as { id: string; storeId: string }[],
   sisa: new Map<string, number>(),
   dibuat: [] as Record<string, unknown>[],
@@ -408,5 +408,65 @@ describe('pelunasan dengan giro', () => {
     expect(h.ok).toBe(true);
     expect(state.dibuat[0].giroStatus ?? null).toBeNull();
     expect(state.dibuat[0].giroNo ?? null).toBeNull();
+  });
+});
+
+/*
+ * Tagihan konsinyasi (lahir saat angka siklus dikunci) dilunasi lewat BKM seperti
+ * piutang lain, kecuali dua hal: tidak bisa dipotong retur (barang titipan yang
+ * kembali tidak pernah ditagih), dan BKM tidak pernah mendarat di tagihan yang
+ * sudah dibatalkan (kunci siklus dibuka).
+ */
+describe("buatKlaimPembayaran — tagihan konsinyasi dan tagihan yang dibatalkan", () => {
+  it("tagihan konsinyasi: BKM tercatat DIKIRIM, piutang tidak berkurang (Aturan 1)", async () => {
+    state.piutang = [{ id: "r1", storeId: "t1", isConsignment: true }];
+    const hasil = await buatKlaimPembayaran({ ...DASAR, pelunasan: [{ receivableId: "r1", nilai: 1_000_000 }] });
+    expect(hasil).toMatchObject({ ok: true });
+    expect(state.dibuat).toHaveLength(1);
+    expect(state.dibuat[0]).toMatchObject({ status: "DIKIRIM" });
+  });
+
+  it("menolak jenis potongan DARI_RETUR pada tagihan konsinyasi, sebelum JENIS_BUTUH_RETUR", async () => {
+    state.piutang = [{ id: "r1", storeId: "t1", isConsignment: true }];
+    state.jenis = [{ id: "retur", method: "DARI_RETUR", noteRequired: false, pkpOnly: false }];
+    expect(
+      await buatKlaimPembayaran({
+        ...DASAR,
+        pelunasan: [{ receivableId: "r1", nilai: 1_000_000 }],
+        potongan: [{ nama: "Retur", nilai: 100_000, deductionTypeId: "retur" }],
+      }),
+    ).toEqual({ ok: false, alasan: "RETUR_TOKO_KONSI" });
+    expect(state.dibuat).toHaveLength(0);
+  });
+
+  it("menolak potongan yang menautkan nota retur pada tagihan konsinyasi", async () => {
+    state.piutang = [{ id: "r1", storeId: "t1", isConsignment: true }];
+    expect(
+      await buatKlaimPembayaran({
+        ...DASAR,
+        pelunasan: [{ receivableId: "r1", nilai: 1_000_000 }],
+        potongan: [{ nama: "Retur", nilai: 100_000, storeReturnId: "nrt1" }],
+      }),
+    ).toEqual({ ok: false, alasan: "RETUR_TOKO_KONSI" });
+    expect(state.dibuat).toHaveLength(0);
+  });
+
+  it("menolak tagihan yang sudah dibatalkan atau dihapusbukukan", async () => {
+    for (const status of ["VOIDED", "WRITTEN_OFF"]) {
+      state.piutang = [{ id: "r1", storeId: "t1", status }];
+      expect(await buatKlaimPembayaran({ ...DASAR, pelunasan: [{ receivableId: "r1", nilai: 1_000 }] })).toEqual({
+        ok: false,
+        alasan: "PIUTANG_DIBATALKAN",
+      });
+    }
+    expect(state.dibuat).toHaveLength(0);
+  });
+
+  it("kiriman ulang BKM yang sudah tercatat tetap dikembalikan walau tagihannya kini dibatalkan", async () => {
+    state.piutang = [{ id: "r1", storeId: "t1", status: "VOIDED", isConsignment: true }];
+    state.klaimBerkunci = { id: "bkm-lama", docNo: "BKM/2026/0007", salesmanId: "u1" };
+    expect(
+      await buatKlaimPembayaran({ ...DASAR, idempotencyKey: "hp-1", pelunasan: [{ receivableId: "r1", nilai: 1_000 }] }),
+    ).toEqual({ ok: true, id: "bkm-lama", docNo: "BKM/2026/0007" });
   });
 });

@@ -2,7 +2,6 @@ import { describe, it, afterAll, vi } from "vitest";
 import { prisma } from "@elorae/db";
 import { NextRequest } from "next/server";
 import { createFieldSalesOrder } from "@/lib/field-sales/writer";
-import { recordFieldSalesDelivery } from "@/lib/field-sales/delivery/writer";
 
 /*
  * Opt-in edge-case driver for the delivery / POD follow-ups card. Runs only with PODF_E2E=1
@@ -37,7 +36,7 @@ vi.mock("@/lib/finance/lapangan/kait", async (importOriginal) => {
 });
 
 import { approveFieldSalesOrderAction } from "@/app/actions/field-sales-orders";
-import { recordDeliveryAction, closeRemainderAction, updateDeliveryDatesAction } from "@/app/actions/field-sales-deliveries";
+import { closeRemainderAction, updateDeliveryDatesAction } from "@/app/actions/field-sales-deliveries";
 import {
   createShipmentAction,
   updateShipmentTrackingAction,
@@ -76,8 +75,8 @@ let uomId = "";
 
 const LAT = -6.2;
 const LNG = 106.8;
-const INV = "2026-09-30";
-const DUE = "2026-10-30";
+/* The nota is dated the WIB day the shipment is created; only the due date is entered (P17). */
+const DUE = "2099-12-31";
 
 function asAdmin() {
   mockAuth.mockResolvedValue({ user: { id: adminId, permissions: ADMIN_PERMS } });
@@ -142,20 +141,23 @@ async function shipment(
   opts: { carrier?: string; ship?: boolean } = {},
 ) {
   asAdmin();
-  const c = await createShipmentAction({ orderId, method, lines });
+  const c = await createShipmentAction({ orderId, method, lines, idempotencyKey: `podf-${run}-${tag}`, dueDate: DUE });
   if (!c.ok || !c.shipmentId) throw new Error(`create ${tag}: ${c.ok ? "no id" : c.reason}`);
   /* Direct write: the seeded salesman/spg may not be eligible carriers on every database (CI's seed.ts grants no `deliveries:pod`), so the spec assigns the column directly. */
   if (opts.carrier) {
     await prisma.deliveryShipment.update({ where: { id: c.shipmentId }, data: { carriedById: opts.carrier } });
   }
-  const t = await updateShipmentTrackingAction({
-    shipmentId: c.shipmentId,
-    carrierName: method === "EXPEDITION" ? "JNE" : undefined,
-    resiNumber: method === "EXPEDITION" ? `RESI-${run}-${tag}` : undefined,
-    invoiceDate: INV,
-    dueDate: DUE,
-  });
-  if (!t.ok) throw new Error(`track ${tag}: ${t.reason}`);
+  if (method === "EXPEDITION") {
+    const t = await updateShipmentTrackingAction({
+      shipmentId: c.shipmentId,
+      carrierName: "JNE",
+      resiNumber: `RESI-${run}-${tag}`,
+      weightKg: 1.5,
+      handoverPhotoUrl: `https://r2.test/delivery-handover/${c.shipmentId}/1.jpg`,
+      handoverPhotoR2Key: `delivery-handover/${c.shipmentId}/1.jpg`,
+    });
+    if (!t.ok) throw new Error(`track ${tag}: ${t.reason}`);
+  }
   if (opts.ship !== false) {
     const s = await shipShipmentAction({ shipmentId: c.shipmentId });
     if (!s.ok) throw new Error(`ship ${tag}: ${s.reason}`);
@@ -165,7 +167,11 @@ async function shipment(
   return { id: c.shipmentId, lines: shipLines };
 }
 
-function podPayload(shipmentId: string, lines: Array<{ shipmentLineId: string; deliveredQty: number }>, over: Record<string, unknown> = {}) {
+function podPayload(
+  shipmentId: string,
+  lines: Array<{ shipmentLineId: string; deliveredQty: number; returnedQty?: number; lostQty?: number }>,
+  over: Record<string, unknown> = {},
+) {
   return {
     shipmentId,
     proofPhotoUrl: `https://r2.test/delivery-pod-proofs/${shipmentId}/goods.jpg`,
@@ -295,9 +301,10 @@ d("delivery / POD follow-ups — end to end (opt-in)", () => {
   });
 
   it("B — salesman-carry completion", async () => {
+    /* The PODF stores have no SPG, so the POD is the store's receipt (R6): every piece is received, refused or lost. */
     const all = (qA: number, qB: number) => [
-      { shipmentLineId: S1.lines[0].id, deliveredQty: qA },
-      { shipmentLineId: S1.lines[1].id, deliveredQty: qB },
+      { shipmentLineId: S1.lines[0].id, deliveredQty: qA, lostQty: 5 - qA },
+      { shipmentLineId: S1.lines[1].id, deliveredQty: qB, lostQty: 5 - qB },
     ];
 
     asSpg();
@@ -335,8 +342,13 @@ d("delivery / POD follow-ups — end to end (opt-in)", () => {
     const b7b = await completePodAction(podPayload(S1.id, all(5, 5), { signedByName: "x".repeat(121) }));
     check("B-07", !b7a.ok && b7a.reason === "MISSING_SIGNED_BY" && !b7b.ok && b7b.reason === "MISSING_SIGNED_BY", `blank ${b7a.ok ? "ok" : b7a.reason}, 121 ${b7b.ok ? "ok" : b7b.reason}`);
 
-    const b8a = await completePodAction(podPayload(S1.id, [...all(5, 5), { shipmentLineId: S1.lines[0].id, deliveredQty: 0 }]));
+    const b8a = await completePodAction(podPayload(S1.id, [...all(5, 5), { shipmentLineId: S1.lines[0].id, deliveredQty: 0, lostQty: 5 }]));
     const b8b = await completePodAction(podPayload(S1.id, [{ shipmentLineId: S1.lines[0].id, deliveredQty: 5 }]));
+    const b8c = await completePodAction(podPayload(S1.id, [
+      { shipmentLineId: S1.lines[0].id, deliveredQty: 5 },
+      { shipmentLineId: S1.lines[1].id, deliveredQty: 3 },
+    ]));
+    check("B-08c", !b8c.ok && b8c.reason === "LINE_UNACCOUNTED", `2 pcs neither received nor marked → ${b8c.ok ? "ok" : b8c.reason}`);
     const s1mid = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: S1.id } });
     check("B-08", !b8a.ok && b8a.reason === "LINE_MISMATCH" && !b8b.ok && b8b.reason === "LINE_MISMATCH" && s1mid.status === "IN_TRANSIT", `duplicate ${b8a.ok ? "ok" : b8a.reason}, omitted ${b8b.ok ? "ok" : b8b.reason}, status ${s1mid.status}`);
 
@@ -344,16 +356,18 @@ d("delivery / POD follow-ups — end to end (opt-in)", () => {
     const before = Date.now();
     const b9 = await completePodAction(podPayload(S1.id, all(5, 3), { deliveredAt: stale, completedOffline: true }));
     const s1 = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: S1.id } });
-    const deliveries = await prisma.fieldSalesDelivery.findMany({ where: { idempotencyKey: `shipment-${S1.id}` } });
+    const deliveries = await prisma.fieldSalesDelivery.findMany({ where: { idempotencyKey: `shipment-${S1.id}` }, include: { lines: true } });
     const deliveryId = deliveries[0]?.id ?? "";
     ids.delivery_S1 = deliveryId;
     const recv = await prisma.receivable.count({ where: { deliveryId } });
     const fak = await prisma.taxInvoice.count({ where: { deliveryId } });
+    const lost = await prisma.stockLoss.count({ where: { shipmentId: S1.id } });
+    const billed = deliveries[0]?.lines.reduce((n, l) => n + l.qty, 0) ?? 0;
     const j = await journalsFor(deliveryId);
     check(
       "B-09",
-      b9.ok && s1.status === "PARTIALLY_DELIVERED" && deliveries.length === 1 && recv === 1 && fak === 1 && s1.deliveryId === deliveryId && s1.gpsDistanceMeters === 0 && s1.signedByName === "Budi Penerima",
-      `${b9.ok ? "ok" : b9.reason}; status ${s1.status}; deliveries ${deliveries.length}, receivable ${recv}, faktur ${fak}; journals ${j.journals} (pending flags ${j.pending})`,
+      b9.ok && s1.status === "PARTIALLY_DELIVERED" && deliveries.length === 1 && recv === 1 && fak === 1 && s1.deliveryId === deliveryId && billed === 8 && lost === 1 && s1.gpsDistanceMeters === 0 && s1.signedByName === "Budi Penerima",
+      `${b9.ok ? "ok" : b9.reason}; status ${s1.status}; deliveries ${deliveries.length} (billed ${billed}, expect 8), receivable ${recv}, faktur ${fak}, lost-goods records ${lost}; journals ${j.journals} (pending flags ${j.pending})`,
     );
     check("B-12", !!s1.deliveredAt && s1.deliveredAt.getTime() >= before - 1000 && !!s1.completedOfflineAt, `deliveredAt 5d old → ${s1.deliveredAt?.toISOString()}; completedOfflineAt ${s1.completedOfflineAt ? "set" : "null"}`);
 
@@ -381,76 +395,45 @@ d("delivery / POD follow-ups — end to end (opt-in)", () => {
 
   it("C — replay after a lost response", async () => {
     const O3 = await approvedOrder("O3", ids.store_P, [{ itemId: ids.item_A, qty: 10 }]);
-    const S3 = await shipment("S3", O3.orderId, "SALESMAN_CARRY", [{ orderLineId: O3.lines[0].id, qty: 3 }], { carrier: salesmanId });
-    const s3row = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: S3.id } });
-    const recorded = await recordFieldSalesDelivery({
-      orderId: O3.orderId,
-      deliveredById: salesmanId,
-      lines: [{ orderLineId: O3.lines[0].id, qty: 2 }],
-      invoiceDate: s3row.invoiceDate!,
-      dueDate: s3row.dueDate!,
-      idempotencyKey: `shipment-${S3.id}`,
-      replayCompare: "linesOnly",
-    });
-    ids.delivery_S3 = recorded.deliveryId;
-
-    asSalesman();
-    mockPostingNota.mockClear();
-    const c1 = await completePodAction(podPayload(S3.id, [{ shipmentLineId: S3.lines[0].id, deliveredQty: 3 }]));
-    const s3a = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: S3.id } });
-    const notaPosts = mockPostingNota.mock.calls.filter(([deliveryId]) => deliveryId === recorded.deliveryId).length;
+    asAdmin();
+    const key = `podf-${run}-c-dbl`;
+    const [c1a, c1b] = await Promise.all([
+      createShipmentAction({ orderId: O3.orderId, method: "SALESMAN_CARRY", lines: [{ orderLineId: O3.lines[0].id, qty: 3 }], idempotencyKey: key, dueDate: DUE }),
+      createShipmentAction({ orderId: O3.orderId, method: "SALESMAN_CARRY", lines: [{ orderLineId: O3.lines[0].id, qty: 3 }], idempotencyKey: key, dueDate: DUE }),
+    ]);
+    const made = await prisma.deliveryShipment.findMany({ where: { orderId: O3.orderId }, select: { id: true, deliveryId: true } });
+    const notas = await prisma.fieldSalesDelivery.count({ where: { orderId: O3.orderId } });
     check(
       "C-01",
-      !c1.ok && c1.reason === "REPLAY_MISMATCH" && c1.replay?.lines[0]?.qty === 2 && s3a.status === "IN_TRANSIT" && notaPosts > 0,
-      `${c1.ok ? "ok" : c1.reason} recorded ${JSON.stringify(c1.ok ? null : c1.replay?.lines)}; status ${s3a.status}; nota journal posts for the recorded delivery ${notaPosts}`,
+      c1a.ok && c1b.ok && made.length === 1 && notas === 1 && (c1a.ulang === true || c1b.ulang === true),
+      `double submit → ${c1a.ok ? "ok" : c1a.reason}/${c1b.ok ? "ok" : c1b.reason}; shipments ${made.length}, notas ${notas}`,
     );
+    const S3id = made[0]?.id ?? "";
+    ids.ship_S3 = S3id;
+    ids.delivery_S3 = made[0]?.deliveryId ?? "";
+    await prisma.deliveryShipment.update({ where: { id: S3id }, data: { carriedById: salesmanId } });
+    const s3ship = await shipShipmentAction({ shipmentId: S3id });
+    const S3lines = await prisma.deliveryShipmentLine.findMany({ where: { shipmentId: S3id } });
 
-    const c3 = await completePodAction(podPayload(S3.id, [{ shipmentLineId: S3.lines[0].id, deliveredQty: 0 }]));
-    const s3b = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: S3.id } });
-    check("C-03", !c3.ok && c3.reason === "REPLAY_MISMATCH" && s3b.status === "IN_TRANSIT", `all-zero → ${c3.ok ? "ok" : c3.reason}; status ${s3b.status}`);
-
-    asAdmin();
-    const fix = await updateDeliveryDatesAction({ deliveryId: recorded.deliveryId, invoiceDate: "2026-10-02", dueDate: "2026-11-02", reason: "PODF corrected" });
     asSalesman();
-    const c2 = await completePodAction(podPayload(S3.id, [{ shipmentLineId: S3.lines[0].id, deliveredQty: 2 }]));
-    const s3c = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: S3.id } });
+    const c2 = await completePodAction(podPayload(S3id, [{ shipmentLineId: S3lines[0].id, deliveredQty: 3 }]));
+    const c3 = await completePodAction(podPayload(S3id, [{ shipmentLineId: S3lines[0].id, deliveredQty: 1, lostQty: 2 }]));
+    const s3 = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: S3id } });
+    const notaLines = await prisma.fieldSalesDeliveryLine.findMany({ where: { deliveryId: ids.delivery_S3 } });
     check(
       "C-02",
-      fix.ok && c2.ok && s3c.status === "PARTIALLY_DELIVERED" && s3c.deliveryId === recorded.deliveryId,
-      `date fix ${fix.ok ? "ok" : fix.reason}; retry ${c2.ok ? "ok" : c2.reason}; status ${s3c.status}; deliveryId matches ${s3c.deliveryId === recorded.deliveryId}`,
+      s3ship.ok && c2.ok && c3.ok && s3.status === "DELIVERED" && notaLines.reduce((n, l) => n + l.qty, 0) === 3,
+      `ship ${s3ship.ok ? "ok" : s3ship.reason}; complete ${c2.ok ? "ok" : c2.reason}; same-actor retry with other quantities ${c3.ok ? "ok" : c3.reason} (ignored); status ${s3.status}`,
     );
 
-    const S4 = await shipment("S4", O3.orderId, "EXPEDITION", [{ orderLineId: O3.lines[0].id, qty: 2 }]);
-    const inv = new Date(`${INV}T00:00:00.000+07:00`);
-    const due = new Date(`${DUE}T00:00:00.000+07:00`);
-    await recordFieldSalesDelivery({
-      orderId: O3.orderId,
-      deliveredById: adminId,
-      lines: [{ orderLineId: O3.lines[0].id, qty: 2 }],
-      invoiceDate: inv,
-      dueDate: due,
-      idempotencyKey: `shipment-${S4.id}`,
-    });
     asAdmin();
-    const c4 = await completeShipmentAction({
-      shipmentId: S4.id,
-      proofPhotoUrl: `https://r2.test/delivery-proofs/${S4.id}/1.jpg`,
-      proofPhotoR2Key: `delivery-proofs/${S4.id}/1.jpg`,
-      invoiceDate: "2026-10-01",
-      dueDate: DUE,
-      lines: [{ shipmentLineId: S4.lines[0].id, deliveredQty: 2 }],
-    });
-    check("C-04", !c4.ok && c4.reason === "REPLAY_MISMATCH" && !!c4.replay?.invoiceDate, `EXPEDITION re-typed date → ${c4.ok ? "ok" : c4.reason}, recorded ${c4.ok ? "-" : c4.replay?.invoiceDate}`);
-
-    const key = `podf-${run}-hand`;
-    const c5a = await recordDeliveryAction({ orderId: O3.orderId, lines: [{ orderLineId: O3.lines[0].id, qty: 1 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: key });
-    const c5b = await recordDeliveryAction({ orderId: O3.orderId, lines: [{ orderLineId: O3.lines[0].id, qty: 1 }], invoiceDate: "2026-10-03", dueDate: DUE, idempotencyKey: key });
-    check("C-05", c5a.ok && !c5b.ok && c5b.reason === "REPLAY_MISMATCH", `first ${c5a.ok ? "ok" : c5a.reason}; changed-date retry ${c5b.ok ? "ok" : c5b.reason}`);
+    const fix = await updateDeliveryDatesAction({ deliveryId: ids.delivery_S3, invoiceDate: "2026-10-02", dueDate: "2026-11-02", reason: "PODF corrected" });
+    check("C-03", fix.ok, `nota date correction after completion → ${fix.ok ? "ok" : fix.reason}`);
 
     const O6 = await approvedOrder("O6", ids.store_P, [{ itemId: ids.item_B, qty: 4 }]);
     await prisma.stockReservation.updateMany({ where: { fieldSalesLineId: O6.lines[0].id }, data: { state: "RELEASED" } });
     asAdmin();
-    const c6 = await recordDeliveryAction({ orderId: O6.orderId, lines: [{ orderLineId: O6.lines[0].id, qty: 1 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: `podf-${run}-c6` });
+    const c6 = await createShipmentAction({ orderId: O6.orderId, method: "EXPEDITION", lines: [{ orderLineId: O6.lines[0].id, qty: 1 }], idempotencyKey: `podf-${run}-c6`, dueDate: DUE });
     check("C-06", !c6.ok && c6.reason === "RESERVATION_MISMATCH", `released reservation → ${c6.ok ? "ok" : c6.reason}`);
   });
 
@@ -464,7 +447,8 @@ d("delivery / POD follow-ups — end to end (opt-in)", () => {
       "NOT_FOUND", "INVALID_STATE", "NO_LINES", "OVER_PLANNED", "MISSING_RESI", "MISSING_PROOF", "INVALID_QTY", "LINE_MISMATCH",
       "MISSING_CARRIER", "MISSING_DATES", "NOT_CARRIER", "MISSING_GPS", "STORE_NOT_GEOCODED", "GPS_OUT_OF_RADIUS", "MISSING_NOTA_PHOTO",
       "MISSING_SIGNED_BY", "KONSI_NOT_RESERVED", "KONSI_PESANAN_LAMA", "NO_INVENTORY_ROW", "OVER_DELIVER", "INSUFFICIENT_STOCK", "INVALID_DATES",
-      "SHIPMENT_IN_FLIGHT", "REPLAY_MISMATCH", "RESERVATION_MISMATCH", "INVALID_REQUEST",
+      "SHIPMENT_IN_FLIGHT", "REPLAY_MISMATCH", "RESERVATION_MISMATCH", "INVALID_REQUEST", "ALREADY_RECEIVED", "INVALID_WEIGHT",
+      "CONSUME_RECORD_MISSING", "LINE_UNACCOUNTED", "DICATAT_SPG", "POD_KOSONG", "TERIMA_GAGAL",
     ];
     const retried = codes.filter((c) => classifyCompletionResult({ ok: false, reason: c }) !== "terminal");
     check("D-02", retried.length === 0 && classifyCompletionResult({ ok: false, reason: "FORBIDDEN" }) === "retry", `non-terminal permanent codes: ${retried.join(",") || "none"}`);
@@ -517,19 +501,34 @@ d("delivery / POD follow-ups — end to end (opt-in)", () => {
     const f1 = await mine();
     check("F-01", f1.awaitCount === base.awaitCount + 1 && Math.abs(f1.awaitAmount - base.awaitAmount - orderTotal) < 0.01, `awaiting ${base.awaitCount}→${f1.awaitCount}, +${f1.awaitAmount - base.awaitAmount} (order total ${orderTotal})`);
 
-    asAdmin();
-    const dl = await recordDeliveryAction({ orderId: OF.orderId, lines: [{ orderLineId: OF.lines[0].id, qty: 1 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: `podf-${run}-f` });
-    const delTotal = dl.ok ? Number((await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { idempotencyKey: `podf-${run}-f` } })).total) : 0;
+    /* The nota is issued when the shipment is created, so the bucket moves at creation. */
+    const SF = await shipment("SF", OF.orderId, "EXPEDITION", [{ orderLineId: OF.lines[0].id, qty: 1 }], { ship: false });
+    const sf = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: SF.id }, select: { deliveryId: true } });
+    const delTotal = sf.deliveryId ? Number((await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: sf.deliveryId } })).total) : 0;
     const f2 = await mine();
     check(
       "F-02",
-      dl.ok && f2.awaitCount === base.awaitCount + 1 && Math.abs(f2.awaitAmount - base.awaitAmount - (orderTotal - delTotal)) < 0.01 && f2.realisedCount === f1.realisedCount + 1 && Math.abs(f2.realisedAmount - f1.realisedAmount - delTotal) < 0.01,
+      !!sf.deliveryId && f2.awaitCount === base.awaitCount + 1 && Math.abs(f2.awaitAmount - base.awaitAmount - (orderTotal - delTotal)) < 0.01 && f2.realisedCount === f1.realisedCount + 1 && Math.abs(f2.realisedAmount - f1.realisedAmount - delTotal) < 0.01,
       `residual +${f2.awaitAmount - base.awaitAmount} (expect ${orderTotal - delTotal}); realised +${f2.realisedCount - f1.realisedCount}/+${f2.realisedAmount - f1.realisedAmount}`,
     );
 
+    /* A shipment still PACKED blocks closing the remainder (R2); ship and confirm it first. */
+    asAdmin();
+    const blocked = await closeRemainderAction(OF.orderId, "PODF close");
+    const shipped = await shipShipmentAction({ shipmentId: SF.id });
+    const done = await completeShipmentAction({
+      shipmentId: SF.id,
+      proofPhotoUrl: `https://r2.test/delivery-proofs/${SF.id}/1.jpg`,
+      proofPhotoR2Key: `delivery-proofs/${SF.id}/1.jpg`,
+      lines: [{ shipmentLineId: SF.lines[0].id, deliveredQty: 1 }],
+    });
     const cl = await closeRemainderAction(OF.orderId, "PODF close");
     const f3 = await mine();
-    check("F-03", cl.ok && f3.awaitCount === base.awaitCount && Math.abs(f3.awaitAmount - base.awaitAmount) < 0.01, `close ${cl.ok ? "ok" : cl.reason}; awaiting back to ${f3.awaitCount} (+${f3.awaitAmount - base.awaitAmount})`);
+    check(
+      "F-03",
+      !blocked.ok && blocked.reason === "SHIPMENT_IN_FLIGHT" && shipped.ok && done.ok && cl.ok && f3.awaitCount === base.awaitCount && Math.abs(f3.awaitAmount - base.awaitAmount) < 0.01,
+      `close while packed ${blocked.ok ? "ok" : blocked.reason}; ship ${shipped.ok ? "ok" : shipped.reason}; POD ${done.ok ? "ok" : done.reason}; close ${cl.ok ? "ok" : cl.reason}; awaiting back to ${f3.awaitCount} (+${f3.awaitAmount - base.awaitAmount})`,
+    );
   });
 
   it("G — store coordinate filter", async () => {

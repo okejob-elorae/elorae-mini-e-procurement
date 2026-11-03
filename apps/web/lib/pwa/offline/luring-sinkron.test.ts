@@ -20,6 +20,7 @@ const h = vi.hoisted(() => {
       pendingStoreReceipts: tabel(),
       pendingStoreOpnames: tabel(),
       pendingSpgReturns: tabel(),
+      pendingSpgRefunds: tabel(),
       pendingMutasiAjuan: tabel(),
       pendingMutasiKirim: tabel(),
     },
@@ -28,6 +29,8 @@ const h = vi.hoisted(() => {
     terima: vi.fn(),
     opname: vi.fn(),
     retur: vi.fn(),
+    uangKembali: vi.fn(),
+    unggahRetur: vi.fn(),
     ajukanMutasi: vi.fn(),
     kirimMutasi: vi.fn(),
     unggah: vi.fn(),
@@ -70,6 +73,7 @@ vi.mock("./db", () => {
       pendingStoreReceipts: buat("pendingStoreReceipts"),
       pendingStoreOpnames: buat("pendingStoreOpnames"),
       pendingSpgReturns: buat("pendingSpgReturns"),
+      pendingSpgRefunds: buat("pendingSpgRefunds"),
       pendingMutasiAjuan: buat("pendingMutasiAjuan"),
       pendingMutasiKirim: buat("pendingMutasiKirim"),
     },
@@ -100,7 +104,12 @@ vi.mock("@/app/actions/spg-retur", () => ({
     h.panggilan.push("retur");
     return h.retur(m);
   },
+  catatUangDikembalikanAction: (m: unknown) => {
+    h.panggilan.push("uangKembali");
+    return h.uangKembali(m);
+  },
 }));
+vi.mock("@/lib/spg/foto-retur-pembeli-klien", () => ({ unggahFotoReturPembeli: h.unggahRetur }));
 vi.mock("@/app/actions/spg-mutasi", () => ({
   ajukanMutasiAction: (m: unknown) => {
     h.panggilan.push("ajuanMutasi");
@@ -162,7 +171,7 @@ const opname = (localId: string, waktu: number, lain: Record<string, unknown> = 
   attempts: 0,
   ...lain,
 });
-const retur = (localId: string, waktu: number): Baris => ({
+const retur = (localId: string, waktu: number, lain: Record<string, unknown> = {}): Baris => ({
   localId,
   storeId: "t1",
   spgSaleId: "s1",
@@ -173,6 +182,19 @@ const retur = (localId: string, waktu: number): Baris => ({
   capturedAt: waktu,
   syncState: "pending",
   attempts: 0,
+  ...lain,
+});
+const uangKembali = (localId: string, waktu: number, lain: Record<string, unknown> = {}): Baris => ({
+  localId,
+  returnId: `ret-${localId}`,
+  storeId: "t1",
+  docNo: "RTP/1",
+  waktu,
+  foto: { nama: "struk.jpg", blob: new Blob(["x"], { type: "image/jpeg" }) },
+  capturedAt: waktu,
+  syncState: "pending",
+  attempts: 0,
+  ...lain,
 });
 const checkout = (localId: string, waktu: number, lain: Record<string, unknown> = {}): Baris => ({
   localId,
@@ -198,7 +220,7 @@ beforeEach(() => {
     t.update.mockReset();
     t.delete.mockReset();
   }
-  for (const f of [h.checkIn, h.checkOut, h.terima, h.opname, h.retur, h.ajukanMutasi, h.kirimMutasi, h.unggah, h.catatTerkirim, h.lupakan]) {
+  for (const f of [h.checkIn, h.checkOut, h.terima, h.opname, h.retur, h.uangKembali, h.unggahRetur, h.ajukanMutasi, h.kirimMutasi, h.unggah, h.catatTerkirim, h.lupakan]) {
     f.mockReset();
   }
   h.panggilan = [];
@@ -321,6 +343,66 @@ describe("flushStokTertahan", () => {
     h.terima.mockResolvedValue({ ok: false, code: "SIKLUS_TERKUNCI", noKonsi: ["KNS/9"] });
     await flushStokTertahan();
     expect(h.t.pendingStoreReceipts.update).toHaveBeenLastCalledWith("r", { syncState: "failed", error: "SIKLUS_TERKUNCI", attempts: 1, noKonsi: ["KNS/9"] });
+  });
+
+  it("uploads a shopper return's photos to the report's own folder once, then sends their keys", async () => {
+    h.t.pendingSpgReturns.rows = [
+      retur("p", 1_000, {
+        uangSudahDikembalikan: true,
+        fotoBarang: { nama: "barang.jpg", blob: new Blob(["b"], { type: "image/jpeg" }) },
+        fotoStruk: { nama: "struk.jpg", key: "spg-sale-returns/t1/p/struk.jpg" },
+      }),
+    ];
+    h.unggahRetur.mockResolvedValue({ key: "spg-sale-returns/t1/p/barang.jpg" });
+    h.retur.mockResolvedValue({ ok: true, returnId: "ret" });
+    await flushStokTertahan();
+    /* Only the photo still on the phone is uploaded, bound to the form's key. */
+    expect(h.unggahRetur).toHaveBeenCalledTimes(1);
+    expect(h.unggahRetur.mock.calls[0][0]).toMatchObject({ jenis: "barang", kunci: "p" });
+    expect(h.t.pendingSpgReturns.update).toHaveBeenCalledWith("p", { fotoBarang: { nama: "barang.jpg", key: "spg-sale-returns/t1/p/barang.jpg" } });
+    expect(h.retur.mock.calls[0][0]).toMatchObject({
+      idempotencyKey: "p",
+      uangSudahDikembalikan: true,
+      fotoBarangKey: "spg-sale-returns/t1/p/barang.jpg",
+      fotoStrukKey: "spg-sale-returns/t1/p/struk.jpg",
+    });
+    expect(h.t.pendingSpgReturns.delete).toHaveBeenCalledWith("p");
+  });
+
+  it("keeps a shopper return whose photo upload lost signal, and stops one whose photo was refused", async () => {
+    h.t.pendingSpgReturns.rows = [
+      retur("p", 1_000, { fotoBarang: { nama: "a.jpg", blob: new Blob(["a"]) }, uangSudahDikembalikan: false }),
+      retur("q", 2_000, { fotoBarang: { nama: "b.jpg", blob: new Blob(["b"]) }, uangSudahDikembalikan: false }),
+    ];
+    h.unggahRetur.mockRejectedValueOnce(new TypeError("Failed to fetch")).mockRejectedValueOnce(new Error("TERLALU_BESAR"));
+    await flushStokTertahan();
+    expect(h.retur).not.toHaveBeenCalled();
+    expect(h.t.pendingSpgReturns.update).toHaveBeenCalledWith("p", { syncState: "pending", error: undefined, attempts: 1 });
+    expect(h.t.pendingSpgReturns.update).toHaveBeenCalledWith("q", { syncState: "failed", error: "FOTO_TERLALU_BESAR", attempts: 1 });
+  });
+
+  it("sends a queued refund with its slip uploaded to the approved report, without waiting for a check-in", async () => {
+    h.t.pendingSpgRefunds.rows = [uangKembali("u", 4_000)];
+    h.unggahRetur.mockResolvedValue({ key: "spg-sale-returns/t1/x/struk.jpg" });
+    h.uangKembali.mockResolvedValue({ ok: true });
+    const hasil = await flushStokTertahan();
+    expect(h.unggahRetur.mock.calls[0][0]).toMatchObject({ jenis: "struk", returnId: "ret-u" });
+    expect(h.uangKembali.mock.calls[0][0]).toEqual({
+      returnId: "ret-u",
+      fotoStrukKey: "spg-sale-returns/t1/x/struk.jpg",
+      luring: true,
+      waktuTangkap: new Date(4_000).toISOString(),
+    });
+    expect(h.t.pendingSpgRefunds.delete).toHaveBeenCalledWith("u");
+    expect(hasil).toEqual({ terkirim: 1, gagal: 0, sibuk: false });
+  });
+
+  it("stops a queued refund the server refuses (the report was rejected meanwhile)", async () => {
+    h.t.pendingSpgRefunds.rows = [uangKembali("u", 4_000, { foto: { nama: "s.jpg", key: "spg-sale-returns/t1/x/struk.jpg" } })];
+    h.uangKembali.mockResolvedValue({ ok: false, kode: "TIDAK_DISETUJUI" });
+    await flushStokTertahan();
+    expect(h.unggahRetur).not.toHaveBeenCalled();
+    expect(h.t.pendingSpgRefunds.update).toHaveBeenLastCalledWith("u", { syncState: "failed", error: "TIDAK_DISETUJUI", attempts: 1 });
   });
 
   it("retries a shopper return the server failed to save (GAGAL), stops one it refused", async () => {

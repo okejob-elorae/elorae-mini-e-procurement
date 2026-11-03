@@ -92,6 +92,20 @@ export const NOTIFICATION_TYPES = [
   "PESANAN_DITUTUP",
   "PESANAN_PORTAL",
   "RETUR_PEMBELI_MENUNGGU",
+  "DELIVERY_NOTA_VOIDED",
+  "DELIVERY_NOTA_CORRECTED",
+  "TAX_INVOICE_NOTA_CHANGED",
+  "VENDOR_BILL_PRICE_DIFFERENCE",
+  "SUPPLIER_INVOICE_OVERDUE",
+  "GRN_NO_PO_PENDING",
+  "RETUR_SELISIH",
+  "SPG_SCHEDULE_SUBMITTED",
+  "SPG_ATTENDANCE_NEEDED",
+  "SPG_ATTENDANCE_SUBMITTED",
+  "SPG_ATTENDANCE_RETURNED",
+  "SPG_DEBT_PAYMENT_SUBMITTED",
+  "SPG_DEBT_PAYMENT_RETURNED",
+  "JUBELIO_PRICE_DIFFERS",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -357,6 +371,58 @@ export function getNotificationHref(
       const id = idAman(data, "returnId");
       return id ? `/backoffice/retur-spg/${id}` : "/backoffice/retur-spg?status=MENUNGGU";
     }
+    case "DELIVERY_NOTA_VOIDED":
+    case "DELIVERY_NOTA_CORRECTED":
+    case "TAX_INVOICE_NOTA_CHANGED": {
+      /*
+       * Nota putus yang dibatalkan/dikoreksi dan faktur pajaknya. Penerimanya Keuangan (`payments:verify`)
+       * dan admin pajak (`tax_invoices:manage`); bawaannya keduanya memegang `tax_invoices:view` tetapi
+       * TIDAK `field_sales_orders:view`, jadi rincian pesanan memantulkan mereka ke /backoffice. Antrean
+       * faktur pajak memuat satu baris untuk setiap nota tagihan apa pun statusnya, dicari ke nomor
+       * notanya; yang boleh membuka pesanan menemukan tautannya di baris itu. Tanpa nomor → antreannya.
+       */
+      const nota = idAman(data, "docNo");
+      return nota ? `/backoffice/finance/faktur-pajak?q=${nota}` : "/backoffice/finance/faktur-pajak";
+    }
+    case "VENDOR_BILL_PRICE_DIFFERENCE": {
+      // Kartu "Selisih harga invoice" ada di rincian tagihannya; tanpa id → daftar yang menunggu keputusan.
+      const id = idAman(data, "billId");
+      return id ? `/backoffice/vendor-bills/${id}` : "/backoffice/vendor-bills/selisih-harga?status=MENUNGGU";
+    }
+    case "SUPPLIER_INVOICE_OVERDUE": {
+      // Permintaan invoice yang terlambat, disaring ke pemasoknya bila diketahui.
+      const pemasok = idAman(data, "supplierId");
+      const dasar = "/backoffice/vendor-bills/belum-ditagih?tab=permintaan&status=terlambat";
+      return pemasok ? `${dasar}&pemasok=${pemasok}` : dasar;
+    }
+    case "GRN_NO_PO_PENDING": {
+      // Kartu konfirmasi ada di rincian GRN; tanpa id → tab GRN yang menunggu konfirmasi.
+      const id = idAman(data, "grnId");
+      return id ? `/backoffice/inventory/grn/${id}` : "/backoffice/inventory?tab=grn&konfirmasi=menunggu";
+    }
+    case "RETUR_SELISIH": {
+      // Selisih retur toko yang perlu diputuskan penanggungnya; tanpa id → langkah "keputusan" daftarnya.
+      const id = idAman(data, "storeReturnId");
+      return id ? `/backoffice/retur-toko/${id}` : "/backoffice/retur-toko?langkah=keputusan";
+    }
+    case "SPG_SCHEDULE_SUBMITTED":
+      return "/backoffice/jadwal-spg?tab=bulanan";
+    case "SPG_ATTENDANCE_NEEDED":
+      return "/backoffice/komisi-spg/catatan-hadir?perlu=masukkan";
+    case "SPG_ATTENDANCE_SUBMITTED":
+      return "/backoffice/komisi-spg/catatan-hadir?perlu=periksa";
+    case "SPG_ATTENDANCE_RETURNED":
+      return "/backoffice/komisi-spg/catatan-hadir?perlu=dikembalikan";
+    case "SPG_DEBT_PAYMENT_SUBMITTED":
+    case "SPG_DEBT_PAYMENT_RETURNED":
+      // Utang SPG yang sudah berhenti dan pembayarannya ada di bagian #utang halaman Komisi SPG.
+      return "/backoffice/komisi-spg#utang";
+    case "JUBELIO_PRICE_DIFFERS": {
+      // Daftar beda harga di Konfirmasi harga, dicari ke SKU-nya bila SKU itu teks wajar (≤ 100 huruf).
+      const sku = typeof data.sku === "string" ? data.sku.trim() : "";
+      const dasar = "/backoffice/jubelio/harga?jenis=BEDA";
+      return sku !== "" && sku.length <= 100 ? `${dasar}&cari=${encodeURIComponent(sku)}` : dasar;
+    }
     case 'PENDING_ORDER_APPROVAL': {
       const id = idAman(data, 'orderId');
       return id ? `/backoffice/field-sales-orders/${id}` : '/backoffice/field-sales-orders';
@@ -504,7 +570,8 @@ const TUJUAN_HP: Record<NotificationType, TujuanHp> = {
     return toko ? `/pwa/pelunasan/${toko}` : "/pwa/pelunasan";
   },
   FIELD_SALES_ORDER_REJECTED: pesananSaya,
-  // Layar pesanan HP tidak pernah menampilkan harga konsinyasi (`nilaiTampil`).
+  // Layar pesanan HP salesman menampilkan konsi lengkap sejak keputusan pemilik 2026-11-02 (P18);
+  // HP SPG dan portal toko tetap tanpa harga konsi (P18a).
   KONSI_ORDER_PUSHED: pesananSaya,
   // SPG toko konsi: layar hitung stok tokonya.
   KONSI_COUNT_DUE: () => "/pwa/spg/stocktake",
@@ -582,6 +649,20 @@ const TUJUAN_HP: Record<NotificationType, TujuanHp> = {
   SPG_STOCK_REQUEST_UNHELD: DI_KANTOR,
   STOCK_LOSS_OPEN: DI_KANTOR,
   RETUR_PEMBELI_MENUNGGU: DI_KANTOR,
+  DELIVERY_NOTA_VOIDED: DI_KANTOR,
+  DELIVERY_NOTA_CORRECTED: DI_KANTOR,
+  TAX_INVOICE_NOTA_CHANGED: DI_KANTOR,
+  VENDOR_BILL_PRICE_DIFFERENCE: DI_KANTOR,
+  SUPPLIER_INVOICE_OVERDUE: DI_KANTOR,
+  GRN_NO_PO_PENDING: DI_KANTOR,
+  RETUR_SELISIH: DI_KANTOR,
+  SPG_SCHEDULE_SUBMITTED: DI_KANTOR,
+  SPG_ATTENDANCE_NEEDED: DI_KANTOR,
+  SPG_ATTENDANCE_SUBMITTED: DI_KANTOR,
+  SPG_ATTENDANCE_RETURNED: DI_KANTOR,
+  SPG_DEBT_PAYMENT_SUBMITTED: DI_KANTOR,
+  SPG_DEBT_PAYMENT_RETURNED: DI_KANTOR,
+  JUBELIO_PRICE_DIFFERS: DI_KANTOR,
 };
 
 /**
@@ -673,11 +754,16 @@ function tautanJurnalTertunda(data: Record<string, unknown>): string {
       case 'komisi_spg_bayar':
       case 'barang_hilang':
       case 'potong_sales':
+      case 'potong_sales_retur':
       case 'gudang_rusak':
       case 'stok_manual':
       case 'retur_pemasok':
       case 'biaya_perjalanan':
       case 'biaya_perjalanan_bayar':
+      // Penerimaan pembayaran utang SPG yang berhenti dan bayaran plus sesudah gaji terakhirnya
+      // (keputusan pemilik 2026-11-02, P67/P68) — dua sumber operasional baru putaran 4.
+      case 'spg_utang_bayar':
+      case 'spg_bayar_tambahan':
         return TAUTAN_REKONSILIASI_PERSEDIAAN;
       // Penyusutan aset (`<aset>/<YYYY-MM>`) dan jurnal berulang (`<templat>/<YYYY-MM>`):
       // posting ulangnya di halaman aset / templatnya.

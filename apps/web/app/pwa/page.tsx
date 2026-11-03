@@ -15,8 +15,10 @@ import { hitungTugasPesanan, pesananMenujuToko } from "@/lib/spg/pesanan-menuju-
 import { kunciHariWib } from "@/lib/dashboard/tren";
 import { kemajuanTarget } from "@/lib/salesman/dasbor";
 import { bulanWib } from "@/lib/salesman/pengaturan";
-import { berandaPenjualanHp, komisiUntukHp } from "@/lib/salesman/penjualan-hp-queries";
-import { komisiBisaNaikOlehKonsi } from "@/lib/salesman/penjualan-hp";
+import { berandaPenjualanHp } from "@/lib/salesman/penjualan-hp-queries";
+import { komisiSalesman } from "@/lib/salesman/komisi-queries";
+import { jumlahSelisihPerluDicek } from "@/lib/receivables/pwa-queries";
+import { jumlahReturUangBelumKembali } from "@/lib/spg/retur-pembeli-queries";
 import { absenBeranda } from "@/lib/salesman/absensi-queries";
 import { ringkasTugasTagihSaya } from "@/lib/receivables/tugas-tagih-queries";
 import { jumlahTargetRinci } from "@/lib/salesman/target-rinci-queries";
@@ -68,7 +70,7 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
         console.error(`[beranda] ${nama} gagal dimuat`, e);
         return cadangan;
       });
-    const [r, pengumuman, shift, titip, tukarMasuk, sudahTutup, pengunjung, tugasPesanan] = await Promise.all([
+    const [r, pengumuman, shift, titip, tukarMasuk, sudahTutup, pengunjung, tugasPesanan, returUangBelumKembali] = await Promise.all([
       ringkasanSpg(session.user.id, toko, sekarang),
       kartuPengumumanBeranda(session.user.id, sekarang).catch((e) => {
         console.error("[beranda] pengumuman gagal dimuat", e);
@@ -86,6 +88,8 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
       // Pesanan sales untuk toko ini — hitungan saja, rinciannya di Terima kiriman: pesanan konsi lama
       // yang menunggu SPG mengonfirmasi sampai, dan sisanya yang masih diproses kantor (satu bacaan).
       aman(pesananMenujuToko(toko.id, sekarang).then(hitungTugasPesanan), { diproses: 0, lama: 0 }, "pesanan menuju toko"),
+      // Retur pembeli yang disetujui kantor tetapi uangnya belum dicatat dikembalikan ke pembeli (P13a).
+      aman(jumlahReturUangBelumKembali(session.user.id, toko.id), 0, "uang retur pembeli"),
     ]);
     // Pengingat tutup hari: sesudah jam 17.00 WIB, kalau toko sudah berjualan dan belum ada laporannya.
     const jamWib = Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hour12: false, timeZone: "Asia/Jakarta" }).format(sekarang));
@@ -172,6 +176,7 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
       kirimanMenungguKunci: r.kirimanMenungguKunci,
       pesananDiproses: tugasPesanan.diproses,
       pesananLama: tugasPesanan.lama,
+      returUangBelumKembali,
       notaHariIni: r.notaHariIni.map((n) => ({ id: n.id, docNo: n.docNo, jam: jam(n.waktu), total: n.total, jumlahBarang: n.jumlahBarang })),
       gaji: {
         perkiraan: r.gajiKomisi.perkiraan ? { totalToko: r.gajiKomisi.perkiraan.totalToko, bagianSaya: r.gajiKomisi.perkiraan.bagianSaya } : null,
@@ -181,10 +186,10 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
           ? {
               bulanJualLabel: salesMonthLabelId(resmi.bulanJual),
               bulanBayarLabel: resmi.bulanBayar ? salesMonthLabelId(resmi.bulanBayar) : null,
-              diterima: resmi.diterima,
+              // Yang ditahan (P60) tidak membawa rupiah sama sekali — tidak juga di payload.
+              diterima: resmi.ditahan ? 0 : resmi.diterima,
               dibayar: resmi.dibayar !== null,
-              ditahan: resmi.ditahan,
-              belumPasti: Boolean(resmi.belumPasti) && resmi.dibayar === null,
+              ditahan: resmi.ditahan !== null,
             }
           : null,
         koreksiMenunggu: r.gajiKomisi.koreksiMenunggu.length
@@ -227,11 +232,11 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
   const { bulanIni, tren } = jual;
 
   // Perkiraan komisi memakai omzet dan target yang SAMA dengan kartu "Bulan ini"
-  // di atasnya (putus + van), supaya kedua kartu tidak pernah berbeda angka dan
-  // tidak ada angka turunan yang membuka rupiah konsi. Kartu sekunder: kalau
-  // kuerinya gagal, beranda tetap tampil tanpa kartu ini.
-  const [komisi, absen, tugasTagih, jumlahTarget, jadwal, pengumuman] = await Promise.all([
-    komisiUntukHp(salesmanId, bulan, { omzet: bulanIni, target: atur.target }).catch((e) => {
+  // di atasnya (putus + konsi + van — konsi lengkap di HP salesman, P18/P56), supaya
+  // kedua kartu tidak pernah berbeda angka. Kartu sekunder: kalau kuerinya gagal,
+  // beranda tetap tampil tanpa kartu ini.
+  const [komisi, absen, tugasTagih, jumlahTarget, jadwal, pengumuman, selisihReturPerluDicek] = await Promise.all([
+    komisiSalesman(salesmanId, bulan, { omzet: bulanIni, target: atur.target }).catch((e) => {
       console.error("[beranda] perkiraan komisi gagal dimuat", e);
       return null;
     }),
@@ -255,6 +260,11 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
       console.error("[beranda] pengumuman gagal dimuat", e);
       return null;
     }),
+    // Selisih retur toko yang harus ia tanyakan ke toko dan SPG-nya (P22): baris "Tugas hari ini".
+    jumlahSelisihPerluDicek(salesmanId).catch((e) => {
+      console.error("[beranda] selisih retur gagal dimuat", e);
+      return 0;
+    }),
   ]);
   // Catatan tersemat (mis. "pemilik hanya ada sore hari") di baris rencana kunjungan.
   const tersemat = await catatanTersematPerToko([...toko.rencana.map((r) => r.storeId), ...jadwal.map((j) => j.storeId)]).catch(
@@ -274,7 +284,6 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
       } : null}
       data={{
         bulanIni,
-        // Capaian atas putus + van: capaian dengan konsi × target − putus − van = konsi.
         kemajuan: kemajuanTarget(atur.target, bulanIni.total, hariIni),
         tren,
         pesanan,
@@ -293,16 +302,11 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
                 dasarNilai: komisi.hasil.dasarNilai,
                 tarifDipakai: komisi.hasil.tarifDipakai,
                 tingkatBerikut: komisi.hasil.tingkatBerikut,
-                // Kalimat "final bisa lebih tinggi" hanya bila konsi memang bisa mengubah komisinya.
-                konsiBelumDihitung: komisiBisaNaikOlehKonsi({
-                  pcsKonsi: bulanIni.pcsKonsi,
-                  dasar: komisi.hasil.dasar,
-                  tingkatBerikut: komisi.hasil.tingkatBerikut,
-                }),
               }
             : null,
         absen,
         tugasTagih,
+        selisihReturPerluDicek,
         adaTargetRinci: jumlahTarget > 0,
         jadwal: jadwal.map((j) => ({ storeId: j.storeId, nama: j.nama, catatan: j.catatan, lat: j.lat, lng: j.lng, dikunjungi: j.dikunjungi })),
         pengumuman,

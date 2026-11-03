@@ -45,11 +45,12 @@ d("submitCollection (test bed only)", () => {
   let orderId = "";
   let deliveryId = "";
   let receivableId = "";
+  let konsiReceivableId = "";
 
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
     storeId = ""; adminId = ""; collectorId = ""; otherCollectorId = "";
-    orderId = ""; deliveryId = ""; receivableId = "";
+    orderId = ""; deliveryId = ""; receivableId = ""; konsiReceivableId = "";
 
     const store = await prisma.store.create({ data: { code: `TEST-CSW-${token}`, name: "test", address: "test", termsType: "PUTUS" } });
     storeId = store.id;
@@ -76,6 +77,10 @@ d("submitCollection (test bed only)", () => {
     await prisma.collectionSubmission.deleteMany({ where: { receivableId: seededId(receivableId) } });
     await prisma.storeSettlementInvoice.deleteMany({ where: { receivableId: seededId(receivableId) } });
     await prisma.storeSettlement.deleteMany({ where: { storeId: seededId(storeId) } });
+    if (konsiReceivableId) {
+      await prisma.collectionSubmission.deleteMany({ where: { receivableId: seededId(konsiReceivableId) } });
+      await prisma.receivable.delete({ where: { id: seededId(konsiReceivableId) } });
+    }
     await prisma.receivable.deleteMany({ where: { id: seededId(receivableId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: seededId(deliveryId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
@@ -103,6 +108,27 @@ d("submitCollection (test bed only)", () => {
   it("rejects a collector who is not the assigned one", async () => {
     const err = await submitAndCatch({ ...base(), collectorId: otherCollectorId });
     expect(err.code).toBe("NOT_ASSIGNED_COLLECTOR");
+  });
+
+  it("refuses a konsi bill even for its assigned collector, and writes nothing", async () => {
+    /*
+     * A konsi bill is paid only through a BKM (`isKonsiBill`). This one is a paper konsi debt
+     * typed in by hand (MANUAL + `isConsignment`), already holding this collector — the shape a
+     * raw request would need, since `assignCollector` now refuses to hand one out.
+     */
+    konsiReceivableId = (
+      await prisma.receivable.create({
+        data: {
+          invoiceNo: `TEST-CSW-KONSI-${token}`, source: "MANUAL", isConsignment: true, storeId,
+          invoiceDate: new Date(), dueDate: new Date(),
+          amount: 500, outstanding: 500, originalAmount: 500, outstandingAmount: 500, collectorId,
+        },
+      })
+    ).id;
+    const err = await submitAndCatch({ ...base(), receivableId: konsiReceivableId });
+    expect(err.code).toBe("KONSI_LEWAT_BKM");
+    expect(await prisma.collectionSubmission.count({ where: { receivableId: seededId(konsiReceivableId) } })).toBe(0);
+    expect(await notificationsFor(konsiReceivableId)).toHaveLength(0);
   });
 
   it("rejects a non-positive amount", async () => {

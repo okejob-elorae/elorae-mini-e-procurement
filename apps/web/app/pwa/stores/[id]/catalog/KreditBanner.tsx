@@ -21,7 +21,16 @@ export function teksAlasanKredit(a: AlasanKredit, t: T): string {
     case "LEWAT_JANJI":
       return t("alasanLewatJanji", { nilai: formatIDR(a.nilai), faktur: a.faktur });
     case "MELEBIHI_BATAS_NILAI":
-      return t("alasanBatasNilai", { sisa: formatIDR(a.sisaSesudah), batas: formatIDR(a.batas) });
+      // Rinciannya disebut kalau ada pesanan putus yang belum dinota (R11).
+      return (a.belumDinota ?? 0) > 0
+        ? t("alasanBatasNilaiRinci", {
+            sisa: formatIDR(a.sisaSesudah),
+            faktur: formatIDR(a.sisaFaktur ?? 0),
+            belumDinota: formatIDR(a.belumDinota ?? 0),
+            pesanan: formatIDR(a.pesanan ?? 0),
+            batas: formatIDR(a.batas),
+          })
+        : t("alasanBatasNilai", { sisa: formatIDR(a.sisaSesudah), batas: formatIDR(a.batas) });
     case "MELEBIHI_BATAS_FAKTUR":
       return t("alasanBatasFaktur", { faktur: a.faktur, batas: a.batas });
   }

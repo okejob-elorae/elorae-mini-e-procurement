@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeftRight, ClipboardCheck, Hourglass, Loader2, LogIn, LogOut, PackageCheck, RotateCw, Trash2, Truck, Undo2 } from "lucide-react";
+import { ArrowLeftRight, Banknote, ClipboardCheck, Hourglass, Loader2, LogIn, LogOut, PackageCheck, RotateCw, Trash2, Truck, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -50,6 +50,7 @@ const IKON: Record<JenisLuring, typeof LogIn> = {
   terima: PackageCheck,
   opname: ClipboardCheck,
   returPembeli: Undo2,
+  uangKembali: Banknote,
   mutasiAjuan: ArrowLeftRight,
   mutasiKirim: Truck,
 };
@@ -162,6 +163,16 @@ export function AntreanLuring({
           error: r.error,
           judul: t("returPembeli", { docNo: r.docNo }),
           keterangan: [t("potong", { count: r.baris.reduce((n, b) => n + b.qty, 0) })],
+          menungguCheckin: false,
+        })),
+        ...data.uangKembali.map((r) => ({
+          jenis: "uangKembali" as const,
+          localId: r.localId,
+          waktu: r.waktu,
+          syncState: r.syncState,
+          error: r.error,
+          judul: t("uangKembali", { docNo: r.docNo }),
+          keterangan: [],
           menungguCheckin: false,
         })),
       ].sort((a, b) => a.waktu - b.waktu)

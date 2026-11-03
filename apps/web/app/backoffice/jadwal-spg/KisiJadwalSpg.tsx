@@ -25,6 +25,7 @@ import {
   type Kenyataan,
 } from "@/lib/spg/shift";
 import type { DataJadwalSpgKantor, SelKantor } from "@/lib/spg/shift-queries";
+import { NADA_JADWAL_BULAN, type LencanaBulan } from "./JadwalBulananKantor";
 import { cn } from "@/lib/utils";
 
 const KOSONG = "__kosong__";
@@ -68,10 +69,13 @@ export function KisiJadwalSpg({
   data,
   bolehUbah,
   onBelumDisimpan,
+  lencanaBulan = {},
 }: {
   data: DataJadwalSpgKantor;
   bolehUbah: boolean;
   onBelumDisimpan: (n: number) => void;
+  /** userId → keadaan jadwal bulanannya untuk bulan yang disentuh minggu ini (P7c). */
+  lencanaBulan?: Record<string, LencanaBulan[]>;
 }) {
   const t = useTranslations("jadwalSpg");
   const td = dinamis(t);
@@ -281,6 +285,11 @@ export function KisiJadwalSpg({
                     <TableRow key={o.id}>
                       <TableCell className="sticky left-0 z-10 whitespace-normal bg-card align-top">
                         <p className="font-medium">{o.nama}</p>
+                        {(lencanaBulan[o.id] ?? []).map((l) => (
+                          <StatusPill key={l.bulan} tone={NADA_JADWAL_BULAN[l.status]} className="mt-1">
+                            {td(`bulanan.lencana.${l.status}`, { bulan: l.label })}
+                          </StatusPill>
+                        ))}
                         {!o.diToko ? (
                           <Badge variant="outline" className="mt-1 px-1.5 py-0 text-[10px]">
                             {t("sudahPindah")}

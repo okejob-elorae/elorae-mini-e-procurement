@@ -15,6 +15,7 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import { newLocalId } from "@/lib/pwa/id-lokal";
 import { denganBatasWaktu, galatJaringan } from "@/lib/field-sales/jaringan-lemah";
 import type { KartuStokDiToko } from "@/lib/konsinyasi/stok-di-toko";
+import { perkiraanNilaiKonsi } from "@/lib/field-sales/perkiraan-konsi";
 import type { TandaStok } from "@/lib/konsinyasi/isi-ulang";
 import { cn } from "@/lib/utils";
 import { kirimPesananIsiUlang } from "./isi-ulang-actions";
@@ -22,9 +23,12 @@ import { kirimPesananIsiUlang } from "./isi-ulang-actions";
 /**
  * Kartu "Stok di toko ini" untuk salesman di toko KONSINYASI.
  *
- * Hanya JUMLAH — tidak ada harga maupun nilai: salesman tidak pernah diberi
- * harga konsinyasi. Baris bertanda (minus, hampir habis, tidak laku) dan yang
- * perlu diisi ulang tampil lebih dulu; sisanya dilipat.
+ * Baris stok hanya JUMLAH: belum ada penilaian stok di toko konsinyasi
+ * (pertanyaan pemilik). Lembar isi ulang menampilkan harga retail toko per pcs
+ * dan PERKIRAAN totalnya (P18) — nilai pastinya dihitung kantor saat
+ * menyetujui; yang dikirim tetap hanya barang dan jumlah. Baris bertanda
+ * (minus, hampir habis, tidak laku) dan yang perlu diisi ulang tampil lebih
+ * dulu; sisanya dilipat.
  *
  * "Buat pesanan isi ulang" membuka lembar konfirmasi berisi saran dari target
  * min/maks. Salesman boleh mengubah jumlah dan menghapus baris; kirimnya lewat
@@ -43,9 +47,32 @@ const WARNA_TANDA: Record<TandaStok, string> = {
 /** Titik ribuan tanpa `Intl` — keluaran server dan browser harus sama persis. */
 const ribuan = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 
-type BarisLembar = { kunci: string; itemId: string; variantSku: string; nama: string; varian: string | null; qty: string; tersedia: number };
+type BarisLembar = {
+  kunci: string;
+  itemId: string;
+  variantSku: string;
+  nama: string;
+  varian: string | null;
+  qty: string;
+  tersedia: number;
+  /** Harga retail toko per pcs (perkiraan, P18); null = belum ada harga. */
+  harga: number | null;
+};
 
-export function StokDiToko({ data, storeId, visitId }: { data: KartuStokDiToko; storeId: string; visitId: string | null }) {
+const rupiah = (n: number) => `Rp ${ribuan(Math.round(n))}`;
+
+export function StokDiToko({
+  data,
+  hargaKonsi,
+  storeId,
+  visitId,
+}: {
+  data: KartuStokDiToko;
+  /** Harga retail konsi per `itemId` (dibaca halaman toko); tidak ada / null = belum ada harga. */
+  hargaKonsi: Record<string, number | null>;
+  storeId: string;
+  visitId: string | null;
+}) {
   const t = useTranslations("pwa.stokDiToko");
   const td = dinamis(t);
   const router = useRouter();
@@ -74,6 +101,7 @@ export function StokDiToko({ data, storeId, visitId }: { data: KartuStokDiToko; 
         varian: b.varian,
         qty: String(b.saranQty),
         tersedia: b.tersediaGudang,
+        harga: hargaKonsi[b.itemId] ?? null,
       })),
     );
     setCatatan(t("defaultNote"));
@@ -92,6 +120,7 @@ export function StokDiToko({ data, storeId, visitId }: { data: KartuStokDiToko; 
     return l.qty.trim() === "" || !Number.isInteger(n) || n < 0;
   });
   const totalPcs = barisKirim.reduce((s, l) => s + l.n, 0);
+  const perkiraan = perkiraanNilaiKonsi(barisKirim.map((l) => ({ qty: l.n, harga: l.harga })));
 
   function kirim() {
     if (!visitId || barisKirim.length === 0 || adaTidakValid) return;
@@ -239,6 +268,9 @@ export function StokDiToko({ data, storeId, visitId }: { data: KartuStokDiToko; 
                         {l.nama}
                       </Label>
                       {l.varian ? <p className="truncate text-xs text-muted-foreground">{l.varian}</p> : null}
+                      {l.harga !== null ? (
+                        <p className="text-xs tabular-nums text-muted-foreground">{t("perPcs", { harga: rupiah(l.harga) })}</p>
+                      ) : null}
                       {Number.isInteger(n) && n > Math.max(l.tersedia, 0) ? (
                         <p className="text-xs text-amber-700 dark:text-amber-300">
                           {t("warehouseShort", { qty: ribuan(Math.max(l.tersedia, 0)) })}
@@ -283,6 +315,12 @@ export function StokDiToko({ data, storeId, visitId }: { data: KartuStokDiToko; 
             <p className="text-center text-sm text-muted-foreground">
               {t("totalLine", { lines: barisKirim.length, pcs: ribuan(totalPcs) })}
             </p>
+            {perkiraan ? (
+              <div className="space-y-0.5 text-center">
+                <p className="text-sm font-semibold tabular-nums">{t("perkiraan", { value: rupiah(perkiraan.nilai) })}</p>
+                <p className="text-xs leading-snug text-muted-foreground">{t("perkiraanCatatan")}</p>
+              </div>
+            ) : null}
             <Button
               type="button"
               className="w-full"

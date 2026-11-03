@@ -2,13 +2,11 @@ import { kunciHariWib } from "@/lib/dashboard/tren";
 import { formatDisplayDate } from "@/lib/date-only";
 import { jumlahkanPenjualan, susunPenjualanSalesman } from "./dasbor";
 import { rentangBulanWib, type SkemaKomisi } from "./komisi";
-import { komisiSalesman, omzetBulan, type OmzetBulan, type RincianKomisi } from "./komisi-queries";
+import { komisiSalesman } from "./komisi-queries";
 import { bulanWib } from "./pengaturan";
 import {
   jumlahHp,
-  omzetTanpaKonsi,
   pcsKonsiBulan,
-  tanpaKonsi,
   trenHp,
   type BarisPcsKonsi,
   type InsentifHp,
@@ -21,10 +19,9 @@ import { penjualanSalesman } from "./queries";
 
 /**
  * Kueri angka penjualan untuk HP salesman. Aturannya di `penjualan-hp.ts`:
- * rupiah konsinyasi tidak pernah keluar dari server menuju HP, konsinyasi
- * hanya sebagai pcs. Sumber rupiahnya tetap `penjualanSalesman` — baris konsi
- * dibuang di sini, bukan dihitung ulang dengan definisi lain — jadi putus dan
- * van di HP selalu sama dengan angka kantor.
+ * angka HP = angka kantor, rupiah konsinyasi laku ikut (P56). Sumbernya
+ * `penjualanSalesman` — tidak dihitung ulang dengan definisi lain — jadi setiap
+ * kanal di HP sama dengan angka kantor.
  *
  * Client screens hanya boleh `import type` dari berkas ini (memuat Prisma).
  */
@@ -36,7 +33,7 @@ export const HARI_GRAFIK_BERANDA = 60;
  * Pcs konsinyasi LAKU salesman sejak `sejak` (dan sebelum `sebelum`, bila
  * ada): barang yang laku di toko konsinyasi yang ia pegang — sumber, tanggal,
  * dan pemilik yang sama dengan baris konsi di `penjualanSalesman`
- * (`penjualan-konsi.ts`). Hanya pcs; rupiahnya tidak pernah keluar ke HP.
+ * (`penjualan-konsi.ts`). Pcs-nya ditunjukkan di samping rupiah konsinyasi.
  */
 export async function pcsKonsiSalesman(salesmanId: string, sejak: Date, sebelum?: Date): Promise<BarisPcsKonsi[]> {
   if (!salesmanId) return [];
@@ -49,30 +46,14 @@ export async function berandaPenjualanHp(
   hariIni: Date,
 ): Promise<{ bulanIni: JumlahHp; tren: TitikTrenHp[] }> {
   const sejak = new Date(Date.parse(`${kunciHariWib(hariIni)}T00:00:00+07:00`) - HARI_GRAFIK_BERANDA * 86_400_000);
-  // Laku konsi dibaca sekali: rupiahnya dibuang (`tanpaKonsi`), pcs-nya untuk kartu.
+  // Laku konsi dibaca sekali: rupiahnya ikut penjualan (P56), pcs-nya untuk kartu.
   const laku = lakuKonsiSatuSalesman(salesmanId, sejak);
   const [jual, pcs] = await Promise.all([penjualanSalesman(salesmanId, sejak, { lakuKonsi: laku }), laku.then(pcsDariLaku)]);
-  const titik = susunPenjualanSalesman(tanpaKonsi(jual), hariIni, HARI_GRAFIK_BERANDA);
+  const titik = susunPenjualanSalesman(jual, hariIni, HARI_GRAFIK_BERANDA);
   const bulan = bulanWib(hariIni);
   // Bulan ini = titik harian yang tanggalnya di bulan kalender WIB yang sama.
   const j = jumlahkanPenjualan(titik.filter((x) => x.tanggal.startsWith(bulan)));
   return { bulanIni: jumlahHp(j, pcsKonsiBulan(pcs, bulan, hariIni)), tren: trenHp(titik) };
-}
-
-/**
- * Perkiraan komisi untuk HP: `komisiSalesman` yang sama, tetapi omzetnya
- * putus + van (konsi dinolkan APA PUN yang diberikan pemanggil). Komisi,
- * capaian, tarif, dan kekurangan ke tingkat berikut yang memuat konsi akan
- * membuka omzet konsi lewat hitungan mundur. Laporan kantor, papan peringkat,
- * dan setiap pemanggil lain tetap memakai `komisiSalesman` dengan omzet resmi.
- */
-export async function komisiUntukHp(
-  salesmanId: string,
-  bulan: string,
-  opsi: { omzet?: Pick<OmzetBulan, "putus" | "van">; target?: number | null; skema?: SkemaKomisi } = {},
-): Promise<RincianKomisi> {
-  const omzet = opsi.omzet ?? (await omzetBulan(salesmanId, bulan));
-  return komisiSalesman(salesmanId, bulan, { ...opsi, omzet: omzetTanpaKonsi(omzet) });
 }
 
 /** Payload halaman Insentif di HP (tanpa daftar bulan, yang dirakit halamannya). */
@@ -83,7 +64,8 @@ export async function insentifHp(
 ): Promise<InsentifHp> {
   const rentang = rentangBulanWib(bulan);
   const [r, pcs] = await Promise.all([
-    komisiUntukHp(salesmanId, bulan, { target: opsi.target, skema: opsi.skema }),
+    // Angka resmi kantor — omzet putus + konsi + van (P56).
+    komisiSalesman(salesmanId, bulan, { target: opsi.target, skema: opsi.skema }),
     rentang ? pcsKonsiSalesman(salesmanId, rentang.awal, rentang.akhir) : Promise.resolve([]),
   ]);
   return {
@@ -100,7 +82,9 @@ export async function insentifHp(
     tingkatBerikut: r.hasil.tingkatBerikut,
     bagianPenagihPersen: r.skema.bagianPenagihPersen,
     tertagih: r.tertagih,
-    // Uang tertagih hanya dari piutang, dan toko konsinyasi tidak pernah punya piutang.
+    // Uang tertagih dari setiap piutang yang dilunasi BKM terverifikasi — juga
+    // tagihan siklus konsinyasi, yang dicatat atas nama pemegang toko saat
+    // angkanya dikunci (P55), jadi bagian penjual/penagihnya seperti piutang putus.
     baris: r.baris.map((b) => ({
       kunci: `${b.claimId}:${b.receivableId}`,
       docNo: b.docNo,

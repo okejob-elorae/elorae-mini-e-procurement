@@ -3,6 +3,7 @@ import { prisma, seededId, seededIds } from "@elorae/db";
 import {
   akhirBulanWib,
   bagiSebanding,
+  barangTransferDiToko,
   gabungBukuToko,
   hitungTitipan,
   labelVarian,
@@ -92,6 +93,17 @@ describe("labelVarian", () => {
     expect(labelVarian(variants, "A-HTM-M")).toBe("Hitam · M");
     expect(labelVarian(variants, "A-X")).toBe("A-X");
     expect(labelVarian(variants, "")).toBeNull();
+  });
+});
+
+describe("barangTransferDiToko", () => {
+  it("yang tiba saat diterima toko — yang ditolak di pintu dan yang kurang tiba tidak", () => {
+    expect(barangTransferDiToko({ qty: 10, receivedQty: 7, returnedQty: 2 })).toBe(7);
+    expect(barangTransferDiToko({ qty: 10, receivedQty: 0, returnedQty: 0 })).toBe(0);
+  });
+  it("transfer lama tanpa jumlah tiba: yang diserahkan dikurangi yang dikembalikan", () => {
+    expect(barangTransferDiToko({ qty: 6, receivedQty: null, returnedQty: 0 })).toBe(6);
+    expect(barangTransferDiToko({ qty: "6", receivedQty: null, returnedQty: 2 })).toBe(4);
   });
 });
 
@@ -253,6 +265,84 @@ describe("stokDiToko / nilaiStokToko (basis data)", () => {
     });
     transferIds.push(t.id);
   }
+
+  /**
+   * Antaran aturan sekarang: transfer dibuat saat surat jalannya dibuat (`IN_TRANSIT`), lalu diterima
+   * toko (`RECEIVED`, `receivedQty` = yang tiba) atau tidak jadi dikirim (`CANCELLED`). `kembali` =
+   * potong yang sudah kembali ke Gudang Utama (`returnedQty`: ditolak di pintu / dibatalkan).
+   */
+  async function antaranSuratJalan(
+    o: { id: string; lineId: string },
+    qty: number,
+    keadaan: { status: "IN_TRANSIT" | "RECEIVED" | "CANCELLED"; kembali?: number; tiba?: number; selesai?: Date },
+    dibuat: Date,
+  ) {
+    nomor += 1;
+    const shp = await prisma.deliveryShipment.create({
+      data: {
+        docNo: `${tag}-SHP-${nomor}`,
+        orderId: o.id,
+        method: "SALESMAN_CARRY",
+        status: keadaan.status === "RECEIVED" ? "DELIVERED" : keadaan.status,
+        packedById: orangId,
+        carriedById: orangId,
+        packedAt: dibuat,
+        deliveredAt: keadaan.status === "RECEIVED" ? (keadaan.selesai ?? dibuat) : null,
+        cancelledAt: keadaan.status === "CANCELLED" ? (keadaan.selesai ?? dibuat) : null,
+        lines: { create: [{ orderLineId: o.lineId, itemId: barangId, variantSku: "", plannedQty: qty, deliveredQty: keadaan.status === "RECEIVED" ? (keadaan.tiba ?? qty) : null }] },
+      },
+      select: { id: true },
+    });
+    pengirimanIds.push(shp.id);
+    nomor += 1;
+    const t = await prisma.konsiTransfer.create({
+      data: {
+        docNo: `${tag}-TRF-${nomor}`,
+        orderId: o.id,
+        storeId: tokoId,
+        shipmentId: shp.id,
+        transferredById: orangId,
+        createdAt: dibuat,
+        status: keadaan.status,
+        ...(keadaan.status === "RECEIVED" ? { receivedAt: keadaan.selesai ?? dibuat, receivedById: orangId } : {}),
+        ...(keadaan.status === "CANCELLED" ? { cancelledAt: keadaan.selesai ?? dibuat, cancelledById: orangId, cancelReason: "uji" } : {}),
+        lines: {
+          create: [
+            {
+              orderLineId: o.lineId,
+              itemId: barangId,
+              variantSku: "",
+              productName: `${tag} Blus`,
+              qty,
+              unitCost: 0,
+              returnedQty: keadaan.kembali ?? 0,
+              receivedQty: keadaan.status === "RECEIVED" ? (keadaan.tiba ?? qty) : null,
+            },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    transferIds.push(t.id);
+  }
+
+  it("antaran surat jalan: hanya yang DITERIMA toko, sebesar yang tiba — yang di perjalanan dalam proses, yang tidak jadi dikirim dan yang ditolak di pintu tidak di toko", async () => {
+    // Pesanan 20: 5 di perjalanan; 4 tidak jadi dikirim (kembali seluruhnya); 10 diantar — 2 ditolak di
+    // pintu, 7 tiba, 1 kurang (hilang di jalan). Terkirim di baris pesanan = 5 + (10 − 2) = 13 → sisa 7.
+    const o = await pesananKonsi(20, { terkirim: 13, disetujui: hariLalu(20), cadangan: "RESERVED" });
+    await antaranSuratJalan(o, 5, { status: "IN_TRANSIT" }, hariLalu(2));
+    await antaranSuratJalan(o, 4, { status: "CANCELLED", kembali: 4, selesai: hariLalu(8) }, hariLalu(9));
+    await antaranSuratJalan(o, 10, { status: "RECEIVED", kembali: 2, tiba: 7, selesai: hariLalu(5) }, hariLalu(6));
+
+    const s = await stokDiToko(tokoId, SEKARANG);
+    expect(s.source).toBe("TITIPAN");
+    // 7 yang tiba saja (bukan 5 + 4 + 10), bertanggal diterimanya — bukan dibuatnya surat jalan.
+    expect(s.baris).toEqual([expect.objectContaining({ itemId: barangId, qty: 7, firstInAt: hariLalu(5), source: "TITIPAN" })]);
+
+    // Isi ulang tidak mengirim ulang yang masih di jalan: sisa pesanan 7 + 5 di perjalanan.
+    const n = (await nilaiStokToko([tokoId], SEKARANG)).get(tokoId)!;
+    expect(n.baris).toEqual([expect.objectContaining({ itemId: barangId, qty: 7, dalamProses: 12 })]);
+  });
 
   it("konsi tanpa SPG: barang masuk saat antaran diserahkan, sebesar antaran itu — bukan yang disetujui; sisanya dalam proses, bukan stok", async () => {
     // Contoh pemilik: pesanan 100, antaran pertama 60 sudah diserahkan, 30 sedang dikemas, 10 belum dikemas.

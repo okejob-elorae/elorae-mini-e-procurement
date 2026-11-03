@@ -32,16 +32,21 @@ export const SUMBER_OPERASIONAL = {
   SIKLUS_KONSI: "CONSIGNMENT_CYCLE",
   KOMISI_KONSI: "CONSIGNMENT_COMMISSION",
   BAYAR_GAJI_KONSI: "CONSIGNMENT_COMMISSION_PAYMENT",
-  BAYAR_TOKO_KONSI: "CONSIGNMENT_PAYMENT",
   KOMISI_SPG: "SPG_COMMISSION",
   BAYAR_KOMISI_SPG: "SPG_COMMISSION_PAYMENT",
   BARANG_HILANG: "STOCK_LOSS",
   POTONG_SALES: "LOSS_SALES_DEDUCTION",
+  /** Potongan (atau pengembalian, bertanda negatif) beban selisih retur dari komisi sales. */
+  POTONG_SALES_RETUR: "RETURN_SALES_DEDUCTION",
   GUDANG_RUSAK: "DAMAGED_STOCK",
   STOK_MANUAL: "STOCK_ADJUSTMENT",
   RETUR_PEMASOK: "VENDOR_RETURN",
   BIAYA_PERJALANAN: "TRAVEL_CLAIM",
   BAYAR_BIAYA_PERJALANAN: "TRAVEL_CLAIM_PAYMENT",
+  /** Uang yang diterima dari SPG yang berhenti untuk utangnya, sesudah dicek Keuangan. */
+  BAYAR_UTANG_SPG: "SPG_DEBT_PAYMENT",
+  /** Pembayaran koreksi plus SPG yang berhenti (diimbangkan dengan utangnya, sisanya dibayar). */
+  BAYAR_TAMBAHAN_SPG: "SPG_EXTRA_PAYOUT",
 } as const;
 
 export type SumberOperasional = (typeof SUMBER_OPERASIONAL)[keyof typeof SUMBER_OPERASIONAL];
@@ -55,12 +60,18 @@ export const SEMUA_SUMBER_OPERASIONAL: readonly SumberOperasional[] = Object.val
  * dibatalkan, komisi ditetapkan ulang, hitungan retur dipindah toko).
  */
 export const SUMBER_BERGENERASI_OPERASIONAL: readonly SumberOperasional[] = [
+  /*
+   * Pindah barang konsinyasi lewat pengiriman: stoknya pindah saat pengiriman DIBUAT (Q1), lalu
+   * berubah bila toko menolak sebagian di pintu atau pengirimannya "tidak jadi dikirim".
+   */
+  SUMBER_OPERASIONAL.PINDAH_KONSI,
   SUMBER_OPERASIONAL.RETUR_KONSI,
   SUMBER_OPERASIONAL.SIKLUS_KONSI,
   SUMBER_OPERASIONAL.KOMISI_KONSI,
-  SUMBER_OPERASIONAL.BAYAR_TOKO_KONSI,
   SUMBER_OPERASIONAL.KOMISI_SPG,
   SUMBER_OPERASIONAL.BARANG_HILANG,
+  /* Penerimaan utang SPG bisa dikembalikan pemeriksa atau dibatalkan sesudah dijurnal. */
+  SUMBER_OPERASIONAL.BAYAR_UTANG_SPG,
 ];
 
 /**
@@ -77,16 +88,18 @@ export const JENIS_TERTUNDA_OPERASIONAL: Readonly<Record<SumberOperasional, stri
   CONSIGNMENT_CYCLE: "konsi_siklus",
   CONSIGNMENT_COMMISSION: "konsi_komisi",
   CONSIGNMENT_COMMISSION_PAYMENT: "konsi_gaji_bayar",
-  CONSIGNMENT_PAYMENT: "konsi_bayar_toko",
   SPG_COMMISSION: "komisi_spg",
   SPG_COMMISSION_PAYMENT: "komisi_spg_bayar",
   STOCK_LOSS: "barang_hilang",
   LOSS_SALES_DEDUCTION: "potong_sales",
+  RETURN_SALES_DEDUCTION: "potong_sales_retur",
   DAMAGED_STOCK: "gudang_rusak",
   STOCK_ADJUSTMENT: "stok_manual",
   VENDOR_RETURN: "retur_pemasok",
   TRAVEL_CLAIM: "biaya_perjalanan",
   TRAVEL_CLAIM_PAYMENT: "biaya_perjalanan_bayar",
+  SPG_DEBT_PAYMENT: "spg_utang_bayar",
+  SPG_EXTRA_PAYOUT: "spg_bayar_tambahan",
 };
 
 /** Nama jenis dokumen untuk kalimat notifikasi (Bahasa Indonesia). */
@@ -99,16 +112,18 @@ export const NAMA_SUMBER_OPERASIONAL: Readonly<Record<SumberOperasional, string>
   CONSIGNMENT_CYCLE: "siklus konsinyasi",
   CONSIGNMENT_COMMISSION: "gaji & komisi SPG konsinyasi",
   CONSIGNMENT_COMMISSION_PAYMENT: "pembayaran gaji SPG konsinyasi",
-  CONSIGNMENT_PAYMENT: "pembayaran toko konsinyasi",
   SPG_COMMISSION: "komisi SPG toko putus",
   SPG_COMMISSION_PAYMENT: "pembayaran komisi SPG",
   STOCK_LOSS: "barang hilang",
   LOSS_SALES_DEDUCTION: "potongan beban barang hilang sales",
+  RETURN_SALES_DEDUCTION: "potongan beban selisih retur sales",
   DAMAGED_STOCK: "keputusan gudang barang rusak",
   STOCK_ADJUSTMENT: "penyesuaian stok manual",
   VENDOR_RETURN: "retur ke pemasok",
   TRAVEL_CLAIM: "biaya perjalanan",
   TRAVEL_CLAIM_PAYMENT: "pembayaran biaya perjalanan",
+  SPG_DEBT_PAYMENT: "penerimaan utang SPG",
+  SPG_EXTRA_PAYOUT: "pembayaran tambahan SPG",
 };
 
 export function sumberOperasionalDariJenis(kind: string): SumberOperasional | null {
@@ -359,22 +374,6 @@ export function barisKoreksiKomisi(koreksi: ReadonlyArray<{ jumlah: number; stor
   return gabungBaris(baris);
 }
 
-/** Peran kas untuk cara bayar toko: tunai → kas, transfer/giro → bank. */
-export function peranKasCaraBayar(cara: string): Extract<PostingRole, "BANK" | "CASH"> {
-  return cara === "tunai" ? "CASH" : "BANK";
-}
-
-/** Pembayaran toko konsinyasi: DR BANK/CASH / CR AR_CONSIGNMENT. Dibatalkan → nol. */
-export function barisBayarTokoKonsi(b: { storeId: string; nilai: number; cara: string; batal: boolean }): BarisBertanda[] {
-  if (b.batal) return [];
-  const sen = keSen(b.nilai);
-  if (sen === 0) return [];
-  return gabungBaris([
-    { role: peranKasCaraBayar(b.cara), sen },
-    { role: "AR_CONSIGNMENT", sen: -sen, storeId: b.storeId },
-  ]);
-}
-
 /**
  * Barang hilang di toko konsinyasi DIPUTUSKAN (barangnya masih milik Elorae):
  *   DR LOSS_EXPENSE / CR INVENTORY_CONSIGNMENT (biaya saat dikirim)
@@ -542,6 +541,206 @@ export function keBarisJurnalOperasional(baris: readonly BarisBertanda[], opsi: 
  * kiriman barang itu (Σ qty × harga rata-rata saat dikirim / Σ qty) sampai
  * suatu saat. Tanpa kiriman tercatat: harga cadangan (rata-rata gudang).
  */
+/**
+ * `rataRataKirim` dengan barang yang KEMBALI ke gudang (ditolak toko di pintu, atau pengiriman
+ * yang tidak jadi dikirim) dikurangkan pada biaya keluarnya sendiri (`KonsiTransferLine.unitCost`):
+ * barang itu tidak pernah sampai di toko, jadi tidak ikut membentuk biaya barang di toko.
+ * Null bila tidak ada yang tersisa.
+ */
+export function rataRataKirimBersih(
+  kirim: ReadonlyArray<{ qty: number; biaya: number }>,
+  kembali: ReadonlyArray<{ qty: number; biaya: number }>,
+): number | null {
+  let qty = 0;
+  let nilai = 0;
+  for (const k of kirim) {
+    const q = Math.abs(k.qty);
+    if (!Number.isFinite(q) || q === 0 || !Number.isFinite(k.biaya)) continue;
+    qty += q;
+    nilai += q * k.biaya;
+  }
+  for (const k of kembali) {
+    const q = Math.abs(k.qty);
+    if (!Number.isFinite(q) || q === 0 || !Number.isFinite(k.biaya)) continue;
+    qty -= q;
+    nilai -= q * k.biaya;
+  }
+  return qty > 0 ? nilai / qty : null;
+}
+
+/**
+ * Barang PUTUS hilang di perjalanan sebuah pengiriman, DIPUTUSKAN (R18). Notanya sudah dikoreksi
+ * (potongnya tidak ditagih dan keluar dari HPP), jadi biayanya yang masih di persediaan gudang
+ * dikeluarkan di sini, pada biaya saat dikonsumsi:
+ *   DR LOSS_EXPENSE (kanal toko putus) / CR persediaan gudang (per tipe barang)
+ */
+export function barisBarangHilangGudang(b: { storeId: string; keluar: readonly NilaiBarang[] }): BarisBertanda[] {
+  const persediaan = barisPersediaan(b.keluar, -1);
+  const sen = -jumlahSen(persediaan);
+  if (sen === 0) return [];
+  return gabungBaris([{ role: "LOSS_EXPENSE", sen, channel: KANAL_JURNAL.PUTUS, storeId: b.storeId }, ...persediaan]);
+}
+
+/**
+ * Penggantian dari ekspedisi atas barang hilang di perjalanan, sesudah pembayarannya DICEK sah
+ * (keputusan 11, P36): transfer → DR BANK, tunai → DR CASH / CR LOSS_RECOVERY. Klaim yang dibayar
+ * dengan memotong tagihan ongkir TIDAK lewat sini — potongannya tercatat di bukti kas keluar yang
+ * membayar ongkir itu (pertanyaan pemilik). Peran kasnya diputuskan di sini sendiri.
+ */
+export function barisPemulihanKlaim(
+  klaim: ReadonlyArray<{ nilai: number; cara: "transfer" | "tunai" }>,
+  konteks: { storeId: string | null; kanal: KanalJurnal | null },
+): BarisBertanda[] {
+  const baris: BarisBertanda[] = [];
+  for (const k of klaim) {
+    const sen = keSen(k.nilai);
+    if (sen === 0) continue;
+    baris.push({ role: k.cara === "tunai" ? "CASH" : "BANK", sen });
+    baris.push({
+      role: "LOSS_RECOVERY",
+      sen: -sen,
+      ...(konteks.kanal ? { channel: konteks.kanal } : {}),
+      ...(konteks.storeId ? { storeId: konteks.storeId } : {}),
+    });
+  }
+  return gabungBaris(baris);
+}
+
+/** Jenis utang SPG (`SpgDebt.kind`) → peran yang dipulihkan saat utangnya dilunasi atau diimbangkan. */
+type JenisUtangJurnal = "KOREKSI" | "BARANG_HILANG" | "RETUR_PEMBELI" | string;
+
+function peranPulihUtang(jenis: JenisUtangJurnal): Extract<PostingRole, "SPG_COMMISSION_EXPENSE" | "LOSS_RECOVERY"> {
+  // Koreksi minus = komisi yang dulu dibayar lebih → beban komisi berkurang; beban hilang/retur → pemulihan rugi.
+  return jenis === "KOREKSI" ? "SPG_COMMISSION_EXPENSE" : "LOSS_RECOVERY";
+}
+
+/**
+ * Utang SPG (yang berhenti) dilunasi uang yang diterima kantor, sesudah DICEK Keuangan:
+ *   DR BANK (transfer) / CASH (tunai) / CR SPG_COMMISSION_EXPENSE (koreksi) atau LOSS_RECOVERY (beban)
+ * per utang yang dilunasinya, pada toko + kanal asal utangnya.
+ */
+export function barisPenerimaanUtangSpg(
+  rows: ReadonlyArray<{ jumlah: number; jenis: JenisUtangJurnal; storeId: string | null; kanal: KanalJurnal | null; cara: string }>,
+): BarisBertanda[] {
+  const baris: BarisBertanda[] = [];
+  for (const r of rows) {
+    const sen = keSen(r.jumlah);
+    if (sen === 0) continue;
+    baris.push({ role: r.cara === "tunai" ? "CASH" : "BANK", sen });
+    baris.push({ role: peranPulihUtang(r.jenis), sen: -sen, channel: r.kanal, storeId: r.storeId });
+  }
+  return gabungBaris(baris);
+}
+
+/**
+ * Utang atau beban SPG yang DIPOTONG/DIIMBANGKAN dari komisi/gaji yang dibayar:
+ *   DR COMMISSION_PAYABLE / CR SPG_COMMISSION_EXPENSE (koreksi) atau LOSS_RECOVERY (beban)
+ */
+export function barisPotongUtangDanBeban(
+  rows: ReadonlyArray<{ jumlah: number; jenis: JenisUtangJurnal; storeId: string | null; kanal: KanalJurnal | null }>,
+): BarisBertanda[] {
+  const baris: BarisBertanda[] = [];
+  for (const r of rows) {
+    const sen = keSen(r.jumlah);
+    if (sen === 0) continue;
+    baris.push({ role: "COMMISSION_PAYABLE", sen });
+    baris.push({ role: peranPulihUtang(r.jenis), sen: -sen, channel: r.kanal, storeId: r.storeId });
+  }
+  return gabungBaris(baris);
+}
+
+/**
+ * Beban retur pembeli SPG yang DIPOTONG dari gaji/komisi yang dibayar (`SpgChargeDeduction` ber-
+ * `paidRefType`/`paidRefId` baris itu; R15 retur pembeli). Sama dengan potongan beban barang hilang
+ * di akrualnya (`barisKomisi`), pada toko bebannya dan kanal baris yang dibayar:
+ *   DR COMMISSION_PAYABLE / CR LOSS_RECOVERY
+ */
+export function barisBebanSpgDipotong(beban: ReadonlyArray<{ jumlah: number; storeId: string | null; kanal: KanalJurnal | null }>): BarisBertanda[] {
+  const baris: BarisBertanda[] = [];
+  for (const b of beban) {
+    const sen = keSen(b.jumlah);
+    if (sen === 0) continue;
+    baris.push({ role: "COMMISSION_PAYABLE", sen });
+    baris.push({ role: "LOSS_RECOVERY", sen: -sen, channel: b.kanal, storeId: b.storeId });
+  }
+  return gabungBaris(baris);
+}
+
+/**
+ * Uang beban retur pembeli yang DIKEMBALIKAN ke SPG dan ikut dibayar bersama gajinya (P79
+ * KEMBALI_STOK: barangnya kembali ke stok, jadi pemulihan yang dulu dipotong dibalik; DIBELI_SPG
+ * tetap di LOSS_RECOVERY). Toko bebannya, kanal baris yang dibayar:
+ *   DR LOSS_RECOVERY / CR COMMISSION_PAYABLE (lalu keluar dari bank bersama bayarannya)
+ */
+export function barisKembaliBebanSpg(kembali: ReadonlyArray<{ jumlah: number; storeId: string | null; kanal: KanalJurnal | null }>): BarisBertanda[] {
+  const baris: BarisBertanda[] = [];
+  for (const k of kembali) {
+    const sen = keSen(k.jumlah);
+    if (sen === 0) continue;
+    baris.push({ role: "LOSS_RECOVERY", sen, channel: k.kanal, storeId: k.storeId });
+    baris.push({ role: "COMMISSION_PAYABLE", sen: -sen });
+  }
+  return gabungBaris(baris);
+}
+
+/**
+ * Pembayaran SATU baris gaji/komisi SPG (toko putus `SpgCommission`, konsinyasi
+ * `ConsignmentCommission`), seperti yang ditulis transaksi pembayarannya (`terapkanPembayaran`):
+ * - `neto` = bruto − potongan beban barang hilang (yang sudah dibukukan di akrualnya, `barisKomisi`);
+ * - koreksi yang diterapkan (`barisKoreksiKomisi`);
+ * - beban retur pembeli yang dipotong (`barisBebanSpgDipotong`);
+ * - utang SPG yang dipotong (`barisPotongUtangDanBeban`, pada toko + kanal asal utangnya);
+ * - uang beban yang dikembalikan (`barisKembaliBebanSpg`);
+ * - bank sebesar yang BENAR-BENAR keluar: neto + Σ koreksi − Σ beban − Σ utang + Σ pengembalian
+ *   (= `dibayar` rencananya).
+ * Hutang komisi tetap lunas tepat sebesar akrualnya (neto). Sisa yang menjadi utang SPG di
+ * pembayaran terakhir tidak diambil dari bayaran, jadi tidak muncul di sini; ia dipulihkan saat
+ * uangnya diterima (`barisPenerimaanUtangSpg`).
+ */
+export function barisBayarKomisiSpg(b: {
+  neto: number;
+  koreksi: ReadonlyArray<{ jumlah: number; storeId: string; kanal: KanalJurnal }>;
+  beban: ReadonlyArray<{ jumlah: number; storeId: string | null; kanal: KanalJurnal | null }>;
+  utang: ReadonlyArray<{ jumlah: number; jenis: JenisUtangJurnal; storeId: string | null; kanal: KanalJurnal | null }>;
+  kembali: ReadonlyArray<{ jumlah: number; storeId: string | null; kanal: KanalJurnal | null }>;
+}): BarisBertanda[] {
+  const jumlah = (rows: ReadonlyArray<{ jumlah: number }>) => rows.reduce((n, r) => n + keSen(r.jumlah), 0);
+  const dibayar = keSen(b.neto) + jumlah(b.koreksi) - jumlah(b.beban) - jumlah(b.utang) + jumlah(b.kembali);
+  return gabungBaris([
+    ...barisKoreksiKomisi(b.koreksi),
+    ...barisBebanSpgDipotong(b.beban),
+    ...barisPotongUtangDanBeban(b.utang),
+    ...barisKembaliBebanSpg(b.kembali),
+    ...barisBayarKomisi(Math.max(0, dibayar) / 100),
+  ]);
+}
+
+/**
+ * Pembayaran koreksi plus SPG yang berhenti: koreksinya menjadi beban (DR SPG_COMMISSION_EXPENSE /
+ * CR COMMISSION_PAYABLE, `barisKoreksiKomisi`), bagian yang diimbangkan dengan utangnya
+ * (`barisPotongUtangDanBeban`), dan sisanya dibayar (DR COMMISSION_PAYABLE / CR BANK atau CASH).
+ * `tunai` = `SpgExtraPayout.amount`, yang SUDAH bersih dari bagian yang diimbangkan
+ * (`offsetAmount`) — jangan dikurangi lagi.
+ */
+export function barisBayarTambahanSpg(b: {
+  koreksi: ReadonlyArray<{ jumlah: number; storeId: string; kanal: KanalJurnal }>;
+  imbang: ReadonlyArray<{ jumlah: number; jenis: JenisUtangJurnal; storeId: string | null; kanal: KanalJurnal | null }>;
+  tunai: number;
+  cara: string | null;
+}): BarisBertanda[] {
+  const tunai = keSen(b.tunai);
+  return gabungBaris([
+    ...barisKoreksiKomisi(b.koreksi),
+    ...barisPotongUtangDanBeban(b.imbang),
+    ...(tunai > 0
+      ? [
+          { role: "COMMISSION_PAYABLE" as const, sen: tunai },
+          { role: (b.cara === "tunai" ? "CASH" : "BANK") as Extract<PostingRole, "CASH" | "BANK">, sen: -tunai },
+        ]
+      : []),
+  ]);
+}
+
 export function rataRataKirim(kiriman: ReadonlyArray<{ qty: number; biaya: number }>): number | null {
   let qty = 0;
   let nilai = 0;

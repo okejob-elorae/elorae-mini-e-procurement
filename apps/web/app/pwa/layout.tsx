@@ -1,9 +1,13 @@
 import { Suspense } from "react";
 import type { Viewport } from "next";
 import { redirect } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
+import { formatDisplayDate } from "@/lib/date-only";
 import { pwaAccessGuard } from "@/lib/pwa/guard";
-import { ambilTokoTetap } from "@/lib/pwa/peran";
+import { ambilTokoTetap, spgBerhentiPada } from "@/lib/pwa/peran";
+import { logout } from "./actions";
+import { SpgBerhentiLayar } from "./SpgBerhentiLayar";
 import { MenuBawahSalesman } from "./MenuBawahSalesman";
 import { MenuBawahSpg } from "./MenuBawahSpg";
 import { ServiceWorkerRegistrar } from "./ServiceWorkerRegistrar";
@@ -30,6 +34,29 @@ export default async function PwaLayout({ children }: { children: React.ReactNod
   if (outcome === "redirect-backoffice") redirect("/backoffice");
   // SPG punya satu toko tetap dan menunya sendiri; menu salesman bukan miliknya.
   const spg = session.user.id ? (await ambilTokoTetap(session.user.id)) !== null : false;
+  /*
+   * SPG yang sudah ditandai berhenti (P66): tokonya dilepas, jadi ia tidak lagi terbaca sebagai
+   * SPG — tetapi juga bukan salesman keliling. Ia hanya mendapat layar berhenti; penyinkron latar
+   * tetap dipasang supaya penjualan dan check-in yang ditangkap sampai hari terakhirnya terkirim.
+   */
+  const berhenti = !spg && session.user.id ? await spgBerhentiPada(session.user.id) : null;
+  if (berhenti) {
+    const toko = await prisma.store.findUnique({ where: { id: berhenti.storeId }, select: { name: true } });
+    return (
+      <>
+        <ServiceWorkerRegistrar />
+        <SinkronLatar />
+        <PemantauLuringHp tautanAntrean="/pwa" />
+        <div className="pwa-app mx-auto flex min-h-dvh w-full max-w-xl flex-col md:border-x">
+          <SpgBerhentiLayar
+            namaToko={toko?.name ?? ""}
+            hariTerakhir={formatDisplayDate(`${berhenti.hariTerakhir}T00:00:00+07:00`)}
+            onLogout={logout}
+          />
+        </div>
+      </>
+    );
+  }
   return (
     <>
       <ServiceWorkerRegistrar />

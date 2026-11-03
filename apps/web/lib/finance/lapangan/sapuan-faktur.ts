@@ -3,7 +3,6 @@ import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { daftarkanSumberSapuan, type DokumenTanpaJurnal, type OpsiCariSapuan } from "@/lib/finance/sapuan/registri";
 import { cariTanpaJurnalSql } from "@/lib/finance/sapuan/sql";
-import { AWALAN_PENANDA_BEBAN } from "@/lib/receivables/penanda-beban";
 import { SUMBER_LAPANGAN } from "./aturan";
 import { postingJurnalLapanganAman } from "./tertunda";
 
@@ -12,8 +11,9 @@ import { postingJurnalLapanganAman } from "./tertunda";
  * (`STORE_INVOICE`, uji akuntansi 2 bug 5). Diimpor `lib/finance/sapuan/semua.ts`.
  *
  * Syaratnya cermin `fakturDijurnalSendiri` + `nilaiFakturDijurnal` (aturan.ts):
- * bukan nota pengiriman, bukan faktur beban retur, bukan toko konsinyasi, dan
- * masih bernilai sesudah dikurangi yang dibayar sebelum impor. Tidak pernah
+ * bukan nota pengiriman, bukan tagihan konsinyasi (`isConsignment`, tanda di
+ * fakturnya sendiri — bukan syarat toko hari ini), dan masih bernilai sesudah
+ * dikurangi yang dibayar sebelum impor. Tidak pernah
  * menyapu sebelum tanggal mulai buku besar (faktur sebelum itu = saldo awal),
  * dan kosong bila tanggal mulai belum ditetapkan.
  */
@@ -31,12 +31,8 @@ export async function cariFakturTanpaJurnal(opsi: OpsiCariSapuan): Promise<Dokum
     syarat: Prisma.sql`
       AND d.${sqlId("source")} <> 'DELIVERY'
       AND d.${sqlId("deliveryId")} IS NULL
-      AND (d.${sqlId("note")} IS NULL OR d.${sqlId("note")} NOT LIKE ${`%${AWALAN_PENANDA_BEBAN}%`})
-      AND d.${sqlId("amount")} - d.${sqlId("paidBeforeImport")} >= 0.01
-      AND EXISTS (
-        SELECT 1 FROM ${sqlId("Store")} s
-        WHERE s.${sqlId("id")} = d.${sqlId("storeId")} AND s.${sqlId("termsType")} <> 'KONSI'
-      )`,
+      AND d.${sqlId("isConsignment")} = ${false}
+      AND d.${sqlId("amount")} - d.${sqlId("paidBeforeImport")} >= 0.01`,
     opsi: { ...opsi, sejak },
   });
 }

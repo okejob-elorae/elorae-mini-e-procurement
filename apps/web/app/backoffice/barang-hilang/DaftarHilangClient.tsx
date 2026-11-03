@@ -16,7 +16,7 @@ import type { DaftarHilangKantor } from "@/lib/spg/hilang-queries";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { cn } from "@/lib/utils";
 import { CatatHilangDialog } from "./CatatHilangDialog";
-import { nadaPenanggung, nadaStatusHilang } from "./tampilan";
+import { nadaPenanggung, nadaStatusHilang, SARINGAN_KLAIM, type SaringanKlaim } from "./tampilan";
 
 const SEMUA = "__semua__";
 
@@ -24,6 +24,7 @@ export function DaftarHilangClient({
   status,
   sumber,
   storeId,
+  klaim = null,
   data,
   bolehKelola,
   tokoAktif,
@@ -31,6 +32,8 @@ export function DaftarHilangClient({
   status: StatusHilang | null;
   sumber: SumberHilang | null;
   storeId: string | null;
+  /** Saringan klaim ekspedisi (`?klaim=`). */
+  klaim?: SaringanKlaim | null;
   data: DaftarHilangKantor;
   bolehKelola: boolean;
   tokoAktif: { id: string; name: string }[];
@@ -40,19 +43,21 @@ export function DaftarHilangClient({
   const router = useRouter();
 
   // Semua kunci saringan ditulis dalam SATU navigasi — dua dorongan berurutan saling menimpa.
-  const pindah = (ubah: { status?: string | null; sumber?: string | null; toko?: string | null }) => {
+  const pindah = (ubah: { status?: string | null; sumber?: string | null; toko?: string | null; klaim?: string | null }) => {
     const q = new URLSearchParams();
     const s = ubah.status !== undefined ? ubah.status : status;
     const sb = ubah.sumber !== undefined ? ubah.sumber : sumber;
     const tk = ubah.toko !== undefined ? ubah.toko : storeId;
+    const kl = ubah.klaim !== undefined ? ubah.klaim : klaim;
     if (s) q.set("status", s);
     if (sb) q.set("sumber", sb);
     if (tk) q.set("toko", tk);
+    if (kl) q.set("klaim", kl);
     const qs = q.toString();
     router.replace(qs ? `/backoffice/barang-hilang?${qs}` : "/backoffice/barang-hilang");
   };
 
-  const disaring = status !== null || sumber !== null || storeId !== null;
+  const disaring = status !== null || sumber !== null || storeId !== null || klaim !== null;
   const tokoPilihan = storeId && !data.toko.some((x) => x.id === storeId) ? [...data.toko, { id: storeId, name: storeId }] : data.toko;
 
   return (
@@ -103,6 +108,22 @@ export function DaftarHilangClient({
             ))}
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t("kantor.saringKlaim")}>
+        <span className="text-sm text-muted-foreground">{t("kantor.saringKlaim")}</span>
+        {SARINGAN_KLAIM.map((k) => (
+          <Button
+            key={k}
+            size="sm"
+            variant="outline"
+            aria-pressed={klaim === k}
+            onClick={() => pindah({ klaim: klaim === k ? null : k })}
+            className={cn("rounded-full", klaim === k && "border-primary bg-primary/10")}
+          >
+            {td(`klaim.status.${k}`)}
+          </Button>
+        ))}
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

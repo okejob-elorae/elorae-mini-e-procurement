@@ -2,11 +2,13 @@
 // Komponen klien hanya boleh `import type` dari berkas ini; nilainya di `./riwayat-hpp.ts`.
 
 import type { Prisma, PrismaClient } from "@elorae/db";
+import { STATUS_KOREKSI_UTANG } from "@/lib/vendor-billing/koreksi-utang-aturan";
 import {
   HALAMAN_RIWAYAT_HPP,
   hppTerbaruDari,
   susunRiwayatHpp,
   type HppTerbaru,
+  type KoreksiHpp,
   type RiwayatHpp,
 } from "./riwayat-hpp";
 import { parseItemVariants, variantSelectOptions } from "./variants";
@@ -38,6 +40,39 @@ const ENTRI_SELECT = {
   balanceValue: true,
   createdAt: true,
 } as const;
+
+/**
+ * Rincian tersimpan sebuah koreksi utang pemasok (`SupplierPayableCorrection.breakdown`): larik
+ * per dokumen `{ dokumen: "GRN" | "FG_RECEIPT", dokumenId, itemId, variantSku, persediaan, … }`.
+ * Hanya bagian barang ini di dokumen yang diminta; entri yang tidak terbaca dilewati.
+ */
+function rincianKoreksiBarang(raw: unknown, itemId: string, dokumen: ReadonlySet<string>): KoreksiHpp[] {
+  let arr: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      arr = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+  const hasil: KoreksiHpp[] = [];
+  for (const r of arr) {
+    if (!r || typeof r !== "object") continue;
+    const e = r as Record<string, unknown>;
+    if (e.dokumen !== "GRN" && e.dokumen !== "FG_RECEIPT") continue;
+    if (typeof e.dokumenId !== "string" || e.itemId !== itemId || !dokumen.has(e.dokumenId)) continue;
+    const persediaan = typeof e.persediaan === "number" ? e.persediaan : Number(e.persediaan);
+    if (!Number.isFinite(persediaan)) continue;
+    hasil.push({
+      dokumen: e.dokumen,
+      dokumenId: e.dokumenId,
+      variantSku: typeof e.variantSku === "string" ? e.variantSku : null,
+      persediaan,
+    });
+  }
+  return hasil;
+}
 
 function batasSah(batas: number): number {
   if (!Number.isFinite(batas)) return HALAMAN_RIWAYAT_HPP;
@@ -123,6 +158,25 @@ export async function bacaRiwayatHpp(klien: Klien, itemId: string, opsi: OpsiRiw
     }),
   ]);
 
+  // Selisih harga invoice yang DITERIMA pemilik untuk dokumen di halaman ini (P49): GRN langsung,
+  // penerimaan barang jadi lewat langkah jasa WO-nya.
+  const idWo = [...new Set(penerimaan.map((p) => p.woId))];
+  const idLangkah = idWo.length
+    ? (await klien.workOrderStep.findMany({ where: { woId: { in: idWo } }, select: { id: true } })).map((l) => l.id)
+    : [];
+  const sumberKoreksi = [
+    ...(idGrn.length ? [{ sourceType: "GRN", sourceId: { in: idGrn } }] : []),
+    ...(idLangkah.length ? [{ sourceType: "WO_STEP", sourceId: { in: idLangkah } }] : []),
+  ];
+  const barisKoreksi = sumberKoreksi.length
+    ? await klien.supplierPayableCorrection.findMany({
+        where: { status: STATUS_KOREKSI_UTANG.DITERIMA, OR: sumberKoreksi },
+        select: { breakdown: true },
+      })
+    : [];
+  const dokumenHalaman = new Set([...idPenerimaan, ...idGrn]);
+  const koreksi = barisKoreksi.flatMap((k) => rincianKoreksiBarang(k.breakdown, itemId, dokumenHalaman));
+
   const labelVarian: Record<string, string> = {};
   for (const o of variantSelectOptions(parseItemVariants(item?.variants))) labelVarian[o.sku] = o.label;
 
@@ -135,6 +189,7 @@ export async function bacaRiwayatHpp(klien: Klien, itemId: string, opsi: OpsiRiw
     labelVarian,
     batas: n,
     ambil,
+    koreksi,
   });
 }
 

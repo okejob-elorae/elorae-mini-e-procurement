@@ -12,11 +12,14 @@ import { batalkanReturSendiri, KATEGORI_NOTIF_RETUR_DIBATALKAN_SALES, pindahkanR
  * dideklarasikan "" dan direset di awal hook.
  */
 
-/** Lonceng kantor "retur SPG dari toko tanpa pemegang" milik nota uji — dicocokkan di JS lewat metadata. */
+/**
+ * Lonceng kantor milik nota uji — "retur SPG dari toko tanpa pemegang" dan "selisih retur"
+ * (hitungan gudang yang kurang) — dicocokkan di JS lewat metadata.
+ */
 async function hapusNotifReturTanpaPemegang(notaIds: string[]) {
   if (notaIds.length === 0) return;
   const catatan = await prisma.adminNotification.findMany({
-    where: { category: "RETUR_SPG_TANPA_PEMEGANG" },
+    where: { category: { in: ["RETUR_SPG_TANPA_PEMEGANG", "RETUR_SELISIH"] } },
     select: { id: true, metadata: true },
   });
   const milikUji = catatan

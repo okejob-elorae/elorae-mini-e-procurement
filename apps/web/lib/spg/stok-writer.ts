@@ -1,17 +1,26 @@
-import { Prisma, prisma, type AdminNotification } from "@elorae/db";
+import { InventoryValueMissingError, Prisma, prisma, ReservationReopenError, type AdminNotification } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
+import { koreksiNotaDiterimaInTx } from "@/lib/field-sales/delivery/koreksi-nota";
+import { kembalikanKonsiTransferInTx, KonsiTransferNotInTransitError, receiveKonsiTransferInTx } from "@/lib/field-sales/konsi-transfer/writer";
+import { DeliveryError, KonsiTransferReservationMismatchError } from "@/lib/field-sales/errors";
+import { DeliveryShipmentError } from "@/lib/delivery/errors";
+import { kaitPindahKonsiTransfer } from "@/lib/finance/operasional/kait";
+import { kaitNotaTerbit } from "@/lib/finance/lapangan/kait";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { JENIS_KABAR, kabariPengguna } from "@/lib/notifications/kabar-pengguna";
-import { dariMutasi, muatKiriman, type JenisKiriman } from "./kiriman";
+import { dariMutasi, keadaanKiriman, muatKiriman, type JenisKiriman } from "./kiriman";
 import { selisihPenerimaan } from "./mutasi-aturan";
 import { bacaAlasan, type AlasanPermintaan } from "./saran-minta";
 import { bukuDimulai, catatTerimaMutasi, periksaTerimaMutasi, tutupMutasiSaatTerima, type PenolakanTerimaMutasi } from "./mutasi-terima";
 import { kunciBaris, rencanaOpname, saldoDariGerakan } from "./stok";
-import { dilewatiKarenaLebihBaru, saldoAcuan, waktuHitungPerKunci } from "./opname-acuan";
+import { dilewatiKarenaLebihBaru, kurangiReturBelumDiRak, saldoAcuan, waktuHitungPerKunci } from "./opname-acuan";
+import { returPembeliBerlaku } from "./retur-pembeli-berlaku";
+import { ENTITAS_RETUR_PEMBELI } from "./retur-pembeli-status";
 import { kabariTitipanTersedia } from "./titip-tersedia";
-import { catatHilangDariOpname, catatHilangDariPenerimaan } from "./hilang-sumber";
-import { KATEGORI_NOTIF_RUSAK, masukBukuSaatTerima, periksaIsianRusak } from "./rusak";
+import { bukaHilangDariPenerimaanDalamTx, catatHilangDariOpname, catatHilangDariPenerimaan } from "./hilang-sumber";
+import { ENTITAS_RUSAK, JEJAK_RUSAK, KATEGORI_NOTIF_RUSAK, masukBukuSaatTerima, periksaIsianRusak } from "./rusak";
 import { terhitungSesudah, waktuHitungTerakhir } from "./opname-hitung";
 import { adaSelisih, hitungSelisihTerima, type SelisihTerima } from "./selisih-terima";
 import { kabarkanSelisihTerima } from "./kabar-selisih-terima";
@@ -39,29 +48,91 @@ export type AlasanTolakTerima =
   | "WAKTU_TIDAK_VALID"
   /** Kunci kiriman sudah dipakai tanda terima toko LAIN. */
   | "KUNCI_DIPAKAI"
+  /** Pengirimannya "tidak jadi dikirim", atau notanya dibatalkan — tidak ada yang perlu diterima. */
+  | "KIRIMAN_DIBATALKAN"
+  /** Pengirimannya masih dikemas di gudang. */
+  | "BELUM_BERANGKAT"
+  /** Penerimaan salesman (P45a): bukan salesman pemegang toko ini. */
+  | "BUKAN_PEMEGANG"
+  /** Penerimaan salesman: tidak sedang berkunjung (check-in) di toko ini. */
+  | "TANPA_KUNJUNGAN"
+  /** Penerimaan salesman: toko ini masih punya SPG — SPG yang menerima (P26). */
+  | "TOKO_PUNYA_SPG"
+  /** Penerimaan salesman: pengirimannya belum berangkat dari gudang. */
+  | "BELUM_DISERAHKAN"
+  /** Penerimaan salesman: nama penanggung jawab toko wajib (2–100 huruf). */
+  | "NAMA_PJ_WAJIB"
+  /** Penerimaan salesman: foto penerimaan wajib, dan harus foto dokumen ini. */
+  | "FOTO_WAJIB"
+  /**
+   * Koreksi nota / pengembalian antaran di transaksi penerimaan tidak cocok dengan catatan stok
+   * kirimannya (biaya konsumsi atau cadangan tidak ditemukan, jumlah melebihi isi nota) — bukan
+   * kesalahan isian SPG; kantor yang memeriksanya.
+   */
+  | "CATATAN_STOK_TIDAK_COCOK"
   | PenolakanTerimaMutasi;
 
 export type HasilTerimaKiriman = { ok: true; receiptId: string } | (Gagal<AlasanTolakTerima> & { noKonsi?: string[] });
 
-/** Jawaban SPG per baris: yang TIBA, dan dari situ berapa yang rusak (opsional). */
+/**
+ * Jawaban per baris: yang TIBA, dari situ berapa yang rusak (opsional), dan —
+ * hanya untuk kiriman gudang lewat pengiriman — berapa yang DITOLAK di depan pintu
+ * dan dibawa pulang kurir (P40). Sisanya (dikirim − tiba − ditolak) hilang di jalan.
+ */
 export type JawabanTerima = {
   lineId: string;
   qtyReceived: number;
+  qtyRefused?: number | null;
   qtyDamaged?: number | null;
   damageNote?: string | null;
   damagePhotoUrl?: string | null;
 };
 
-/** Diisi di dalam transaksi, disebar sesudahnya. */
-type SesudahTerima = {
+/** Diisi di dalam transaksi, disebar sesudahnya (`sebarSesudahTerima`). */
+export type SesudahTerima = {
   notifikasi: AdminNotification | null;
   notifikasiRusak: AdminNotification | null;
   kabarDiterima: { userId: string; docNo: string; transferId: string; kurang: number } | null;
   /** Kiriman gudang (bukan mutasi) yang diterima kurang/rusak → salesman pengirimnya. */
   kabarSelisih: { sourceType: JenisKiriman; sourceId: string; docNo: string; selisih: SelisihTerima } | null;
+  /** Kabar Keuangan/admin pajak dari koreksi atau pembatalan nota putus. */
+  notifikasiNota: AdminNotification[];
+  /** Kabar catatan barang hilang yang dibuka di transaksi ini. */
+  notifikasiHilang: AdminNotification | null;
+  /** Dokumen yang jurnalnya perlu diselaraskan sesudah commit. */
+  jurnal: { deliveryId?: string; transferId?: string; lossId?: string };
+  /** Barang yang kembali ke Gudang Utama (ditolak di pintu) — didorong ke Jubelio sesudah commit. */
+  barangKembali: string[];
+  /**
+   * Kekurangannya dibuka sebagai barang hilang SESUDAH commit (`catatHilangDariPenerimaan`):
+   * kiriman lama (pesanan konsi lama, kiriman modul konsinyasi, nota putus tanpa pengiriman).
+   * Kiriman lewat pengiriman membukanya di transaksi penerimaan; mutasi tidak sama sekali.
+   */
+  hilangSesudahCommit: boolean;
 };
 
-export async function terimaKiriman(input: {
+export function sesudahTerimaKosong(): SesudahTerima {
+  return {
+    notifikasi: null,
+    notifikasiRusak: null,
+    kabarDiterima: null,
+    kabarSelisih: null,
+    notifikasiNota: [],
+    notifikasiHilang: null,
+    jurnal: {},
+    barangKembali: [],
+    hilangSesudahCommit: false,
+  };
+}
+
+function setelUlang(s: SesudahTerima): void {
+  Object.assign(s, sesudahTerimaKosong());
+}
+
+/** Siapa yang mencatat penerimaan toko. */
+export type PenerimaToko = "SPG" | "POD" | "SALESMAN";
+
+export type TerimaKirimanInput = {
   storeId: string;
   userId: string;
   sourceType: JenisKiriman;
@@ -95,7 +166,35 @@ export async function terimaKiriman(input: {
    */
   waktuTangkap?: Date | null;
   sekarang?: Date;
-}): Promise<HasilTerimaKiriman> {
+};
+
+/**
+ * Penolakan yang DILEMPAR penulis koreksi di dalam transaksi penerimaan (koreksi nota putus,
+ * pengembalian antaran konsinyasi) menjadi `{ ok: false }` untuk SPG dan salesman pemegang (R9):
+ * HP tidak pernah mendapat galat tersamar, dan antrean tanpa sinyal mengenalinya sebagai akhir.
+ * Antaran yang keburu diterima/dibatalkan penulis lain, atau nota yang keburu dibatalkan, terbaca
+ * sama dengan pemeriksaan di awal. Konfirmasi ekspedisi/kurir (`POD`) tidak memakai ini: galatnya
+ * menggulung balik konfirmasinya. Selain yang dikenal di sini: null (dilempar ulang).
+ */
+export function alasanGalatPenerimaan(err: unknown): AlasanTolakTerima | null {
+  if (err instanceof KonsiTransferNotInTransitError) return err.status === "CANCELLED" ? "KIRIMAN_DIBATALKAN" : "SUDAH_DITERIMA";
+  if (err instanceof DeliveryShipmentError) {
+    if (err.code === "INVALID_STATE") return "KIRIMAN_DIBATALKAN";
+    if (err.code === "ALREADY_RECEIVED") return "SUDAH_DITERIMA";
+    return "CATATAN_STOK_TIDAK_COCOK";
+  }
+  if (
+    err instanceof ReservationReopenError ||
+    err instanceof KonsiTransferReservationMismatchError ||
+    err instanceof InventoryValueMissingError ||
+    err instanceof DeliveryError
+  ) {
+    return "CATATAN_STOK_TIDAK_COCOK";
+  }
+  return null;
+}
+
+export async function terimaKiriman(input: TerimaKirimanInput): Promise<HasilTerimaKiriman> {
   const kunci = input.idempotencyKey?.trim() || null;
   if (kunci) {
     const ada = await tandaTerimaDenganKunci(kunci, input.storeId);
@@ -109,10 +208,10 @@ export async function terimaKiriman(input: {
 
   // Diisi di dalam transaksi; percobaan ulang menyetelnya ulang supaya catatan
   // dari percobaan yang dibatalkan tidak pernah ikut disebar.
-  const sesudah: SesudahTerima = { notifikasi: null, notifikasiRusak: null, kabarDiterima: null, kabarSelisih: null };
+  const sesudah = sesudahTerimaKosong();
   let hasil: HasilTerimaKiriman;
   try {
-    hasil = await terimaDalamTransaksi(input, sesudah, { kunci, waktuTangkap });
+    hasil = await runSerializable((tx) => terimaKirimanDalamTx(tx, { ...input, oleh: "SPG" }, sesudah, { kunci, waktuTangkap }));
   } catch (err) {
     // Dua HP yang menerima kiriman yang sama bersamaan: pemeriksaan di atas
     // lolos untuk keduanya, dan kunci unik (sumber) yang menolak yang kalah.
@@ -122,18 +221,52 @@ export async function terimaKiriman(input: {
       const ada = kunci ? await tandaTerimaDenganKunci(kunci, input.storeId) : null;
       return ada ?? { ok: false, alasan: "SUDAH_DITERIMA" };
     }
+    const alasan = alasanGalatPenerimaan(err);
+    if (alasan) return { ok: false, alasan };
     throw err;
   }
   if (hasil.ok) {
+    await sebarSesudahTerima({ storeId: input.storeId, userId: input.userId, sourceType: input.sourceType, receiptId: hasil.receiptId, sesudah });
+  }
+  return hasil;
+}
+
+/**
+ * Setengah sesudah-commit dari sebuah penerimaan: kabar dan notifikasi, jurnal
+ * yang perlu diselaraskan, dorong stok ke Jubelio untuk barang yang kembali ke
+ * gudang. Tidak pernah melempar — penerimaannya sudah tersimpan.
+ */
+export async function sebarSesudahTerima(input: {
+  storeId: string;
+  userId: string;
+  sourceType: JenisKiriman;
+  receiptId: string;
+  sesudah: SesudahTerima;
+}): Promise<void> {
+  const { sesudah } = input;
+  try {
     // Barang yang dititip-pesankan pembeli mungkin baru saja datang.
     void kabariTitipanTersedia(input.storeId);
-    // Kiriman gudang yang diterima KURANG membuka catatan barang hilang. Mutasi
-    // tidak: kurangnya diputuskan lewat selisih mutasi (HILANG/KEMBALI), dan
-    // barang hilangnya dibuka dari keputusan itu.
-    if (!dariMutasi(input.sourceType)) void catatHilangDariPenerimaan(hasil.receiptId, input.userId);
+    // Kiriman gudang lama (pesanan konsi lama, kiriman modul konsinyasi, nota putus yang dicatat
+    // tangan tanpa pengiriman) yang diterima KURANG membuka catatan barang hilang di sini; kiriman
+    // lewat pengiriman membukanya di dalam transaksi penerimaan. Mutasi tidak: kurangnya
+    // diputuskan lewat selisih mutasi.
+    if (sesudah.hilangSesudahCommit) void catatHilangDariPenerimaan(input.receiptId, input.userId);
     if (sesudah.notifikasi) void fanOutAdminNotification(sesudah.notifikasi);
     // Barang rusak: gudang yang memutuskan nasibnya (`/backoffice/spg-kiriman-rusak`).
     if (sesudah.notifikasiRusak) void fanOutAdminNotification(sesudah.notifikasiRusak);
+    for (const n of sesudah.notifikasiNota) void fanOutAdminNotification(n);
+    if (sesudah.notifikasiHilang) void fanOutAdminNotification(sesudah.notifikasiHilang);
+    if (sesudah.jurnal.transferId) await kaitPindahKonsiTransfer(sesudah.jurnal.transferId, input.userId);
+    // Nota putus yang dikoreksi/dibatalkan di penerimaan: jurnal notanya diselaraskan oleh kaitnya.
+    if (sesudah.jurnal.deliveryId) await kaitNotaTerbit(sesudah.jurnal.deliveryId, input.userId);
+    if (sesudah.barangKembali.length > 0) {
+      await antrekanPushStok([...new Set(sesudah.barangKembali)], {
+        sumber: "ADJUSTMENT",
+        ref: `ditolak toko ${input.receiptId}`,
+        userId: input.userId,
+      });
+    }
     const k = sesudah.kabarDiterima;
     if (k) {
       await kabariPengguna(k.userId, {
@@ -150,8 +283,14 @@ export async function terimaKiriman(input: {
     // sama kembali sebelum transaksi (atau di dalamnya) tanpa mengisi ini.
     const s = sesudah.kabarSelisih;
     if (s) await kabarkanSelisihTerima({ ...s, storeId: input.storeId, penerimaId: input.userId });
+  } catch (err) {
+    console.error("sebarSesudahTerima gagal", input.receiptId, err);
   }
-  return hasil;
+}
+
+/** Kiriman gudang lewat pengiriman (`DeliveryShipment`): nota putus dan antaran konsinyasi. */
+function lewatPengiriman(jenis: JenisKiriman): jenis is "PUTUS_DELIVERY" | "KONSI_TRANSFER" {
+  return jenis === "PUTUS_DELIVERY" || jenis === "KONSI_TRANSFER";
 }
 
 /**
@@ -167,206 +306,421 @@ async function tandaTerimaDenganKunci(kunci: string, storeId: string): Promise<H
 
 export { terhitungSesudah, waktuHitungTerakhir } from "./opname-hitung";
 
-function terimaDalamTransaksi(
-  input: Parameters<typeof terimaKiriman>[0],
+/**
+ * SATU penulis penerimaan toko, untuk tiga penerima (R9): SPG di HP-nya (P40),
+ * konfirmasi ekspedisi/kurir di toko tanpa SPG (`POD`), dan salesman pemegang
+ * saat SPG-nya sudah berhenti (`SALESMAN`, P45a, dengan nama penanggung jawab
+ * toko dan fotonya). Berjalan di transaksi PEMANGGIL; penolakan dikembalikan
+ * sebagai `{ ok: false }` (pemanggil yang memegang transaksi lain melemparnya).
+ *
+ * Untuk kiriman gudang lewat pengiriman, penerimaan inilah satu-satunya tempat
+ * barang digolongkan: TIBA (rusak termasuk), DITOLAK di pintu, dan HILANG
+ * (dikirim − tiba − ditolak). Yang ditolak: nota putus dikoreksi dan barangnya
+ * kembali ke Gudang Utama (P24); antaran konsinyasi mengembalikannya ke gudang.
+ * Yang hilang: nota putus dikoreksi, catatan barang hilang dibuka DI SINI juga
+ * (bernilai menurut pengaturan barang hilang, P42; nilai klaim ekspedisi =
+ * nilai jual di nota / surat jalan), tidak pernah dikirim ulang otomatis (P38).
+ * Barang rusak di toko PUTUS langsung diputuskan KEMBALI_GUDANG (P39): SPG
+ * mengembalikannya lewat retur ke Gudang Barang Rusak, notanya tidak dikoreksi.
+ *
+ * Penanda "toko sudah menerima" di mana pun adalah baris `StoreReceipt` (unik per
+ * sumber), tidak pernah `FieldSalesDelivery.receivedAt`.
+ */
+export async function terimaKirimanDalamTx(
+  tx: Prisma.TransactionClient,
+  input: TerimaKirimanInput & { oleh: PenerimaToko; picName?: string; photo?: { url: string; r2Key: string } },
   sesudah: SesudahTerima,
   luring: { kunci: string | null; waktuTangkap: Date | null },
-) {
+): Promise<HasilTerimaKiriman> {
   // Penerimaan dari antrean HP dinilai pada waktu kirimannya dihitung (mis.
   // siklus konsinyasi bulan itu), bukan saat sinyal kembali.
   const sekarang = luring.waktuTangkap ?? input.sekarang ?? new Date();
-  return runSerializable(async (tx): Promise<HasilTerimaKiriman> => {
-    sesudah.notifikasi = null;
-    sesudah.notifikasiRusak = null;
-    sesudah.kabarDiterima = null;
-    sesudah.kabarSelisih = null;
-    const mutasi = dariMutasi(input.sourceType) ? input.sourceType : null;
-    // Kantor hanya menerima mutasi atas nama toko; kiriman lain milik SPG.
-    if (input.kantor && !mutasi) return { ok: false, alasan: "KIRIMAN_TIDAK_DITEMUKAN" };
+  setelUlang(sesudah);
+  const mutasi = dariMutasi(input.sourceType) ? input.sourceType : null;
+  // Kantor hanya menerima mutasi atas nama toko; kiriman lain milik SPG.
+  if (input.kantor && !mutasi) return { ok: false, alasan: "KIRIMAN_TIDAK_DITEMUKAN" };
 
-    // Kunci kiriman diperiksa lagi DI DALAM transaksi: percobaan ulang sesudah
-    // balapan dua kiriman berkunci sama (yang kalah diulang runSerializable)
-    // harus mendapat tanda terima pemenangnya, bukan "sudah diterima".
-    if (luring.kunci) {
-      const ada = await tx.storeReceipt.findUnique({ where: { idempotencyKey: luring.kunci }, select: { id: true, storeId: true } });
-      if (ada) return ada.storeId === input.storeId ? { ok: true, receiptId: ada.id } : { ok: false, alasan: "KUNCI_DIPAKAI" };
-    }
+  // Kunci kiriman diperiksa lagi DI DALAM transaksi: percobaan ulang sesudah
+  // balapan dua kiriman berkunci sama (yang kalah diulang runSerializable)
+  // harus mendapat tanda terima pemenangnya, bukan "sudah diterima".
+  if (luring.kunci) {
+    const ada = await tx.storeReceipt.findUnique({ where: { idempotencyKey: luring.kunci }, select: { id: true, storeId: true } });
+    if (ada) return ada.storeId === input.storeId ? { ok: true, receiptId: ada.id } : { ok: false, alasan: "KUNCI_DIPAKAI" };
+  }
 
-    // Tanda terima yang sudah ada diperiksa PALING DULU: percobaan ulang
-    // sesudah balapan (atau kiriman kedua dari HP lain) harus terbaca "sudah
-    // diterima", bukan "tidak ditemukan" karena status mutasinya sudah pindah.
-    const sudah = await tx.storeReceipt.findUnique({
-      where: { sourceType_sourceId: { sourceType: input.sourceType, sourceId: input.sourceId } },
-      select: { id: true },
-    });
-    if (sudah) return { ok: false, alasan: "SUDAH_DITERIMA" };
-
-    const kiriman = await muatKiriman(tx, input.storeId, input.sourceType, input.sourceId);
-    if (!kiriman) return { ok: false, alasan: "KIRIMAN_TIDAK_DITEMUKAN" };
-
-    // SETIAP baris harus dijawab, dengan bilangan bulat ≥ 0. Baris yang tidak
-    // dijawab bukan "nol" — itu layar yang tertinggal dari dokumennya.
-    const jawab = new Map(input.diterima.map((d) => [d.lineId, d.qtyReceived]));
-    const valid = kiriman.lines.every((l) => {
-      const q = jawab.get(l.lineId);
-      return q !== undefined && Number.isInteger(q) && q >= 0;
-    });
-    if (!valid) return { ok: false, alasan: "JUMLAH_TIDAK_VALID" };
-    const baris = kiriman.lines.map((l) => ({ qtySent: l.qty, qtyReceived: jawab.get(l.lineId) ?? 0 }));
-
-    // Barang rusak per baris: ≤ diterima, keterangan wajib. Barang rusak tetap
-    // dihitung TIBA (selisih kurang-kirim di atas tidak berubah) — hanya buku
-    // stok toko yang menahannya sampai gudang memutuskan.
-    const isianRusak = new Map(input.diterima.map((d) => [d.lineId, d]));
-    const rusak = new Map<string, { qtyDamaged: number; damageNote: string | null; damagePhotoUrl: string | null }>();
-    for (const l of kiriman.lines) {
-      const d = isianRusak.get(l.lineId);
-      const r = periksaIsianRusak({
-        qtyReceived: jawab.get(l.lineId) ?? 0,
-        qtyDamaged: d?.qtyDamaged,
-        damageNote: d?.damageNote,
-        damagePhotoUrl: d?.damagePhotoUrl,
-      });
-      if (!r.ok) return { ok: false, alasan: r.alasan };
-      rusak.set(l.lineId, r);
-    }
-    const rusakDari = (lineId: string) => rusak.get(lineId)?.qtyDamaged ?? 0;
-
-    let periksa: Awaited<ReturnType<typeof periksaTerimaMutasi>> | null = null;
-    let tulisBuku = true;
-    if (mutasi) {
-      // Mutasi berpindah antar toko KITA: jumlah lebih dari yang dikirim
-      // berarti barang dari toko asal yang tidak pernah keluar dari bukunya.
-      if (baris.some((b) => b.qtyReceived > b.qtySent)) return { ok: false, alasan: "LEBIH_DARI_DIKIRIM" };
-      periksa = await periksaTerimaMutasi(tx, {
-        sourceType: mutasi,
-        transferId: input.sourceId,
-        storeId: input.storeId,
-        olehKantor: Boolean(input.kantor),
-        setujuSiklusTerkunci: Boolean(input.kantor?.setujuSiklusTerkunci),
-        sekarang,
-      });
-      if (!periksa.ok) return { ok: false, alasan: periksa.alasan, ...(periksa.noKonsi ? { noKonsi: periksa.noKonsi } : {}) };
-      if (!(await tutupMutasiSaatTerima(tx, { sourceType: mutasi, transferId: input.sourceId, storeId: input.storeId, baris }))) {
-        return { ok: false, alasan: "KIRIMAN_TIDAK_DITEMUKAN" };
-      }
-      // Toko yang belum punya buku stok (tanpa SPG) tidak dibukakan buku oleh
-      // penerimaan kantor: angka pertamanya harus dari opname, bukan dari satu kiriman.
-      if (input.kantor) tulisBuku = await bukuDimulai(tx, input.storeId);
-    }
-
-    const receipt = await tx.storeReceipt.create({
-      data: {
-        storeId: input.storeId,
-        sourceType: input.sourceType,
-        sourceId: input.sourceId,
-        sourceDocNo: kiriman.docNo,
-        receivedById: input.userId,
-        ...(luring.kunci ? { idempotencyKey: luring.kunci } : {}),
-        ...(luring.waktuTangkap ? { receivedAt: luring.waktuTangkap } : {}),
-        note: input.note?.trim() || null,
-        lines: {
-          create: kiriman.lines.map((l) => {
-            const r = rusak.get(l.lineId);
-            return {
-              itemId: l.itemId,
-              variantSku: l.variantSku,
-              productName: l.productName,
-              qtySent: l.qty,
-              qtyReceived: jawab.get(l.lineId) ?? 0,
-              ...(r && r.qtyDamaged > 0
-                ? { qtyDamaged: r.qtyDamaged, damageNote: r.damageNote, damagePhotoUrl: r.damagePhotoUrl, damageStatus: "TERBUKA" }
-                : {}),
-            };
-          }),
-        },
-      },
-      select: { id: true },
-    });
-
-    // Hanya baris barang katalog yang menggerakkan stok — baris yang diketik
-    // nama saja tidak punya saldo untuk ditambah (sama dengan NRI). Mutasi
-    // masuk memakai jenisnya sendiri, bukan TERIMA (kiriman dari gudang).
-    // Barang rusak tidak masuk buku sampai gudang memutuskannya layak jual.
-    // Dari antrean HP: barang yang sudah dihitung opname SESUDAH kiriman ini
-    // dihitung tidak ditambah lagi (opname itu sudah melihatnya di rak).
-    const sudahTerhitung = luring.waktuTangkap
-      ? await terhitungSesudah(
-          tx,
-          input.storeId,
-          [...new Set(kiriman.lines.map((l) => l.itemId).filter((x): x is string => !!x))],
-          luring.waktuTangkap,
-        )
-      : new Set<string>();
-    const gerak = tulisBuku
-      ? kiriman.lines
-          .filter((l) => l.itemId && masukBukuSaatTerima(jawab.get(l.lineId) ?? 0, rusakDari(l.lineId)) > 0)
-          .filter((l) => !sudahTerhitung.has(kunciBaris(l.itemId as string, l.variantSku)))
-          .map((l) => ({
-            storeId: input.storeId,
-            itemId: l.itemId as string,
-            variantSku: l.variantSku,
-            qty: masukBukuSaatTerima(jawab.get(l.lineId) ?? 0, rusakDari(l.lineId)),
-            kind: mutasi ? ("MUTASI_MASUK" as const) : ("TERIMA" as const),
-            refType: "StoreReceipt",
-            refId: receipt.id,
-            createdById: input.userId,
-            ...(luring.waktuTangkap ? { createdAt: luring.waktuTangkap } : {}),
-          }))
-      : [];
-    if (gerak.length) await tx.storeStockMovement.createMany({ data: gerak });
-
-    const barisRusak = kiriman.lines.filter((l) => rusakDari(l.lineId) > 0);
-    if (barisRusak.length > 0) {
-      const pcs = barisRusak.reduce((n, l) => n + rusakDari(l.lineId), 0);
-      const toko = await tx.store.findUnique({ where: { id: input.storeId }, select: { name: true } });
-      sesudah.notifikasiRusak = await tx.adminNotification.create({
-        data: {
-          category: KATEGORI_NOTIF_RUSAK,
-          severity: "WARNING",
-          title: `Kiriman ${kiriman.docNo} tiba dengan ${pcs} potong rusak`,
-          message:
-            `${toko?.name ?? "Toko"}: ${barisRusak.length} baris dicatat rusak saat diterima. ` +
-            "Putuskan per baris: layak jual, kembali ke gudang, atau dihapuskan.",
-          metadata: { receiptId: receipt.id, storeId: input.storeId, pcs },
-        },
-      });
-    }
-
-    // Kiriman gudang yang tidak pas (kurang/rusak) dikabarkan ke salesman
-    // pengirimnya sesudah transaksi. Mutasi punya kabarnya sendiri di bawah.
-    if (!mutasi) {
-      const selisih = hitungSelisihTerima(
-        kiriman.lines.map((l) => ({ qtySent: l.qty, qtyReceived: jawab.get(l.lineId) ?? 0, qtyDamaged: rusakDari(l.lineId) })),
-      );
-      if (adaSelisih(selisih)) {
-        sesudah.kabarSelisih = { sourceType: input.sourceType, sourceId: input.sourceId, docNo: kiriman.docNo, selisih };
-      }
-    }
-
-    if (mutasi && periksa?.ok) {
-      sesudah.notifikasi = await catatTerimaMutasi(tx, {
-        sourceType: mutasi,
-        transfer: periksa.transfer,
-        userId: input.userId,
-        receiptId: receipt.id,
-        baris,
-        olehKantor: Boolean(input.kantor),
-        tulisBuku,
-        siklusTerkunci: periksa.siklusTerkunci,
-      });
-      if (mutasi === "MUTASI") {
-        sesudah.kabarDiterima = {
-          userId: periksa.transfer.createdById,
-          docNo: periksa.transfer.docNo,
-          transferId: periksa.transfer.id,
-          kurang: selisihPenerimaan(baris).kurang,
-        };
-      }
-    }
-
-    return { ok: true, receiptId: receipt.id };
+  // Tanda terima yang sudah ada diperiksa PALING DULU: percobaan ulang
+  // sesudah balapan (atau kiriman kedua dari HP lain) harus terbaca "sudah
+  // diterima", bukan "tidak ditemukan" karena status mutasinya sudah pindah.
+  const sudah = await tx.storeReceipt.findUnique({
+    where: { sourceType_sourceId: { sourceType: input.sourceType, sourceId: input.sourceId } },
+    select: { id: true },
   });
+  if (sudah) return { ok: false, alasan: "SUDAH_DITERIMA" };
+
+  const keadaan = await keadaanKiriman(tx, input.storeId, input.sourceType, input.sourceId);
+  if (keadaan === "DIBATALKAN") return { ok: false, alasan: "KIRIMAN_DIBATALKAN" };
+  if (keadaan === "BELUM_BERANGKAT") return { ok: false, alasan: "BELUM_BERANGKAT" };
+
+  const kiriman = await muatKiriman(tx, input.storeId, input.sourceType, input.sourceId);
+  if (!kiriman) return { ok: false, alasan: "KIRIMAN_TIDAK_DITEMUKAN" };
+  // Nota putus yang dicatat tangan (tanpa pengiriman) diterima seperti dulu (R24): tidak ada
+  // penolakan di pintu, tidak ada koreksi nota, kekurangannya dibuka sesudah commit.
+  const gudang = lewatPengiriman(input.sourceType) && !kiriman.tanpaPengiriman ? input.sourceType : null;
+  sesudah.hilangSesudahCommit = !mutasi && !gudang;
+
+  // SETIAP baris harus dijawab, dengan bilangan bulat ≥ 0. Baris yang tidak
+  // dijawab bukan "nol" — itu layar yang tertinggal dari dokumennya.
+  const jawab = new Map(input.diterima.map((d) => [d.lineId, d.qtyReceived]));
+  const tolakDari = new Map(input.diterima.map((d) => [d.lineId, d.qtyRefused ?? 0]));
+  const valid = kiriman.lines.every((l) => {
+    const q = jawab.get(l.lineId);
+    const t = tolakDari.get(l.lineId) ?? 0;
+    return q !== undefined && Number.isInteger(q) && q >= 0 && Number.isInteger(t) && t >= 0;
+  });
+  if (!valid) return { ok: false, alasan: "JUMLAH_TIDAK_VALID" };
+  // Barang hanya boleh "ditolak" pada kiriman gudang lewat pengiriman (P40).
+  if (!gudang && kiriman.lines.some((l) => (tolakDari.get(l.lineId) ?? 0) > 0)) return { ok: false, alasan: "JUMLAH_TIDAK_VALID" };
+  const tiba = (lineId: string) => jawab.get(lineId) ?? 0;
+  const ditolak = (lineId: string) => (gudang ? (tolakDari.get(lineId) ?? 0) : 0);
+  // Yang sampai di pintu toko = dikirim − ditolak; dasar selisih kurang-kirim.
+  const baris = kiriman.lines.map((l) => ({ qtySent: l.qty - ditolak(l.lineId), qtyReceived: tiba(l.lineId) }));
+
+  // Barang rusak per baris: ≤ diterima, keterangan wajib. Barang rusak tetap
+  // dihitung TIBA (selisih kurang-kirim di atas tidak berubah) — hanya buku
+  // stok toko yang menahannya sampai gudang memutuskan.
+  const isianRusak = new Map(input.diterima.map((d) => [d.lineId, d]));
+  const rusak = new Map<string, { qtyDamaged: number; damageNote: string | null; damagePhotoUrl: string | null }>();
+  for (const l of kiriman.lines) {
+    const d = isianRusak.get(l.lineId);
+    const r = periksaIsianRusak({
+      qtyReceived: tiba(l.lineId),
+      qtyDamaged: d?.qtyDamaged,
+      damageNote: d?.damageNote,
+      damagePhotoUrl: d?.damagePhotoUrl,
+    });
+    if (!r.ok) return { ok: false, alasan: r.alasan };
+    rusak.set(l.lineId, r);
+  }
+  const rusakDari = (lineId: string) => rusak.get(lineId)?.qtyDamaged ?? 0;
+
+  let periksa: Awaited<ReturnType<typeof periksaTerimaMutasi>> | null = null;
+  let tulisBuku = true;
+  if (mutasi || gudang) {
+    // Tidak ada yang tiba melebihi yang dikirim: untuk mutasi, barang toko asal
+    // yang tidak pernah keluar dari bukunya; untuk kiriman gudang, tiba + ditolak
+    // tidak pernah melebihi isi surat jalan / nota.
+    if (kiriman.lines.some((l) => tiba(l.lineId) + ditolak(l.lineId) > l.qty)) return { ok: false, alasan: "LEBIH_DARI_DIKIRIM" };
+  }
+  if (mutasi) {
+    periksa = await periksaTerimaMutasi(tx, {
+      sourceType: mutasi,
+      transferId: input.sourceId,
+      storeId: input.storeId,
+      olehKantor: Boolean(input.kantor),
+      setujuSiklusTerkunci: Boolean(input.kantor?.setujuSiklusTerkunci),
+      sekarang,
+    });
+    if (!periksa.ok) return { ok: false, alasan: periksa.alasan, ...(periksa.noKonsi ? { noKonsi: periksa.noKonsi } : {}) };
+    if (!(await tutupMutasiSaatTerima(tx, { sourceType: mutasi, transferId: input.sourceId, storeId: input.storeId, baris }))) {
+      return { ok: false, alasan: "KIRIMAN_TIDAK_DITEMUKAN" };
+    }
+    // Toko yang belum punya buku stok (tanpa SPG) tidak dibukakan buku oleh
+    // penerimaan kantor: angka pertamanya harus dari opname, bukan dari satu kiriman.
+    if (input.kantor) tulisBuku = await bukuDimulai(tx, input.storeId);
+  }
+  // Konfirmasi ekspedisi dan salesman pemegang tidak MEMULAI buku toko: angka
+  // pertama toko tanpa SPG berasal dari opname (sama dengan penerimaan kantor).
+  if (input.oleh !== "SPG") tulisBuku = await bukuDimulai(tx, input.storeId);
+
+  const putusTokoRusak = gudang === "PUTUS_DELIVERY";
+
+  const receipt = await tx.storeReceipt.create({
+    data: {
+      storeId: input.storeId,
+      sourceType: input.sourceType,
+      sourceId: input.sourceId,
+      sourceDocNo: kiriman.docNo,
+      receivedById: input.userId,
+      // Penerimaan kantor (mutasi atas nama toko) bukan salah satu dari tiga penerima toko.
+      receivedVia: input.kantor ? null : input.oleh,
+      ...(input.oleh === "SALESMAN"
+        ? { picName: input.picName ?? null, photoUrl: input.photo?.url ?? null, photoR2Key: input.photo?.r2Key ?? null }
+        : {}),
+      ...(luring.kunci ? { idempotencyKey: luring.kunci } : {}),
+      ...(luring.waktuTangkap ? { receivedAt: luring.waktuTangkap } : {}),
+      note: input.note?.trim() || null,
+      lines: {
+        create: kiriman.lines.map((l) => {
+          const r = rusak.get(l.lineId);
+          return {
+            itemId: l.itemId,
+            variantSku: l.variantSku,
+            productName: l.productName,
+            qtySent: l.qty - ditolak(l.lineId),
+            qtyReceived: tiba(l.lineId),
+            qtyRefused: ditolak(l.lineId),
+            ...(r && r.qtyDamaged > 0
+              ? putusTokoRusak
+                ? {
+                    // P39: di toko putus barang rusak kembali ke gudang lewat retur — langsung diputuskan.
+                    qtyDamaged: r.qtyDamaged,
+                    damageNote: r.damageNote,
+                    damagePhotoUrl: r.damagePhotoUrl,
+                    damageStatus: "KEMBALI_GUDANG",
+                    damageDecidedById: input.userId,
+                    damageDecidedAt: sekarang,
+                    damageDecisionNote: CATATAN_RUSAK_PUTUS,
+                  }
+                : { qtyDamaged: r.qtyDamaged, damageNote: r.damageNote, damagePhotoUrl: r.damagePhotoUrl, damageStatus: "TERBUKA" }
+              : {}),
+          };
+        }),
+      },
+    },
+    select: { id: true, lines: { select: { id: true, qtyDamaged: true } } },
+  });
+
+  // ── Kiriman gudang: yang ditolak kembali ke gudang, yang hilang dibuka ───────
+  if (gudang) {
+    const klaim = await golongkanKirimanGudang(tx, {
+      sourceType: gudang,
+      sourceId: input.sourceId,
+      storeId: input.storeId,
+      receiptId: receipt.id,
+      userId: input.userId,
+      sekarang,
+      receivedAt: luring.waktuTangkap ?? sekarang,
+      baris: kiriman.lines.map((l) => ({ lineId: l.lineId, dikirim: l.qty, tiba: tiba(l.lineId), ditolak: ditolak(l.lineId) })),
+      sesudah,
+    });
+    if (klaim.adaHilang) {
+      const hilang = { notif: null as AdminNotification | null };
+      const buka = await bukaHilangDariPenerimaanDalamTx(
+        tx,
+        { receiptId: receipt.id, userId: input.userId, shipmentId: klaim.shipmentId, claimValueSen: klaim.claimValueSen },
+        hilang,
+      );
+      if (buka.ok) sesudah.jurnal.lossId = buka.id;
+      sesudah.notifikasiHilang = hilang.notif;
+    }
+    if (putusTokoRusak) {
+      for (const rl of receipt.lines.filter((x) => x.qtyDamaged > 0)) {
+        await tx.auditLog.create({
+          data: {
+            userId: input.userId,
+            action: JEJAK_RUSAK.DIPUTUSKAN,
+            entityType: ENTITAS_RUSAK,
+            entityId: rl.id,
+            changes: { before: { damageStatus: "TERBUKA" }, after: { damageStatus: "KEMBALI_GUDANG" } },
+            metadata: { receiptId: receipt.id, storeId: input.storeId, sourceType: input.sourceType, qty: rl.qtyDamaged, otomatis: true, aturan: "P39" },
+          },
+        });
+      }
+    }
+  }
+
+  // Hanya baris barang katalog yang menggerakkan stok — baris yang diketik
+  // nama saja tidak punya saldo untuk ditambah (sama dengan NRI). Mutasi
+  // masuk memakai jenisnya sendiri, bukan TERIMA (kiriman dari gudang).
+  // Barang rusak tidak masuk buku sampai gudang memutuskannya layak jual.
+  // Dari antrean HP: barang yang sudah dihitung opname SESUDAH kiriman ini
+  // dihitung tidak ditambah lagi (opname itu sudah melihatnya di rak).
+  const sudahTerhitung = luring.waktuTangkap
+    ? await terhitungSesudah(
+        tx,
+        input.storeId,
+        [...new Set(kiriman.lines.map((l) => l.itemId).filter((x): x is string => !!x))],
+        luring.waktuTangkap,
+      )
+    : new Set<string>();
+  const gerak = tulisBuku
+    ? kiriman.lines
+        .filter((l) => l.itemId && masukBukuSaatTerima(tiba(l.lineId), rusakDari(l.lineId)) > 0)
+        .filter((l) => !sudahTerhitung.has(kunciBaris(l.itemId as string, l.variantSku)))
+        .map((l) => ({
+          storeId: input.storeId,
+          itemId: l.itemId as string,
+          variantSku: l.variantSku,
+          qty: masukBukuSaatTerima(tiba(l.lineId), rusakDari(l.lineId)),
+          kind: mutasi ? ("MUTASI_MASUK" as const) : ("TERIMA" as const),
+          refType: "StoreReceipt",
+          refId: receipt.id,
+          createdById: input.userId,
+          ...(luring.waktuTangkap ? { createdAt: luring.waktuTangkap } : {}),
+        }))
+    : [];
+  if (gerak.length) await tx.storeStockMovement.createMany({ data: gerak });
+
+  // Barang rusak di toko KONSI menunggu keputusan gudang; di toko PUTUS sudah
+  // diputuskan di atas (tidak ada yang perlu diputuskan, jadi tanpa catatan kantor).
+  const barisRusak = putusTokoRusak ? [] : kiriman.lines.filter((l) => rusakDari(l.lineId) > 0);
+  if (barisRusak.length > 0) {
+    const pcs = barisRusak.reduce((n, l) => n + rusakDari(l.lineId), 0);
+    const toko = await tx.store.findUnique({ where: { id: input.storeId }, select: { name: true } });
+    sesudah.notifikasiRusak = await tx.adminNotification.create({
+      data: {
+        category: KATEGORI_NOTIF_RUSAK,
+        severity: "WARNING",
+        title: `Kiriman ${kiriman.docNo} tiba dengan ${pcs} potong rusak`,
+        message:
+          `${toko?.name ?? "Toko"}: ${barisRusak.length} baris dicatat rusak saat diterima. ` +
+          "Putuskan per baris: layak jual, kembali ke gudang, atau dihapuskan.",
+        metadata: { receiptId: receipt.id, storeId: input.storeId, pcs },
+      },
+    });
+  }
+
+  // Kiriman gudang yang tidak pas (kurang/rusak) dikabarkan ke salesman
+  // pengirimnya sesudah transaksi. Mutasi punya kabarnya sendiri di bawah.
+  if (!mutasi) {
+    const selisih = hitungSelisihTerima(
+      kiriman.lines.map((l) => ({ qtySent: l.qty - ditolak(l.lineId), qtyReceived: tiba(l.lineId), qtyDamaged: rusakDari(l.lineId) })),
+    );
+    if (adaSelisih(selisih)) {
+      sesudah.kabarSelisih = { sourceType: input.sourceType, sourceId: input.sourceId, docNo: kiriman.docNo, selisih };
+    }
+  }
+
+  if (mutasi && periksa?.ok) {
+    sesudah.notifikasi = await catatTerimaMutasi(tx, {
+      sourceType: mutasi,
+      transfer: periksa.transfer,
+      userId: input.userId,
+      receiptId: receipt.id,
+      baris,
+      olehKantor: Boolean(input.kantor),
+      tulisBuku,
+      siklusTerkunci: periksa.siklusTerkunci,
+    });
+    if (mutasi === "MUTASI") {
+      sesudah.kabarDiterima = {
+        userId: periksa.transfer.createdById,
+        docNo: periksa.transfer.docNo,
+        transferId: periksa.transfer.id,
+        kurang: selisihPenerimaan(baris).kurang,
+      };
+    }
+  }
+
+  return { ok: true, receiptId: receipt.id };
+}
+
+/** Catatan keputusan otomatis barang rusak di toko putus (P39). */
+const CATATAN_RUSAK_PUTUS = "Toko putus: kembali ke gudang lewat retur";
+
+/**
+ * Menggolongkan sebuah kiriman gudang lewat pengiriman pada penerimaannya:
+ * DITOLAK → kembali ke Gudang Utama (P24/P40), HILANG → nota putus dikoreksi
+ * (stok tidak bergerak; catatan hilangnya dibuka pemanggil), TIBA → antaran
+ * konsinyasi diterima di Gudang Toko (StoreStock += tiba). Mengembalikan pengiriman
+ * asalnya dan nilai klaim ekspedisi (sen) bila ada yang hilang dan pengirimannya
+ * lewat EKSPEDISI: putus = nilai bersih per potong di nota SEBELUM dikoreksi ×
+ * hilang; konsi = harga per artikel di surat jalannya (`KonsiTransferLine.unitPrice`)
+ * × hilang — P37: "nilai klaim kiriman konsi = nilai di surat jalan itu". Baris
+ * konsi yang hilang tanpa harga di surat jalan membuat nilainya null (kantor mengisi).
+ */
+async function golongkanKirimanGudang(
+  tx: Prisma.TransactionClient,
+  input: {
+    sourceType: "PUTUS_DELIVERY" | "KONSI_TRANSFER";
+    sourceId: string;
+    storeId: string;
+    receiptId: string;
+    userId: string;
+    sekarang: Date;
+    receivedAt: Date;
+    baris: Array<{ lineId: string; dikirim: number; tiba: number; ditolak: number }>;
+    sesudah: SesudahTerima;
+  },
+): Promise<{ adaHilang: boolean; shipmentId: string | null; claimValueSen: number | null }> {
+  const hilangDari = (b: { dikirim: number; tiba: number; ditolak: number }) => Math.max(0, b.dikirim - b.tiba - b.ditolak);
+  const adaHilang = input.baris.some((b) => hilangDari(b) > 0);
+  const alasan = "Diterima toko: ditolak di pintu atau kurang tiba";
+
+  if (input.sourceType === "PUTUS_DELIVERY") {
+    const nota = await tx.fieldSalesDelivery.findUniqueOrThrow({
+      where: { id: input.sourceId },
+      select: { lines: { select: { id: true, qty: true } }, shipment: { select: { id: true, method: true } } },
+    });
+    const qtyAwal = new Map(nota.lines.map((l) => [l.id, l.qty]));
+    const ubah = input.baris.map((b) => ({ deliveryLineId: b.lineId, kembali: b.ditolak, hilang: hilangDari(b) }));
+    const hasil = await koreksiNotaDiterimaInTx(tx, {
+      deliveryId: input.sourceId,
+      baris: ubah,
+      sumber: "PENERIMAAN_TOKO",
+      refKembali: input.receiptId,
+      olehUserId: input.userId,
+      alasan,
+      sekarang: input.sekarang,
+    });
+    input.sesudah.notifikasiNota.push(...hasil.notifikasi);
+    input.sesudah.barangKembali.push(...hasil.barangKembali);
+    if (ubah.some((u) => u.kembali > 0 || u.hilang > 0)) input.sesudah.jurnal.deliveryId = input.sourceId;
+    let claimValueSen: number | null = null;
+    if (adaHilang && nota.shipment?.method === "EXPEDITION") {
+      claimValueSen = 0;
+      for (const u of ubah) {
+        if (u.hilang === 0) continue;
+        const q = qtyAwal.get(u.deliveryLineId) ?? 0;
+        const bersih = hasil.nilaiBersihSebelum.get(u.deliveryLineId) ?? 0;
+        claimValueSen += q > 0 ? Math.round((bersih * 100 * u.hilang) / q) : 0;
+      }
+    }
+    return { adaHilang, shipmentId: nota.shipment?.id ?? null, claimValueSen };
+  }
+
+  const transfer = await tx.konsiTransfer.findUniqueOrThrow({
+    where: { id: input.sourceId },
+    select: {
+      shipmentId: true,
+      shipment: { select: { method: true } },
+      lines: { select: { id: true, orderLineId: true, unitPrice: true } },
+    },
+  });
+  const barisById = new Map(transfer.lines.map((l) => [l.id, l]));
+  const ditolakSemua = input.baris.every((b) => b.ditolak === b.dikirim);
+  const kembali = input.baris
+    .filter((b) => b.ditolak > 0)
+    .map((b) => ({ orderLineId: barisById.get(b.lineId)?.orderLineId ?? "", qty: b.ditolak }))
+    .filter((b) => b.orderLineId !== "");
+  if (kembali.length > 0) {
+    const k = await kembalikanKonsiTransferInTx(tx, {
+      transferId: input.sourceId,
+      baris: kembali,
+      olehUserId: input.userId,
+      sekarang: input.sekarang,
+      alasan: ditolakSemua ? "Seluruh kiriman ditolak toko" : alasan,
+      batal: ditolakSemua,
+      kunci: input.receiptId,
+    });
+    input.sesudah.barangKembali.push(...k.barangKembali);
+  }
+  if (!ditolakSemua) {
+    await receiveKonsiTransferInTx(tx, {
+      transferId: input.sourceId,
+      storeId: input.storeId,
+      receivedById: input.userId,
+      receivedAt: input.receivedAt,
+      baris: input.baris.map((b) => ({ transferLineId: b.lineId, qtyReceived: b.tiba })),
+    });
+  }
+  input.sesudah.jurnal.transferId = input.sourceId;
+  /* P37: nilai klaim = nilai di surat jalan — harga per artikel yang dicetak di sana × yang hilang. */
+  let claimValueSen: number | null = null;
+  if (adaHilang && transfer.shipment?.method === "EXPEDITION") {
+    claimValueSen = 0;
+    for (const b of input.baris) {
+      const hilang = hilangDari(b);
+      if (hilang === 0) continue;
+      const harga = barisById.get(b.lineId)?.unitPrice;
+      if (harga === null || harga === undefined) {
+        claimValueSen = null;
+        break;
+      }
+      claimValueSen += Math.round(Number(harga) * 100) * hilang;
+    }
+  }
+  return { adaHilang, shipmentId: transfer.shipmentId, claimValueSen };
 }
 
 export type HasilCatatOpname =
@@ -481,6 +835,35 @@ export async function catatOpname(input: {
           select: { itemId: true, variantSku: true, qty: true, createdAt: true },
         });
         saldo = saldoAcuan(saldoDasar, sesudah, waktuHitung);
+      }
+      /*
+       * Retur pembeli yang DISETUJUI kantor sesudah barangnya dihitung: buku sudah menambahkannya,
+       * tetapi potongnya belum ada di rak saat dihitung (masih disisihkan menunggu keputusan). Tanpa
+       * ini potong itu terbaca kurang dan membuka catatan barang hilang di toko konsinyasi (R7).
+       */
+      const paling = new Date(Math.min(dasar.getTime(), ...[...waktuHitung.values()].map((t) => t.getTime())));
+      const returSesudah = await tx.spgSaleReturn.findMany({
+        where: returPembeliBerlaku({ storeId: input.storeId, decidedAt: { gt: paling } }),
+        select: { id: true, decidedAt: true },
+      });
+      if (returSesudah.length > 0) {
+        const diRak = new Map(returSesudah.map((r) => [r.id, r.decidedAt ?? dasar]));
+        const gerakRetur = await tx.storeStockMovement.findMany({
+          where: { refType: ENTITAS_RETUR_PEMBELI, refId: { in: [...diRak.keys()] }, itemId: { in: itemIds } },
+          select: { refId: true, itemId: true, variantSku: true, qty: true, createdAt: true },
+        });
+        saldo = kurangiReturBelumDiRak(
+          saldo,
+          gerakRetur.map((g) => ({
+            itemId: g.itemId,
+            variantSku: g.variantSku,
+            qty: g.qty,
+            createdAt: g.createdAt,
+            diRakSejak: diRak.get(g.refId ?? "") ?? dasar,
+          })),
+          waktuHitung,
+          dasar,
+        );
       }
       const semua = rencanaOpname(input.baris, saldo);
 

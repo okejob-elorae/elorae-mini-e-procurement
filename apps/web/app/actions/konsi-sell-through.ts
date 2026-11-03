@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
@@ -138,24 +137,21 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 
 type ApproveRequest = DistributiveOmit<ApproveSellThroughInput, "approvedById">;
 
-function parseApproveRequest(input: unknown): ApproveRequest | null {
+/**
+ * The screen approves in RECORD mode (freeze and price, bill nothing) or BASELINE. INVOICE is no
+ * longer offered: since decision 2026-10-29 konsi bills come from Max's consignment cycle when its
+ * sold figures are locked, so a sell-through report billing the same month would bill it twice.
+ * An INVOICE request is answered `INVOICING_RETIRED` before any write (`approveSellThroughAction`).
+ */
+function parseApproveRequest(input: unknown): ApproveRequest | "INVOICING_RETIRED" | null {
   if (typeof input !== "object" || input === null) return null;
   const i = input as Record<string, unknown>;
   if (typeof i.id !== "string" || i.id === "") return null;
+  if (i.mode === "RECORD") return { id: i.id, mode: "RECORD" };
+  if (i.mode === "INVOICE") return "INVOICING_RETIRED";
   if (i.mode === "BASELINE") {
     if (typeof i.reason !== "string") return null;
     return { id: i.id, mode: "BASELINE", reason: i.reason };
-  }
-  if (i.mode === "INVOICE") {
-    if (typeof i.invoiceDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(i.invoiceDate)) return null;
-    const invoiceDate = parseDateOnly(i.invoiceDate);
-    /* The round-trip refuses a day the calendar does not have: `2026-02-30` parses, rolled over to 2 March. */
-    if (!invoiceDate || formatDateOnlyJakarta(invoiceDate) !== i.invoiceDate) return null;
-    if (i.salesmanId !== null && (typeof i.salesmanId !== "string" || i.salesmanId === "")) return null;
-    /* Required here although the writer treats it as optional: every screen approve must be checked against the total the admin was shown. */
-    const expectedTotal = i.expectedTotal;
-    if (typeof expectedTotal !== "number" || !Number.isFinite(expectedTotal) || expectedTotal < 0) return null;
-    return { id: i.id, mode: "INVOICE", invoiceDate, salesmanId: i.salesmanId as string | null, expectedTotal };
   }
   return null;
 }
@@ -193,6 +189,7 @@ export async function approveSellThroughAction(input: unknown): Promise<SellThro
   const g = await guardDecide();
   if ("ok" in g) return g;
   const req = parseApproveRequest(input);
+  if (req === "INVOICING_RETIRED") return { ok: false, reason: "INVOICING_RETIRED" };
   if (!req) return { ok: false, reason: "INVALID_REQUEST" };
 
   const doc = await prisma.konsiSellThrough.findUnique({ where: { id: req.id }, select: { closingStocktakeId: true } });

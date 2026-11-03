@@ -2,15 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { REF_KOMISI_KONSI } from "@/lib/spg/hilang";
 import { JEJAK } from "@/lib/receivables/jejak";
-import {
-  batalkanPembayaranToko,
-  bayarKomisi,
-  bukaKunci,
-  catatNomorDokumen,
-  catatPembayaranToko,
-  JEJAK_BAYAR_TOKO,
-  kunciAngka,
-} from "./writer";
+import { hapusGajiUji, siapkanGajiUji } from "@/lib/spg/gaji-pokok-uji";
+import { bayarKomisi, bukaKunci, catatNomorDokumen, kunciAngka } from "./writer";
 import { daftarSiklus, rincianSiklus } from "./queries";
 import { payoutMonth } from "@/lib/spg-commission/payout";
 import { daftarKomisiKantor } from "@/lib/spg/komisi-queries";
@@ -22,7 +15,10 @@ import { daftarKomisiKantor } from "@/lib/spg/komisi-queries";
  * beban hilang). Komisi memakai satu hitungan (keputusan pemilik 2026-11-01):
  * tarif kategori Blus Rp2.000/pcs × potong yang dijual masing-masing SPG di
  * kasir — A dan B masing-masing 5 → Rp10.000 per SPG; gaji pokok Rp1.000.000
- * per SPG. Tarif di master barang sengaja diisi lain dan tidak boleh terbaca.
+ * per SPG, dari gaji bulanan + catatan check-in yang sudah diperiksa (`siapkanGajiUji`) — tidak
+ * diketik saat mengunci lagi. Tarif di master barang sengaja diisi lain dan tidak boleh terbaca.
+ * Kategori komisi dibaca dari BARIS nota (P8/P69), jadi baris nota uji membawa kategorinya. Mengunci
+ * melahirkan tagihan siklus di Piutang (toko butuh salesman pemegang).
  */
 
 const tag = `KUG${Math.random().toString(36).slice(2, 8)}`;
@@ -71,6 +67,9 @@ beforeEach(async () => {
   spgB = (
     await prisma.user.create({ data: { email: `${tag.toLowerCase()}-b@uji.local`, name: `${tag} B`, passwordHash: "x", assignedStoreId: tokoId } })
   ).id;
+  // Penagih tagihan siklus (P47) dan dasar gaji pokok yang pasti (P60) — bukan pokok tes di sini.
+  await prisma.store.update({ where: { id: tokoId }, data: { salesmanId: adminId } });
+  for (const spg of [spgA, spgB]) await siapkanGajiUji({ userId: spg, storeId: tokoId, bulan: "2026-09", jumlah: 1_000_000, olehUserId: adminId });
   siklusId = (await prisma.consignmentCycle.create({ data: { noKonsi: `${tag}/K`, storeId: tokoId, periodYear: 2026, periodMonth: 9 } })).id;
   // Penjualan SPG di kasir bulan siklus: komisinya milik yang menjual.
   for (const [i, spg] of [spgA, spgB].entries()) {
@@ -85,7 +84,19 @@ beforeEach(async () => {
         changeGiven: 0,
         createdById: spg,
         createdAt: new Date("2026-09-15T10:00:00+07:00"),
-        lines: { create: [{ itemId: barangId, productName: `${tag} Blus`, qty: 5, unitPrice: 150_000, lineTotal: 750_000 }] },
+        lines: {
+          create: [
+            {
+              itemId: barangId,
+              categoryId: kategoriId,
+              categoryAt: new Date("2026-09-15T10:00:00+07:00"),
+              productName: `${tag} Blus`,
+              qty: 5,
+              unitPrice: 150_000,
+              lineTotal: 750_000,
+            },
+          ],
+        },
       },
       select: { id: true },
     });
@@ -111,7 +122,8 @@ afterEach(async () => {
   await prisma.stockLossDeduction.deleteMany({ where: { shareId: { in: seededIds(bagian.map((b) => b.id)) } } });
   await prisma.stockLossShare.deleteMany({ where: { lossId: seededId(lossId) } });
   await prisma.stockLoss.deleteMany({ where: { id: seededId(lossId) } });
-  await prisma.consignmentPayment.deleteMany({ where: { cycleId: seededId(siklusId) } });
+  await prisma.receivable.deleteMany({ where: { consignmentCycleId: seededId(siklusId) } });
+  await hapusGajiUji([spgA, spgB, spgC]);
   await prisma.consignmentReportItem.deleteMany({ where: { report: { cycleId: seededId(siklusId) } } });
   await prisma.consignmentReport.deleteMany({ where: { cycleId: seededId(siklusId) } });
   await prisma.consignmentSold.deleteMany({ where: { cycleId: seededId(siklusId) } });
@@ -130,18 +142,7 @@ const kunci = () =>
   kunciAngka({
     cycleId: siklusId,
     olehUserId: adminId,
-    gajiPokokPerSpg: 1_000_000,
     baris: [{ itemId: barangId, itemName: `${tag} Blus`, qty: 10, price: 150_000 }],
-  });
-
-const bayar = (jumlah: number, tanggal = "2026-10-03", cara = "transfer") =>
-  catatPembayaranToko({
-    cycleId: siklusId,
-    jumlah,
-    tanggal: new Date(`${tanggal}T00:00:00+07:00`),
-    cara,
-    catatan: "uji",
-    olehUserId: adminId,
   });
 
 const komisiSiklus = () =>
@@ -310,8 +311,7 @@ describe("kunciAngka — komisi SPG dari satu hitungan (tarif kategori × penjua
     const h = await kunciAngka({
       cycleId: siklusId,
       olehUserId: adminId,
-      gajiPokokPerSpg: 1_000_000,
-      baris: [{ itemId: barangId, itemName: `${tag} Blus`, qty: 15, price: 150_000 }],
+        baris: [{ itemId: barangId, itemName: `${tag} Blus`, qty: 15, price: 150_000 }],
     });
     expect(h).toMatchObject({ ok: true, totalKomisi: 30_000, jumlahSpg: 2 });
     const komisi = await komisiSiklus();
@@ -341,7 +341,7 @@ describe("kunciAngka — komisi SPG dari satu hitungan (tarif kategori × penjua
   it("angka resmi di bawah catatan kasir membatasi potong terkonfirmasi; dikunci ulang tidak menggandakan baris", async () => {
     // Di kasir A 5, B 5; angka resmi 6 → 6 dibagi 5:5 → 3 dan 3.
     const kunciEnam = () =>
-      kunciAngka({ cycleId: siklusId, olehUserId: adminId, gajiPokokPerSpg: 0, baris: [{ itemId: barangId, itemName: `${tag} Blus`, qty: 6, price: 150_000 }] });
+      kunciAngka({ cycleId: siklusId, olehUserId: adminId, baris: [{ itemId: barangId, itemName: `${tag} Blus`, qty: 6, price: 150_000 }] });
     expect(await kunciEnam()).toMatchObject({ ok: true, totalKomisi: 12_000 });
     expect(await bukaKunci({ cycleId: siklusId, olehUserId: adminId })).toEqual({ ok: true });
     expect(await kunciEnam()).toMatchObject({ ok: true, totalKomisi: 12_000 });
@@ -357,9 +357,9 @@ describe("kunciAngka — komisi SPG dari satu hitungan (tarif kategori × penjua
 
     const sama = await kartu();
     expect(sama).toMatchObject({ totalHitung: 20_000, totalTersimpan: 20_000, berbeda: false, adaDibayar: false });
-    expect(sama?.baris.map((b) => [b.komisiHitung, b.komisi, b.bergaji])).toEqual([
-      [10_000, 10_000, true],
-      [10_000, 10_000, true],
+    expect(sama?.baris.map((b) => [b.komisiHitung, b.komisi, b.gajiPokok])).toEqual([
+      [10_000, 10_000, 1_000_000],
+      [10_000, 10_000, 1_000_000],
     ]);
 
     // Siklus yang dikunci dengan aturan lama (tarif barang, dibagi rata) menyimpan angka lain.
@@ -376,338 +376,37 @@ describe("kunciAngka — komisi SPG dari satu hitungan (tarif kategori × penjua
   });
 });
 
-describe("kunciAngka — penjual yang bukan SPG toko ini", () => {
-  /** SPG C dari toko lain (tidak bertugas di sini) menjual 5 Blus di toko ini di bulan siklus. */
-  async function penjualDariTokoLain() {
-    spgC = (await prisma.user.create({ data: { email: `${tag.toLowerCase()}-c@uji.local`, name: `${tag} C`, passwordHash: "x" } })).id;
-    const nota = await prisma.spgSale.create({
-      data: {
-        docNo: `${tag}-NC`,
-        salesmanId: spgC,
-        storeId: tokoId,
-        subtotal: 0,
-        total: 0,
-        cashReceived: 0,
-        changeGiven: 0,
-        createdById: spgC,
-        createdAt: new Date("2026-09-18T10:00:00+07:00"),
-        lines: { create: [{ itemId: barangId, productName: `${tag} Blus`, qty: 5, unitPrice: 150_000, lineTotal: 750_000 }] },
-      },
-      select: { id: true },
-    });
-    notaSpg.push(nota.id);
-    return nota.id;
-  }
-
-  const kunciDengan = (qty: number, gajiPokokPerSpg: number) =>
-    kunciAngka({
-      cycleId: siklusId,
-      olehUserId: adminId,
-      gajiPokokPerSpg,
-      baris: [{ itemId: barangId, itemName: `${tag} Blus`, qty, price: 150_000 }],
-    });
-
-  it("mendapat komisinya sendiri tanpa gaji pokok — dikunci ulang dengan gaji pokok lebih besar pun tetap tanpa gaji pokok", async () => {
-    await penjualDariTokoLain();
-    expect(await kunciDengan(15, 1_000_000)).toMatchObject({ ok: true, totalKomisi: 30_000, jumlahSpg: 3 });
-    const pertama = new Map((await komisiSiklus()).map((k) => [k.spgUserId, k]));
-    const c1 = pertama.get(spgC)!;
-    expect([Number(c1.baseSalary), Number(c1.commission), c1.salaried]).toEqual([0, 10_000, false]);
-    expect([Number(pertama.get(spgA)!.baseSalary), pertama.get(spgA)!.salaried]).toEqual([1_000_000, true]);
-
+describe("kunciAngka — tagihan siklus di Piutang dan gerbangnya", () => {
+  it("mengunci melahirkan satu tagihan bernomor konsi untuk salesman pemegang; buka kunci membatalkannya", async () => {
+    const r = await kunci();
+    expect(r).toMatchObject({ ok: true });
+    const tagihan = await prisma.receivable.findMany({ where: { consignmentCycleId: siklusId } });
+    expect(tagihan).toHaveLength(1);
+    expect(tagihan[0]).toMatchObject({ invoiceNo: `${tag}/K`, isConsignment: true, salesmanId: adminId });
     expect(await bukaKunci({ cycleId: siklusId, olehUserId: adminId })).toEqual({ ok: true });
-    expect(await kunciDengan(15, 1_500_000)).toMatchObject({ ok: true, totalKomisi: 30_000, jumlahSpg: 3 });
-    const ulang = new Map((await komisiSiklus()).map((k) => [k.spgUserId, k]));
-    const c2 = ulang.get(spgC)!;
-    expect(c2.id).toBe(c1.id);
-    expect([Number(c2.baseSalary), Number(c2.total), c2.salaried]).toEqual([0, 10_000, false]);
-    expect([Number(ulang.get(spgA)!.baseSalary), Number(ulang.get(spgB)!.baseSalary)]).toEqual([1_500_000, 1_500_000]);
-
-    // Jejak: C bukan "baris SPG yang pindah toko" — ia memang tidak pernah peserta bergaji.
-    const jejak = await prisma.auditLog.findFirstOrThrow({
-      where: { entityType: "ConsignmentCycle", entityId: siklusId, action: JEJAK.KONSI_DIKUNCI },
-      orderBy: { createdAt: "desc" },
-    });
-    const ubah = jejak.changes as {
-      after: { komisiSpgPindah: { spgUserId: string }[]; komisiPerSpg: { spgUserId: string; bergaji: boolean }[] };
-    };
-    expect(ubah.after.komisiSpgPindah).toEqual([]);
-    expect(ubah.after.komisiPerSpg.find((k) => k.spgUserId === spgC)?.bergaji).toBe(false);
-
-    const rincian = await rincianSiklus(siklusId);
-    expect(rincian?.komisi.find((k) => k.spgNama === `${tag} C`)?.bergaji).toBe(false);
-    expect(rincian?.komisi.find((k) => k.spgNama === `${tag} A`)?.bergaji).toBe(true);
+    const batal = await prisma.receivable.findUniqueOrThrow({ where: { id: tagihan[0].id }, select: { status: true } });
+    expect(batal.status).toBe("VOIDED");
   });
 
-  it("penjualannya hilang sebelum dikunci ulang: barisnya dihapus, tidak berubah menjadi baris gaji pokok", async () => {
-    const notaC = await penjualDariTokoLain();
-    expect(await kunciDengan(15, 1_000_000)).toMatchObject({ ok: true, jumlahSpg: 3 });
-    expect(await bukaKunci({ cycleId: siklusId, olehUserId: adminId })).toEqual({ ok: true });
-    // Notanya ternyata milik bulan lain — C tidak lagi menjual di bulan siklus ini.
-    await prisma.spgSale.update({ where: { id: notaC }, data: { createdAt: new Date("2026-08-18T10:00:00+07:00") } });
-
-    expect(await kunciDengan(10, 1_000_000)).toMatchObject({ ok: true, totalKomisi: 20_000, jumlahSpg: 2 });
-    const sesudah = await komisiSiklus();
-    expect(sesudah.map((k) => k.spgUserId).sort()).toEqual([spgA, spgB].sort());
-    expect(sesudah.every((k) => Number(k.baseSalary) === 1_000_000 && k.salaried)).toBe(true);
+  it("toko tanpa salesman pemegang tidak bisa dikunci (TOKO_TANPA_PEMEGANG)", async () => {
+    await prisma.store.update({ where: { id: tokoId }, data: { salesmanId: null } });
+    expect(await kunci()).toEqual({ ok: false, alasan: "TOKO_TANPA_PEMEGANG" });
   });
 
-  it("penjual tanpa tarif di toko tanpa SPG bertugas: tidak ada baris Rp 0, tahap bayar SPG dilewati", async () => {
-    await prisma.user.updateMany({ where: { id: { in: seededIds([spgA, spgB]) } }, data: { assignedStoreId: null } });
-    await prisma.spgCommissionRate.deleteMany({ where: { itemCategoryId: seededId(kategoriId) } });
-
-    expect(await kunci()).toMatchObject({ ok: true, totalKomisi: 0, jumlahSpg: 0 });
-    expect(await komisiSiklus()).toEqual([]);
-    expect(await tahapSiklusIni()).toBe("nota");
-  });
-});
-
-describe("kunciAngka ulang — baris komisi SPG yang sudah pindah toko", () => {
-  /** Beban barang hilang SPG A Rp200.000, separuhnya sudah dipotong dari baris komisinya. */
-  async function potonganLamaUntuk(commissionId: string) {
-    lossId = (
-      await prisma.stockLoss.create({
-        data: {
-          storeId: tokoId,
-          source: "MANUAL",
-          totalQty: 1,
-          totalAmount: 200_000,
-          valueBasis: "HARGA_TERIMA",
-          status: "DITETAPKAN",
-          createdById: adminId,
-          decidedById: adminId,
-          decidedAt: new Date(),
-        },
-      })
-    ).id;
-    const share = await prisma.stockLossShare.create({
-      data: { lossId, bearer: "SPG", bearerUserId: spgA, amount: 200_000, settledAmount: 100_000 },
-    });
-    await prisma.stockLossDeduction.create({
-      data: { shareId: share.id, amount: 100_000, refType: REF_KOMISI_KONSI, refId: commissionId, createdById: adminId },
-    });
-    await prisma.consignmentCommission.update({ where: { id: commissionId }, data: { deduction: 100_000 } });
-    return share.id;
-  }
-
-  /*
-   * KEPUTUSAN SEMENTARA PEMILIK 2026-10-06: baris SPG yang pindah toko sesudah
-   * kunci pertama TETAP miliknya — tidak dihapus, dan bagiannya tidak dibagi ke
-   * SPG yang baru ditugaskan. Peserta kunci ulang = peserta kunci pertama.
-   */
-  it("baris SPG yang pindah toko TETAP miliknya: tidak dihapus, dihitung ulang, potongan bebannya dipotong lagi, siklusnya bisa selesai", async () => {
-    await kunci();
-    expect(await bukaKunci({ cycleId: siklusId, olehUserId: adminId })).toEqual({ ok: true });
-    const lama = (await komisiSiklus()).find((k) => k.spgUserId === spgA)!;
-    const shareId = await potonganLamaUntuk(lama.id);
-
-    // SPG A pindah toko sesudah bulan itu selesai.
-    await prisma.user.update({ where: { id: spgA }, data: { assignedStoreId: null } });
-    expect(await kunci()).toMatchObject({ ok: true, jumlahSpg: 2 });
-
-    const sesudah = await komisiSiklus();
-    expect(sesudah.map((k) => k.spgUserId).sort()).toEqual([spgA, spgB].sort());
-    const a = sesudah.find((k) => k.spgUserId === spgA)!;
-    const b = sesudah.find((k) => k.spgUserId === spgB)!;
-    // Baris yang sama (id tidak berganti), angka dibagi rata seperti kunci pertama.
-    expect(a.id).toBe(lama.id);
-    expect([Number(a.commission), Number(a.total)]).toEqual([10_000, 1_010_000]);
-    expect([Number(b.commission), Number(b.total)]).toEqual([10_000, 1_010_000]);
-
-    // Beban barang hilang SPG A dilepas lalu dipotong lagi dari barisnya sendiri.
-    const potonganA = await prisma.stockLossDeduction.findMany({ where: { refId: lama.id }, select: { amount: true } });
-    const totalPotonganA = potonganA.reduce((s, p) => s + Number(p.amount), 0);
-    expect(totalPotonganA).toBeGreaterThan(0);
-    expect(Number(a.deduction)).toBe(totalPotonganA);
-    expect(Number((await prisma.stockLossShare.findUniqueOrThrow({ where: { id: shareId } })).settledAmount)).toBe(totalPotonganA);
-
-    // Jejak mengunci: tidak ada yang dihapus; baris SPG yang sudah pindah disebut.
-    const jejak = await prisma.auditLog.findFirstOrThrow({
-      where: { entityType: "ConsignmentCycle", entityId: siklusId, action: JEJAK.KONSI_DIKUNCI },
-      orderBy: { createdAt: "desc" },
-    });
-    const ubah = jejak.changes as {
-      before: { komisiDihapus: unknown[] };
-      after: { komisiSpgPindah: { id: string; spgUserId: string }[] };
-    };
-    expect(ubah.before.komisiDihapus).toEqual([]);
-    expect(ubah.after.komisiSpgPindah).toEqual([expect.objectContaining({ id: lama.id, spgUserId: spgA })]);
-
-    // Gaji SPG A tetap bisa dibayar; rantainya selesai.
-    await bayarSemuaKomisi();
-    expect(await tahapSiklusIni()).toBe("nota");
-  });
-
-  it("SPG yang baru ditugaskan sesudah kunci pertama tidak ikut dibagi saat dikunci ulang", async () => {
-    await kunci();
-    expect(await bukaKunci({ cycleId: siklusId, olehUserId: adminId })).toEqual({ ok: true });
-    // A pindah, C menggantikannya di toko ini.
-    await prisma.user.update({ where: { id: spgA }, data: { assignedStoreId: null } });
-    spgC = (
-      await prisma.user.create({
-        data: { email: `${tag.toLowerCase()}-c@uji.local`, name: `${tag} C`, passwordHash: "x", assignedStoreId: tokoId },
-      })
-    ).id;
-
-    expect(await kunci()).toMatchObject({ ok: true, jumlahSpg: 2 });
-    const sesudah = await komisiSiklus();
-    expect(sesudah.map((k) => k.spgUserId).sort()).toEqual([spgA, spgB].sort());
-    expect(sesudah.every((k) => Number(k.commission) === 10_000)).toBe(true);
-
-    const jejak = await prisma.auditLog.findFirstOrThrow({
-      where: { entityType: "ConsignmentCycle", entityId: siklusId, action: JEJAK.KONSI_DIKUNCI },
-      orderBy: { createdAt: "desc" },
-    });
-    expect((jejak.changes as { after: { spgBaruTidakIkut: string[] } }).after.spgBaruTidakIkut).toEqual([spgC]);
-  });
-
-  it("baris SPG lama yang SUDAH dibayar tidak disentuh", async () => {
-    await kunci();
-    expect(await bukaKunci({ cycleId: siklusId, olehUserId: adminId })).toEqual({ ok: true });
-    const lama = (await komisiSiklus()).find((k) => k.spgUserId === spgA)!;
-    // Keadaan lama: dibayar selagi kuncinya terbuka (sebelum bayarKomisi menolaknya).
-    await prisma.consignmentCommission.update({ where: { id: lama.id }, data: { paidAt: new Date(), paidById: adminId } });
-    await prisma.user.update({ where: { id: spgA }, data: { assignedStoreId: null } });
-
-    expect(await kunci()).toMatchObject({ ok: true });
-    const tetap = await prisma.consignmentCommission.findUniqueOrThrow({ where: { id: lama.id } });
-    expect(tetap.paidAt).not.toBeNull();
-    expect(Number(tetap.total)).toBe(1_010_000);
-    // Baris yang sudah dibayar tetap ikut dibagi: B tidak mendapat bagian A lagi.
-    const b = (await komisiSiklus()).find((k) => k.spgUserId === spgB)!;
-    expect(Number(b.commission)).toBe(10_000);
-  });
-});
-
-describe("pembayaran toko per siklus", () => {
-  it("menolak mencatat pembayaran sebelum angkanya dikunci", async () => {
-    expect(await bayar(500_000)).toEqual({ ok: false, alasan: "BELUM_DIKUNCI" });
-  });
-
-  it("boleh dicicil; sisa = tagihan beku − pembayaran; rincian dan jejak mencatatnya", async () => {
-    await kunci();
-    expect(await bayar(600_000)).toMatchObject({ ok: true, sisa: 900_000 });
-
-    const r = await rincianSiklus(siklusId);
-    expect(r!.tagihan.total).toBe(1_500_000);
-    expect(r!.pelunasan).toMatchObject({ dibayar: 600_000, sisa: 900_000, lunas: false });
-    expect(r!.pelunasan.pembayaran).toEqual([
-      expect.objectContaining({ jumlah: 600_000, cara: "transfer", catatan: "uji", dibatalkanPada: null }),
-    ]);
-
-    const jejak = await prisma.auditLog.findFirstOrThrow({
-      where: { entityType: "ConsignmentCycle", entityId: siklusId, action: JEJAK_BAYAR_TOKO.DICATAT },
-    });
-    expect(jejak.changes).toMatchObject({ before: { dibayar: 0, sisa: 1_500_000 }, after: { dibayar: 600_000, sisa: 900_000 } });
-
-    expect(await bayar(900_000, "2026-10-04", "giro")).toMatchObject({ ok: true, sisa: 0 });
-    expect((await rincianSiklus(siklusId))!.pelunasan).toMatchObject({ dibayar: 1_500_000, sisa: 0, lunas: true });
-    expect(await bayar(1)).toEqual({ ok: false, alasan: "MELEBIHI_SISA" });
-  });
-
-  it("sisa memakai tagihan BEKU utuh (− promo Elorae + beban hilang) dan lunas tepat sampai sen", async () => {
-    // 3 × Rp133.333,33 (harga konsi hasil gross-up) = Rp399.999,99.
+  it("bulan siklus yang belum selesai tidak bisa dikunci (BULAN_BELUM_SELESAI)", async () => {
     expect(
       await kunciAngka({
         cycleId: siklusId,
         olehUserId: adminId,
-        baris: [{ itemId: barangId, itemName: `${tag} Blus`, qty: 3, price: 133_333.33 }],
+        sekarang: new Date("2026-09-20T10:00:00+07:00"),
+        baris: [{ itemId: barangId, itemName: `${tag} Blus`, qty: 10, price: 150_000 }],
       }),
-    ).toMatchObject({ ok: true });
-    // Nilai beku hasil kunci (di sini diisi langsung): promo Elorae Rp12.345,67, beban hilang ke toko Rp50.000,10.
-    await prisma.consignmentCycle.update({
-      where: { id: siklusId },
-      data: { promoBorneByElorae: 12_345.67, lossChargedToStore: 50_000.1 },
-    });
-    // 399.999,99 − 12.345,67 + 50.000,10 = 437.654,42
-    expect((await rincianSiklus(siklusId))!.tagihan.total).toBe(437_654.42);
-
-    expect(await bayar(400_000)).toMatchObject({ ok: true, sisa: 37_654.42 });
-    expect(await bayar(37_654.43)).toEqual({ ok: false, alasan: "MELEBIHI_SISA" });
-    expect(await bayar(37_654.42)).toMatchObject({ ok: true, sisa: 0 });
-    expect((await rincianSiklus(siklusId))!.pelunasan).toMatchObject({ dibayar: 437_654.42, sisa: 0, lunas: true });
-    expect((await daftarSiklus()).find((b) => b.id === siklusId)?.sisaTagihan).toBe(0);
+    ).toEqual({ ok: false, alasan: "BULAN_BELUM_SELESAI" });
   });
 
-  it("menolak jumlah melebihi sisa, jumlah tidak sah, cara bayar asing, dan tanggal di masa depan", async () => {
-    await kunci();
-    expect(await bayar(1_500_000.01)).toEqual({ ok: false, alasan: "MELEBIHI_SISA" });
-    expect(await bayar(0)).toEqual({ ok: false, alasan: "NILAI_TIDAK_VALID" });
-    expect(await bayar(-5_000)).toEqual({ ok: false, alasan: "NILAI_TIDAK_VALID" });
-    expect(await bayar(Number.NaN)).toEqual({ ok: false, alasan: "NILAI_TIDAK_VALID" });
-    expect(await bayar(10_000, "2026-10-03", "cek")).toEqual({ ok: false, alasan: "CARA_BAYAR_TIDAK_VALID" });
-    const besok = new Date(Date.now() + 2 * 86_400_000);
-    expect(
-      await catatPembayaranToko({ cycleId: siklusId, jumlah: 10_000, tanggal: besok, cara: "tunai", olehUserId: adminId }),
-    ).toEqual({ ok: false, alasan: "TANGGAL_DI_DEPAN" });
-    expect(await prisma.consignmentPayment.count({ where: { cycleId: siklusId } })).toBe(0);
-  });
-
-  it("tahap menunggu pembayaran toko sesudah faktur pajak, sampai lunas", async () => {
-    await kunci();
-    await bayarSemuaKomisi();
-    await catatNomorDokumen({ cycleId: siklusId, jenis: "NOTA", nomor: "NT-1", olehUserId: adminId });
-    await catatNomorDokumen({ cycleId: siklusId, jenis: "PAJAK", nomor: "FP-1", olehUserId: adminId });
-    expect(await tahapSiklusIni()).toBe("bayar_toko");
-    expect((await daftarSiklus()).find((b) => b.id === siklusId)?.giliran).toBe("keuangan");
-
-    await bayar(1_000_000);
-    expect(await tahapSiklusIni()).toBe("bayar_toko");
-    await bayar(500_000);
-    expect(await tahapSiklusIni()).toBe("selesai");
-  });
-
-  it("buka kunci DITOLAK selama ada pembayaran; pembayaran yang dibatalkan tidak dihitung", async () => {
-    await kunci();
-    const p = await bayar(400_000);
-    if (!p.ok) throw new Error("pembayaran gagal");
-    expect(await bukaKunci({ cycleId: siklusId, olehUserId: adminId })).toEqual({ ok: false, alasan: "ADA_PEMBAYARAN_TOKO" });
-
-    expect(await batalkanPembayaranToko({ paymentId: p.id, alasan: "  ", olehUserId: adminId })).toEqual({
-      ok: false,
-      alasan: "ALASAN_WAJIB",
-    });
-    expect(await batalkanPembayaranToko({ paymentId: p.id, alasan: "salah toko", olehUserId: adminId })).toEqual({
-      ok: true,
-      sisa: 1_500_000,
-    });
-    expect(await batalkanPembayaranToko({ paymentId: p.id, alasan: "lagi", olehUserId: adminId })).toEqual({
-      ok: false,
-      alasan: "SUDAH_DIBATALKAN",
-    });
-
-    const r = await rincianSiklus(siklusId);
-    expect(r!.pelunasan).toMatchObject({ dibayar: 0, sisa: 1_500_000, lunas: false });
-    expect(r!.pelunasan.pembayaran[0]).toMatchObject({ jumlah: 400_000, alasanBatal: "salah toko" });
-    expect(r!.pelunasan.pembayaran[0].dibatalkanPada).not.toBeNull();
-    const jejak = await prisma.auditLog.findFirstOrThrow({
-      where: { entityType: "ConsignmentCycle", entityId: siklusId, action: JEJAK_BAYAR_TOKO.DIBATALKAN },
-    });
-    expect(jejak.reason).toBe("salah toko");
-    expect(jejak.changes).toMatchObject({ before: { dibayar: 400_000, sisa: 1_100_000 }, after: { dibayar: 0, sisa: 1_500_000 } });
-
-    expect(await bukaKunci({ cycleId: siklusId, olehUserId: adminId })).toEqual({ ok: true });
-  });
-
-  it("balapan: dua pembayaran Rp1.000.000 atas tagihan Rp1.500.000 — hanya satu yang tercatat", async () => {
-    await kunci();
-    const hasil = await Promise.all([bayar(1_000_000), bayar(1_000_000)]);
-    expect(hasil.filter((h) => h.ok)).toHaveLength(1);
-    expect(hasil.filter((h) => !h.ok)).toEqual([{ ok: false, alasan: "MELEBIHI_SISA" }]);
-    const rows = await prisma.consignmentPayment.findMany({ where: { cycleId: siklusId } });
-    expect(rows.reduce((n, x) => n + Number(x.amount), 0)).toBe(1_000_000);
-  });
-
-  it("balapan: buka kunci dan mencatat pembayaran tidak bisa sama-sama berhasil", async () => {
-    await kunci();
-    const [buka, catat] = await Promise.all([bukaKunci({ cycleId: siklusId, olehUserId: adminId }), bayar(300_000)]);
-    if (buka.ok) {
-      expect(catat).toEqual({ ok: false, alasan: "BELUM_DIKUNCI" });
-      expect(await prisma.consignmentPayment.count({ where: { cycleId: siklusId } })).toBe(0);
-    } else {
-      expect(buka).toEqual({ ok: false, alasan: "ADA_PEMBAYARAN_TOKO" });
-      expect(catat).toMatchObject({ ok: true, sisa: 1_200_000 });
-      expect((await prisma.consignmentCycle.findUniqueOrThrow({ where: { id: siklusId } })).lockedAt).not.toBeNull();
-    }
+  it("gaji pokok dihitung dari gaji bulanan dan catatan check-in, tidak diketik", async () => {
+    expect(await kunci()).toMatchObject({ ok: true });
+    const rows = await komisiSiklus();
+    expect(rows.map((k) => Number(k.baseSalary))).toEqual([1_000_000, 1_000_000]);
   });
 });

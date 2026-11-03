@@ -47,14 +47,12 @@ export type HPPBreakdown = {
   subtotal: number;
   hasMixedPPN: boolean;
   nettSubtotal?: number;
-  marginPercent: number | null;
-  marginAmount: number | null;
-  additionalCost: number | null;
   /**
-   * HARGA REKOMENDASI dari markup WO (subtotal × (1 + markup) + biaya tambahan) — bukan harga
-   * jual barang dan tidak pernah ditulis ke barang; harga jual diketik di halaman barang.
+   * Biaya tambahan per pcs perintah kerja — biaya produksi, ikut HPP penerimaan. Isian markup di
+   * perintah kerja dihapus (jawaban pemilik P4a, 2026-11-02): harga rekomendasi hanya satu, dari
+   * pengaturan barang (`lib/items/rekomendasi-harga-queries.ts`), dan Laporan HPP menampilkan itu.
    */
-  sellingPrice: number | null;
+  additionalCost: number | null;
 };
 
 export type HPPRow = {
@@ -96,7 +94,6 @@ async function hitungHPP(woId: string): Promise<HPPBreakdown> {
       consumptionPlan: true,
       plannedQty: true,
       actualQty: true,
-      hppMarginPercent: true,
       hppAdditionalCost: true,
       finishedGood: { select: { id: true, sku: true, nameId: true } },
       issues: { select: { issueType: true, items: true } },
@@ -108,7 +105,6 @@ async function hitungHPP(woId: string): Promise<HPPBreakdown> {
 
   const plannedQty = Number(wo.plannedQty) || 0;
   const actualQty = Number(wo.actualQty ?? 0) || 0;
-  const marginPercent = wo.hppMarginPercent != null ? Number(wo.hppMarginPercent) : null;
   const additionalCost = wo.hppAdditionalCost != null ? Number(wo.hppAdditionalCost) : null;
 
   // Per-piece quantities come from the WO's own plan, not the current BOM: a colour/size-scoped
@@ -198,13 +194,6 @@ async function hitungHPP(woId: string): Promise<HPPBreakdown> {
   const ppnFlags = lines.map((l) => l.ppnIncluded);
   const hasMixedPPN = ppnFlags.length > 0 && (new Set(ppnFlags).size > 1);
   const nettSubtotal = lines.reduce((sum, l) => sum + (l.nettCostPerPcs ?? l.costPerPcs), 0);
-  const marginAmount = marginPercent != null ? (subtotal * marginPercent) / 100 : null;
-  const sellingPrice =
-    marginPercent != null
-      ? subtotal * (1 + marginPercent / 100) + (additionalCost ?? 0)
-      : additionalCost != null
-        ? subtotal + additionalCost
-        : null;
 
   return {
     woId: wo.id,
@@ -221,10 +210,7 @@ async function hitungHPP(woId: string): Promise<HPPBreakdown> {
     subtotal,
     hasMixedPPN,
     nettSubtotal,
-    marginPercent,
-    marginAmount,
     additionalCost,
-    sellingPrice,
   };
 }
 

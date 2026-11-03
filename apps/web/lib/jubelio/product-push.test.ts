@@ -68,6 +68,13 @@ describe.each([
     );
   });
 
+  it("never pushes a Toko offline saja item on an edit, even one Jubelio already has (P3a)", async () => {
+    vi.mocked(prisma.item.findUnique).mockResolvedValue({ id: "i1", type: "FINISHED_GOOD", salesChannel: "OFFLINE" } as never);
+    vi.mocked(prisma.jubelioProductMapping.count).mockResolvedValue(1 as never);
+    await run();
+    expect(prisma.jubelioOutbox.create).not.toHaveBeenCalled();
+  });
+
   it("ignores items that are not finished goods", async () => {
     vi.mocked(prisma.item.findUnique).mockResolvedValue({ id: "i1", type: "FABRIC" } as never);
     vi.mocked(prisma.jubelioProductMapping.count).mockResolvedValue(1 as never);

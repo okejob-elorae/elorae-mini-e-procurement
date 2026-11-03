@@ -6,9 +6,10 @@ const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 /**
- * `Receivable_one_source_check` is source-aware: a DELIVERY-sourced row (a putus nota or a konsi
- * sell-through report, which carry the column default) needs exactly one of `deliveryId` /
- * `sellThroughId`; a MANUAL or IMPORT row stands on its own invoice number and must carry neither.
+ * `Receivable_one_source_check` is source-aware: a DELIVERY-sourced row (a putus nota, a konsi
+ * sell-through report or a locked konsi cycle, which carry the column default) needs exactly one of
+ * `deliveryId` / `sellThroughId` / `consignmentCycleId`; a MANUAL or IMPORT row stands on its own
+ * invoice number and must carry none of them.
  * `TaxInvoice_one_source_check` is unchanged: exactly one, always.
  */
 d("Receivable / TaxInvoice exactly-one-source CHECK (test bed only)", () => {
@@ -18,6 +19,7 @@ d("Receivable / TaxInvoice exactly-one-source CHECK (test bed only)", () => {
   let orderId = "";
   let deliveryId = "";
   let sellThroughId = "";
+  let cycleId = "";
   let receivableId = "";
   let taxInvoiceId = "";
 
@@ -28,6 +30,7 @@ d("Receivable / TaxInvoice exactly-one-source CHECK (test bed only)", () => {
     orderId = "";
     deliveryId = "";
     sellThroughId = "";
+    cycleId = "";
     receivableId = "";
     taxInvoiceId = "";
 
@@ -71,6 +74,11 @@ d("Receivable / TaxInvoice exactly-one-source CHECK (test bed only)", () => {
       },
     });
     sellThroughId = sellThrough.id;
+
+    const cycle = await prisma.consignmentCycle.create({
+      data: { noKonsi: `TEST-RSC-KONSI-${token}`, storeId, periodYear: 2026, periodMonth: 5 },
+    });
+    cycleId = cycle.id;
   });
 
   afterEach(async () => {
@@ -82,6 +90,8 @@ d("Receivable / TaxInvoice exactly-one-source CHECK (test bed only)", () => {
      */
     await prisma.taxInvoice.deleteMany({ where: { id: seededId(taxInvoiceId) } });
     await prisma.receivable.deleteMany({ where: { id: seededId(receivableId) } });
+    /* The cycle after its receivable: `Receivable.consignmentCycle` is `onDelete: Restrict`. */
+    await prisma.consignmentCycle.deleteMany({ where: { id: seededId(cycleId) } });
     await prisma.konsiSellThrough.deleteMany({ where: { id: seededId(sellThroughId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: seededId(deliveryId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
@@ -225,6 +235,69 @@ d("Receivable / TaxInvoice exactly-one-source CHECK (test bed only)", () => {
     receivableId = receivable.id;
     expect(receivable.deliveryId).toBeNull();
     expect(receivable.sellThroughId).toBe(sellThroughId);
+  });
+
+  it("accepts a DELIVERY-sourced receivable with only consignmentCycleId", async () => {
+    const receivable = await prisma.receivable.create({
+      data: {
+        consignmentCycleId: cycleId,
+        isConsignment: true,
+        invoiceNo: `TEST-RSC-KONSI-${token}`,
+        storeId,
+        invoiceDate: new Date("2026-05-31T00:00:00.000+07:00"),
+        dueDate: new Date("2026-06-30T00:00:00.000+07:00"),
+        amount: 100,
+        outstanding: 100,
+        originalAmount: 100,
+        outstandingAmount: 100,
+      },
+    });
+    receivableId = receivable.id;
+    expect(receivable.source).toBe("DELIVERY");
+    expect(receivable.deliveryId).toBeNull();
+    expect(receivable.sellThroughId).toBeNull();
+    expect(receivable.consignmentCycleId).toBe(cycleId);
+  });
+
+  it("rejects a receivable that names both a cycle and a delivery", async () => {
+    const attempt = prisma.receivable
+      .create({
+        data: {
+          consignmentCycleId: cycleId,
+          deliveryId,
+          storeId,
+          invoiceDate: new Date("2026-05-31T00:00:00.000+07:00"),
+          dueDate: new Date("2026-06-30T00:00:00.000+07:00"),
+          originalAmount: 100,
+          outstandingAmount: 100,
+        },
+      })
+      .then((row) => {
+        receivableId = row.id;
+        return row;
+      });
+    await expect(attempt).rejects.toThrow(/Receivable_one_source_check/);
+  });
+
+  it("rejects a MANUAL receivable that names a cycle", async () => {
+    const attempt = prisma.receivable
+      .create({
+        data: {
+          source: "MANUAL",
+          invoiceNo: `TEST-RSC-MK-${token}`,
+          consignmentCycleId: cycleId,
+          storeId,
+          invoiceDate: new Date("2026-05-31T00:00:00.000+07:00"),
+          dueDate: new Date("2026-06-30T00:00:00.000+07:00"),
+          amount: 100,
+          outstanding: 100,
+        },
+      })
+      .then((row) => {
+        receivableId = row.id;
+        return row;
+      });
+    await expect(attempt).rejects.toThrow(/Receivable_one_source_check/);
   });
 
   it("rejects a tax invoice with neither deliveryId nor sellThroughId", async () => {

@@ -13,7 +13,8 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  *
  * Yang dibuktikan: setiap aksi itu, SESUDAH dokumennya tercatat, menulis satu
  * baris `stock_push` PENDING untuk barang yang punya pemetaan Jubelio — dan
- * tidak untuk barang tanpa pemetaan.
+ * tidak untuk barang tanpa pemetaan. GRN tanpa PO (P51a) belum masuk stok
+ * sampai admin mengonfirmasinya, jadi baru diantrekan SESUDAH konfirmasi itu.
  */
 
 const sesi = vi.hoisted(() => ({ id: "", permissions: [] as string[] }));
@@ -56,7 +57,7 @@ vi.mock("@/lib/redis/lock", () => ({
 vi.mock("@/lib/internal-api", () => ({ apiFetch: vi.fn(async () => ({ ok: true, status: 200 })) }));
 
 const { createStockAdjustment } = await import("./inventory");
-const { createGRN, declineGRNByOwner } = await import("./grn");
+const { createGRN, declineGRNByOwner, putuskanGrnTanpaPoAction } = await import("./grn");
 const { receiveFG } = await import("./production");
 const { acceptReturnItemAction } = await import("./sales-return-decision");
 
@@ -153,6 +154,15 @@ d("push stok ke Jubelio sesudah dokumen stok (test bed only)", () => {
     const semuaGrn = (
       await prisma.gRN.findMany({ where: { supplierId: seededId(supplierId) }, select: { id: true } })
     ).map((g) => g.id);
+    // GRN tanpa PO menulis lonceng `GRN_NO_PO_PENDING` (P51a); metadata dicocokkan di JS —
+    // penyaringan jalur JSON tidak andal di adaptor ini — dan hanya baris GRN uji ini yang ikut.
+    const milik = new Set([...semuaGrn, ...grnIds]);
+    const lonceng = (
+      await prisma.adminNotification.findMany({ where: { category: "GRN_NO_PO_PENDING" }, select: { id: true, metadata: true } })
+    )
+      .filter((n) => milik.has(String((n.metadata as { grnId?: unknown } | null)?.grnId ?? "")))
+      .map((n) => n.id);
+    await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(lonceng) } } });
     await prisma.gRN.deleteMany({ where: { id: { in: seededIds([...semuaGrn, ...grnIds]) } } });
     await prisma.itemPriceChangeLog.deleteMany({ where: { itemId: { in: seededIds(items) } } });
     await prisma.stockMovement.deleteMany({ where: { itemId: { in: seededIds(items) } } });
@@ -225,7 +235,12 @@ d("push stok ke Jubelio sesudah dokumen stok (test bed only)", () => {
     expect(await antrean()).toEqual([]);
   });
 
-  it("GRN: hanya barang terpetakan di GRN itu yang diantrekan", async () => {
+  it("GRN tanpa PO: tidak ada yang diantrekan sampai admin mengonfirmasi; sesudahnya hanya barang terpetakan di GRN itu", async () => {
+    const stokTerpetakan = async () =>
+      (await prisma.inventoryValue.findMany({ where: { itemId: seededId(terpetakan) }, select: { qtyOnHand: true } }))
+        .reduce((n, b) => n + Number(b.qtyOnHand), 0);
+    const stokAwal = await stokTerpetakan();
+
     sebagai(["inventory:manage"]);
     const hasil = await createGRN({
       supplierId,
@@ -238,6 +253,15 @@ d("push stok ke Jubelio sesudah dokumen stok (test bed only)", () => {
     const grn = hasil.grn;
     grnIds.push(grn.id);
 
+    // Menunggu konfirmasi admin (P51a): stok belum bergerak, jadi belum ada yang didorong ke Jubelio.
+    expect(grn.menungguKonfirmasi).toBe(true);
+    expect(await stokTerpetakan()).toBe(stokAwal);
+    expect(await antrean()).toEqual([]);
+
+    sebagai(["goods_receipts:confirm_no_po"]);
+    expect(await putuskanGrnTanpaPoAction(grn.id, "KONFIRMASI")).toEqual({ ok: true, docNumber: grn.docNumber });
+
+    expect(await stokTerpetakan()).toBe(stokAwal + 5);
     expect(await antrean()).toEqual([
       { entityId: terpetakan, status: "PENDING", payload: { sumber: "GRN", ref: grn.docNumber } },
     ]);

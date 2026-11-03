@@ -18,6 +18,8 @@ export const PESAN_PEMILIK_GRN = {
   STOK_KURANG: "Cannot decline: insufficient on-hand stock (goods may have been issued or consumed).",
   QTY_PO_NEGATIF: "PO received quantity would become negative; data may be inconsistent.",
   TANPA_BARIS: "No valid GRN lines to reverse",
+  /** Tagihan vendor yang belum dibatalkan menyebut GRN ini (baris GRN_ITEM): batalkan tagihannya dulu. */
+  SUDAH_DITAGIH: "Cannot decline: a live vendor bill names this receipt. Void that bill first.",
   /** Diikuti id barang. */
   HARGA_TIDAK_SAH: "Invalid unit cost on GRN line for item",
 } as const;
@@ -29,6 +31,7 @@ export type KodeTolakPemilikGrn =
   | "TIDAK_MENUNGGU"
   | "ROL_SUDAH_DIPAKAI"
   | "STOK_KURANG"
+  | "SUDAH_DITAGIH"
   | "DATA_TIDAK_KONSISTEN"
   | "GAGAL";
 
@@ -46,6 +49,8 @@ export function kodeTolakPemilikGrn(e: unknown): KodeTolakPemilikGrn {
       return "ROL_SUDAH_DIPAKAI";
     case PESAN_PEMILIK_GRN.STOK_KURANG:
       return "STOK_KURANG";
+    case PESAN_PEMILIK_GRN.SUDAH_DITAGIH:
+      return "SUDAH_DITAGIH";
     case PESAN_PEMILIK_GRN.QTY_PO_NEGATIF:
     case PESAN_PEMILIK_GRN.TANPA_BARIS:
       return "DATA_TIDAK_KONSISTEN";

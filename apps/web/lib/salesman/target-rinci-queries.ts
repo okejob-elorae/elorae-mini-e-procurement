@@ -1,14 +1,12 @@
 import { prisma, type Prisma } from "@elorae/db";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import {
   capaianUntuk,
-  capaianUntukHp,
   dokumenSpg,
   kemajuanRinci,
-  tanpaKonsiDiHp,
   rentangBulanWib,
   susunCapaianRinci,
   TANPA_KATEGORI,
-  totalUntukHp,
   type BarisTarget,
   type CapaianRinci,
   type DokumenJual,
@@ -286,8 +284,6 @@ export async function acuanDikenal(
 export type BarisTargetTampil = BarisTarget & {
   nama: string;
   sku: string | null;
-  /** Nilai capaian di HP dihitung tanpa konsinyasi (setiap target dalam rupiah). */
-  tanpaKonsi: boolean;
   aktif: boolean;
   kemajuan: KemajuanRinci;
 };
@@ -299,18 +295,16 @@ export function rakitBarisTarget(
   nama: ReadonlyMap<string, NamaAcuan>,
   bulan: string,
   hariIni: Date,
-  /** HP salesman: setiap target dalam rupiah dihitung tanpa konsinyasi (`capaianUntukHp`). */
-  opsi: { untukHp?: boolean } = {},
 ): BarisTargetTampil[] {
   return baris.map((b) => {
     const n = nama.get(`${b.scope}:${b.refId}`);
-    const capai = opsi.untukHp ? capaianUntukHp(capaian, b) : capaianUntuk(capaian, b);
+    // Satu capaian untuk kantor dan HP: konsinyasi ikut (P56).
+    const capai = capaianUntuk(capaian, b);
     return {
       ...b,
       nama: n?.nama ?? "—",
       sku: n?.sku ?? null,
       aktif: n?.aktif ?? false,
-      tanpaKonsi: opsi.untukHp === true && tanpaKonsiDiHp(b),
       kemajuan: kemajuanRinci(b.value, capai, bulan, hariIni),
     };
   });
@@ -318,9 +312,8 @@ export function rakitBarisTarget(
 
 /**
  * Target rinci milik SATU orang untuk layar HP-nya. SPG (`opsi.spg`) dihitung
- * dari nota penjualannya sendiri (`capaianRinciSpg`); konsinyasi tidak pernah
- * ada di sana, jadi tidak ada yang perlu disembunyikan (`untukHp` hanya untuk
- * sales).
+ * dari nota penjualannya sendiri (`capaianRinciSpg`); salesman dari capaian
+ * resmi kantor, konsinyasi ikut (P56).
  */
 export async function targetSaya(salesmanId: string, bulan: string, hariIni: Date, opsi: { spg?: boolean } = {}) {
   const [peta, capaian] = await Promise.all([
@@ -330,7 +323,7 @@ export async function targetSaya(salesmanId: string, bulan: string, hariIni: Dat
   const baris = peta.get(salesmanId) ?? [];
   const c = capaian.get(salesmanId) ?? capaianKosong();
   const nama = await namaAcuanTarget(baris);
-  return { baris: rakitBarisTarget(baris, c, nama, bulan, hariIni, { untukHp: !opsi.spg }), capaian: c };
+  return { baris: rakitBarisTarget(baris, c, nama, bulan, hariIni), capaian: c };
 }
 
 /** Satu target di layar Target saya HP — kunci dipilih satu per satu, tanpa capaian mentah. */
@@ -340,8 +333,6 @@ export type BarisTargetHp = {
   nama: string;
   sku: string | null;
   measure: UkuranTarget;
-  /** Capaian dihitung dari putus + van saja (setiap target dalam rupiah). */
-  tanpaKonsi: boolean;
   target: number;
   capai: number;
   persen: number;
@@ -353,20 +344,17 @@ export type BarisTargetHp = {
 
 /** Payload halaman Target saya di HP (tanpa target total, yang dirakit halamannya dari `omzet`). */
 export type TargetSayaHp = {
-  /** Omzet untuk target total: putus + van (sales) atau penjualan bersih notanya (SPG). Tanpa konsinyasi. */
+  /** Omzet untuk target total: omzet resmi kantor (sales, konsinyasi ikut — P56) atau penjualan bersih notanya (SPG). */
   omzet: number;
   /** Target kategori dulu, lalu barang. */
   baris: BarisTargetHp[];
 };
 
 /**
- * Target saya untuk HP. Aturan mutlak pemilik: harga dan total konsinyasi
- * tidak pernah sampai ke aplikasi salesman. `targetSaya` mengembalikan
- * `capaian` mentah (total dan kanal memuat konsi) — itu tidak pernah keluar
- * dari sini. Omzet target total = putus + van (`totalUntukHp`); setiap target
- * dalam rupiah dihitung tanpa konsi (`capaianUntukHp`); target pcs tetap
- * menghitung pcs konsinyasi. Halaman HP memanggil ini, tidak pernah
- * `targetSaya` langsung (dijaga `penjualan-hp.penjaga.test.ts`).
+ * Target saya untuk HP: capaian yang sama dengan layar kantor (P56, jawaban
+ * pemilik 2026-11-02 "tampilkan semuanya saja") — omzet target total =
+ * `capaian.total`, dan setiap target rupiah memuat konsinyasi. Untuk SPG
+ * `capaian.total` = penjualan bersih notanya, seperti sebelumnya.
  */
 export async function targetSayaHp(
   salesmanId: string,
@@ -377,14 +365,13 @@ export async function targetSayaHp(
   const rinci = await targetSaya(salesmanId, bulan, hariIni, opsi);
   const urut = [...rinci.baris].sort((a, b) => (a.scope === b.scope ? 0 : a.scope === "KATEGORI" ? -1 : 1));
   return {
-    omzet: totalUntukHp(rinci.capaian),
+    omzet: rinci.capaian.total,
     baris: urut.map((b) => ({
       kunci: `${b.scope}:${b.refId}`,
       scope: b.scope,
       nama: b.nama,
       sku: b.sku,
       measure: b.measure,
-      tanpaKonsi: b.tanpaKonsi,
       target: b.kemajuan.target,
       capai: b.kemajuan.capai,
       persen: b.kemajuan.persen,
@@ -409,8 +396,11 @@ export async function pilihanAcuanTarget(): Promise<PilihanAcuan> {
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { id: true, name: true },
     }),
+    // Hanya barang yang dijual offline (P3): target lapangan untuk barang
+    // marketplace saja tidak bisa dicapai salesman. Target yang sudah ada
+    // tetap tampil di tempat lain.
     prisma.item.findMany({
-      where: { isActive: true, type: "FINISHED_GOOD" },
+      where: { isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() },
       orderBy: { sku: "asc" },
       select: { id: true, sku: true, nameId: true, category: { select: { name: true } } },
     }),

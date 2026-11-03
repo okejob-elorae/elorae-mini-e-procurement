@@ -12,6 +12,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { saveCountsAction } from "@/app/actions/store-stocktakes";
 import { browserStorage, clearSpgDraft, readSpgDraft, writeSpgDraft } from "@/lib/stores/stocktake/spg-draft";
 import { SpgStocktakeAddItemSheet, type AddableItem } from "./SpgStocktakeAddItemSheet";
+import { BarangDisisihkanBanner } from "../BarangDisisihkanBanner";
+import type { BarangDisisihkan } from "@/lib/spg/retur-pembeli-queries";
 
 export type SpgStocktakeLine = {
   itemId: string;
@@ -43,7 +45,18 @@ function keyOf(itemId: string, variantSku: string): string {
   return `${itemId}::${variantSku}`;
 }
 
-export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: string; storeName: string; lines: SpgStocktakeLine[] }) {
+export function SpgStocktakeShell({
+  storeId,
+  storeName,
+  lines,
+  disisihkan = [],
+}: {
+  storeId: string;
+  storeName: string;
+  lines: SpgStocktakeLine[];
+  /** Barang retur pembeli yang disisihkan (P12) — tidak di rak, jangan dihitung. */
+  disisihkan?: BarangDisisihkan[];
+}) {
   const t = useTranslations("storeStocktakes.spg");
   const [q, setQ] = useState("");
   const [counts, setCounts] = useState<Record<string, string>>({});
@@ -245,6 +258,8 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
         <h1 className="text-lg font-semibold">{storeName}</h1>
         <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>
+
+      <BarangDisisihkanBanner barang={disisihkan} />
 
       {!online && (
         <Alert className="border-amber-500/50 text-amber-700 [&>svg]:text-amber-600">

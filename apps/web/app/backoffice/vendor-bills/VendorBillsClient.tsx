@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Loader2, Plus } from "lucide-react";
+import { AlertTriangle, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,8 +19,16 @@ import { getVendorBills } from "@/app/actions/vendor-billing";
 import type { VendorBillRow } from "@/lib/vendor-billing/queries";
 import { BILL_STATUS_VARIANT } from "./status-variant";
 
-export function VendorBillsClient({ canManage }: { canManage: boolean }) {
+export type PeringatanTagihan = { belumDiminta: number | null; permintaanTerlambat: number | null; selisihMenunggu: number | null };
+
+export function VendorBillsClient({ canManage, peringatan }: { canManage: boolean; peringatan?: PeringatanTagihan }) {
   const t = useTranslations("vendorBills");
+  const tP = useTranslations("vendorBills.peringatan");
+  const bagianPeringatan = [
+    (peringatan?.belumDiminta ?? 0) > 0 ? tP("belumDiminta", { count: peringatan!.belumDiminta! }) : null,
+    (peringatan?.permintaanTerlambat ?? 0) > 0 ? tP("terlambat", { count: peringatan!.permintaanTerlambat! }) : null,
+    (peringatan?.selisihMenunggu ?? 0) > 0 ? tP("selisih", { count: peringatan!.selisihMenunggu! }) : null,
+  ].filter((x): x is string => x != null);
   const [status, setStatus] = useState("ALL");
   const [supplierId, setSupplierId] = useState("");
   const [from, setFrom] = useState("");
@@ -60,15 +68,30 @@ export function VendorBillsClient({ canManage }: { canManage: boolean }) {
           <h1 className="text-2xl font-bold">{t("title")}</h1>
           <p className="text-muted-foreground">{t("subtitle")}</p>
         </div>
-        {canManage && (
-          <Link href="/backoffice/vendor-bills/new" className="ml-auto">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              {t("newBill")}
-            </Button>
+        <div className="ml-auto flex flex-wrap gap-2">
+          <Link href="/backoffice/vendor-bills/belum-ditagih">
+            <Button variant="outline">{t("belumDitagih.judul")}</Button>
           </Link>
-        )}
+          <Link href="/backoffice/vendor-bills/selisih-harga?status=MENUNGGU">
+            <Button variant="outline">{t("selisih.halamanJudul")}</Button>
+          </Link>
+          {canManage && (
+            <Link href="/backoffice/vendor-bills/new">
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                {t("newBill")}
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
+
+      {bagianPeringatan.length > 0 && (
+        <div className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <p>{bagianPeringatan.join(" · ")}</p>
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -142,7 +165,7 @@ export function VendorBillsClient({ canManage }: { canManage: boolean }) {
                     <TableHead>{t("supplier")}</TableHead>
                     <TableHead>{t("colDate")}</TableHead>
                     <TableHead>{t("colDue")}</TableHead>
-                    <TableHead className="text-right">{t("colTotal")}</TableHead>
+                    <TableHead className="text-right">{t("totalDicatat")}</TableHead>
                     <TableHead className="text-right">{t("colPaid")}</TableHead>
                     <TableHead>{t("status")}</TableHead>
                   </TableRow>

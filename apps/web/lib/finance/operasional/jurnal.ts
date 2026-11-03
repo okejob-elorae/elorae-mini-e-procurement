@@ -10,6 +10,7 @@ import { bacaPengaturanPpn } from "@/lib/finance/pajak/ppn-pengaturan";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { gerakStokPerDokumen } from "@/lib/inventory/kartu-stok-queries";
 import { hitungKreditRetur } from "@/lib/purchase-orders/kredit-retur";
+import { kurangPerBarang } from "@/lib/receivables/selisih-retur";
 import { REF_KOMISI_KONSI, REF_KOMISI_SPG_PUTUS } from "@/lib/spg/hilang";
 import { parseVendorReturnLines } from "@/lib/vendor-returns/baris-retur";
 import {
@@ -17,15 +18,17 @@ import {
   bacaIdKomisiSpg,
   bacaPeriode,
   barisBarangHilang,
+  barisBarangHilangGudang,
   barisBayarBiayaPerjalanan,
-  barisBayarKomisi,
-  barisBayarTokoKonsi,
+  barisBayarKomisiSpg,
+  barisBayarTambahanSpg,
   barisBiayaPerjalanan,
   barisGudangRusak,
   barisKomisi,
-  barisKoreksiKomisi,
   barisPindahKonsi,
   barisPindahKonsiPengiriman,
+  barisPemulihanKlaim,
+  barisPenerimaanUtangSpg,
   barisPotongSales,
   barisReturKonsi,
   barisReturPemasok,
@@ -293,41 +296,97 @@ export function postJurnalPesananKonsi(orderId: string, postedById: string, clie
  * memotong kartu stok gudang, jadi mengkredit INVENTORY_VARIANCE — akun yang
  * sudah didebit jurnal opname itu — bukan persediaan gudang.
  */
-export function postJurnalPindahKonsi(transferId: string, postedById: string, client: Klien = prisma): Promise<HasilJurnalOperasional> {
-  return postSekali(client, SUMBER_OPERASIONAL.PINDAH_KONSI, transferId, postedById, async () => {
-    const t = await client.konsiTransfer.findUnique({
-      where: { id: transferId },
-      select: {
-        docNo: true,
-        storeId: true,
-        createdAt: true,
-        store: { select: { name: true } },
-        order: { select: { orderNo: true } },
-        oldOrderArrival: true,
-        lines: { select: { qty: true, unitCost: true, mainCountedByOpnameId: true, item: { select: { type: true } } } },
-      },
-    });
-    if (!t) return null;
-    return {
-      tanggal: t.createdAt,
-      deskripsi: t.oldOrderArrival
-        ? `Barang pesanan konsinyasi lama ${t.order.orderNo} sampai di ${t.store.name} (${t.docNo})`
-        : `Pindah barang konsinyasi ${t.docNo} (${t.order.orderNo}) ke ${t.store.name}`,
-      baris: barisPindahKonsiPengiriman({
-        storeId: t.storeId,
-        baris: t.lines.map((l) => ({
-          qty: angka(l.qty),
-          unitCost: angka(l.unitCost),
-          tipeBarang: l.item.type,
-          // Hanya transfer konfirmasi sampai yang boleh membawa tanda ini (penulisnya menolak yang lain).
-          sudahDiopname: t.oldOrderArrival && Boolean(l.mainCountedByOpnameId),
-        })),
-      }),
-    };
+export function postJurnalPindahKonsi(transferId: string, postedById: string, _client: Klien = prisma): Promise<HasilJurnalOperasional> {
+  return selaraskanJurnalPindahKonsi(transferId, postedById);
+}
+
+/**
+ * Jurnal pindah barang konsinyasi, DISELARASKAN bergenerasi (`<id>`, `<id>#2`, …, R18): sasarannya
+ * Σ (qty − returnedQty) × `unitCost` baris transfer — yang benar-benar meninggalkan gudang dan
+ * tidak kembali. Penolakan di pintu dan "tidak jadi dikirim" menurunkannya; transfer yang
+ * DIBATALKAN bersasaran kosong (seluruh jurnalnya dibalik). Generasi pertama digerbang tanggal
+ * mulai buku besar pada tanggal transfernya; generasi berikutnya bertanggal saat berubah.
+ */
+export async function selaraskanJurnalPindahKonsi(transferId: string, postedById: string): Promise<HasilJurnalOperasional> {
+  return selaras(SUMBER_OPERASIONAL.PINDAH_KONSI, transferId, postedById, (tx, _t, mulai) => sasaranPindahKonsi(tx, transferId, mulai));
+}
+
+/**
+ * Sasaran jurnal pindah barang konsinyasi satu transfer. Satu penyusun untuk penyelarasnya dan
+ * pencari jurnal yang tertinggal dari keadaan transfernya (`cariPindahKonsiTertinggal` di
+ * `sapuan.ts`), jadi yang dicari = yang akan diposting.
+ */
+export async function sasaranPindahKonsi(tx: Klien, transferId: string, mulai: Date | null): Promise<SasaranDokumen> {
+  const t = await tx.konsiTransfer.findUnique({
+    where: { id: transferId },
+    select: {
+      docNo: true,
+      storeId: true,
+      status: true,
+      createdAt: true,
+      adjustedAt: true,
+      cancelledAt: true,
+      store: { select: { name: true } },
+      order: { select: { orderNo: true } },
+      oldOrderArrival: true,
+      lines: { select: { qty: true, returnedQty: true, unitCost: true, mainCountedByOpnameId: true, item: { select: { type: true } } } },
+    },
   });
+  if (!t) return { sasaran: [], bolehMulai: false, tanggal: new Date(), deskripsi: `Pindah barang konsinyasi ${transferId}` };
+  const deskripsi = t.oldOrderArrival
+    ? `Barang pesanan konsinyasi lama ${t.order.orderNo} sampai di ${t.store.name} (${t.docNo})`
+    : `Pindah barang konsinyasi ${t.docNo} (${t.order.orderNo}) ke ${t.store.name}`;
+  const batal = t.status === "CANCELLED";
+  return {
+    sasaran: batal
+      ? []
+      : barisPindahKonsiPengiriman({
+          storeId: t.storeId,
+          baris: t.lines.map((l) => ({
+            qty: angka(l.qty) - l.returnedQty,
+            unitCost: angka(l.unitCost),
+            tipeBarang: l.item.type,
+            // Hanya transfer konfirmasi sampai yang boleh membawa tanda ini (penulisnya menolak yang lain).
+            sudahDiopname: t.oldOrderArrival && Boolean(l.mainCountedByOpnameId),
+          })),
+        }),
+    bolehMulai: !batal && bolehMulai(mulai, t.createdAt),
+    tanggal: t.cancelledAt ?? t.adjustedAt ?? t.createdAt,
+    deskripsi,
+  };
 }
 
 // ── Konsinyasi: barang kembali dari toko (NRI) ──────────────────────────────
+
+/**
+ * Barang yang KURANG dari nota toko pasangan hitungan ini, hanya bila beban selisihnya sudah
+ * diputuskan (beban bernilai > 0 dengan `decidedAt`) dan hitungan asli sudah final. Hanya baris
+ * yang menunjuk barang katalog. Hitungan susulan (tanpa pasangan) mengembalikan [].
+ */
+async function kurangDiputuskanNota(tx: Klien, nriId: string): Promise<Array<{ itemId: string; qty: number }>> {
+  const nri = await tx.warehouseReturn.findUnique({
+    where: { id: nriId },
+    select: {
+      status: true,
+      items: { select: { itemId: true, variantSku: true, itemName: true, qty: true } },
+      storeReturn: {
+        select: {
+          status: true,
+          items: { select: { itemId: true, variantSku: true, itemName: true, qty: true } },
+          followUps: { where: { status: "FINAL" }, select: { items: { select: { itemId: true, variantSku: true, itemName: true, qty: true } } } },
+          charges: { where: { amount: { gt: 0 } }, select: { decidedAt: true } },
+        },
+      },
+    },
+  });
+  const nota = nri?.storeReturn;
+  if (!nri || nri.status !== "FINAL" || !nota || nota.status === "BATAL") return [];
+  if (!nota.charges.some((c) => c.decidedAt !== null)) return [];
+  const hitungan = [...nri.items, ...nota.followUps.flatMap((f) => f.items)];
+  return kurangPerBarang(nota.items, hitungan)
+    .filter((k) => k.itemId && k.qtyKurang > 0)
+    .map((k) => ({ itemId: k.itemId as string, qty: k.qtyKurang }));
+}
 
 /** Biaya gudang rusak yang sudah dijurnal untuk dokumen ini (dibekukan sejak jurnal pertama). */
 function rusakTerposting(terposting: readonly BarisBertanda[]): number | null {
@@ -340,6 +399,15 @@ function rusakTerposting(terposting: readonly BarisBertanda[]): number | null {
  * putus milik `lib/finance/lapangan` (yang menghasilkan sasaran kosong untuk
  * toko konsinyasi, dan sebaliknya di sini). Hitungan yang dipindah toko dari
  * konsinyasi ke putus dibalik di sini dan dijurnal di sana.
+ *
+ * Hitungan yang BERPASANGAN dengan nota toko juga membawa barang yang KURANG dari nota itu begitu
+ * bebannya diputuskan: nota toko sudah mengeluarkan seluruh klaim dari buku toko, sedangkan
+ * persediaan konsinyasi di buku besar hanya dikredit sebesar yang dihitung gudang — sisanya hilang:
+ *   DR LOSS_EXPENSE / CR INVENTORY_CONSIGNMENT (`barisBarangHilang`, biaya konsi saat dikirim).
+ * Kurangnya = klaim − hitungan asli − setiap hitungan susulan yang final (`kurangPerBarang`, aturan
+ * yang sama dengan `kurangReturPerToko`), jadi menyusut sendiri begitu barang susulan datang — sumber
+ * ini bergenerasi; penulis selisih retur menyelaraskan ulang jurnal hitungan ASLI sesudah hitungan
+ * susulan atau keputusan beban berubah.
  */
 export async function selaraskanJurnalReturKonsi(nriId: string, postedById: string): Promise<HasilJurnalOperasional> {
   return selaras(SUMBER_OPERASIONAL.RETUR_KONSI, nriId, postedById, async (tx, terposting, mulai) => {
@@ -359,7 +427,12 @@ export async function selaraskanJurnalReturKonsi(nriId: string, postedById: stri
       rusak: rusakTerposting(terposting) ?? b.rusak,
       biayaKonsi: nilaiBiayaKonsi(items, petaBiaya(biaya)),
     });
-    return { sasaran, bolehMulai: bolehMulai(mulai, b.tanggal), tanggal: b.tanggal, deskripsi };
+    const kurang = await kurangDiputuskanNota(tx, nriId);
+    if (b.storeId && kurang.length > 0) {
+      const biayaKurang = await biayaSatuanKonsi(tx, kurang.map((k) => k.itemId), b.tanggal);
+      sasaran.push(...barisBarangHilang({ storeId: b.storeId, biaya: nilaiBiayaKonsi(kurang, petaBiaya(biayaKurang)) }));
+    }
+    return { sasaran: gabungBaris(sasaran), bolehMulai: bolehMulai(mulai, b.tanggal), tanggal: b.tanggal, deskripsi };
   });
 }
 
@@ -392,10 +465,21 @@ export function postJurnalReturLapanganKonsi(returnId: string, postedById: strin
         approvedAt: true,
         storeId: true,
         store: { select: { name: true, termsType: true } },
-        lines: { select: { itemId: true, creditedQty: true, sellableQty: true } },
+        lines: { select: { id: true, itemId: true, creditedQty: true, sellableQty: true, rejectedQty: true } },
       },
     });
     if (!r || r.status !== "APPROVED" || !r.approvedAt || r.store.termsType !== "KONSI") return null;
+    /*
+     * Q25/P23: barang yang DITOLAK dari retur toko konsinyasi masuk Gudang Barang Rusak bernilai
+     * qty × biaya konsinyasinya (`masukkanGudangRusakDariReturLapangan`). Nilai itu didebit ke
+     * INVENTORY_DAMAGED, dan potongnya ikut keluar dari persediaan konsinyasi pada biaya yang sama.
+     */
+    const rusakGerak = await client.damagedStockMovement.findMany({
+      where: { refType: "FieldReturnLine", refId: { in: r.lines.map((l) => l.id) } },
+      select: { refId: true, value: true },
+    });
+    const barisRusak = new Set(rusakGerak.map((g) => g.refId));
+    const nilaiRusak = rusakGerak.reduce((n, g) => n + angka(g.value), 0);
     const masuk = await client.stockLedgerEntry.findMany({
       where: { refType: "FieldReturn", refId: returnId, locationType: "MAIN" },
       select: { itemId: true, totalCost: true },
@@ -411,7 +495,7 @@ export function postJurnalReturLapanganKonsi(returnId: string, postedById: strin
     if (barangIds.length) {
       for (const b of await client.item.findMany({ where: { id: { in: barangIds } }, select: { id: true, type: true } })) tipeBarang.set(b.id, b.type);
     }
-    const keluar = r.lines.map((l) => ({ itemId: l.itemId, qty: l.creditedQty ?? 0 }));
+    const keluar = r.lines.map((l) => ({ itemId: l.itemId, qty: (l.creditedQty ?? 0) + (barisRusak.has(l.id) ? (l.rejectedQty ?? 0) : 0) }));
     const biaya = await biayaSatuanKonsi(
       client,
       keluar.flatMap((l) => (l.qty > 0 ? [l.itemId] : [])),
@@ -423,7 +507,7 @@ export function postJurnalReturLapanganKonsi(returnId: string, postedById: strin
       baris: barisReturKonsi({
         storeId: r.storeId,
         stokLayak: masuk.map((m) => ({ tipeBarang: tipeBarang.get(m.itemId), nilai: angka(m.totalCost) })),
-        rusak: 0,
+        rusak: nilaiRusak,
         biayaKonsi: nilaiBiayaKonsi(keluar, petaBiaya(biaya)),
       }),
     };
@@ -534,17 +618,51 @@ async function koreksiPembayaran(client: Klien, paidRefType: typeof REF_KOMISI_S
     .filter((k) => keSen(k.jumlah) !== 0);
 }
 
+type PengurangBayar = Pick<Parameters<typeof barisBayarKomisiSpg>[0], "beban" | "utang" | "kembali">;
+
 /**
- * Jurnal pembayaran gaji/komisi SPG: koreksi yang dibawanya (beban di toko + kanal
- * asalnya, `barisKoreksiKomisi`) lalu bank sebesar yang benar-benar keluar
- * (neto + Σ koreksi). Hutang komisi tetap lunas sebesar akrual barisnya sendiri.
+ * Pengurang dan penambah yang ditulis transaksi pembayaran SATU baris gaji/komisi SPG
+ * (`terapkanPembayaran`, `lib/spg/komisi-bayar.ts`), selain koreksi dan potongan barang hilang:
+ * - beban retur pembeli yang dipotong (`SpgChargeDeduction` ber-`paidRefType`/`paidRefId` baris
+ *   itu — potongan yang dipindah ke utang SPG ber-`paidRefType` `SpgDebt`, jadi tidak ikut);
+ * - utang SPG yang dipotong (`SpgDebtSettlement` ber-`refType`/`refId` baris itu, tidak dibatalkan),
+ *   pada toko + kanal asal utangnya;
+ * - uang beban yang dikembalikan ke SPG (`SpgCharge.paybackPaidRefType`/`paybackPaidRefId`).
+ * Toko beban dan pengembaliannya = toko bebannya; kanalnya = kanal baris yang dibayar (R15).
  */
-function barisBayarDenganKoreksi(neto: number, koreksi: readonly KoreksiBayar[]): BarisBertanda[] {
-  const senKoreksi = koreksi.reduce((n, k) => n + keSen(k.jumlah), 0);
-  return gabungBaris([...barisKoreksiKomisi(koreksi), ...barisBayarKomisi(Math.max(0, keSen(neto) + senKoreksi) / 100)]);
+async function pengurangPembayaran(
+  client: Klien,
+  paidRefType: typeof REF_KOMISI_SPG_PUTUS | typeof REF_KOMISI_KONSI,
+  paidRefId: string,
+  kanal: KanalJurnal,
+): Promise<PengurangBayar> {
+  const [beban, potongUtang, kembali] = await Promise.all([
+    client.spgChargeDeduction.findMany({ where: { paidRefType, paidRefId }, select: { amount: true, charge: { select: { storeId: true } } } }),
+    client.spgDebtSettlement.findMany({ where: { refType: paidRefType, refId: paidRefId, voidedAt: null }, select: { debtId: true, amount: true } }),
+    client.spgCharge.findMany({ where: { paybackPaidRefType: paidRefType, paybackPaidRefId: paidRefId }, select: { storeId: true, paybackAmount: true } }),
+  ]);
+  const asal = await asalUtangSpg(client, potongUtang.map((u) => u.debtId));
+  return {
+    beban: beban.map((b) => ({ jumlah: angka(b.amount), storeId: b.charge.storeId, kanal })),
+    utang: potongUtang.map((u) => {
+      const a = asal.get(u.debtId);
+      return { jumlah: angka(u.amount), jenis: a?.jenis ?? "", storeId: a?.storeId ?? null, kanal: a?.kanal ?? null };
+    }),
+    kembali: kembali.map((k) => ({ jumlah: angka(k.paybackAmount), storeId: k.storeId, kanal })),
+  };
 }
 
-const tandaKoreksi = (koreksi: readonly KoreksiBayar[]) => (koreksi.length > 0 ? " + koreksi" : "");
+/**
+ * Jurnal pembayaran gaji/komisi SPG (`barisBayarKomisiSpg`): koreksi yang dibawanya (beban di toko
+ * + kanal asalnya), beban retur dan utang yang dipotong, uang beban yang dikembalikan, lalu bank
+ * sebesar yang benar-benar keluar. Hutang komisi tetap lunas sebesar akrual barisnya sendiri.
+ */
+function barisBayarDenganKoreksi(neto: number, koreksi: readonly KoreksiBayar[], pengurang: PengurangBayar): BarisBertanda[] {
+  return barisBayarKomisiSpg({ neto, koreksi, ...pengurang });
+}
+
+const tandaKoreksi = (koreksi: readonly KoreksiBayar[], pengurang: PengurangBayar) =>
+  (koreksi.length > 0 ? " + koreksi" : "") + (pengurang.beban.some((b) => keSen(b.jumlah) !== 0) ? " − beban retur" : "");
 
 export function postJurnalBayarGajiKonsi(commissionId: string, postedById: string, client: Klien = prisma): Promise<HasilJurnalOperasional> {
   return postSekali(client, SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, commissionId, postedById, async () => {
@@ -553,28 +671,14 @@ export function postJurnalBayarGajiKonsi(commissionId: string, postedById: strin
       select: { paidAt: true, total: true, deduction: true, spgUser: { select: { name: true } }, cycle: { select: { noKonsi: true } } },
     });
     if (!k?.paidAt) return null;
-    const koreksi = await koreksiPembayaran(client, REF_KOMISI_KONSI, commissionId);
+    const [koreksi, pengurang] = await Promise.all([
+      koreksiPembayaran(client, REF_KOMISI_KONSI, commissionId),
+      pengurangPembayaran(client, REF_KOMISI_KONSI, commissionId, KANAL_JURNAL.KONSINYASI),
+    ]);
     return {
       tanggal: k.paidAt,
-      deskripsi: `Pembayaran gaji & komisi SPG ${k.spgUser.name ?? ""} — ${k.cycle.noKonsi}`.replace(/\s+—/, " —") + tandaKoreksi(koreksi),
-      baris: barisBayarDenganKoreksi(angka(k.total) - angka(k.deduction), koreksi),
-    };
-  });
-}
-
-export async function selaraskanJurnalBayarTokoKonsi(paymentId: string, postedById: string): Promise<HasilJurnalOperasional> {
-  return selaras(SUMBER_OPERASIONAL.BAYAR_TOKO_KONSI, paymentId, postedById, async (tx, _t, mulai) => {
-    const p = await tx.consignmentPayment.findUnique({
-      where: { id: paymentId },
-      select: { amount: true, paidOn: true, method: true, cancelledAt: true, cycle: { select: { noKonsi: true, storeId: true, store: { select: { name: true } } } } },
-    });
-    if (!p) return { sasaran: [], bolehMulai: false, tanggal: new Date(), deskripsi: `Pembayaran toko konsinyasi ${paymentId}` };
-    const batal = p.cancelledAt !== null;
-    return {
-      sasaran: barisBayarTokoKonsi({ storeId: p.cycle.storeId, nilai: angka(p.amount), cara: p.method, batal }),
-      bolehMulai: !batal && bolehMulai(mulai, p.paidOn),
-      tanggal: p.paidOn,
-      deskripsi: `Pembayaran ${p.cycle.store.name} untuk ${p.cycle.noKonsi}`,
+      deskripsi: `Pembayaran gaji & komisi SPG ${k.spgUser.name ?? ""} — ${k.cycle.noKonsi}`.replace(/\s+—/, " —") + tandaKoreksi(koreksi, pengurang),
+      baris: barisBayarDenganKoreksi(angka(k.total) - angka(k.deduction), koreksi, pengurang),
     };
   });
 }
@@ -590,13 +694,14 @@ export async function sasaranKomisiSpg(client: Klien, storeId: string, periode: 
   const p = bacaPeriode(periode);
   if (!p) return null;
   const [rows, toko] = await Promise.all([
-    client.spgCommission.findMany({ where: { storeId, period: periode }, select: { commission: true, deduction: true } }),
+    client.spgCommission.findMany({ where: { storeId, period: periode }, select: { commission: true, baseSalary: true, deduction: true } }),
     client.store.findUnique({ where: { id: storeId }, select: { name: true } }),
   ]);
   const tanggal = akhirBulanWib(p[0], p[1]);
   const sasaran = barisKomisi({
     peranBeban: "SPG_COMMISSION_EXPENSE",
-    bruto: rows.reduce((n, r) => n + angka(r.commission), 0),
+    // Komisi + gaji pokok (komisi-gaji-spg): keduanya hutang komisi yang dibayarkan bersama.
+    bruto: rows.reduce((n, r) => n + angka(r.commission) + angka(r.baseSalary), 0),
     potongan: rows.reduce((n, r) => n + angka(r.deduction), 0),
     storeId,
     kanal: "PUTUS",
@@ -618,18 +723,126 @@ export function postJurnalBayarKomisiSpg(commissionId: string, postedById: strin
   return postSekali(client, SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, commissionId, postedById, async () => {
     const k = await client.spgCommission.findUnique({
       where: { id: commissionId },
-      select: { paidAt: true, commission: true, deduction: true, period: true, storeId: true, userId: true },
+      select: { paidAt: true, commission: true, baseSalary: true, deduction: true, period: true, storeId: true, userId: true },
     });
     if (!k?.paidAt) return null;
-    const [orang, toko, koreksi] = await Promise.all([
+    const [orang, toko, koreksi, pengurang] = await Promise.all([
       client.user.findUnique({ where: { id: k.userId }, select: { name: true } }),
       client.store.findUnique({ where: { id: k.storeId }, select: { name: true } }),
       koreksiPembayaran(client, REF_KOMISI_SPG_PUTUS, commissionId),
+      pengurangPembayaran(client, REF_KOMISI_SPG_PUTUS, commissionId, KANAL_JURNAL.PUTUS),
     ]);
     return {
       tanggal: k.paidAt,
-      deskripsi: `Pembayaran komisi SPG ${orang?.name ?? ""} ${k.period} — ${toko?.name ?? ""}`.replace(/\s+/g, " ").trim() + tandaKoreksi(koreksi),
-      baris: barisBayarDenganKoreksi(angka(k.commission) - angka(k.deduction), koreksi),
+      deskripsi:
+        `Pembayaran komisi SPG ${orang?.name ?? ""} ${k.period} — ${toko?.name ?? ""}`.replace(/\s+/g, " ").trim() + tandaKoreksi(koreksi, pengurang),
+      baris: barisBayarDenganKoreksi(angka(k.commission) + angka(k.baseSalary) - angka(k.deduction), koreksi, pengurang),
+    };
+  });
+}
+
+// ── Utang SPG yang berhenti ─────────────────────────────────────────────────
+
+const REF_BAYAR_UTANG_SPG = "SpgDebtPayment";
+const REF_BAYAR_TAMBAHAN_SPG = "SpgExtraPayout";
+
+/** Toko + kanal asal setiap utang (untuk baris pemulihannya). */
+async function asalUtangSpg(client: Klien, debtIds: readonly string[]) {
+  const utang = debtIds.length
+    ? await client.spgDebt.findMany({ where: { id: { in: [...new Set(debtIds)] } }, select: { id: true, kind: true, sourceStoreId: true } })
+    : [];
+  const tokoIds = [...new Set(utang.map((u) => u.sourceStoreId).filter((x): x is string => Boolean(x)))];
+  const toko = tokoIds.length ? await client.store.findMany({ where: { id: { in: tokoIds } }, select: { id: true, termsType: true } }) : [];
+  const syarat = new Map(toko.map((t) => [t.id, t.termsType]));
+  return new Map(
+    utang.map((u) => [
+      u.id,
+      {
+        jenis: u.kind,
+        storeId: u.sourceStoreId,
+        kanal: u.sourceStoreId ? (syarat.get(u.sourceStoreId) === "KONSI" ? KANAL_JURNAL.KONSINYASI : KANAL_JURNAL.PUTUS) : null,
+      },
+    ]),
+  );
+}
+
+/**
+ * Penerimaan utang SPG, DISELARASKAN: sasarannya hanya berdiri selama pembayarannya TERVERIFIKASI
+ * dan tidak dibatalkan (dikembalikan pemeriksa atau dibatalkan → dibalik). Bertanggal saat dicek.
+ */
+export async function selaraskanJurnalPenerimaanUtangSpg(paymentId: string, postedById: string): Promise<HasilJurnalOperasional> {
+  return selaras(SUMBER_OPERASIONAL.BAYAR_UTANG_SPG, paymentId, postedById, async (tx, _t, mulai) => {
+    const p = await tx.spgDebtPayment.findUnique({
+      where: { id: paymentId },
+      select: { status: true, voidedAt: true, method: true, checkedAt: true, createdAt: true, spgUserId: true },
+    });
+    if (!p) return { sasaran: [], bolehMulai: false, tanggal: new Date(), deskripsi: `Penerimaan utang SPG ${paymentId}` };
+    const orang = await tx.user.findUnique({ where: { id: p.spgUserId }, select: { name: true } });
+    const tanggal = p.checkedAt ?? p.createdAt;
+    const deskripsi = `Penerimaan utang SPG ${orang?.name ?? ""}`.trim();
+    const berlaku = p.status === "TERVERIFIKASI" && p.voidedAt === null;
+    if (!berlaku) return { sasaran: [], bolehMulai: false, tanggal, deskripsi };
+    const lunas = await tx.spgDebtSettlement.findMany({
+      where: { refType: REF_BAYAR_UTANG_SPG, refId: paymentId, voidedAt: null },
+      select: { debtId: true, amount: true },
+    });
+    const asal = await asalUtangSpg(tx, lunas.map((l) => l.debtId));
+    return {
+      sasaran: barisPenerimaanUtangSpg(
+        lunas.map((l) => {
+          const a = asal.get(l.debtId);
+          return { jumlah: angka(l.amount), jenis: a?.jenis ?? "", storeId: a?.storeId ?? null, kanal: a?.kanal ?? null, cara: p.method };
+        }),
+      ),
+      bolehMulai: bolehMulai(mulai, tanggal),
+      tanggal,
+      deskripsi,
+    };
+  });
+}
+
+/**
+ * Pembayaran tambahan SPG yang berhenti (koreksi plus sesudah pembayaran akhir), sekali posting:
+ * koreksinya, bagian yang diimbangkan dengan utangnya, dan uang yang dibayarkan.
+ */
+export function postJurnalBayarTambahanSpg(payoutId: string, postedById: string, client: Klien = prisma): Promise<HasilJurnalOperasional> {
+  return postSekali(client, SUMBER_OPERASIONAL.BAYAR_TAMBAHAN_SPG, payoutId, postedById, async () => {
+    const p = await client.spgExtraPayout.findUnique({
+      where: { id: payoutId },
+      select: { amount: true, offsetAmount: true, method: true, createdAt: true, spgUserId: true },
+    });
+    if (!p) return null;
+    const [orang, koreksiRows, imbang] = await Promise.all([
+      client.user.findUnique({ where: { id: p.spgUserId }, select: { name: true } }),
+      client.spgCommissionCorrection.findMany({
+        where: { paidRefType: REF_BAYAR_TAMBAHAN_SPG, paidRefId: payoutId },
+        select: { amount: true, sourceKind: true, sourceStoreId: true },
+      }),
+      client.spgDebtSettlement.findMany({
+        where: { refType: REF_BAYAR_TAMBAHAN_SPG, refId: payoutId, voidedAt: null },
+        select: { debtId: true, amount: true },
+      }),
+    ]);
+    const asal = await asalUtangSpg(client, imbang.map((i) => i.debtId));
+    return {
+      tanggal: p.createdAt,
+      deskripsi: `Pembayaran tambahan SPG ${orang?.name ?? ""}`.trim(),
+      baris: barisBayarTambahanSpg({
+        koreksi: koreksiRows
+          .map((r) => ({
+            jumlah: angka(r.amount),
+            storeId: r.sourceStoreId,
+            kanal: r.sourceKind === "KONSI" ? KANAL_JURNAL.KONSINYASI : KANAL_JURNAL.PUTUS,
+          }))
+          .filter((k) => keSen(k.jumlah) !== 0),
+        imbang: imbang.map((i) => {
+          const a = asal.get(i.debtId);
+          return { jumlah: angka(i.amount), jenis: a?.jenis ?? "", storeId: a?.storeId ?? null, kanal: a?.kanal ?? null };
+        }),
+        // `amount` = uang yang dibayarkan, SUDAH bersih dari `offsetAmount` (`terapkanKoreksiPlusSesudahAkhir`).
+        tunai: angka(p.amount),
+        cara: p.method,
+      }),
     };
   });
 }
@@ -639,36 +852,133 @@ export function postJurnalBayarKomisiSpg(commissionId: string, postedById: strin
 const STATUS_HILANG_DIPUTUSKAN = new Set(["DITETAPKAN", "SELESAI"]);
 
 /**
+ * Biaya keluar barang PUTUS yang hilang dari sebuah nota: per baris hilang, qty × avgCost saat baris
+ * nota itu dikonsumsi (StockAdjustment konsumsinya), dengan tipe barangnya. Null bila ada baris yang
+ * biaya konsumsinya tidak ditemukan (jurnalnya menunggu, tidak ditebak).
+ */
+async function biayaKeluarNota(
+  tx: Klien,
+  deliveryId: string,
+  hilang: ReadonlyArray<{ itemId: string | null; variantSku: string; qty: number }>,
+): Promise<Array<{ tipeBarang: string | null; nilai: number }> | null> {
+  const nota = await tx.fieldSalesDelivery.findUnique({
+    where: { id: deliveryId },
+    select: {
+      order: { select: { orderNo: true } },
+      lines: { select: { orderLineId: true, itemId: true, variantSku: true, item: { select: { type: true } } } },
+    },
+  });
+  if (!nota) return null;
+  const kunci = nota.lines.map((b) => `fieldsales-${nota.order.orderNo}-delivery-${deliveryId}-line-${b.orderLineId}`);
+  const adj = await tx.stockAdjustment.findMany({ where: { idempotencyKey: { in: kunci } }, select: { idempotencyKey: true, prevAvgCost: true } });
+  const biayaKunci = new Map(adj.map((a) => [a.idempotencyKey as string, angka(a.prevAvgCost)]));
+  const keluar: Array<{ tipeBarang: string | null; nilai: number }> = [];
+  for (const h of hilang) {
+    if (!h.itemId || !(h.qty > 0)) continue;
+    const baris = nota.lines.find((b) => b.itemId === h.itemId && (b.variantSku ?? "") === (h.variantSku ?? ""));
+    if (!baris) return null;
+    const biaya = biayaKunci.get(`fieldsales-${nota.order.orderNo}-delivery-${deliveryId}-line-${baris.orderLineId}`);
+    if (biaya === undefined) return null;
+    keluar.push({ tipeBarang: baris.item.type, nilai: h.qty * biaya });
+  }
+  return keluar;
+}
+
+/**
  * Barang hilang di toko konsinyasi yang sudah diputuskan: barangnya masih
  * milik Elorae, jadi persediaan konsinyasi berkurang sebesar biayanya.
- * Barang hilang di toko putus (barangnya sudah milik toko) dan catatan tanpa
- * toko (gudang utama memakai penyesuaian stok) tidak dijurnal di sini.
+ * Barang putus yang hilang di perjalanan sebuah PENGIRIMAN (penerimaan nota
+ * yang dikoreksi, R18): biayanya keluar dari persediaan gudang pada biaya
+ * konsumsinya. Barang hilang lain di toko putus (barangnya sudah milik toko,
+ * termasuk nota yang dicatat tangan tanpa pengiriman) dan catatan tanpa toko
+ * (gudang utama memakai penyesuaian stok) tidak dijurnal di sini. Penggantian
+ * dari ekspedisi menyertai keduanya sesudah pembayarannya dicek sah (R20).
  */
 export async function selaraskanJurnalBarangHilang(lossId: string, postedById: string): Promise<HasilJurnalOperasional> {
-  return selaras(SUMBER_OPERASIONAL.BARANG_HILANG, lossId, postedById, async (tx, _t, mulai) => {
-    const l = await tx.stockLoss.findUnique({
-      where: { id: lossId },
-      select: { status: true, storeId: true, decidedAt: true, createdAt: true, sourceDocNo: true, lines: { select: { itemId: true, qty: true } } },
-    });
-    if (!l) return { sasaran: [], bolehMulai: false, tanggal: new Date(), deskripsi: `Barang hilang ${lossId}` };
-    const toko = l.storeId ? await tx.store.findUnique({ where: { id: l.storeId }, select: { name: true, termsType: true } }) : null;
-    const tanggal = l.decidedAt ?? l.createdAt;
-    const deskripsi = `Barang hilang${toko ? ` di ${toko.name}` : ""}${l.sourceDocNo ? ` (${l.sourceDocNo})` : ""}`;
-    if (!l.storeId || toko?.termsType !== "KONSI" || !STATUS_HILANG_DIPUTUSKAN.has(l.status)) {
-      return { sasaran: [], bolehMulai: false, tanggal, deskripsi };
-    }
-    const biaya = await biayaSatuanKonsi(
-      tx,
-      l.lines.flatMap((b) => (b.itemId ? [b.itemId] : [])),
-      l.createdAt,
+  return selaras(SUMBER_OPERASIONAL.BARANG_HILANG, lossId, postedById, (tx, _t, mulai) => sasaranBarangHilang(tx, lossId, mulai));
+}
+
+/**
+ * Sasaran jurnal satu catatan barang hilang. Satu penyusun untuk penyelarasnya dan pencari jurnal
+ * yang tertinggal dari klaim ekspedisinya (`cariBarangHilangTertinggal` di `sapuan.ts`).
+ */
+export async function sasaranBarangHilang(tx: Klien, lossId: string, mulai: Date | null): Promise<SasaranDokumen> {
+  const l = await tx.stockLoss.findUnique({
+    where: { id: lossId },
+    select: {
+      status: true,
+      storeId: true,
+      source: true,
+      sourceId: true,
+      decidedAt: true,
+      createdAt: true,
+      sourceDocNo: true,
+      lines: { select: { itemId: true, variantSku: true, qty: true } },
+    },
+  });
+  if (!l) return { sasaran: [], bolehMulai: false, tanggal: new Date(), deskripsi: `Barang hilang ${lossId}` };
+  const toko = l.storeId ? await tx.store.findUnique({ where: { id: l.storeId }, select: { name: true, termsType: true } }) : null;
+  const tanggal = l.decidedAt ?? l.createdAt;
+  const deskripsi = `Barang hilang${toko ? ` di ${toko.name}` : ""}${l.sourceDocNo ? ` (${l.sourceDocNo})` : ""}`;
+  if (!l.storeId || !STATUS_HILANG_DIPUTUSKAN.has(l.status)) {
+    return { sasaran: [], bolehMulai: false, tanggal, deskripsi };
+  }
+  /*
+   * Penggantian ekspedisi: hanya bagian EKSPEDISI yang pembayarannya sudah DICEK sah (DIBAYAR),
+   * dibayar transfer atau tunai (R20). Potong tagihan ongkir tidak dijurnal di sini.
+   */
+  const klaim = await tx.stockLossShare.findMany({
+    where: { lossId, bearer: "EKSPEDISI", claimStatus: "DIBAYAR", claimPaidMethod: { in: ["transfer", "tunai"] } },
+    select: { amount: true, claimPaidMethod: true },
+  });
+  const pemulihan = (kanal: KanalJurnal) =>
+    barisPemulihanKlaim(
+      klaim.map((k) => ({ nilai: angka(k.amount), cara: k.claimPaidMethod === "tunai" ? ("tunai" as const) : ("transfer" as const) })),
+      { storeId: l.storeId, kanal },
     );
+
+  const terima =
+    l.source === "PENERIMAAN" && l.sourceId
+      ? await tx.storeReceipt.findUnique({ where: { id: l.sourceId }, select: { sourceType: true, sourceId: true } })
+      : null;
+  /*
+   * Hanya nota sebuah PENGIRIMAN: notanya dikoreksi di penerimaan, jadi barang yang hilang sudah
+   * keluar dari HPP dan biayanya baru keluar dari persediaan di sini. Nota yang dicatat tangan
+   * (tanpa pengiriman, R24) tidak dikoreksi — barang hilangnya tetap ditagih dan ada di HPP —
+   * jadi tidak dijurnal di sini (seperti barang hilang toko putus sebelumnya).
+   */
+  const notaPengiriman =
+    terima?.sourceType === "PUTUS_DELIVERY"
+      ? (await tx.deliveryShipment.findUnique({ where: { deliveryId: terima.sourceId }, select: { id: true } })) !== null
+      : false;
+  if (terima?.sourceType === "PUTUS_DELIVERY" && !notaPengiriman) return { sasaran: [], bolehMulai: false, tanggal, deskripsi };
+  if (terima?.sourceType === "PUTUS_DELIVERY") {
+    // Barang putus yang hilang di perjalanan: biayanya keluar dari persediaan gudang pada biaya konsumsinya.
+    const keluar = await biayaKeluarNota(tx, terima.sourceId, l.lines);
+    // Biaya konsumsinya tidak ditemukan: tidak ditebak — belum dijurnal (generasi pertama tertahan).
+    if (keluar === null) return { sasaran: [], bolehMulai: false, tanggal, deskripsi };
     return {
-      sasaran: barisBarangHilang({ storeId: l.storeId, biaya: nilaiBiayaKonsi(l.lines, petaBiaya(biaya)) }),
+      sasaran: gabungBaris([...barisBarangHilangGudang({ storeId: l.storeId, keluar }), ...pemulihan(KANAL_JURNAL.PUTUS)]),
       bolehMulai: bolehMulai(mulai, tanggal),
       tanggal,
       deskripsi,
     };
-  });
+  }
+  if (toko?.termsType !== "KONSI") return { sasaran: [], bolehMulai: false, tanggal, deskripsi };
+  const biaya = await biayaSatuanKonsi(
+    tx,
+    l.lines.flatMap((b) => (b.itemId ? [b.itemId] : [])),
+    l.createdAt,
+  );
+  return {
+    sasaran: gabungBaris([
+      ...barisBarangHilang({ storeId: l.storeId, biaya: nilaiBiayaKonsi(l.lines, petaBiaya(biaya)) }),
+      ...pemulihan(KANAL_JURNAL.KONSINYASI),
+    ]),
+    bolehMulai: bolehMulai(mulai, tanggal),
+    tanggal,
+    deskripsi,
+  };
 }
 
 /** `StockLossDeduction.refType` potongan beban SALES (`REF_KOMISI_SALESMAN`). */
@@ -685,6 +995,33 @@ export function postJurnalPotongSales(deductionId: string, postedById: string, c
     return {
       tanggal: d.createdAt,
       deskripsi: `Potongan beban barang hilang dari komisi sales${bulan ? ` ${bulan}` : ""}`,
+      baris: barisPotongSales(angka(d.amount)),
+    };
+  });
+}
+
+/**
+ * Potongan beban SELISIH RETUR sales dari komisinya (`tandaiBebanReturDipotong`), atau kelebihan
+ * potong yang dikembalikan (`tandaiKelebihanReturDikembalikan`, `amount` negatif). Satu jurnal per
+ * baris `ReturnChargeDeduction` — sama dengan potongan beban barang hilang (`barisPotongSales`),
+ * bertanda: potongan DR SALES_COMMISSION_EXPENSE / CR LOSS_RECOVERY; pengembalian sebaliknya.
+ */
+export function postJurnalPotongSalesRetur(deductionId: string, postedById: string, client: Klien = prisma): Promise<HasilJurnalOperasional> {
+  return postSekali(client, SUMBER_OPERASIONAL.POTONG_SALES_RETUR, deductionId, postedById, async () => {
+    const d = await client.returnChargeDeduction.findUnique({
+      where: { id: deductionId },
+      select: { refType: true, refId: true, amount: true, createdAt: true, chargeId: true },
+    });
+    if (!d || d.refType !== REF_POTONG_SALES) return null;
+    const bagian = d.refId.replace(/^kembali:/, "").split(":");
+    const bulan = bagian[1] ?? "";
+    const kembali = d.refId.startsWith("kembali:");
+    /* Dibaca terpisah: tanpa kunci asing, beban yang tak ada tidak boleh menggagalkan jurnalnya. */
+    const beban = await client.returnCharge.findUnique({ where: { id: d.chargeId }, select: { storeReturn: { select: { noNrt: true } } } });
+    const nota = beban?.storeReturn?.noNrt ?? "";
+    return {
+      tanggal: d.createdAt,
+      deskripsi: `${kembali ? "Pengembalian kelebihan potong" : "Potongan"} beban selisih retur dari komisi sales${bulan ? ` ${bulan}` : ""}${nota ? ` · ${nota}` : ""}`,
       baris: barisPotongSales(angka(d.amount)),
     };
   });
@@ -880,7 +1217,7 @@ export function jurnalOperasional(sumber: SumberOperasional, id: string, postedB
     case SUMBER_OPERASIONAL.PESANAN_KONSI:
       return postJurnalPesananKonsi(id, postedById);
     case SUMBER_OPERASIONAL.PINDAH_KONSI:
-      return postJurnalPindahKonsi(id, postedById);
+      return selaraskanJurnalPindahKonsi(id, postedById);
     case SUMBER_OPERASIONAL.RETUR_KONSI:
       return selaraskanJurnalReturKonsi(id, postedById);
     case SUMBER_OPERASIONAL.RETUR_LAPANGAN_KONSI:
@@ -891,8 +1228,6 @@ export function jurnalOperasional(sumber: SumberOperasional, id: string, postedB
       return selaraskanJurnalKomisiKonsi(id, postedById);
     case SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI:
       return postJurnalBayarGajiKonsi(id, postedById);
-    case SUMBER_OPERASIONAL.BAYAR_TOKO_KONSI:
-      return selaraskanJurnalBayarTokoKonsi(id, postedById);
     case SUMBER_OPERASIONAL.KOMISI_SPG: {
       const k = bacaIdKomisiSpg(id);
       return k ? selaraskanJurnalKomisiSpg(k.storeId, k.periode, postedById) : Promise.resolve({ ok: false, code: "NOTHING_TO_POST" });
@@ -903,6 +1238,8 @@ export function jurnalOperasional(sumber: SumberOperasional, id: string, postedB
       return selaraskanJurnalBarangHilang(id, postedById);
     case SUMBER_OPERASIONAL.POTONG_SALES:
       return postJurnalPotongSales(id, postedById);
+    case SUMBER_OPERASIONAL.POTONG_SALES_RETUR:
+      return postJurnalPotongSalesRetur(id, postedById);
     case SUMBER_OPERASIONAL.GUDANG_RUSAK:
       return postJurnalGudangRusak(id, postedById);
     case SUMBER_OPERASIONAL.STOK_MANUAL:
@@ -913,5 +1250,9 @@ export function jurnalOperasional(sumber: SumberOperasional, id: string, postedB
       return postJurnalBiayaPerjalanan(id, postedById);
     case SUMBER_OPERASIONAL.BAYAR_BIAYA_PERJALANAN:
       return postJurnalBayarBiayaPerjalanan(id, postedById);
+    case SUMBER_OPERASIONAL.BAYAR_UTANG_SPG:
+      return selaraskanJurnalPenerimaanUtangSpg(id, postedById);
+    case SUMBER_OPERASIONAL.BAYAR_TAMBAHAN_SPG:
+      return postJurnalBayarTambahanSpg(id, postedById);
   }
 }

@@ -70,7 +70,8 @@ export function returTertahan(potongan: PotonganRetur[]): number {
     const selisih = p.nilaiKlaim - p.nilaiFisik;
     if (selisih <= 0) continue; // fisik >= klaim: tidak ada yang ditahan
     if (p.bebanTerbuka) tertahan += selisih;
-    // Beban sudah diputuskan → faktur dilepas, penagihan penggantinya jalan sendiri.
+    // Beban sudah diputuskan → faktur dilepas. Beban yang ditetapkan ke TOKO
+    // (P84) ditahan lewat `tetap` oleh penerjemah potongan, bukan di sini.
   }
   return tertahan;
 }
@@ -153,59 +154,29 @@ export function returTerpakaiMelebihi(nilaiNota: number, sudahDipakai: number, a
 const keSen = (n: number) => Math.round(n * 100);
 
 /**
- * KEPUTUSAN SEMENTARA PEMILIK (2026-10-06, "ikuti usulan Claude dulu, nanti
- * saya tindak lanjuti"): beban selisih retur yang ditetapkan ke TOKO menagih
- * hanya yang benar-benar diambil toko melebihi barang yang sampai — bukan
- * seluruh selisih. Satu tempat untuk mengubahnya:
- * - `YANG_DIPOTONG`   — tagih min(selisih, dipotong − fisik); NRT sesudahnya
- *                       hanya boleh dipotong sebesar fisik + yang ditagih.
- * - `SELURUH_SELISIH` — aturan lama: tagih seluruh selisih, dengan anggapan
- *                       toko memotong nota returnya penuh.
+ * @deprecated Tidak ada lagi faktur beban ke TOKO (P84, keputusan 1). Dipertahankan HANYA
+ * karena `return-queries.ts` (paket selisih-retur-sales) masih memanggil `bebanDitagihKeToko`
+ * untuk pratinjau lamanya; hapus ketiganya begitu pemanggil itu dibuang.
  */
-export type AturanBebanToko = 'YANG_DIPOTONG' | 'SELURUH_SELISIH';
-export const ATURAN_BEBAN_TOKO: AturanBebanToko = 'YANG_DIPOTONG';
+export type AturanBebanToko = "YANG_DIPOTONG" | "SELURUH_SELISIH";
+/** @deprecated Lihat `AturanBebanToko`. */
+export const ATURAN_BEBAN_TOKO: AturanBebanToko = "YANG_DIPOTONG";
 
 /**
- * Berapa beban selisih retur yang ditagihkan ke toko lewat faktur bebannya.
+ * @deprecated Lihat `AturanBebanToko` — tidak ada penulis yang menagih beban selisih ke toko
+ * lagi; perilakunya tidak diubah supaya pemanggil lama tetap terkompilasi.
  *
- *   NRT 300.000, fisik 100.000 (selisih 200.000), faktur asli 1.000.000:
- *   dipotong 300.000 → ditagih 200.000 (1 jt − 300 rb + 200 rb = 900 rb)
- *   dipotong 150.000 → ditagih  50.000 (1 jt − 150 rb +  50 rb = 900 rb)
- *   belum dipotong   → ditagih       0 (1 jt, dan NRT masih boleh dipotong
- *                                       100 rb → 900 rb)
- *   Aturan lama menagih 200.000 di ketiganya — yang terakhir menjadi 1,2 jt.
- *
- * `sudahDipotong` = jumlah potongan atas NRT ini di BKM yang masih hidup
- * (DIKIRIM/TERVERIFIKASI). Dihitung dalam sen.
+ * Bagian selisih retur yang diambil toko melebihi barang yang sampai:
+ * min(selisih, dipotong − fisik), dihitung dalam sen.
  */
 export function bebanDitagihKeToko(
   r: { nilaiKlaim: number; nilaiFisik: number; sudahDipotong: number },
   aturan: AturanBebanToko = ATURAN_BEBAN_TOKO,
 ): number {
   const selisih = Math.max(0, keSen(r.nilaiKlaim) - keSen(r.nilaiFisik));
-  if (aturan === 'SELURUH_SELISIH') return selisih / 100;
+  if (aturan === "SELURUH_SELISIH") return selisih / 100;
   const lebih = Math.max(0, keSen(r.sudahDipotong) - keSen(r.nilaiFisik));
   return Math.min(selisih, lebih) / 100;
-}
-
-/**
- * Batas potong sebuah NRT di seluruh BKM hidup.
- *
- * Umumnya nilai klaimnya. Sesudah bebannya ditetapkan ke TOKO, batasnya turun
- * menjadi fisik + yang ditagih balik lewat faktur beban: toko boleh memotong
- * barang yang benar-benar sampai, ditambah yang ia bayar kembali. Tanpa batas
- * ini, toko yang belum memotong bisa memotong klaim penuh SESUDAH keputusan —
- * keputusan sudah melepas tahanan, jadi selisihnya lepas tanpa ditagih.
- *
- * `bebanTokoDitagih: null` = tidak ada beban yang ditetapkan ke toko.
- */
-export function batasPotongNota(r: {
-  nilaiKlaim: number;
-  nilaiFisik: number | null;
-  bebanTokoDitagih: number | null;
-}): number {
-  if (r.bebanTokoDitagih === null || r.nilaiFisik === null) return r.nilaiKlaim;
-  return Math.min(keSen(r.nilaiKlaim), keSen(r.nilaiFisik) + keSen(Math.max(0, r.bebanTokoDitagih))) / 100;
 }
 
 /**
@@ -224,18 +195,74 @@ export function batasPotongNota(r: {
  * potongan itu, dan BKM berikutnya adalah cara menagihnya (`batalkanRetur`).
  */
 export function tertahanPiutang(klaimList: PorsiKlaim[]): number {
-  let tertahan = 0;
+  return tertahanPiutangRinci(klaimList).lepasSendiri;
+}
+
+/**
+ * Mengapa sebagian sisa faktur menunggu (Q15, jawaban pemilik 2026-11-02 "Ya,
+ * diingatkan"): returnya belum dihitung gudang, selisihnya belum diputuskan
+ * siapa menanggung, atau keduanya pada faktur yang sama.
+ */
+export type JenisTahanan = "BELUM_DIHITUNG" | "MENUNGGU_BEBAN" | "CAMPURAN";
+
+export type RincianTahanan = {
+  /** Bagian yang lepas sendiri begitu returnya beres — `tertahanPiutang`. */
+  lepasSendiri: number;
+  /** Tahanan TETAP (nota batal / penunjuk menggantung): tokonya memang berutang. */
+  tetap: number;
+  /** Mengapa bagian `lepasSendiri` menunggu. `null` kalau tidak ada yang menunggu. */
+  jenisLepas: JenisTahanan | null;
+};
+
+/**
+ * `tertahanPiutang` beserta rinciannya, diprorata menurut porsi faktur ini di
+ * setiap BKM terverifikasi. Satu-satunya tempat pembagian ini dihitung —
+ * `pisahTahananRetur` membaca hasilnya.
+ */
+export function tertahanPiutangRinci(klaimList: PorsiKlaim[]): RincianTahanan {
+  let lepasSendiri = 0;
+  let tetap = 0;
+  let adaHitung = false;
+  let adaBeban = false;
   for (const k of klaimList) {
-    if (k.status !== 'TERVERIFIKASI' || !(k.nilaiFaktur > 0)) continue;
+    if (k.status !== "TERVERIFIKASI" || !(k.nilaiFaktur > 0)) continue;
+    const nf = k.nilaiFaktur;
+    const semua = Math.min(nf, returTertahan(k.potonganRetur));
+    const tetapK = Math.min(nf, returTertahan(k.potonganRetur.filter((p) => p.tetap)));
     // Yang lepas sendiri = tahanan seluruhnya dikurangi yang tetap tertahan
     // sesudahnya (keduanya dibatasi nilai BKM).
-    const tahan =
-      Math.min(k.nilaiFaktur, returTertahan(k.potonganRetur)) -
-      Math.min(k.nilaiFaktur, returTertahan(k.potonganRetur.filter((p) => p.tetap)));
-    if (tahan <= 0) continue;
-    tertahan += tahan * (k.nilaiDilunasiPiutangIni / k.nilaiFaktur);
+    const tahan = semua - tetapK;
+    const porsi = k.nilaiDilunasiPiutangIni / nf;
+    lepasSendiri += Math.max(0, tahan) * porsi;
+    tetap += tetapK * porsi;
+    if (tahan > 0 && porsi > 0) {
+      const lepas = k.potonganRetur.filter((p) => !p.tetap);
+      if (returTertahan(lepas.filter((p) => p.nilaiFisik === null)) > 0) adaHitung = true;
+      if (returTertahan(lepas.filter((p) => p.nilaiFisik !== null)) > 0) adaBeban = true;
+    }
   }
-  return tertahan;
+  const jenisLepas: JenisTahanan | null =
+    adaHitung && adaBeban ? "CAMPURAN" : adaHitung ? "BELUM_DIHITUNG" : adaBeban ? "MENUNGGU_BEBAN" : null;
+  return { lepasSendiri, tetap, jenisLepas };
+}
+
+/**
+ * SATU pembagian sisa faktur yang sebagian ditahan retur (Q15):
+ * - `bebas` — yang boleh ditagih dan dilunasi BKM baru sekarang;
+ * - `ditahan` — yang menunggu returnya beres (dan `sebab`-nya);
+ * - `nilaiTertahan` — angka tahanan yang ditampilkan: yang menunggu DITAMBAH
+ *   tahanan tetap, karena keduanya membuat faktur ini belum lunas.
+ * Tahanan tetap tetap terutang, jadi ia tidak mengurangi `bebas`. Jangan
+ * menghitung pembagian ini dengan cara lain di tempat lain.
+ */
+export function pisahTahananRetur(
+  sisa: number,
+  rinci: RincianTahanan,
+): { bebas: number; ditahan: number; nilaiTertahan: number; sebab: JenisTahanan | null } {
+  const bebas = sisaBolehDilunasi(sisa, rinci.lepasSendiri);
+  const ditahan = Math.max(0, sisa - bebas);
+  const nilaiTertahan = Math.max(0, sisa - sisaBolehDilunasi(sisa, rinci.lepasSendiri + rinci.tetap));
+  return { bebas, ditahan, nilaiTertahan, sebab: ditahan > 0 ? rinci.jenisLepas : null };
 }
 
 /** Yang masih boleh dilunasi BKM baru: sisa dikurangi yang sedang ditahan, dibulatkan ke rupiah. */
@@ -372,9 +399,71 @@ export function langkahRetur(r: {
   return 'beres';
 }
 
-/** Giliran siapa mengerjakan sebuah langkah. */
-export function giliranRetur(langkah: LangkahRetur): 'gudang' | 'keuangan' | 'tidak_ada' {
-  if (langkah === 'cek') return 'gudang';
-  if (langkah === 'keputusan' || langkah === 'jodoh') return 'keuangan';
-  return 'tidak_ada';
+/** Hasil sales pemegang toko mencari barang selisih retur (P88). */
+export type CekSelisih = "DITANYAKAN" | "DITEMUKAN" | "TIDAK_DITEMUKAN";
+
+/**
+ * Berapa hari kalender WIB sesudah selisih lahir kantor boleh membebankannya ke
+ * sales walau sales belum melapor "tidak ketemu" (P88, jawaban pemilik
+ * 2026-11-02 "setuju"). Mengubahnya adalah keputusan pemilik.
+ */
+export const BATAS_HARI_LAPOR_SELISIH = 14;
+
+const HARI_MS = 86_400_000;
+
+/**
+ * Bolehkah selisih retur dibebankan ke SALES sekarang (P88): seketika kalau sales
+ * melaporkan barangnya TIDAK ditemukan; selain itu mulai hari ke-14 sejak
+ * selisihnya lahir, dihitung per hari kalender WIB (tengah malam WIB batasnya).
+ * `mulai` = tanggal WIB (YYYY-MM-DD) sejak kapan boleh tanpa laporan sales.
+ */
+export function bolehDibebankanKeSales(b: {
+  cek: CekSelisih;
+  dibuatPada: Date;
+  sekarang: Date;
+}): { boleh: boolean; mulai: string } {
+  const lahir = Date.parse(`${tanggalWib(b.dibuatPada)}T00:00:00Z`);
+  const mulai = new Date(lahir + BATAS_HARI_LAPOR_SELISIH * HARI_MS).toISOString().slice(0, 10);
+  if (b.cek === "TIDAK_DITEMUKAN") return { boleh: true, mulai };
+  return { boleh: tanggalWib(b.sekarang) >= mulai, mulai };
+}
+
+/**
+ * Status beban selisih yang ditanggung sales sesudah besarnya atau potongannya
+ * berubah: LUNAS begitu yang sudah dipotong menutup besarnya (dibandingkan
+ * dalam sen), DITETAPKAN selama masih kurang. Beban bernilai nol yang belum
+ * pernah dipotong tidak berubah status — tidak ada yang lunas atau kurang.
+ */
+export function statusBebanSales(
+  amount: number,
+  settled: number,
+  sekarang: "DITETAPKAN" | "LUNAS",
+): "DITETAPKAN" | "LUNAS" {
+  if (keSen(amount) <= 0 && keSen(settled) <= 0) return sekarang;
+  return keSen(settled) >= keSen(amount) ? "LUNAS" : "DITETAPKAN";
+}
+
+/**
+ * Giliran siapa mengerjakan sebuah langkah.
+ *
+ * Langkah `keputusan` yang membawa hasil cek sales (`cek`) dibagi lagi:
+ * - sales belum melapor, atau barang yang ia temukan sudah sampai dan masih
+ *   ada sisa selisih → `sales` (mencari / memeriksa lagi);
+ * - sales melapor barangnya ditemukan, susulannya belum dihitung → `gudang`;
+ * - sales melapor tidak ditemukan, atau batas lapor (14 hari) sudah lewat →
+ *   `keuangan` (kantor memutuskan penanggungnya).
+ * Tanpa `cek` perilakunya sama dengan sebelumnya.
+ */
+export function giliranRetur(
+  langkah: LangkahRetur,
+  cek?: { status: CekSelisih; adaSusulanSesudahLapor: boolean; batasLewat: boolean } | null,
+): "gudang" | "keuangan" | "sales" | "tidak_ada" {
+  if (langkah === "cek") return "gudang";
+  if (langkah === "jodoh") return "keuangan";
+  if (langkah === "keputusan") {
+    if (!cek || cek.status === "TIDAK_DITEMUKAN" || cek.batasLewat) return "keuangan";
+    if (cek.status === "DITEMUKAN" && !cek.adaSusulanSesudahLapor) return "gudang";
+    return "sales";
+  }
+  return "tidak_ada";
 }

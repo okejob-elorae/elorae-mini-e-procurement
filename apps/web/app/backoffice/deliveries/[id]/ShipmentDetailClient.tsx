@@ -56,6 +56,14 @@ export function ShipmentDetailClient({ shipment }: Props) {
   const isCancelled = shipment.status === "CANCELLED";
   const hasGps = shipment.gpsLat !== null && shipment.gpsLng !== null;
   const unknownActor = td("actorUnknown");
+  /* Who recorded the store's receipt (R9): the SPG, the courier's confirmation, or the holder salesman. */
+  const viaLabel: Record<string, string> = {
+    SPG: td("receiptVia.SPG"),
+    POD: td("receiptVia.POD"),
+    SALESMAN: td("receiptVia.SALESMAN"),
+  };
+  /* Refused / lost per line exist only where the POD was the store's receipt (store without an SPG). */
+  const adaKembaliHilang = shipment.lines.some((l) => (l.returnedQty ?? 0) > 0 || (l.lostQty ?? 0) > 0);
 
   /* Photo empty-state copy follows what the shipment could have collected, not just "missing". */
   let goodsEmpty = td("noPhotoYet");
@@ -141,7 +149,46 @@ export function ShipmentDetailClient({ shipment }: Props) {
                 {(isKonsi ? shipment.konsiTransferDocNo : shipment.accountingDocNo) ?? (
                   <span className="text-muted-foreground">{td("notCreated")}</span>
                 )}
+                {shipment.nota?.voidedAt ? (
+                  <Badge variant="destructive" className="ml-2">
+                    {t("nota.batal")}
+                  </Badge>
+                ) : shipment.nota?.correctedAt ? (
+                  <Badge variant="secondary" className="ml-2">
+                    {t("nota.dikoreksi")}
+                  </Badge>
+                ) : null}
+                {shipment.nota?.voidReason ? (
+                  <span className="block text-xs text-muted-foreground">{shipment.nota.voidReason}</span>
+                ) : null}
               </DetailRow>
+              {!isCarry && (
+                <DetailRow label={t("weightLabel")}>
+                  {shipment.weightKg === null ? <Dash /> : <span className="tabular-nums">{shipment.weightKg}</span>}
+                </DetailRow>
+              )}
+              <DetailRow label={td("storeReceipt")}>
+                {shipment.penerimaan ? (
+                  <>
+                    <span className="tabular-nums">{formatDateTime(shipment.penerimaan.receivedAt, locale)} WIB</span>
+                    <span className="text-muted-foreground">
+                      {" · "}
+                      {shipment.penerimaan.receiverName ?? unknownActor}
+                      {shipment.penerimaan.receivedVia && viaLabel[shipment.penerimaan.receivedVia] ? ` · ${viaLabel[shipment.penerimaan.receivedVia]}` : ""}
+                    </span>
+                    {shipment.penerimaan.picName ? (
+                      <span className="block text-xs text-muted-foreground">{td("receiptPic", { name: shipment.penerimaan.picName })}</span>
+                    ) : null}
+                  </>
+                ) : isCancelled ? (
+                  <Dash />
+                ) : (
+                  <span className="text-muted-foreground">{td("storeReceiptNone")}</span>
+                )}
+              </DetailRow>
+              {isCancelled && shipment.cancelReason ? (
+                <DetailRow label={td("cancelReason")}>{shipment.cancelReason}</DetailRow>
+              ) : null}
             </dl>
 
             <div className="space-y-3 border-t pt-4">
@@ -175,6 +222,15 @@ export function ShipmentDetailClient({ shipment }: Props) {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-2">
+              {!isCarry && (
+                <ShipmentPhotoPanel
+                  key={shipment.handoverPhoto.url ?? "handover-none"}
+                  title={td("handoverPhoto")}
+                  url={shipment.handoverPhoto.url}
+                  unavailable={shipment.handoverPhoto.unavailable}
+                  emptyText={isCancelled ? td("photoCancelled") : td("noPhotoYet")}
+                />
+              )}
               <ShipmentPhotoPanel
                 key={shipment.goodsPhoto.url ?? "goods-none"}
                 title={td("goodsPhoto")}
@@ -255,6 +311,8 @@ export function ShipmentDetailClient({ shipment }: Props) {
                   <TableHead>{td("variant")}</TableHead>
                   <TableHead className="text-right">{t("plannedQty")}</TableHead>
                   <TableHead className="text-right">{t("deliveredQty")}</TableHead>
+                  {adaKembaliHilang && <TableHead className="text-right">{td("returnedQty")}</TableHead>}
+                  {adaKembaliHilang && <TableHead className="text-right">{td("lostQty")}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -284,6 +342,12 @@ export function ShipmentDetailClient({ shipment }: Props) {
                           </span>
                         )}
                       </TableCell>
+                      {adaKembaliHilang && (
+                        <TableCell className="text-right tabular-nums">{line.returnedQty === null ? <Dash /> : line.returnedQty}</TableCell>
+                      )}
+                      {adaKembaliHilang && (
+                        <TableCell className="text-right tabular-nums">{line.lostQty === null ? <Dash /> : line.lostQty}</TableCell>
+                      )}
                     </TableRow>
                   );
                 })}

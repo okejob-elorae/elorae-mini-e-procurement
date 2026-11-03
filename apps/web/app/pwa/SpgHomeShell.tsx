@@ -16,6 +16,7 @@ import {
   PackageCheck,
   ScanLine,
   Store as StoreIcon,
+  Undo2,
   Wallet,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -88,15 +89,17 @@ export type DataBerandaSpg = {
   pesananDiproses: number;
   /** Pesanan konsi lama yang menunggu SPG mengonfirmasi barangnya sudah sampai (bagian Pesanan untuk toko ini di Terima kiriman). */
   pesananLama?: number;
+  /** Retur pembeli yang disetujui kantor dan uangnya belum dicatat dikembalikan ke pembeli (P13a). */
+  returUangBelumKembali?: number;
   notaHariIni: { id: string; docNo: string; jam: string; total: number; jumlahBarang: number }[];
   gaji: {
     perkiraan: { totalToko: number; bagianSaya: number } | null;
     /**
      * Pembayaran resmi terbaru menurut bulan PEMBAYARANNYA — sama dengan layar Gaji & komisi, dan
      * `diterima` angka yang sama dengan baris "Diterima"/"Akan diterima" di sana (sesudah potongan
-     * beban barang hilang dan koreksi). Nama bulan sudah diformat server; `bulanBayarLabel` null
-     * selama kantor membuka lagi laporannya. Yang `ditahan` (menunggu keputusan kantor) atau
-     * `belumPasti` (siklusnya dibuka lagi) tidak menyebut rupiah — layar Gaji & komisi pun tidak.
+     * semua pengurang dan koreksi). Nama bulan sudah diformat server; `bulanBayarLabel` null
+     * selama laporannya belum ditutup kantor. Yang `ditahan` (dasar gajinya belum pasti, P60) tidak
+     * menyebut rupiah — layar Gaji & komisi pun tidak.
      */
     terakhir: {
       bulanJualLabel: string;
@@ -104,7 +107,6 @@ export type DataBerandaSpg = {
       diterima: number;
       dibayar: boolean;
       ditahan?: boolean;
-      belumPasti?: boolean;
     } | null;
     /** Σ koreksi yang menunggu pembayaran resmi berikutnya; null kalau tidak ada. */
     koreksiMenunggu?: number | null;
@@ -246,6 +248,8 @@ export function SpgHomeShell({
   const kirimanMenunggu = useKirimanMenunggu(toko.id, data.kirimanMenunggu, data.kirimanMenungguKunci);
   const tugas: Tugas[] = [
     { kunci: "antrean", jumlah: belumTerkirim, href: "/pwa/spg/antrean", label: t("taskQueue"), ikon: CloudOff, mendesak: true },
+    // Retur pembeli yang disetujui kantor: uangnya baru boleh dikembalikan sekarang, dan harus dicatat (P13a).
+    { kunci: "uangRetur", jumlah: data.returUangBelumKembali ?? 0, href: "/pwa/spg/retur-pembeli", label: t("taskRefundShopper"), ikon: Undo2, mendesak: true },
     { kunci: "titip", jumlah: data.titipDatang, href: "/pwa/spg/titip", label: t("taskHoldArrived"), ikon: BellRing },
     { kunci: "terima", jumlah: kirimanMenunggu, href: "/pwa/spg/terima", label: t("taskReceive"), ikon: PackageCheck },
     { kunci: "pesananLama", jumlah: data.pesananLama ?? 0, href: "/pwa/spg/terima#pesanan-toko", label: t("taskOldOrdersConfirm"), ikon: PackageCheck },
@@ -489,12 +493,12 @@ export function SpgHomeShell({
             <span className="block text-sm">{t("payEstimate", { amount: formatIDR(data.gaji.perkiraan.bagianSaya) })}</span>
           ) : null}
           {/* Pembayaran resmi terbaru dengan angka yang DITERIMA — sama dengan layar Gaji & komisi.
-              Yang menunggu kantor (ditahan, atau siklusnya dibuka lagi) tidak menyebut rupiah:
+              Yang menunggu (ditahan, atau laporannya belum ditutup) tidak menyebut rupiah:
               angkanya belum pasti, dan layar Gaji & komisi pun tidak menyebutnya. */}
           {data.gaji.terakhir ? (
             <>
               <span className="block text-sm">
-                {data.gaji.terakhir.bulanBayarLabel && !data.gaji.terakhir.ditahan && !data.gaji.terakhir.belumPasti
+                {data.gaji.terakhir.bulanBayarLabel && !data.gaji.terakhir.ditahan
                   ? t(data.gaji.terakhir.dibayar ? "payLastPaid" : "payLastUnpaid", {
                       period: tGaji("payoutMonth", { month: data.gaji.terakhir.bulanBayarLabel }),
                       amount: formatIDR(data.gaji.terakhir.diterima),

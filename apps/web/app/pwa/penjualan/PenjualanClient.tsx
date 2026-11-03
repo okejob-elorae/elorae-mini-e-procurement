@@ -22,34 +22,36 @@ export type DataPenjualan = {
   daftarBulan: string[];
   bulan: string;
   bulanIni: string;
-  /** Rupiah putus + van per bulan, konsinyasi sebagai pcs — rupiah konsi tidak pernah sampai ke HP. */
+  /** Rupiah putus + konsinyasi + van per bulan, dan pcs konsinyasi laku (P56). */
   seri: TitikBulanHp[];
   ringkas: RingkasanBulanHp;
-  /** Capaian atas putus + van. */
+  /** Capaian atas omzet resmi — putus + konsinyasi + van (P56). */
   target: CapaianTarget | null;
   toko: TokoTeratasBaris[];
   barang: BarangTeratasBaris[];
 };
 
-// Nada dari warna tema, seperti kartu beranda: putus pekat, van pudar.
-// Hanya kanal RUPIAH; konsinyasi tampil sebagai pcs dan tidak pernah jadi batang.
+// Nada dari warna tema, seperti kartu beranda: putus pekat, konsinyasi sedang, van pudar.
 const nada = (persen: number) => `color-mix(in oklab, var(--primary) ${persen}%, transparent)`;
 const KANAL = [
   { kunci: "putus", label: "channelPutus", warna: nada(100) },
-  { kunci: "van", label: "channelVan", warna: nada(40) },
+  { kunci: "konsi", label: "channelKonsi", warna: nada(65) },
+  { kunci: "van", label: "channelVan", warna: nada(35) },
 ] as const;
 // Kanal di kartu utama (latar warna tema): warna tulisan-di-atas-tema.
 const nadaUtama = (persen: number) => `color-mix(in oklab, var(--primary-foreground) ${persen}%, transparent)`;
-const NADA_UTAMA = { putus: nadaUtama(90), van: nadaUtama(40) } as const;
+const NADA_UTAMA = { putus: nadaUtama(90), konsi: nadaUtama(60), van: nadaUtama(35) } as const;
 
 /**
  * Riwayat penjualan per bulan: total dan rinciannya, kemajuan ke target bulan
  * itu, perbandingan dengan bulan lalu dan bulan yang sama tahun lalu, grafik
  * 12 bulan, serta toko dan barang teratas.
  *
- * Aturan mutlak: rupiah konsinyasi tidak pernah sampai ke HP. Setiap rupiah di
- * halaman ini (total, capaian target, pembanding, grafik) adalah putus + van;
- * konsinyasi tampil sebagai pcs.
+ * HP salesman menampilkan konsinyasi lengkap (pemilik P18; P56 "tampilkan
+ * semuanya saja"): setiap rupiah di halaman ini (total, capaian target,
+ * pembanding, grafik, toko dan barang teratas) adalah putus + konsinyasi laku +
+ * van — angka yang sama dengan omzet resmi kantor — dan pcs konsinyasi laku
+ * disebut di sampingnya.
  *
  * Pilihan bulan disimpan di alamat (`?bulan=`) dan berpindah dengan `replace`,
  * jadi "Kembali" tidak berjalan mundur melewati setiap bulan yang dilihat.
@@ -72,10 +74,11 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
   };
 
   const j = data.ringkas.jumlah;
-  // Van tetap dihitung ke omzet, tapi hampir tidak pernah jalan — sembunyikan
-  // kanalnya bila setahun penuh nol, seperti kartu beranda.
+  // Van dan konsinyasi tetap dihitung ke omzet, tapi tidak semua salesman
+  // menjalankannya — sembunyikan kanalnya bila setahun penuh nol.
   const adaVan = data.seri.some((s) => s.van > 0) || j.van > 0;
-  const kanal = KANAL.filter((k) => k.kunci !== "van" || adaVan);
+  const adaKonsi = data.seri.some((s) => s.konsi > 0 || s.pcsKonsi > 0) || j.konsi > 0 || j.pcsKonsi > 0;
+  const kanal = KANAL.filter((k) => (k.kunci !== "van" || adaVan) && (k.kunci !== "konsi" || adaKonsi));
   const kosong = j.total === 0 && j.pcsKonsi === 0 && data.toko.length === 0 && data.barang.length === 0;
 
   return (
@@ -130,7 +133,7 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
         <section className="beranda-kartu beranda-kartu-utama">
           <h2 className="beranda-judul">{t("totalTitle", { month: nama(data.bulan) })}</h2>
           <p className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">{formatIDR(j.total)}</p>
-          <p className="text-xs opacity-80">{t("totalPutusVan")}</p>
+          <p className="text-xs opacity-80">{t("totalSemuaKanal")}</p>
           {data.ringkas.sampaiTanggal !== null ? (
             <p className="text-xs opacity-80">{t("upToDay", { day: data.ringkas.sampaiTanggal })}</p>
           ) : null}
@@ -154,15 +157,9 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
                 <dd className="text-sm font-semibold tabular-nums">{formatIDR(j[k.kunci])}</dd>
               </div>
             ))}
-            {/* Konsinyasi: pcs saja, tidak masuk total rupiah di atas. */}
-            <div className="flex items-baseline justify-between gap-3">
-              <dt className="flex items-center gap-1.5 text-xs opacity-80">
-                <span aria-hidden className="h-2 w-2 shrink-0 rounded-sm border" style={{ borderColor: nadaUtama(55) }} />
-                {t("channelKonsi")}
-              </dt>
-              <dd className="text-sm font-semibold tabular-nums">{pcs(j.pcsKonsi)}</dd>
-            </div>
           </dl>
+          {/* Pcs konsinyasi laku — rupiahnya sudah di baris konsinyasi di atas. */}
+          {j.pcsKonsi > 0 ? <p className="mt-1 text-xs opacity-80">{t("konsiPcs", { n: angka.format(j.pcsKonsi) })}</p> : null}
         </section>
 
         {/* Kemajuan ke target bulan itu. */}
@@ -187,7 +184,6 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
               <p className="mt-1.5 text-xs font-medium tabular-nums">
                 {data.target.tercapai ? t("targetReached") : t("targetShort", { amount: formatIDR(data.target.kurang) })}
               </p>
-              {j.pcsKonsi > 0 ? <p className="mt-1 text-xs text-muted-foreground">{t("targetKonsiNote")}</p> : null}
             </>
           ) : (
             <p className="mt-1 text-sm text-muted-foreground">{t("targetNone")}</p>
@@ -198,7 +194,7 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
         <section className="beranda-kartu">
           <h2 className="beranda-judul">{t("compareTitle")}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            {t("compareHint", { month: nama(data.bulan) })} {t("comparePutusVan")}
+            {t("compareHint", { month: nama(data.bulan) })} {t("compareSemuaKanal")}
             {data.ringkas.sampaiTanggal !== null ? ` ${t("sameDaysNote", { day: data.ringkas.sampaiTanggal })}` : ""}
           </p>
           <ul className="mt-1 divide-y">
@@ -260,7 +256,7 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-[11px] text-muted-foreground">{t("chartPutusVan")}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">{t("chartSemuaKanal")}</p>
         </section>
 
         {kosong ? (
@@ -286,7 +282,7 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
                           <span className="block text-xs text-muted-foreground tabular-nums">
                             {/* Pengiriman lama tanpa baris barang punya nilai tapi 0 pcs —
                                 "0 pcs · Rp 12 jt" membingungkan, jadi pcs nol tidak ditulis. */}
-                            {[s.pcs > 0 ? pcs(s.pcs) : null, s.nilaiTanpaKonsi > 0 ? formatIDR(s.nilaiTanpaKonsi) : null]
+                            {[s.pcs > 0 ? pcs(s.pcs) : null, s.nilai > 0 ? formatIDR(s.nilai) : null]
                               .filter(Boolean)
                               .join(" · ")}
                           </span>
@@ -318,9 +314,7 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
                         {b.sku ? <span className="block truncate font-mono text-[11px] text-muted-foreground">{b.sku}</span> : null}
                         <span className="block text-xs text-muted-foreground tabular-nums">
                           {pcs(b.pcs)}
-                          {b.nilaiTanpaKonsi > 0
-                            ? ` · ${b.pcsKonsi > 0 ? t("valueNoKonsi", { amount: formatIDR(b.nilaiTanpaKonsi) }) : formatIDR(b.nilaiTanpaKonsi)}`
-                            : ""}
+                          {b.nilai > 0 ? ` · ${formatIDR(b.nilai)}` : ""}
                         </span>
                         {b.pcsKonsi > 0 ? (
                           <span className="block text-xs text-muted-foreground tabular-nums">{t("konsiPcs", { n: angka.format(b.pcsKonsi) })}</span>

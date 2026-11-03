@@ -2,23 +2,18 @@ import { prisma } from "@elorae/db";
 import { bacaAturanPeringkat, KUNCI_PERINGKAT, rentangBulanWib, susunPeringkat, type AturanPeringkat } from "./komisi";
 import { omzetBulan } from "./komisi-queries";
 import { bacaTargetBulan, KUNCI_TARGET } from "./pengaturan";
-import { omzetTanpaKonsi, pcsKonsiBulan } from "./penjualan-hp";
+import { pcsKonsiBulan } from "./penjualan-hp";
 import { pcsKonsiSalesman } from "./penjualan-hp-queries";
 import { daftarSalesman } from "./queries";
 
 /**
- * Papan peringkat salesman untuk HP — SELURUHNYA atas putus + van.
+ * Papan peringkat salesman untuk HP — atas omzet resmi kantor (putus +
+ * konsinyasi laku + van), sama dengan papan kantor dan Insentif (P56, jawaban
+ * pemilik 2026-11-02 "tampilkan semuanya saja").
  *
- * Aturan mutlak pemilik: harga dan total konsinyasi tidak pernah sampai ke
- * aplikasi salesman. Papan resmi (`peringkatBulan`) memuat konsi: omzet sendiri
- * yang dikirim adalah total dengan konsi, dan capaian sendiri × target (yang
- * terlihat di halaman Target) − putus − van = konsi. Mengurutkan dengan angka
- * resmi pun membocorkan: persen rekan di atas dan di bawah posisi sendiri
- * mengapit capaian resmi sendiri, jadi konsinya bisa ditebak sampai beberapa
- * persen target. Karena itu urutan, persen, dan omzet di papan HP semuanya
- * putus + van, untuk semua peserta — sama dengan Insentif dan kartu "Bulan ini".
- *
- * Konsinyasi hanya sebagai pcs, dan hanya milik penonton sendiri.
+ * Omzet rekan tetap TIDAK dikirim (aturan privasi yang sudah ada): yang tampil
+ * untuk rekan hanya peringkat dan persen capaiannya. Pcs konsinyasi hanya milik
+ * penonton sendiri.
  *
  * Client screens hanya boleh `import type` dari berkas ini (memuat Prisma).
  */
@@ -30,9 +25,9 @@ export type BarisPeringkatHp = {
   posisi: number;
   /** null = disembunyikan pengaturan pemilik. Nama sendiri selalu terlihat. */
   nama: string | null;
-  /** Capaian target atas putus + van. */
+  /** Capaian target atas omzet resmi (putus + konsi + van). */
   persen: number | null;
-  /** Omzet putus + van — hanya milik penonton sendiri. */
+  /** Omzet resmi — hanya milik penonton sendiri. */
   omzet: number | null;
   /** Pcs konsinyasi bulan itu — hanya milik penonton sendiri. */
   pcsKonsi: number | null;
@@ -79,8 +74,7 @@ export async function peringkatHp(
       peserta.map(async (s) => ({
         id: s.id,
         nama: s.nama,
-        // Omzet resmi dibaca di server, tapi yang dipakai hanya putus + van.
-        omzet: omzetTanpaKonsi(await omzetBulan(s.id, bulan)).total,
+        omzet: (await omzetBulan(s.id, bulan)).total,
         target: bacaTargetBulan(target, s.id, bulan),
       })),
     ),

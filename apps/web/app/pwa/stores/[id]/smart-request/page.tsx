@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@elorae/db";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { auth } from "@/lib/auth";
 import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { ambilTokoTetap } from "@/lib/pwa/peran";
@@ -41,7 +42,8 @@ export default async function PwaRencanaKirim({ params }: { params: Promise<{ id
   const [active, categories, ratio, setelanHariBaru, dasarLaku] = await Promise.all([
     getActiveVisit(session.user.id),
     prisma.itemCategory.findMany({
-      where: { isActive: true, items: { some: { isActive: true, type: "FINISHED_GOOD" } } },
+      // Kategori yang punya barang jadi aktif yang dijual offline — tanpa kategori kosong (P3).
+      where: { isActive: true, items: { some: { isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() } } },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

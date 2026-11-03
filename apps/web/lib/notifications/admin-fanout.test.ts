@@ -88,9 +88,13 @@ describe("fanOutAdminNotification", () => {
     expect(mockGetUsers).not.toHaveBeenCalledWith("field_sales_orders:approve");
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining("no permission mapped for category CREDIT_LIMIT_HOLD"));
 
+    // Owner 2026-11-02 (P48): receiving the office overdue reminder is its own permission, neither the
+    // collections code it used to ride on nor receivables:manage, which changes the thresholds (Q14).
     mockGetUsers.mockClear();
     await fanOutAdminNotification({ ...BASE, category: "AR_OVERDUE" });
-    expect(mockGetUsers).toHaveBeenCalledWith("collections:manage");
+    expect(mockGetUsers).toHaveBeenCalledWith("receivables:overdue_reminder");
+    expect(mockGetUsers).not.toHaveBeenCalledWith("collections:manage");
+    expect(mockGetUsers).not.toHaveBeenCalledWith("receivables:manage");
 
     mockGetUsers.mockClear();
     await fanOutAdminNotification({ ...BASE, category: "PO_PAYMENT_DUE" });
@@ -144,6 +148,27 @@ describe("fanOutAdminNotification", () => {
     ["KOREKSI_DIMINTA_RETUR", "receivables:manage"],
     ["STORE_TRANSFER_TO_RECEIVE", "stores:manage"],
     ["STORE_TRANSFER_STALE", "stores:manage"],
+    /*
+     * Owner 2026-11-02, round 4. Lost goods stay on receivables:decide_bearer; a store-return
+     * shortfall has its own code (P22). A voided or corrected nota tells Finance (payments:verify) and,
+     * when its faktur was numbered, the faktur recorder (P25, P34, P41a).
+     */
+    ["RETUR_SELISIH", "store_returns:decide_shortfall"],
+    ["DELIVERY_NOTA_VOIDED", "payments:verify"],
+    ["DELIVERY_NOTA_CORRECTED", "payments:verify"],
+    ["TAX_INVOICE_NOTA_CHANGED", "tax_invoices:manage"],
+    ["VENDOR_BILL_PRICE_DIFFERENCE", "vendor_bills:decide_price"],
+    ["SUPPLIER_INVOICE_OVERDUE", "vendor_bills:manage"],
+    ["GRN_NO_PO_PENDING", "goods_receipts:confirm_no_po"],
+    ["SPG_SCHEDULE_SUBMITTED", "spg_schedules:approve"],
+    // The check-in record: entered by spg_attendance:record, checked by spg_attendance:verify (P7e, P61a).
+    ["SPG_ATTENDANCE_NEEDED", "spg_attendance:record"],
+    ["SPG_ATTENDANCE_SUBMITTED", "spg_attendance:verify"],
+    ["SPG_ATTENDANCE_RETURNED", "spg_attendance:record"],
+    ["SPG_DEBT_PAYMENT_SUBMITTED", "payments:verify"],
+    ["SPG_DEBT_PAYMENT_RETURNED", "spg_commission:pay"],
+    ["JUBELIO_PRICE_DIFFERS", "jubelio_prices:confirm"],
+    ["AR_OVERDUE", "receivables:overdue_reminder"],
   ])("routes %s to %s, the code its office action checks", async (category, permission) => {
     mockGetUsers.mockClear();
     await fanOutAdminNotification({ ...BASE, category });

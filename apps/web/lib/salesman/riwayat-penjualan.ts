@@ -164,18 +164,17 @@ export function capaianTarget(target: number | null | undefined, capai: number):
 // ─── Toko dan barang teratas ──────────────────────────────────────────────────
 
 /**
- * Satu dokumen penjualan ke satu toko. `nilai` adalah total dokumen; nilai
- * konsinyasi TIDAK PERNAH ditampilkan per toko di HP (nilai konsi satu toko ÷
- * pcs yang dikirim = harga konsinyasi), jadi baris konsi hanya menyumbang pcs.
+ * Satu dokumen penjualan ke satu toko. `nilai` adalah total dokumen; baris
+ * konsinyasi membawa nilai laku konsinyasinya (harga Elorae, P56).
  */
 export type JualKeToko = { storeId: string | null; jenis: JenisJual; nilai: number; pcs: number };
 
-export type TokoTeratas = { storeId: string; pcs: number; pcsKonsi: number; nilaiTanpaKonsi: number };
+export type TokoTeratas = { storeId: string; pcs: number; pcsKonsi: number; nilai: number };
 
 /**
- * Toko teratas sebulan, diurutkan menurut PCS: satu-satunya ukuran yang sama
- * adilnya bagi toko putus dan toko konsinyasi tanpa membuka harga konsinyasi.
- * Penjualan van ke pembeli tanpa toko (`storeId` null) bukan toko — dilewati.
+ * Toko teratas sebulan, diurutkan menurut PCS lalu rupiah (semua kanal,
+ * konsinyasi ikut — P56). Penjualan van ke pembeli tanpa toko (`storeId` null)
+ * bukan toko — dilewati.
  */
 export function tokoTeratas(baris: readonly JualKeToko[], batas: number = BATAS_TOKO_TERATAS): TokoTeratas[] {
   const per = new Map<string, { pcs: number; pcsKonsi: number; sen: number }>();
@@ -185,21 +184,21 @@ export function tokoTeratas(baris: readonly JualKeToko[], batas: number = BATAS_
     if (!t) per.set(b.storeId, (t = { pcs: 0, pcsKonsi: 0, sen: 0 }));
     t.pcs += b.pcs;
     if (b.jenis === "konsi") t.pcsKonsi += b.pcs;
-    else t.sen += Math.round(b.nilai * 100);
+    t.sen += Math.round(b.nilai * 100);
   }
   return [...per]
-    .map(([storeId, t]) => ({ storeId, pcs: t.pcs, pcsKonsi: t.pcsKonsi, nilaiTanpaKonsi: t.sen / 100 }))
-    .filter((t) => t.pcs > 0 || t.nilaiTanpaKonsi !== 0)
-    .sort((a, b) => b.pcs - a.pcs || b.nilaiTanpaKonsi - a.nilaiTanpaKonsi || a.storeId.localeCompare(b.storeId))
+    .map(([storeId, t]) => ({ storeId, pcs: t.pcs, pcsKonsi: t.pcsKonsi, nilai: t.sen / 100 }))
+    .filter((t) => t.pcs > 0 || t.nilai !== 0)
+    .sort((a, b) => b.pcs - a.pcs || b.nilai - a.nilai || a.storeId.localeCompare(b.storeId))
     .slice(0, batas);
 }
 
-export type BarangTeratas = { itemId: string; pcs: number; pcsKonsi: number; nilaiTanpaKonsi: number };
+export type BarangTeratas = { itemId: string; pcs: number; pcsKonsi: number; nilai: number };
 
 /**
  * Barang teratas sebulan dari capaian rinci (`capaianRinciSales`), menurut pcs.
- * Rupiahnya TANPA konsinyasi — aturan yang sama dengan target barang di HP
- * (`capaianUntukHp`): nilai konsi satu barang ÷ pcs = harga satuan konsi.
+ * Rupiahnya nilai capaian penuh, konsinyasi ikut (P56); `barangKonsi` hanya
+ * untuk menyebut berapa dari pcs-nya yang konsinyasi.
  */
 export function barangTeratas(
   barang: Readonly<Record<string, { nilai: number; pcs: number }>>,
@@ -207,16 +206,13 @@ export function barangTeratas(
   batas: number = BATAS_BARANG_TERATAS,
 ): BarangTeratas[] {
   return Object.entries(barang)
-    .map(([itemId, x]) => {
-      const k = barangKonsi[itemId];
-      return {
-        itemId,
-        pcs: x.pcs,
-        pcsKonsi: k?.pcs ?? 0,
-        nilaiTanpaKonsi: Math.round((x.nilai - (k?.nilai ?? 0)) * 100) / 100,
-      };
-    })
+    .map(([itemId, x]) => ({
+      itemId,
+      pcs: x.pcs,
+      pcsKonsi: barangKonsi[itemId]?.pcs ?? 0,
+      nilai: Math.round(x.nilai * 100) / 100,
+    }))
     .filter((b) => b.pcs > 0)
-    .sort((a, b) => b.pcs - a.pcs || b.nilaiTanpaKonsi - a.nilaiTanpaKonsi || a.itemId.localeCompare(b.itemId))
+    .sort((a, b) => b.pcs - a.pcs || b.nilai - a.nilai || a.itemId.localeCompare(b.itemId))
     .slice(0, batas);
 }

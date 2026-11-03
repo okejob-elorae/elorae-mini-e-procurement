@@ -53,7 +53,7 @@ vi.mock("@/lib/production/hutang-jasa-queries", async () => {
           dibayar,
           sisa,
           langkah: [
-            { stepId: l.stepId, woId: "wo-uji", woDocNumber: "WO/UJI", urutan: 1, namaLangkah: "Jahit", supplierId, hargaPerPcs: 12_250, hargaTermasukPpn: false, qtyTerhutang: 100, hutang: l.hutang, dasarPotong: l.hutang, ppn: 0, dibayar, sisa },
+            { stepId: l.stepId, woId: "wo-uji", woDocNumber: "WO/UJI", urutan: 1, namaLangkah: "Jahit", supplierId, hargaPerPcs: 12_250, hargaTermasukPpn: false, qtyTerhutang: 100, hutang: l.hutang, hutangTanpaKoreksi: l.hutang, dasarPotong: l.hutang, ppn: 0, dibayar, sisa },
           ],
         });
       }

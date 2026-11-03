@@ -2,12 +2,17 @@ import { prisma } from '@elorae/db';
 import { cariTeks } from "@/lib/db/cari-teks";
 import { ItemType, Prisma } from '@elorae/db';
 import { itemHasSkuVariants } from '@/lib/items/variants';
+import { syaratDijualOffline, type SaluranJual } from "@/lib/items/saluran-jual";
 
 export type ListItemsFilters = {
   type?: ItemType | 'raw';
   categoryId?: string;
   search?: string;
   isActive?: boolean;
+  /** Saringan "Dijual di" daftar barang — selalu barang jadi saja (P3). */
+  salesChannel?: SaluranJual;
+  /** Pemilih jual offline: barang "Marketplace saja" tidak tampil (P3a); barang jadi saja. */
+  dijualOffline?: boolean;
 };
 
 export type ListItemsOpts = {
@@ -76,6 +81,12 @@ export function buildItemsWhere(filters?: ListItemsFilters): Prisma.ItemWhereInp
     ];
   }
 
+  // Saluran jual hanya bermakna untuk barang jadi: kain dan aksesori tidak pernah cocok.
+  const dan: Prisma.ItemWhereInput[] = [];
+  if (filters?.salesChannel) dan.push({ type: ItemType.FINISHED_GOOD, salesChannel: filters.salesChannel });
+  if (filters?.dijualOffline) dan.push({ type: ItemType.FINISHED_GOOD, ...syaratDijualOffline() });
+  if (dan.length > 0) where.AND = dan;
+
   return where;
 }
 
@@ -97,6 +108,8 @@ export const KOLOM_DECIMAL_ITEM = [
   'overReceiveThreshold',
   'sellingPrice',
   "jubelioConfirmedPrice",
+  "jubelioObservedPriceMax",
+  "jubelioObservedPriceMin",
   'targetMarginPercent',
   'additionalCost',
   'commissionPerPcs',

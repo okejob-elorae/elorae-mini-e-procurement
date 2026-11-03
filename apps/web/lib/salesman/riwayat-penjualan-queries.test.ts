@@ -7,10 +7,10 @@ import { riwayatPenjualan } from "./riwayat-penjualan-queries";
  * Halaman "Riwayat penjualan" terhadap basis data uji. Yang dipasak: total satu
  * bulan (dan tiap kanalnya) SAMA PERSIS dengan kartu "Bulan ini" di beranda
  * pada hari terakhir bulan itu — dihitung dengan fungsi beranda sendiri
- * (`berandaPenjualanHp`), persis seperti `app/pwa/page.tsx`. Keduanya untuk
- * HP: rupiah putus + van, konsinyasi hanya pcs. Ditambah: batas bulan WIB,
- * pembanding bulan lalu / tahun lalu, toko & barang teratas tanpa nilai
- * konsinyasi.
+ * (`berandaPenjualanHp`), persis seperti `app/pwa/page.tsx`. Keduanya angka
+ * kantor (P56): rupiah putus + konsinyasi laku + van, dan pcs konsinyasi.
+ * Ditambah: batas bulan WIB, pembanding bulan lalu / tahun lalu, toko & barang
+ * teratas dengan nilai konsinyasi.
  *
  * Semua baris milik pengguna buatan tes pada bulan lampau yang acak; teardown
  * hanya lewat id yang diseed.
@@ -209,16 +209,15 @@ d("riwayat penjualan salesman (test bed only)", () => {
     expect(sen(r.ringkas.jumlah.total)).toBe(sen(beranda.total));
     expect(sen(r.ringkas.jumlah.putus)).toBe(sen(beranda.putus));
     expect(sen(r.ringkas.jumlah.van)).toBe(sen(beranda.van));
+    expect(sen(r.ringkas.jumlah.konsi)).toBe(sen(beranda.konsi));
     expect(r.ringkas.jumlah.pcsKonsi).toBe(beranda.pcsKonsi);
-    // Dihitung tangan: 49.500 + 10.000 + 7.000,50 — konsi 40.000 tidak pernah dalam rupiah, hanya 4 pcs.
-    expect(sen(r.ringkas.jumlah.total)).toBe(sen(66_500.5));
+    // Dihitung tangan: 49.500 + 10.000 + 7.000,50 + konsi laku 40.000 (4 pcs) — P56.
+    expect(sen(r.ringkas.jumlah.total)).toBe(sen(106_500.5));
+    expect(sen(r.ringkas.jumlah.konsi)).toBe(sen(40_000));
     expect(r.ringkas.jumlah.pcsKonsi).toBe(4);
     // Grafik 12 bulan memuat angka yang sama.
-    expect(sen(r.seri.find((s) => s.bulan === BULAN)!.total)).toBe(sen(66_500.5));
+    expect(sen(r.seri.find((s) => s.bulan === BULAN)!.total)).toBe(sen(106_500.5));
     expect(r.seri.find((s) => s.bulan === BULAN)!.pcsKonsi).toBe(4);
-    // Total resmi dengan konsi (106.500,5) tidak boleh ikut: total − putus − van = konsi.
-    expect(JSON.stringify(r)).not.toContain("106500");
-    expect(JSON.stringify(r)).not.toContain("40000");
   });
 
   it("bulan berjalan = kartu beranda hari itu juga", async () => {
@@ -228,8 +227,8 @@ d("riwayat penjualan salesman (test bed only)", () => {
     expect(r.bulan).toBe(BULAN);
     expect(r.ringkas.sampaiTanggal).toBe(11);
     expect(sen(r.ringkas.jumlah.total)).toBe(sen(beranda.total));
-    // Putus 49.500 + van 10.000; van ke pembeli langsung tanggal 12 belum terjadi.
-    expect(sen(r.ringkas.jumlah.total)).toBe(sen(59_500));
+    // Putus 49.500 + van 10.000 + konsi laku 40.000 (tanggal 10); van ke pembeli langsung tanggal 12 belum terjadi.
+    expect(sen(r.ringkas.jumlah.total)).toBe(sen(99_500));
   });
 
   it("pembanding: bulan lalu dan bulan yang sama tahun lalu", async () => {
@@ -237,27 +236,25 @@ d("riwayat penjualan salesman (test bed only)", () => {
     expect(r.ringkas.sampaiTanggal).toBeNull();
     expect(r.ringkas.sebulanLalu).toMatchObject({ bulan: BULAN_LALU, total: 20_000 });
     expect(r.ringkas.setahunLalu).toMatchObject({ bulan: TAHUN_LALU, total: 30_000 });
-    expect(r.ringkas.setahunLalu.persen).toBe(Math.round(((66_500.5 - 30_000) / 30_000) * 100));
+    expect(r.ringkas.setahunLalu.persen).toBe(Math.round(((106_500.5 - 30_000) / 30_000) * 100));
   });
 
-  it("toko teratas menurut pcs; konsi tanpa rupiah; pembeli tanpa toko dilewati", async () => {
+  it("toko teratas menurut pcs; konsi dengan rupiahnya (P56); pembeli tanpa toko dilewati", async () => {
     const r = await riwayatPenjualan(salesId, BULAN, NANTI);
     expect(r.toko).toEqual([
-      { storeId: tokoA, nama: `Toko A ${token}`, pcs: 6, pcsKonsi: 0, nilaiTanpaKonsi: 59_500 },
-      { storeId: tokoB, nama: `Toko B ${token}`, pcs: 4, pcsKonsi: 4, nilaiTanpaKonsi: 0 },
+      { storeId: tokoA, nama: `Toko A ${token}`, pcs: 6, pcsKonsi: 0, nilai: 59_500 },
+      { storeId: tokoB, nama: `Toko B ${token}`, pcs: 4, pcsKonsi: 4, nilai: 40_000 },
     ]);
   });
 
-  it("barang teratas: bonus tidak dihitung; rupiah tanpa konsinyasi", async () => {
+  it("barang teratas: bonus tidak dihitung; rupiah memuat konsinyasi (P56)", async () => {
     const r = await riwayatPenjualan(salesId, BULAN, NANTI);
     const b1 = r.barang.find((b) => b.itemId === i1)!;
     const b2 = r.barang.find((b) => b.itemId === i2)!;
-    expect(b1).toMatchObject({ pcs: 5, pcsKonsi: 0, nilaiTanpaKonsi: 49_500, sku: `TEST-RP-1-${token}` });
-    // Barang 2: 4 konsi + 1 van ke toko + 1 van langsung = 6 pcs; rupiah hanya van.
-    expect(b2).toMatchObject({ pcs: 6, pcsKonsi: 4, nilaiTanpaKonsi: 17_000.5 });
+    expect(b1).toMatchObject({ pcs: 5, pcsKonsi: 0, nilai: 49_500, sku: `TEST-RP-1-${token}` });
+    // Barang 2: 4 konsi + 1 van ke toko + 1 van langsung = 6 pcs; rupiah van 17.000,5 + konsi 40.000.
+    expect(b2).toMatchObject({ pcs: 6, pcsKonsi: 4, nilai: 57_000.5 });
     expect(r.barang[0].itemId).toBe(i2);
-    // Nilai konsinyasi tidak pernah keluar dari bagian toko dan barang.
-    expect(JSON.stringify({ t: r.toko, b: r.barang })).not.toContain("40000");
   });
 
   it("bulan di luar daftar 12 bulan jatuh ke bulan ini", async () => {

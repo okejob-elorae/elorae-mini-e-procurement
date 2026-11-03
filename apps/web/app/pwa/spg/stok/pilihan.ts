@@ -4,13 +4,16 @@ import { kunciBaris } from "@/lib/spg/stok";
 import type { BarisPilihan } from "./barang-pilihan";
 
 /**
- * Barang yang bisa dipilih di layar SPG (minta kiriman, opname): katalog aktif
- * DIGABUNG dengan barang yang pernah bergerak di toko.
+ * Barang yang bisa dipilih di layar SPG (minta kiriman, opname, formulir retur
+ * toko SPG): katalog aktif yang dijual offline DIGABUNG dengan barang yang
+ * pernah bergerak di toko.
  *
- * Katalog saja tidak cukup — barang yang sudah dinonaktifkan di master tetap
- * bisa masih ada di rak toko, dan opname harus bisa menghitungnya. Stok toko
- * saja juga tidak cukup — barang yang belum pernah ada di toko justru yang
- * paling perlu diminta.
+ * Katalog saja tidak cukup — barang yang sudah dinonaktifkan di master, atau
+ * dijadikan "Marketplace saja" (P3a), tetap bisa masih ada di rak toko, dan
+ * opname harus bisa menghitungnya (P73). Barang di buku toko itu karenanya
+ * diminta tetap tampil di katalog (`tetapTampilkan`), supaya baris katalognya
+ * (barcode, label varian) tetap terbaca. Stok toko saja juga tidak cukup —
+ * barang yang belum pernah ada di toko justru yang paling perlu diminta.
  *
  * Hanya untuk server component: dipanggil dari halaman, hasilnya dikirim ke
  * klien sebagai data polos. Tipe dan pencariannya ada di `barang-pilihan.ts`,
@@ -20,7 +23,7 @@ import type { BarisPilihan } from "./barang-pilihan";
 export async function pilihanBarang(stok: BarisStok[]): Promise<BarisPilihan[]> {
   // Saldo sudah ada di `stok` — katalog dimuat TANPA toko supaya kelompok
   // gerakan stok tidak dihitung dua kali.
-  const katalog = await getSellableCatalogForSpg();
+  const katalog = await getSellableCatalogForSpg(undefined, { tetapTampilkan: [...new Set(stok.map((s) => s.itemId))] });
   const saldo = new Map(stok.map((b) => [kunciBaris(b.itemId, b.variantSku), b]));
 
   const hasil = new Map<string, BarisPilihan>();

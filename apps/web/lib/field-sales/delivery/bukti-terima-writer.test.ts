@@ -114,6 +114,7 @@ d("bukti terima — penulis (test bed only)", () => {
 
   afterEach(async () => {
     await prisma.auditLog.deleteMany({ where: { entityType: "FieldSalesDelivery", entityId: seededId(deliveryId) } });
+    await prisma.deliveryShipment.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: seededId(deliveryId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
@@ -229,6 +230,26 @@ d("bukti terima — penulis (test bed only)", () => {
       expect(sesudah[0]).toMatchObject({ keadaan: "DITERIMA", receivedByName: "Bu Siti", podPhotoUrl: fotoUrl(fotoSalesman) });
 
       expect(await kirimanPesananSaya(orderId, salesmanLainId)).toEqual([]);
+    });
+
+    it("a shipment nota shows (and takes a proof) only once the goods have left; a voided nota never (R23)", async () => {
+      /* The nota of a shipment is issued when the shipment is packed, before the goods leave. */
+      const pengiriman = await prisma.deliveryShipment.create({
+        data: { docNo: `DLV/TEST-BT-SHP-${token}`, orderId, deliveryId, method: "EXPEDITION", status: "PACKED", packedById: kantorId },
+      });
+      expect(await kirimanPesananSaya(orderId, salesmanId)).toEqual([]);
+      expect(await catatBuktiTerima(salesman(), masukan())).toEqual({ ok: false, kode: "BELUM_BERANGKAT" });
+
+      await prisma.deliveryShipment.update({ where: { id: seededId(pengiriman.id) }, data: { status: "IN_TRANSIT", shippedAt: new Date() } });
+      expect((await kirimanPesananSaya(orderId, salesmanId)).map((k) => k.id)).toEqual([deliveryId]);
+      expect(await catatBuktiTerima(salesman(), masukan())).toMatchObject({ ok: true });
+
+      await prisma.fieldSalesDelivery.update({ where: { id: seededId(deliveryId) }, data: { voidedAt: new Date() } });
+      expect(await kirimanPesananSaya(orderId, salesmanId)).toEqual([]);
+      expect(await koreksiBuktiTerima(kantor(), masukan({ receivedByName: "Bu Rina", podPhotoUrl: fotoUrl(fotoKantor), reason: "salah nama" }))).toEqual({
+        ok: false,
+        kode: "NOTA_DIBATALKAN",
+      });
     });
   });
 

@@ -20,6 +20,7 @@ type PageProps = {
     view?: string;
     kategori?: string;
     status?: string;
+    saluran?: string;
   }>;
 };
 
@@ -49,6 +50,7 @@ export default async function ItemsPage({ searchParams }: PageProps) {
     type: typeFilter,
     categoryId: saring.kategori || undefined,
     isActive: isActiveDariStatus(saring.status),
+    salesChannel: saring.saluran || undefined,
   };
 
   if (view === 'variant') {
@@ -78,6 +80,7 @@ export default async function ItemsPage({ searchParams }: PageProps) {
         typeFilter={typeFilter ?? ''}
         kategoriFilter={saring.kategori}
         statusFilter={saring.status}
+        saluranFilter={saring.saluran}
         kategori={kategori.map((k) => ({ id: k.id, name: k.name, code: k.code ?? null }))}
         page={page}
         pageSize={DEFAULT_PAGE_SIZE}
@@ -113,6 +116,7 @@ export default async function ItemsPage({ searchParams }: PageProps) {
       typeFilter={typeFilter ?? ''}
       kategoriFilter={saring.kategori}
       statusFilter={saring.status}
+      saluranFilter={saring.saluran}
       kategori={kategori.map((k) => ({ id: k.id, name: k.name, code: k.code ?? null }))}
       page={page}
       pageSize={DEFAULT_PAGE_SIZE}

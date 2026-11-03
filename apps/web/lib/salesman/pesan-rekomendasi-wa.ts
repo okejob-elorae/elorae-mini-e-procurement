@@ -6,8 +6,9 @@
  * SELALU Bahasa Indonesia, tidak lewat next-intl: pembacanya toko.
  *
  * TIDAK ADA HARGA, untuk jenis toko apa pun. Bentuk bahannya bahkan tidak punya
- * kolom harga. Untuk konsinyasi itu aturan tetap aplikasi salesman (harga dan
- * total konsinyasi tidak pernah sampai ke HP). Untuk toko putus itu pilihan
+ * kolom harga. Untuk konsinyasi itu keputusan pemilik P58: teks WhatsApp dari
+ * sales ke toko konsinyasi tanpa harga (walau HP salesman sendiri menampilkan
+ * harga retail konsi, P18). Untuk toko putus itu pilihan
  * yang paling aman: rekomendasi belum pesanan — harga final dihitung server
  * saat pesanan dibuat (promo ikut, kantor menyetujui), jadi angka di pesan ini
  * akan menjadi janji harga yang belum tentu sama. Toko putus hanya diberi tahu

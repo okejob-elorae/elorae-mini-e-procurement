@@ -34,12 +34,27 @@ export const KELOMPOK_PERAN: readonly KelompokPeran[] = [
       "INVENTORY_CONSIGNMENT",
       "INVENTORY_DAMAGED",
       "INVENTORY_VARIANCE",
+      "PURCHASE_PRICE_VARIANCE",
+      // Jasa proses WO (CMT, cuci, sablon) dari tagihan vendor, dikredit ke utang.
+      "PRODUCTION_SERVICE_COST",
       "AP",
     ],
   },
   {
     id: "PENJUALAN",
-    peran: ["SALES_REVENUE", "SALES_RETURN", "SALES_DISCOUNT", "COGS", "AR", "AR_STORE", "AR_CONSIGNMENT"],
+    peran: [
+      "SALES_REVENUE",
+      "SALES_RETURN",
+      "SALES_DISCOUNT",
+      "COGS",
+      "AR",
+      "AR_STORE",
+      "AR_CONSIGNMENT",
+      // Potongan yang dipotong toko saat pelunasan piutang.
+      "TRADE_PROGRAM_EXPENSE",
+      "ADMIN_FEE_EXPENSE",
+      "ROUNDING_EXPENSE",
+    ],
   },
   {
     id: "MARKETPLACE",

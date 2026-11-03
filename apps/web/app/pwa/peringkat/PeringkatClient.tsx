@@ -16,8 +16,9 @@ import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /**
- * Satu baris papan dari `peringkatHp`: capaian dan omzet atas putus + van;
- * omzet dan pcs konsinyasi hanya terisi untuk diri sendiri.
+ * Satu baris papan dari `peringkatHp`: capaian dan omzet atas omzet resmi
+ * putus + konsi + van (P56); omzet dan pcs konsinyasi hanya terisi untuk diri
+ * sendiri.
  */
 export type BarisPeringkatJson = BarisPeringkatHp;
 
@@ -57,7 +58,7 @@ function Baris({ b, label, persen }: { b: BarisPeringkatJson; label: string; per
             <div className="h-full rounded-full bg-primary" style={{ width: `${lebar}%` }} />
           </div>
         ) : b.diriSendiri && b.omzet !== null ? (
-          <p className="text-xs text-muted-foreground tabular-nums">{t("yourSalesPutusVan", { amount: formatIDR(b.omzet) })}</p>
+          <p className="text-xs text-muted-foreground tabular-nums">{t("yourSales", { amount: formatIDR(b.omzet) })}</p>
         ) : null}
       </div>
       <span className="shrink-0 text-right text-sm font-semibold tabular-nums">
@@ -71,7 +72,8 @@ function Baris({ b, label, persen }: { b: BarisPeringkatJson; label: string; per
  * Papan peringkat. Yang bertarget diurutkan menurut capaian; yang belum punya
  * target di bagian terpisah di bawah, diurutkan menurut omzet — omzetnya
  * sendiri tidak ditampilkan kecuali milik penonton. Capaian dan omzet atas
- * putus + van; konsinyasi hanya sebagai pcs milik sendiri.
+ * omzet resmi putus + konsi + van, sama dengan papan kantor (pemilik P56,
+ * 2026-11-02); pcs konsinyasi hanya milik sendiri.
  */
 export function PeringkatClient({ bulan, baris }: { bulan: string; baris: BarisPeringkatJson[] }) {
   const t = useTranslations("pwa.peringkat");
@@ -97,7 +99,7 @@ export function PeringkatClient({ bulan, baris }: { bulan: string; baris: BarisP
         </div>
         <p className="text-sm text-muted-foreground">{t("subtitle", { month: namaBulan(tBulan, bulan, "panjang") })}</p>
         {/* Selalu tampil, bukan hanya saat ada konsinyasi — keterangan bersyarat justru memberi tahu bahwa ada. */}
-        <p className="mt-1 text-xs text-muted-foreground">{t("basisNote")}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{t("basisNoteSemuaKanal")}</p>
       </header>
 
       {saya ? (
@@ -111,10 +113,10 @@ export function PeringkatClient({ bulan, baris }: { bulan: string; baris: BarisP
           <p className="mt-1 text-sm tabular-nums opacity-90">
             {saya.persen !== null ? t("yourAchievement", { pct: persen(saya.persen) }) : t("yourNoTarget")}
           </p>
-          {/* Konsinyasi milik sendiri hanya sebagai pcs — rupiahnya tidak pernah sampai ke HP. */}
+          {/* Pcs konsinyasi milik sendiri — rupiahnya sudah termasuk di capaian di atas. */}
           {saya.pcsKonsi !== null && saya.pcsKonsi > 0 ? (
             <p className="mt-1 text-xs tabular-nums opacity-80">
-              {t("konsiPcs", { n: new Intl.NumberFormat(locale === "en" ? "en-US" : "id-ID").format(saya.pcsKonsi) })}
+              {t("konsiPcsTermasuk", { n: new Intl.NumberFormat(locale === "en" ? "en-US" : "id-ID").format(saya.pcsKonsi) })}
             </p>
           ) : null}
         </section>

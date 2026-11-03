@@ -191,20 +191,25 @@ d("konsi sell-through queries (test bed only)", () => {
     expect(approved!.approvedAt).not.toBeNull();
   }, SLOW);
 
-  it("a DRAFT report previews unit prices, line totals and the total from the same pricing rule approve uses", async () => {
+  it("a DRAFT report shows no price preview — sell-through bills nothing; RECORD freezes the line prices", async () => {
     await setMethod("SHELF_COUNT");
     await transferIn(6);
     /* SHELF_COUNT billing 4 at the catalog selling price 40000 */
     const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
     const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
 
-    const detail = await getSellThrough(id);
-    expect(detail?.lines[0]).toMatchObject({ unitPrice: 40000, lineTotal: 160000 });
-    expect(detail?.total).toBe(160000);
-    expect(detail?.unpricedKeys).toEqual([]);
-    expect(detail?.uncostedKeys).toEqual([]);
-    /* the fixture's konsi order salesman is not a candidate */
-    expect(detail?.defaultSalesmanId).toBeNull();
+    const draft = await getSellThrough(id);
+    expect(draft?.lines[0]).toMatchObject({ unitPrice: null, lineTotal: null });
+    expect(draft?.total).toBeNull();
+    expect(draft?.unpricedKeys).toEqual([]);
+    expect(draft?.uncostedKeys).toEqual([]);
+
+    await fx.approveRecord(id);
+    const recorded = await getSellThrough(id);
+    expect(recorded?.lines[0]).toMatchObject({ unitPrice: 40000, lineTotal: 160000 });
+    expect(recorded?.total).toBeNull();
+    expect(recorded?.receivableId).toBeNull();
+    expect(recorded?.journalPending).toBe(false);
   }, SLOW);
 
   it("a DRAFT names a line that bills at unit cost 0 in uncostedKeys, and an approved report names none", async () => {

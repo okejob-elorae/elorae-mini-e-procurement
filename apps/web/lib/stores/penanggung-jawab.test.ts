@@ -27,6 +27,23 @@ describe("penagihPiutang", () => {
   it("falls back to the seller while the store has no holder", () => {
     expect(penagihPiutang({ penanggungJawabId: null, penjualId: "lama" })).toBe("lama");
   });
+
+  it("an invoice with no seller at a store with no holder has no collector", () => {
+    expect(penagihPiutang({ penanggungJawabId: null, penjualId: null })).toBeNull();
+    expect(penagihPiutang({ penanggungJawabId: "pemegang", penjualId: null })).toBe("pemegang");
+  });
+
+  it("a konsi bill is collected by the store's holder only (P31)", () => {
+    expect(penagihPiutang({ penanggungJawabId: "pemegang", penjualId: "penjual", konsi: true })).toBe("pemegang");
+  });
+
+  it("a konsi bill never falls back to its seller — no holder, no collector (P31)", () => {
+    expect(penagihPiutang({ penanggungJawabId: null, penjualId: "penjual", konsi: true })).toBeNull();
+  });
+
+  it("konsi false keeps the putus rule", () => {
+    expect(penagihPiutang({ penanggungJawabId: null, penjualId: "penjual", konsi: false })).toBe("penjual");
+  });
 });
 
 describe("lingkupPindah", () => {

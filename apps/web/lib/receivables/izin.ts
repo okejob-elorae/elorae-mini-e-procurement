@@ -47,10 +47,14 @@ export function bolehMengelola(izin: string[] | undefined): boolean {
 }
 
 /**
- * Memutuskan siapa menanggung selisih: selisih retur toko (tetapkan dan
- * alihkan beban) dan barang hilang SPG (putuskan, ubah keputusan, dan
- * membatalkan catatan yang sudah diputuskan — pembatalan menghapus bagian
- * penanggungnya, jadi itu juga keputusan).
+ * Memutuskan siapa menanggung BARANG HILANG — di toko ber-SPG (hitungan toko)
+ * maupun di perjalanan, termasuk hasil klaim ekspedisinya: putuskan, ubah
+ * keputusan, dan membatalkan catatan yang sudah diputuskan (pembatalan menghapus
+ * bagian penanggungnya, jadi itu juga keputusan).
+ *
+ * Selisih retur toko TIDAK lagi di sini (P22): keputusannya punya izin sendiri,
+ * `store_returns:decide_shortfall` (`bolehMemutuskanSelisihRetur`, paket selisih
+ * retur sales). Setiap peran yang memegang izin ini mendapat izin itu sekali.
  *
  * Keputusan manager, jadi izinnya terpisah dari `receivables:manage`
  * (keputusan pemilik 2026-11-01): bawaannya hanya admin, dan pemilik boleh
@@ -59,6 +63,15 @@ export function bolehMengelola(izin: string[] | undefined): boolean {
  */
 export function bolehMemutuskanBeban(izin: string[] | undefined): boolean {
   return hasPermission(izin ?? [], PERMISSIONS.RECEIVABLES_DECIDE_BEARER);
+}
+
+/**
+ * Memutuskan siapa menanggung SELISIH RETUR toko — sales pemegang toko, toko,
+ * atau perusahaan — dan mengalihkannya (P22, P84). Izinnya sendiri,
+ * `store_returns:decide_shortfall`; bawaannya hanya admin.
+ */
+export function bolehMemutuskanSelisihRetur(izin: string[] | undefined): boolean {
+  return hasPermission(izin ?? [], PERMISSIONS.STORE_RETURNS_DECIDE_SHORTFALL);
 }
 
 /**
@@ -186,4 +199,15 @@ export function bolehMencatatNomorKonsi(izin: string[] | undefined, jenis: "NOTA
  */
 export function bolehMembayarKomisiSpg(izin: string[] | undefined): boolean {
   return hasPermission(izin ?? [], PERMISSIONS.SPG_COMMISSION_PAY);
+}
+
+/**
+ * Membuka halaman Komisi SPG: pembaca penjualan SPG, ATAU yang membayar komisi
+ * dan gaji SPG (P28: Keuangan "hanya halaman Komisi SPG"). Keuangan memegang
+ * `spg_commission:pay` saja, jadi halaman itu memagari dirinya dengan fungsi ini,
+ * bukan dengan ROUTE_PERMISSIONS yang hanya bisa menguji satu izin.
+ */
+export function bolehMembukaKomisiSpg(izin: string[] | undefined): boolean {
+  const p = izin ?? [];
+  return hasPermission(p, PERMISSIONS.SPG_SALES_VIEW) || hasPermission(p, PERMISSIONS.SPG_COMMISSION_PAY);
 }

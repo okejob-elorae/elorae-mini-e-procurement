@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { prisma } from '@elorae/db';
 import type { StockLedgerRefType } from '@elorae/db';
 import { cariTeks } from "@/lib/db/cari-teks";
-import { calculateMovingAverage, reverseMovingAverage, findExistingInventoryValueRow } from '@/lib/inventory/costing';
+import { reverseMovingAverage, findExistingInventoryValueRow } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
 import { notifyGRNCreated, notifyMaterialArrivedForPo } from '@/lib/notifications/events';
 import { getActorName } from "@/lib/notifications/actor-name";
@@ -15,7 +15,7 @@ import { auth } from '@/lib/auth';
 import { assertActor } from "@/lib/auth/assert-actor";
 import { requirePermission, requireAnyPermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-journal";
-import { hitungPpnMasukanGrn, kunciBarisPpn } from "@/lib/finance/pajak/grn-ppn";
+import { hitungPpnMasukanGrn } from "@/lib/finance/pajak/grn-ppn";
 import { hitungPpnKapitalisasiGrn } from "@/lib/finance/operasional/grn-kapitalisasi-queries";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
@@ -26,10 +26,11 @@ import { recomputePaymentDueDate } from "@/lib/purchase-orders/payment-due";
 import { toReceiptRefusal, type ReceiptRefusal, type ReceiptRefusalCode } from "@/lib/inventory/receipt-refusal";
 import { ReceiptLineError } from "@/lib/inventory/receipt-errors";
 import { grnSchema as baseGrnSchema } from "@/lib/grn/schema";
-import { fabricRollCode } from "@/lib/grn/roll-code";
 import { overReceiveBy, sumRollLengths } from "@/lib/grn/over-receive";
-import { billedQtyByPoItem } from "@/lib/vendor-billing/billable";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { prosesBarisGrn } from "@/lib/grn/grn-proses";
+import { grnBelumDiproses, keadaanKonfirmasiTanpaPo, SYARAT_GRN_MENUNGGU_KONFIRMASI, type KeadaanKonfirmasiTanpaPo } from "@/lib/grn/grn-tanpa-po";
+import { GRN_NO_PO_PENDING, putuskanGrnTanpaPo, susunKabarGrnTanpaPo, type KodeGalatGrnTanpaPo } from "@/lib/grn/grn-tanpa-po-writer";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { alasanTolakPenerimaanPo } from "@/lib/purchase-orders/penerimaan";
 import { syaratCariGrn } from "@/lib/inventory/cari-grn";
@@ -68,6 +69,8 @@ export type HasilCreateGRN = {
   grnDate: Date;
   createdAt: Date;
   ulang: boolean;
+  /** GRN tanpa PO: tersimpan, tetapi belum masuk stok dan belum menjadi utang sampai dikonfirmasi admin (P51a). */
+  menungguKonfirmasi: boolean;
 };
 
 const KOLOM_HASIL_GRN = {
@@ -82,6 +85,8 @@ const KOLOM_HASIL_GRN = {
   notes: true,
   grnDate: true,
   createdAt: true,
+  requiresNoPoConfirmation: true,
+  noPoConfirmedAt: true,
 } as const;
 
 type BarisHasilGrn = {
@@ -96,10 +101,13 @@ type BarisHasilGrn = {
   notes: string | null;
   grnDate: Date;
   createdAt: Date;
+  requiresNoPoConfirmation: boolean;
+  noPoConfirmedAt: Date | null;
 };
 
 function hasilGrn(grn: BarisHasilGrn, ulang: boolean): HasilCreateGRN {
-  return { ...grn, totalAmount: Number(grn.totalAmount), ulang };
+  const { requiresNoPoConfirmation, noPoConfirmedAt, ...isi } = grn;
+  return { ...isi, totalAmount: Number(grn.totalAmount), ulang, menungguKonfirmasi: grnBelumDiproses({ requiresNoPoConfirmation, noPoConfirmedAt }) };
 }
 
 /** GRN yang sudah tercatat dengan kunci kiriman ini (di luar atau di dalam transaksi). */
@@ -189,6 +197,12 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId?: string
  * Hanya yang lengkap boleh menerima terima-lebih yang sah (lewat ambang /
  * persetujuan pemilik), sama seperti PO berstatus OVER; sisanya `PO_DITUTUP`.
  *
+ * GRN TANPA PO (keputusan pemilik 2026-11-02, P51 + P51a) tetap tersimpan, tetapi MENUNGGU
+ * konfirmasi admin (`requiresNoPoConfirmation`): stok tidak bergerak, kartu stok, roll kain, harga
+ * rata-rata, jurnal hutang dan push stok Jubelio TIDAK dijalankan; satu lonceng `GRN_NO_PO_PENDING`
+ * ditulis di transaksi ini. Konfirmasinya (`putuskanGrnTanpaPoAction`) menjalankan pemrosesan yang sama
+ * persis (`prosesBarisGrn`). Notifikasi "GRN dibuat" tetap dikirim — barangnya memang datang.
+ *
  * `idempotencyKey` (dibuat formulir SEKALI per isian) diperiksa PALING DULU —
  * sebelum penjaga status PO, karena GRN pertama bisa sudah menutup PO-nya — lalu
  * sekali lagi DI DALAM transaksi: kiriman ulang sesudah jawaban hilang, klik
@@ -211,7 +225,11 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, claimedUserId?: s
   }
   await assertLinesVariantSkusMatchItemDefinitions(prisma.item, validated.items);
 
+  const tanpaPo = !validated.poId;
+  // Lonceng "GRN tanpa PO menunggu konfirmasi" yang ditulis percobaan transaksi INI (diulang dari nol tiap percobaan).
+  let kabarTanpaPo: { id: string; category: string; title: string; message: string; metadata: unknown } | null = null;
   const terima = () => runSerializable(async (tx): Promise<HasilCreateGRN> => {
+    kabarTanpaPo = null;
     // Lagi, di dalam transaksi: percobaan ulang sesudah konflik melihat GRN pemenangnya.
     if (kunci) {
       const lama = await grnDenganKunci(tx, kunci);
@@ -374,108 +392,37 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, claimedUserId?: s
         items: JSON.stringify(baseItems),
         notes: validated.notes ?? null,
         idempotencyKey: kunci,
+        requiresNoPoConfirmation: tanpaPo,
       },
     });
 
-    // Pass 2: run the moving-average cost calc now that grn.id is a real ledger ref. Sequential
-    // (not Promise.all) — the schema doesn't forbid the same itemId twice in one payload, and
-    // interleaved awaits on a never-before-stocked item could otherwise fork a duplicate
-    // InventoryValue row (MySQL treats variantSku null as distinct in the unique index, so the
-    // @@unique([itemId, variantSku]) constraint doesn't catch it).
-    const processedItems: Array<{
-      itemId: string;
-      variantSku: string | null;
-      qty: number;
-      unitCost: number;
-      itemType: string;
-      uomId: string;
-      overReceiveThreshold: number | null;
-      rolls: (typeof baseItems)[number]["rolls"];
-      totalCost: number;
-      hargaPo?: number;
-      ppnDikapitalisasi?: number;
-      prevAvgCost: number;
-      newAvgCost: number;
-      prevQty: number;
-      newQty: number;
-    }> = [];
-    for (const [idxBaris, item] of baseItems.entries()) {
-      const qty = new Decimal(item.qty);
-      const unitCost = unitCostPerLine[idxBaris] ?? new Decimal(item.unitCost);
-      const costCalc = await calculateMovingAverage(
-        item.itemId,
-        qty,
-        unitCost,
-        tx,
-        item.variantKey,
-        { refType: 'GRN' satisfies StockLedgerRefType, refId: grn.id, refDocNumber: docNumber, createdById: userId }
-      );
-
-      processedItems.push({
-        itemId: item.itemId,
-        variantSku: item.variantSku,
-        qty: item.qty,
-        unitCost: item.unitCost,
-        itemType: item.itemType,
-        uomId: item.uomId,
-        overReceiveThreshold: item.overReceiveThreshold,
-        rolls: item.rolls,
-        totalCost: item.totalCost,
-        ...(item.ppnDikapitalisasi !== undefined
-          ? { hargaPo: item.hargaPo, ppnDikapitalisasi: item.ppnDikapitalisasi }
-          : {}),
-        prevAvgCost: costCalc.previousAvgCost.toNumber(),
-        newAvgCost: costCalc.newAvgCost.toNumber(),
-        prevQty: costCalc.previousQty.toNumber(),
-        newQty: costCalc.newQty.toNumber(),
+    if (tanpaPo) {
+      // Tanpa PO: tersimpan menunggu konfirmasi admin — tidak ada gerak stok, roll, atau harga rata-rata.
+      const pemasok = await tx.supplier.findUnique({ where: { id: validated.supplierId }, select: { name: true } });
+      const teks = susunKabarGrnTanpaPo({ docNumber, namaPemasok: pemasok?.name ?? "" });
+      kabarTanpaPo = await tx.adminNotification.create({
+        data: {
+          category: GRN_NO_PO_PENDING,
+          severity: "WARNING",
+          title: teks.title,
+          message: teks.message,
+          metadata: { grnId: grn.id, supplierId: validated.supplierId, docNumber },
+        },
+        select: { id: true, category: true, title: true, message: true, metadata: true },
       });
+      revalidatePath('/backoffice/inventory');
+      return hasilGrn(grn, false);
     }
 
-    const itemsTersimpan = processedItems.map((p) =>
-      ppnMasukan.kenaPpn.has(kunciBarisPpn(p.itemId, p.variantSku)) ? { ...p, ppnIncluded: false } : p,
-    );
-    const itemsJson = JSON.stringify(itemsTersimpan);
-    await tx.gRN.update({
-      where: { id: grn.id },
-      data: { items: itemsJson },
+    // Pass 2: the moving-average cost calc now that grn.id is a real ledger ref, the items patch and
+    // the fabric rolls — shared with the admin's confirmation of a GRN without a PO (`prosesBarisGrn`).
+    const { processedItems, itemsJson } = await prosesBarisGrn(tx, {
+      grn: { id: grn.id, docNumber },
+      baseItems,
+      unitCostPerLine,
+      kenaPpn: ppnMasukan.kenaPpn,
+      userId,
     });
-
-    const totalRolls = processedItems.reduce(
-      (sum, item) =>
-        item.itemType === "FABRIC" && Array.isArray(item.rolls) ? sum + item.rolls.length : sum,
-      0
-    );
-    let rollSeq = 0;
-    const rollCreates: Array<{
-      grnId: string;
-      itemId: string;
-      rollCode: string;
-      rollRef: string;
-      initialLength: number;
-      remainingLength: number;
-      uomId: string;
-      notes: string | null;
-    }> = [];
-    for (const item of processedItems) {
-      if (item.itemType !== 'FABRIC' || !Array.isArray(item.rolls) || item.rolls.length === 0) continue;
-      for (let index = 0; index < item.rolls.length; index++) {
-        rollSeq += 1;
-        const roll = item.rolls[index];
-        rollCreates.push({
-          grnId: grn.id,
-          itemId: item.itemId,
-          rollCode: fabricRollCode(docNumber, rollSeq, totalRolls),
-          rollRef: roll.rollRef || `ROLL-${index + 1}`,
-          initialLength: roll.length,
-          remainingLength: roll.length,
-          uomId: item.uomId,
-          notes: roll.notes ?? null,
-        });
-      }
-    }
-    if (rollCreates.length > 0) {
-      await tx.fabricRoll.createMany({ data: rollCreates });
-    }
 
     if (validated.poId) {
       for (let i = 0; i < validated.items.length; i++) {
@@ -568,6 +515,7 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, claimedUserId?: s
   }
   // Ulangan: barang tidak masuk lagi — notifikasi, push stok, dan jurnal tidak dikirim lagi.
   if (result.ulang) return result;
+  if (kabarTanpaPo) void fanOutAdminNotification(kabarTanpaPo);
 
   getActorName(userId)
     .then((triggeredByName) => notifyGRNCreated(result.id, result.docNumber, triggeredByName))
@@ -587,12 +535,23 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, claimedUserId?: s
     changes: { after: { docNumber: result.docNumber } },
   }).catch(() => {});
 
+  // Tanpa PO: belum masuk stok dan belum menjadi utang — push stok dan jurnal menunggu konfirmasi admin.
+  if (result.menungguKonfirmasi) return result;
+
   // Sesudah commit: kirim stok baru ke Jubelio (best-effort, tidak pernah melempar).
   await antrekanPushStok(
     validated.items.map((i) => i.itemId),
     { sumber: 'GRN', ref: result.docNumber, userId },
   );
 
+  await postJurnalPenerimaanAman(result.id, userId);
+
+  return result;
+}
+
+/** Jurnal penerimaan GRN sesudah commit, best-effort: gagal → `JOURNAL_PENDING` (dipakai `createGRN` dan konfirmasi tanpa PO). */
+async function postJurnalPenerimaanAman(grnId: string, userId: string): Promise<void> {
+  const result = { id: grnId };
   try {
     const jr = await postGrnJournal(result.id, userId);
     if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
@@ -623,8 +582,6 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, claimedUserId?: s
       // best-effort: a notification failure must never fail the GRN
     }
   }
-
-  return result;
 }
 
 /** Penjaga baca GRN: sesi (`Unauthorized`) + `inventory:view` atau salah satu izin `extra` (`Forbidden`). */
@@ -638,7 +595,7 @@ export type KodeTolakGrn = keyof typeof PESAN_TOLAK_GRN;
 
 export type SimpanGRNResult =
   /** `ulang: true` hanya pada kiriman ulang berkunci sama (GRN yang sudah ada). */
-  | { ok: true; id: string; docNumber: string; ulang?: true }
+  | { ok: true; id: string; docNumber: string; ulang?: true; menungguKonfirmasi?: true }
   | { ok: false; code: KodeTolakGrn | ReceiptRefusalCode; detail?: string };
 
 /**
@@ -652,7 +609,13 @@ export async function simpanGRN(data: GRNFormData): Promise<SimpanGRNResult> {
     const hasil = await createGRN(data);
     if (!hasil.success) return { ok: false, code: hasil.code, ...(hasil.detail ? { detail: hasil.detail } : {}) };
     const grn = hasil.grn;
-    return { ok: true, id: grn.id, docNumber: grn.docNumber, ...(grn.ulang ? { ulang: true as const } : {}) };
+    return {
+      ok: true,
+      id: grn.id,
+      docNumber: grn.docNumber,
+      ...(grn.ulang ? { ulang: true as const } : {}),
+      ...(grn.menungguKonfirmasi ? { menungguKonfirmasi: true as const } : {}),
+    };
   } catch (error) {
     if (error instanceof GrnDitolakError) return { ok: false, code: error.code };
     throw error;
@@ -674,7 +637,8 @@ const PEMASOK_AMAN = {
 
 /**
  * Daftar GRN: halaman inventori (`inventory:view`) dan formulir retur pemasok
- * (`vendor_returns:view`).
+ * (`vendor_returns:view`). Setiap baris membawa `menungguKonfirmasi` (GRN tanpa PO yang belum
+ * dikonfirmasi admin, P51a) untuk lencana daftarnya.
  */
 export async function getGRNs(
   filters?: {
@@ -685,6 +649,8 @@ export async function getGRNs(
     search?: string;
     /** Kata kunci (nomor GRN, pemasok, nomor PO) — disaring di server, lihat `syaratCariGrn`. */
     cari?: string;
+    /** "menunggu" = hanya GRN tanpa PO yang menunggu konfirmasi admin (target Beranda dan lonceng). */
+    konfirmasiTanpaPo?: "menunggu";
   },
   opts?: { page: number; pageSize: number }
 ) {
@@ -693,7 +659,10 @@ export async function getGRNs(
   if (filters?.supplierId) where.supplierId = filters.supplierId;
   if (filters?.poId) where.poId = filters.poId;
   const cari = syaratCariGrn(filters?.cari);
-  if (cari) where.AND = [cari];
+  const dan: unknown[] = [];
+  if (cari) dan.push(cari);
+  if (filters?.konfirmasiTanpaPo === "menunggu") dan.push(SYARAT_GRN_MENUNGGU_KONFIRMASI);
+  if (dan.length > 0) where.AND = dan;
   if (filters?.dateFrom || filters?.dateTo) {
     where.grnDate = {};
     if (filters.dateFrom) (where.grnDate as Record<string, Date>).gte = filters.dateFrom;
@@ -728,6 +697,7 @@ export async function getGRNs(
       ...r,
       totalAmount: Number(r.totalAmount),
       ppnAmount: r.ppnAmount == null ? null : Number(r.ppnAmount),
+      menungguKonfirmasi: grnBelumDiproses(r),
     }));
     return { items, totalCount };
   }
@@ -741,6 +711,7 @@ export async function getGRNs(
     ...r,
     totalAmount: Number(r.totalAmount),
     ppnAmount: r.ppnAmount == null ? null : Number(r.ppnAmount),
+    menungguKonfirmasi: grnBelumDiproses(r),
   }));
 }
 
@@ -1000,6 +971,12 @@ export async function declineGRNByOwner(id: string, claimedUserId?: string) {
       throw new Error(PESAN_PEMILIK_GRN.TIDAK_MENUNGGU);
     }
 
+    // Invoices name receipts (GRN_ITEM lines): a GRN a live bill names cannot be declined until that bill is voided.
+    const ditagih = await tx.vendorBillLine.count({ where: { grnId: id, bill: { status: { not: "VOID" } } } });
+    if (ditagih > 0) {
+      throw new Error(PESAN_PEMILIK_GRN.SUDAH_DITAGIH);
+    }
+
     const lines = parseGrnStoredLines(grn.items);
     let reversedLines = 0;
     const rolls = await tx.fabricRoll.findMany({ where: { grnId: id } });
@@ -1079,11 +1056,6 @@ export async function declineGRNByOwner(id: string, claimedUserId?: string) {
       }
 
       const poItems = await tx.pOItem.findMany({ where: { poId: grn.poId } });
-      // Received qty may not drop below what live vendor bills already charged for.
-      const billed = await billedQtyByPoItem(tx, poItems.map((p) => p.id));
-      if (poItems.some((p) => Number(p.receivedQty) < (billed.get(p.id) ?? 0) - 0.005)) {
-        throw new Error('Cannot decline: vendor bills already charge for more than would stay received. Void those bills first.');
-      }
       const newStatus = statusPoDariBaris(poItems);
 
       await tx.purchaseOrder.update({
@@ -1169,9 +1141,10 @@ export async function getGrnJournalState(grnId: string): Promise<{
       where: { sourceType_sourceId: { sourceType: "GRN_REVERSAL", sourceId: grnId } },
       select: { id: true },
     }),
-    prisma.gRN.findUnique({ where: { id: grnId }, select: { totalAmount: true, ownerDeclinedAt: true } }),
+    prisma.gRN.findUnique({ where: { id: grnId }, select: { totalAmount: true, ownerDeclinedAt: true, requiresNoPoConfirmation: true, noPoConfirmedAt: true } }),
   ]);
-  const hasValue = grn != null && Math.abs(Number(grn.totalAmount)) >= 0.01;
+  // A GRN without a PO still awaiting the admin's confirmation is not a payable yet: nothing to post (P51a).
+  const hasValue = grn != null && Math.abs(Number(grn.totalAmount)) >= 0.01 && !grnBelumDiproses(grn);
   const declined = grn?.ownerDeclinedAt != null;
   return {
     receiptJournalId: receipt?.id ?? null,
@@ -1189,14 +1162,16 @@ export async function getGrnJournalState(grnId: string): Promise<{
 
 export async function postGrnReceiptJournalAction(
   grnId: string,
-): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" | "DITOLAK_PEMILIK" }> {
+): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" | "DITOLAK_PEMILIK" | "MENUNGGU_KONFIRMASI" }> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
     return { ok: false, code: "FORBIDDEN" };
   }
 
-  const grn = await prisma.gRN.findUnique({ where: { id: grnId }, select: { id: true, ownerDeclinedAt: true } });
+  const grn = await prisma.gRN.findUnique({ where: { id: grnId }, select: { id: true, ownerDeclinedAt: true, requiresNoPoConfirmation: true, noPoConfirmedAt: true } });
   if (!grn) return { ok: false, code: "BAD_STATE" };
+  // GRN tanpa PO yang belum dikonfirmasi admin belum menjadi utang (P51a).
+  if (grnBelumDiproses(grn)) return { ok: false, code: "MENUNGGU_KONFIRMASI" };
   /*
    * Same rule as `getGrnJournalState`: a declined receipt is postable only to net off a stray
    * reversal. Otherwise its goods were already reversed out of inventory, and a receipt journal
@@ -1232,6 +1207,34 @@ export async function postGrnReversalJournalAction(
   if (r.ok) await tandaiJurnalTertundaSelesai([dokumenJurnal("GRN_REVERSAL", grnId)]);
   revalidatePath("/backoffice/inventory");
   return r;
+}
+
+export type PutuskanGrnTanpaPoResult = { ok: true; docNumber: string } | { ok: false; code: KodeGalatGrnTanpaPo | "TANPA_AKSES" | "GAGAL"; detail?: string };
+
+/**
+ * Konfirmasi admin atas GRN TANPA PO (P51a) — izin `goods_receipts:confirm_no_po`, yang SAMA dengan
+ * yang diperiksa tombolnya (`bolehMengonfirmasiGrnTanpaPo`). Sesudah commit, seperti `createGRN`: push
+ * stok ke Jubelio lalu jurnal penerimaan (best-effort, gagal → `JOURNAL_PENDING`). Menolak belum dibangun.
+ */
+export async function putuskanGrnTanpaPoAction(id: string, keputusan: "KONFIRMASI"): Promise<PutuskanGrnTanpaPoResult> {
+  const session = await auth();
+  const perms = session?.user?.permissions ?? [];
+  if (!session?.user?.id || !hasPermission(perms, PERMISSIONS.GOODS_RECEIPTS_CONFIRM_NO_PO)) return { ok: false, code: "TANPA_AKSES" };
+  const userId = session.user.id;
+  let r: Awaited<ReturnType<typeof putuskanGrnTanpaPo>>;
+  try {
+    r = await putuskanGrnTanpaPo({ grnId: z.string().min(1).max(64).parse(id), keputusan, olehUserId: userId });
+  } catch (e) {
+    console.error("[putuskanGrnTanpaPoAction]", e);
+    return { ok: false, code: "GAGAL" };
+  }
+  if (!r.ok) return { ok: false, code: r.kode, ...(r.detail ? { detail: r.detail } : {}) };
+  await antrekanPushStok(r.barang, { sumber: "GRN", ref: r.docNumber, userId });
+  await postJurnalPenerimaanAman(id, userId);
+  revalidatePath("/backoffice/inventory");
+  revalidatePath(`/backoffice/inventory/grn/${id}`);
+  revalidatePath("/backoffice/vendor-bills");
+  return { ok: true, docNumber: r.docNumber };
 }
 
 export type PutuskanGRNPemilikResult = { ok: true } | { ok: false; code: KodeTolakPemilikGrn };
@@ -1281,6 +1284,8 @@ export type RincianGRN = {
     waktu: string | null;
     oleh: string | null;
   };
+  /** GRN tanpa PO: menunggu konfirmasi admin, atau sudah dikonfirmasi (oleh, kapan); null = GRN biasa. */
+  konfirmasiTanpaPo: { keadaan: KeadaanKonfirmasiTanpaPo; waktu: string | null; oleh: string | null };
   rolls: Awaited<ReturnType<typeof getRollsByGrnId>>;
   returPemasok: Array<{ id: string; docNumber: string; status: string }>;
 };
@@ -1323,6 +1328,10 @@ export async function getRincianGRN(id: string): Promise<RincianGRN | null> {
   );
   const keadaan = keadaanPemilikGrn(grn);
   const pemutus = keadaan === 'ditolak' ? grn.ownerDeclinedBy : keadaan === 'disetujui' ? grn.ownerApprovedBy : null;
+  const keadaanTanpaPo = keadaanKonfirmasiTanpaPo(grn);
+  const pengonfirmasi = grn.noPoConfirmedById
+    ? await prisma.user.findUnique({ where: { id: grn.noPoConfirmedById }, select: { name: true, email: true } })
+    : null;
 
   return {
     id: grn.id,
@@ -1346,6 +1355,11 @@ export async function getRincianGRN(id: string): Promise<RincianGRN | null> {
             ? grn.ownerApprovedAt?.toISOString() ?? null
             : null,
       oleh: pemutus ? pemutus.name || pemutus.email || null : null,
+    },
+    konfirmasiTanpaPo: {
+      keadaan: keadaanTanpaPo,
+      waktu: grn.noPoConfirmedAt?.toISOString() ?? null,
+      oleh: pengonfirmasi ? pengonfirmasi.name || pengonfirmasi.email || null : null,
     },
     rolls,
     returPemasok: grn.vendorReturns,

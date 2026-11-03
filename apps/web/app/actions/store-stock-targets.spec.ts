@@ -116,4 +116,14 @@ describe("cariBarangTargetAction", () => {
       }),
     ]);
   });
+
+  it("tidak menawarkan barang 'Marketplace saja' (P3a); 'Toko offline saja' dan 'Keduanya' tetap ditawarkan", async () => {
+    await prisma.item.update({ where: { id: seededId(barangId) }, data: { salesChannel: "MARKETPLACE" } });
+    expect(await cariBarangTargetAction(`${tag} Kem`)).toEqual({ ok: true, barang: [] });
+    for (const salesChannel of ["OFFLINE", "BOTH"] as const) {
+      await prisma.item.update({ where: { id: seededId(barangId) }, data: { salesChannel } });
+      const r = await cariBarangTargetAction(`${tag} Kem`);
+      expect(r.ok && r.barang.map((b) => b.itemId)).toEqual([barangId]);
+    }
+  });
 });

@@ -35,6 +35,12 @@ describe("createItemInJubelio", () => {
     expect(ajukanKeJubelio).not.toHaveBeenCalled();
   });
 
+  it("barang Toko offline saja tidak diajukan (P3a)", async () => {
+    vi.mocked(jubelioCreateEligibility).mockResolvedValue("offline_channel");
+    expect(await createItemInJubelio("i1")).toEqual({ ok: false, reason: "offline_channel" });
+    expect(ajukanKeJubelio).not.toHaveBeenCalled();
+  });
+
   it("meneruskan alasan barang yang tidak bisa diajukan", async () => {
     vi.mocked(jubelioCreateEligibility).mockResolvedValue("already_requested");
     expect(await createItemInJubelio("i1")).toEqual({ ok: false, reason: "already_requested" });
@@ -53,6 +59,7 @@ describe("createItemInJubelio", () => {
     ["SEDANG_DIKIRIM", "already_queued"],
     ["SUDAH_DI_JUBELIO", "already_mapped"],
     ["BUKAN_BARANG_JADI_ERP", "not_erp_finished_good"],
+    ["SALURAN_OFFLINE", "offline_channel"],
     ["TIDAK_DITEMUKAN", "not_found"],
   ] as const)("pengajuan yang kalah balapan (%s) dilaporkan sebagai %s", async (hasil, reason) => {
     vi.mocked(ajukanKeJubelio).mockResolvedValue([{ itemId: "i1", hasil }]);

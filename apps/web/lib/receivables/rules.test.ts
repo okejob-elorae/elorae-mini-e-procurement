@@ -395,3 +395,164 @@ describe('giliranRetur', () => {
     expect(giliranRetur('batal')).toBe('tidak_ada');
   });
 });
+
+describe("giliranRetur — keputusan selisih menurut hasil cek sales", () => {
+  const cek = (status: "DITANYAKAN" | "DITEMUKAN" | "TIDAK_DITEMUKAN", lain: { adaSusulanSesudahLapor?: boolean; batasLewat?: boolean } = {}) => ({
+    status,
+    adaSusulanSesudahLapor: lain.adaSusulanSesudahLapor ?? false,
+    batasLewat: lain.batasLewat ?? false,
+  });
+
+  it("sales belum melapor → giliran sales", async () => {
+    const { giliranRetur } = await import("./rules");
+    expect(giliranRetur("keputusan", cek("DITANYAKAN"))).toBe("sales");
+  });
+
+  it("ditemukan dan susulannya belum dihitung → giliran gudang", async () => {
+    const { giliranRetur } = await import("./rules");
+    expect(giliranRetur("keputusan", cek("DITEMUKAN"))).toBe("gudang");
+  });
+
+  it("ditemukan, susulan sudah dihitung, masih ada sisa → sales memeriksa lagi", async () => {
+    const { giliranRetur } = await import("./rules");
+    expect(giliranRetur("keputusan", cek("DITEMUKAN", { adaSusulanSesudahLapor: true }))).toBe("sales");
+  });
+
+  it("tidak ditemukan, atau batas lapor lewat → giliran keuangan", async () => {
+    const { giliranRetur } = await import("./rules");
+    expect(giliranRetur("keputusan", cek("TIDAK_DITEMUKAN"))).toBe("keuangan");
+    expect(giliranRetur("keputusan", cek("DITANYAKAN", { batasLewat: true }))).toBe("keuangan");
+    expect(giliranRetur("keputusan", cek("DITEMUKAN", { batasLewat: true }))).toBe("keuangan");
+  });
+
+  it("tanpa cek perilakunya tetap", async () => {
+    const { giliranRetur } = await import("./rules");
+    expect(giliranRetur("keputusan", null)).toBe("keuangan");
+    expect(giliranRetur("cek", cek("DITANYAKAN"))).toBe("gudang");
+  });
+});
+
+describe("bolehDibebankanKeSales — P88, 14 hari kalender WIB", () => {
+  // Selisih lahir 1 Okt 10.00 WIB (03.00Z).
+  const lahir = new Date("2026-10-01T03:00:00Z");
+
+  it("batasnya dipatok 14 hari", async () => {
+    const { BATAS_HARI_LAPOR_SELISIH } = await import("./rules");
+    expect(BATAS_HARI_LAPOR_SELISIH).toBe(14);
+  });
+
+  it("tidak ditemukan → boleh seketika", async () => {
+    const { bolehDibebankanKeSales } = await import("./rules");
+    expect(bolehDibebankanKeSales({ cek: "TIDAK_DITEMUKAN", dibuatPada: lahir, sekarang: lahir }).boleh).toBe(true);
+  });
+
+  it("ditanyakan/ditemukan: hari ke-13 belum, hari ke-14 boleh tepat sejak tengah malam WIB", async () => {
+    const { bolehDibebankanKeSales } = await import("./rules");
+    for (const c of ["DITANYAKAN", "DITEMUKAN"] as const) {
+      // 14 Okt 23.59 WIB = hari ke-13
+      expect(bolehDibebankanKeSales({ cek: c, dibuatPada: lahir, sekarang: new Date("2026-10-14T16:59:00Z") }).boleh).toBe(false);
+      // 15 Okt 00.00 WIB = hari ke-14
+      const h = bolehDibebankanKeSales({ cek: c, dibuatPada: lahir, sekarang: new Date("2026-10-14T17:00:00Z") });
+      expect(h.boleh).toBe(true);
+      expect(h.mulai).toBe("2026-10-15");
+    }
+  });
+});
+
+describe("statusBebanSales", () => {
+  it("lunas begitu potongan menutup besarnya, dalam sen", async () => {
+    const { statusBebanSales } = await import("./rules");
+    expect(statusBebanSales(100_000, 100_000, "DITETAPKAN")).toBe("LUNAS");
+    expect(statusBebanSales(100_000, 99_999.99, "DITETAPKAN")).toBe("DITETAPKAN");
+    // Besarnya turun di bawah yang sudah dipotong (barang ketemu, P87) → tetap lunas.
+    expect(statusBebanSales(40_000, 100_000, "LUNAS")).toBe("LUNAS");
+    // Besarnya naik sesudah lunas → kembali ditetapkan.
+    expect(statusBebanSales(150_000, 100_000, "LUNAS")).toBe("DITETAPKAN");
+  });
+
+  it("nol tanpa potongan tidak mengubah status", async () => {
+    const { statusBebanSales } = await import("./rules");
+    expect(statusBebanSales(0, 0, "DITETAPKAN")).toBe("DITETAPKAN");
+    expect(statusBebanSales(0, 0, "LUNAS")).toBe("LUNAS");
+  });
+});
+
+describe("tertahanPiutangRinci & pisahTahananRetur — Q15", () => {
+  type P = import("./rules").PorsiKlaim;
+  const bkm = (nilaiFaktur: number, dilunasi: number, potonganRetur: P["potonganRetur"], status: P["status"] = "TERVERIFIKASI"): P => ({
+    status,
+    nilaiFaktur,
+    nilaiDilunasiPiutangIni: dilunasi,
+    potonganRetur,
+  });
+  const belumDihitung = (n: number) => ({ nilaiKlaim: n, nilaiFisik: null, bebanTerbuka: true });
+  const dihitungNolTerbuka = (n: number) => ({ nilaiKlaim: n, nilaiFisik: 0, bebanTerbuka: true });
+  const tetap = (n: number) => ({ nilaiKlaim: n, nilaiFisik: null, bebanTerbuka: true, tetap: true });
+
+  it("(a) potongan belum dihitung", async () => {
+    const { tertahanPiutangRinci, pisahTahananRetur } = await import("./rules");
+    const r = tertahanPiutangRinci([bkm(600_000, 600_000, [belumDihitung(300_000)])]);
+    expect(r).toEqual({ lepasSendiri: 300_000, tetap: 0, jenisLepas: "BELUM_DIHITUNG" });
+    expect(pisahTahananRetur(700_000, r)).toEqual({ bebas: 400_000, ditahan: 300_000, nilaiTertahan: 300_000, sebab: "BELUM_DIHITUNG" });
+  });
+
+  it("(b) dihitung nol, beban terbuka → menunggu beban", async () => {
+    const { tertahanPiutangRinci } = await import("./rules");
+    expect(tertahanPiutangRinci([bkm(600_000, 600_000, [dihitungNolTerbuka(300_000)])]).jenisLepas).toBe("MENUNGGU_BEBAN");
+  });
+
+  it("(c) keduanya pada satu BKM → campuran", async () => {
+    const { tertahanPiutangRinci } = await import("./rules");
+    expect(
+      tertahanPiutangRinci([bkm(600_000, 600_000, [belumDihitung(100_000), dihitungNolTerbuka(100_000)])]).jenisLepas,
+    ).toBe("CAMPURAN");
+  });
+
+  it("(d) BKM gabungan diprorata per faktur", async () => {
+    const { tertahanPiutangRinci } = await import("./rules");
+    expect(tertahanPiutangRinci([bkm(600_000, 300_000, [belumDihitung(300_000)])]).lepasSendiri).toBe(150_000);
+  });
+
+  it("(e) tahanan tetap saja", async () => {
+    const { tertahanPiutangRinci, pisahTahananRetur } = await import("./rules");
+    const r = tertahanPiutangRinci([bkm(1_000_000, 1_000_000, [tetap(300_000)])]);
+    expect(r).toEqual({ lepasSendiri: 0, tetap: 300_000, jenisLepas: null });
+    expect(pisahTahananRetur(300_000, r)).toEqual({ bebas: 300_000, ditahan: 0, nilaiTertahan: 300_000, sebab: null });
+  });
+
+  it("(f) campuran lepas + tetap pada satu faktur", async () => {
+    const { pisahTahananRetur } = await import("./rules");
+    expect(pisahTahananRetur(700, { lepasSendiri: 300, tetap: 200, jenisLepas: "BELUM_DIHITUNG" })).toEqual({
+      bebas: 400,
+      ditahan: 300,
+      nilaiTertahan: 500,
+      sebab: "BELUM_DIHITUNG",
+    });
+  });
+
+  it("(g) potongan di atas nilai BKM dibatasi", async () => {
+    const { tertahanPiutangRinci } = await import("./rules");
+    expect(tertahanPiutangRinci([bkm(200_000, 200_000, [belumDihitung(300_000)])]).lepasSendiri).toBe(200_000);
+  });
+
+  it("(h) BKM yang belum terverifikasi atau ditolak tidak menahan apa pun", async () => {
+    const { tertahanPiutangRinci } = await import("./rules");
+    for (const st of ["DIKIRIM", "DITOLAK"] as const) {
+      expect(tertahanPiutangRinci([bkm(600_000, 600_000, [belumDihitung(300_000)], st)])).toEqual({
+        lepasSendiri: 0,
+        tetap: 0,
+        jenisLepas: null,
+      });
+    }
+  });
+
+  it("(i) tertahanPiutang sama dengan lepasSendiri", async () => {
+    const { tertahanPiutang, tertahanPiutangRinci } = await import("./rules");
+    const kasus = [
+      [bkm(600_000, 600_000, [belumDihitung(300_000)])],
+      [bkm(600_000, 300_000, [belumDihitung(300_000), tetap(100_000)])],
+      [bkm(1_000_000, 1_000_000, [tetap(300_000)])],
+    ];
+    for (const k of kasus) expect(tertahanPiutang(k)).toBe(tertahanPiutangRinci(k).lepasSendiri);
+  });
+});

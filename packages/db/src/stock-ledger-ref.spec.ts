@@ -10,6 +10,22 @@ describe("stock ledger ref registry", () => {
     expect(isStockLedgerRefType("KonsiTransfer")).toBe(true);
   });
 
+  /* The list is kept in code-point order so a new member has exactly one place to go. */
+  it("keeps its members in alphabetical order", () => {
+    expect([...STOCK_LEDGER_REF_TYPES]).toEqual([...STOCK_LEDGER_REF_TYPES].sort());
+  });
+
+  /*
+   * Owner answer P49: an accepted supplier invoice price difference revalues the receipt's goods
+   * wherever they still are (Gudang Utama, a consignment store's gudang, a van) with a quantity-0
+   * ledger entry, and voiding the bill reverses it. Both refs must be members, or the stock card
+   * renders the bare identifier instead of their label.
+   */
+  it("accepts the supplier payable correction and its reversal", () => {
+    expect(isStockLedgerRefType("SupplierPayableCorrection")).toBe(true);
+    expect(isStockLedgerRefType("SupplierPayableCorrectionReversal")).toBe(true);
+  });
+
   /*
    * These three happen not to overlap, which proves nothing about the vocabularies as a
    * whole — see the test below. Non-membership is never evidence that a value belongs to

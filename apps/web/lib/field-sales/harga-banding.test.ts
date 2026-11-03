@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { approveFieldSalesOrder, HargaFinalTidakSahError } from "./writer";
-import { recordFieldSalesDelivery } from "./delivery/writer";
+// Nota tanpa surat jalan untuk tes ("Catat pengiriman" dihapus, P44a) — sama dengan penulis aslinya.
+import { catatNotaUji as recordFieldSalesDelivery } from "./delivery/uji-nota";
 import { InvalidFinalPriceError } from "./errors";
 
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));

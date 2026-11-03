@@ -27,8 +27,10 @@ export type KeputusanDisetujui = {
 export function kabarPesananDisetujui(k: KeputusanDisetujui): Kabar {
   const bagian: string[] = [];
   if (k.orderType === "KONSI") {
-    // Salesman konsinyasi tidak pernah diperlihatkan harga, jadi totalnya tidak disebut.
-    bagian.push(`${k.storeName} · transfer konsinyasi disetujui.`);
+    // HP salesman menampilkan konsi lengkap (pemilik P18 "berikan selengkapnya saja"): nilai
+    // retail transfer yang dibekukan kantor saat menyetujui ikut disebut. Kabar ini hanya ke
+    // salesman — HP SPG dan portal toko tetap tanpa harga konsi (P18a).
+    bagian.push(`${k.storeName} · transfer konsinyasi disetujui · nilai retail ${formatIDR(k.total)}.`);
     if (k.ditambahKantor > 0) bagian.push(`Kantor menambahkan ${k.ditambahKantor} barang baru.`);
   } else {
     bagian.push(`${k.storeName} · total ${formatIDR(k.total)}.`);

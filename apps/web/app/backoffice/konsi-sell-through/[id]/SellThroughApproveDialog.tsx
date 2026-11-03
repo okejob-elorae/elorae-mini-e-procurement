@@ -1,19 +1,14 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { AlertTriangle } from "lucide-react";
 import type { SellThroughDetail } from "@/lib/konsi-sell-through/queries";
-import { dueDateFor, isInvoiceDateAllowed } from "@/lib/konsi-sell-through/invoice-dates";
-import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { cn } from "@/lib/utils";
 import { approveSellThroughAction, type SellThroughActionFailure } from "@/app/actions/konsi-sell-through";
 import { Button } from "@/components/ui/button";
-import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import {
   Dialog,
   DialogContent,
@@ -22,73 +17,44 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatRupiahExact, productNamesForKeys } from "./display";
 
-type ApproveMode = "INVOICE" | "BASELINE";
+/*
+ * RECORD freezes the report's sold figures and bills nothing; BASELINE (a store's first report
+ * only) freezes them with a reason. INVOICE is no longer offered: since decision 2026-10-29 konsi
+ * bills come from that month's consignment cycle, and the action refuses INVOICING_RETIRED.
+ */
+type ApproveMode = "RECORD" | "BASELINE";
 
 /* Mirrors the writer's cap on a baseline reason, so the input stops where the writer would refuse. */
 const REASON_MAX_LENGTH = 1000;
-const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export function SellThroughApproveDialog({
   open,
   onOpenChange,
   report,
-  salesmanCandidates,
   onApproved,
-  onPriceChanged,
   describeError,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   report: SellThroughDetail;
-  salesmanCandidates: Array<{ id: string; name: string }>;
   onApproved: () => void;
-  /* Called on a PRICE_CHANGED refusal so the page reloads the preview; the dialog stays open with the error and never retries on its own. */
-  onPriceChanged: () => void;
   describeError: (result: SellThroughActionFailure) => string;
 }) {
   const t = useTranslations("konsiSellThrough");
   const tApprove = useTranslations("konsiSellThrough.approve");
   const tCommon = useTranslations("common");
 
-  const [now] = useState(() => new Date());
-  const today = formatDateOnlyJakarta(now);
-  const [mode, setMode] = useState<ApproveMode>("INVOICE");
-  const [invoiceDate, setInvoiceDate] = useState(today);
-  const [salesmanId, setSalesmanId] = useState(() => {
-    const prefill = report.defaultSalesmanId;
-    return prefill !== null && salesmanCandidates.some((c) => c.id === prefill) ? prefill : "";
-  });
+  const [mode, setMode] = useState<ApproveMode>("RECORD");
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const salesmanOptions = useMemo(
-    () => salesmanCandidates.map((c) => ({ value: c.id, label: c.name })),
-    [salesmanCandidates],
-  );
-
   /* Only a store's first report may be a baseline; the writer refuses BASELINE_NOT_FIRST otherwise. */
   const canChooseBaseline = report.previousId === null;
-  const effectiveMode: ApproveMode = canChooseBaseline ? mode : "INVOICE";
-  const total = report.total ?? 0;
-  const hasUnpriced = report.unpricedKeys.length > 0;
-  /* A warning only: a zero-cost line still approves, so this never feeds `submitDisabled`. */
-  const hasUncosted = report.uncostedKeys.length > 0;
-  const salesmanRequired = total > 0;
-  const noCandidates = salesmanCandidates.length === 0;
-
-  const minDate = formatDateOnlyJakarta(report.periodEnd);
-  const parsedInvoiceDate = DATE_ONLY_PATTERN.test(invoiceDate) ? parseDateOnly(invoiceDate) : undefined;
-  const dateValid = parsedInvoiceDate !== undefined && isInvoiceDateAllowed(parsedInvoiceDate, report.periodEnd, now);
-
+  const effectiveMode: ApproveMode = canChooseBaseline ? mode : "RECORD";
   const reasonBlank = reason.trim() === "";
-  const submitDisabled =
-    pending ||
-    (effectiveMode === "BASELINE"
-      ? reasonBlank
-      : hasUnpriced || !dateValid || (salesmanRequired && salesmanId === ""));
+  const submitDisabled = pending || (effectiveMode === "BASELINE" && reasonBlank);
 
   function handleOpenChange(next: boolean): void {
     if (pending) return;
@@ -104,16 +70,10 @@ export function SellThroughApproveDialog({
   function submit(): void {
     if (submitDisabled) return;
     setError(null);
-    const input = effectiveMode === "BASELINE"
-      ? { id: report.id, mode: effectiveMode, reason: reason.trim() }
-      : {
-          id: report.id,
-          mode: effectiveMode,
-          invoiceDate,
-          salesmanId: salesmanId === "" ? null : salesmanId,
-          /* The total on screen; approve refuses PRICE_CHANGED if live pricing no longer matches it. */
-          expectedTotal: report.total ?? 0,
-        };
+    const input =
+      effectiveMode === "BASELINE"
+        ? { id: report.id, mode: effectiveMode, reason: reason.trim() }
+        : { id: report.id, mode: effectiveMode };
     startTransition(async () => {
       try {
         const result = await approveSellThroughAction(input);
@@ -123,7 +83,6 @@ export function SellThroughApproveDialog({
           return;
         }
         setError(describeError(result));
-        if (result.reason === "PRICE_CHANGED") onPriceChanged();
       } catch {
         setError(t("err.UNEXPECTED"));
       }
@@ -136,7 +95,7 @@ export function SellThroughApproveDialog({
         <DialogHeader>
           <DialogTitle>{tApprove("title")}</DialogTitle>
           <DialogDescription>
-            {effectiveMode === "BASELINE" ? tApprove("baselineDescription") : tApprove("confirmDescription")}
+            {effectiveMode === "BASELINE" ? tApprove("baselineDescription") : tApprove("recordDescription")}
           </DialogDescription>
         </DialogHeader>
 
@@ -146,12 +105,12 @@ export function SellThroughApproveDialog({
               <Button
                 type="button"
                 variant="outline"
-                aria-pressed={effectiveMode === "INVOICE"}
+                aria-pressed={effectiveMode === "RECORD"}
                 disabled={pending}
-                onClick={() => chooseMode("INVOICE")}
-                className={cn("h-10 min-w-0", effectiveMode === "INVOICE" && "border-primary bg-primary/10 text-primary")}
+                onClick={() => chooseMode("RECORD")}
+                className={cn("h-10 min-w-0", effectiveMode === "RECORD" && "border-primary bg-primary/10 text-primary")}
               >
-                <span className="truncate">{tApprove("modeInvoice")}</span>
+                <span className="truncate">{tApprove("modeRecord")}</span>
               </Button>
               <Button
                 type="button"
@@ -187,98 +146,7 @@ export function SellThroughApproveDialog({
               required
             />
           </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <Label htmlFor="sell-through-invoice-date" className="text-xs text-muted-foreground">
-                {tApprove("invoiceDate")}
-              </Label>
-              <TanggalInput
-                id="sell-through-invoice-date"
-                className="h-10"
-                value={invoiceDate}
-                min={minDate}
-                max={today}
-                disabled={pending}
-                aria-invalid={!dateValid}
-                onChange={(e) => {
-                  setInvoiceDate(e.target.value);
-                  setError(null);
-                }}
-              />
-              {dateValid && parsedInvoiceDate ? (
-                <p className="text-xs text-muted-foreground">
-                  {tApprove("dueDate", {
-                    date: formatDateOnlyJakarta(dueDateFor(parsedInvoiceDate, report.storePaymentTempo)),
-                    n: report.storePaymentTempo,
-                  })}
-                </p>
-              ) : (
-                <p className="text-xs text-destructive">{tApprove("invoiceDateInvalid", { min: minDate, max: today })}</p>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="sell-through-salesman" className="text-xs text-muted-foreground">
-                {salesmanRequired ? tApprove("salesman") : `${tApprove("salesman")} ${tApprove("salesmanOptional")}`}
-              </Label>
-              <SearchableCombobox
-                id="sell-through-salesman"
-                options={salesmanOptions}
-                value={salesmanId}
-                disabled={pending || noCandidates}
-                onValueChange={(v) => {
-                  setSalesmanId(v);
-                  setError(null);
-                }}
-                placeholder={tApprove("salesmanPlaceholder")}
-                searchPlaceholder={tApprove("salesmanSearchPlaceholder")}
-                emptyMessage={tApprove("salesmanEmpty")}
-                triggerClassName="h-10 w-full"
-              />
-              {noCandidates ? (
-                <p className={cn("text-xs", salesmanRequired ? "text-destructive" : "text-muted-foreground")}>
-                  {tApprove("salesmanNoCandidates")}
-                </p>
-              ) : (
-                salesmanRequired && salesmanId === "" && (
-                  <p className="text-xs text-muted-foreground">{tApprove("salesmanRequiredHint")}</p>
-                )
-              )}
-            </div>
-
-            <div className="flex items-baseline justify-between gap-4 rounded-md border px-3 py-2">
-              <span className="text-sm text-muted-foreground">{tApprove("total")}</span>
-              <span className="text-base font-semibold tabular-nums">
-                {report.total === null ? "—" : formatRupiahExact(report.total)}
-              </span>
-            </div>
-
-            {hasUnpriced && (
-              <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <p className="min-w-0 break-words">
-                  {tApprove("unpriced", {
-                    products: productNamesForKeys(report.lines, report.unpricedKeys),
-                    n: report.unpricedKeys.length,
-                  })}
-                </p>
-              </div>
-            )}
-
-            {hasUncosted && (
-              <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <p className="min-w-0 break-words">
-                  {tApprove("uncosted", {
-                    products: productNamesForKeys(report.lines, report.uncostedKeys),
-                    n: report.uncostedKeys.length,
-                  })}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
+        ) : null}
 
         <DialogFooter>
           <Button type="button" variant="outline" className="h-10" disabled={pending} onClick={() => handleOpenChange(false)}>

@@ -52,7 +52,11 @@ export function PindahTokoDialog({
   const [area, setArea] = useState(awalArea || SEMUA);
   const [dari, setDari] = useState(awalDari || SEMUA);
   const [ke, setKe] = useState("");
-  const [pratinjau, setPratinjau] = useState<{ dalamLingkup: number; akanPindah: number } | null>(null);
+  const [pratinjau, setPratinjau] = useState<{
+    dalamLingkup: number;
+    akanPindah: number;
+    konsiAkanKosong: number;
+  } | null>(null);
   const [sibuk, mulai] = useTransition();
 
   const lingkup: LingkupPindah = {
@@ -85,7 +89,12 @@ export function PindahTokoDialog({
     mulai(async () => {
       const r = await pindahkanTokoAction({ lingkup, keSalesmanId });
       if (!r.ok) {
-        toast.error(t("err"));
+        // Toko konsi wajib punya pemegang (P47); penulis menolak mengosongkannya.
+        toast.error(
+          r.code === "KONSI_WAJIB_PEMEGANG"
+            ? t("konsiWajibPemegang", { count: pratinjau?.konsiAkanKosong ?? 0 })
+            : t("err"),
+        );
         return;
       }
       toast.success(t("done", { count: r.data?.jumlah ?? 0 }));
@@ -168,13 +177,21 @@ export function PindahTokoDialog({
                     ? t("previewNone")
                     : t("preview", { total: pratinjau.dalamLingkup, move: pratinjau.akanPindah, name: namaKe })}
           </p>
+          {pratinjau !== null && pratinjau.konsiAkanKosong > 0 && (
+            <p className="text-sm text-destructive" role="alert">
+              {t("konsiWajibPemegang", { count: pratinjau.konsiAkanKosong })}
+            </p>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={sibuk}>
             {t("cancel")}
           </Button>
-          <Button onClick={pindahkan} disabled={sibuk || !pratinjau || pratinjau.akanPindah === 0}>
+          <Button
+            onClick={pindahkan}
+            disabled={sibuk || !pratinjau || pratinjau.akanPindah === 0 || pratinjau.konsiAkanKosong > 0}
+          >
             {sibuk ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
             {t("submit", { count: pratinjau?.akanPindah ?? 0 })}
           </Button>

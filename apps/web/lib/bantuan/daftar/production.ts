@@ -259,7 +259,7 @@ export const ENTRI: EntriBantuan[] = [
         judul: { kunci: "workOrders.detail.hppTitle" },
         isi: [
           { kunci: "workOrders.detail.hppDescription" },
-          "Biaya tambahan di sini dihitung per pcs dan ikut HPP barang jadi yang diterima SESUDAH diisi (per pcs lolos QC), dicatat sebagai biaya yang masih harus dibayar. Mengubahnya tidak mengubah penerimaan yang sudah dicatat.",
+          "Biaya tambahan di sini dihitung per pcs dan ikut HPP barang jadi yang diterima SESUDAH diisi (per pcs lolos QC), dicatat sebagai biaya yang masih harus dibayar. Mengubahnya tidak mengubah penerimaan yang sudah dicatat. Tidak ada markup per perintah kerja: rekomendasi harga jual ada di barangnya sendiri.",
         ],
       },
       {

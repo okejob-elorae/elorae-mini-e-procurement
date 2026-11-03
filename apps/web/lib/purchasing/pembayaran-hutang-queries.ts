@@ -14,6 +14,8 @@ import { SARING_PEMBAYARAN_DOKUMEN } from "./pembayaran-dokumen-po";
 import { oldestBookedBillDateByWo, vendorPaidBySource } from "@/lib/vendor-billing/billable";
 import { grnLineKey, readGrnLines } from "@/lib/vendor-billing/bill-paid-rule";
 import { terapkanFifo } from "./pembayaran-umur";
+import { SYARAT_KONFIRMASI_TANPA_PO } from "@/lib/grn/grn-tanpa-po";
+import { apKoreksiPerPenerimaan } from "@/lib/vendor-billing/koreksi-utang-queries";
 import { hitungUangMukaBelumDipotong, susunJejakUangMuka, type DataUangMukaPembayaran } from "./pembayaran-uang-muka";
 
 type Klien = Prisma.TransactionClient | typeof prisma;
@@ -23,8 +25,13 @@ type Klien = Prisma.TransactionClient | typeof prisma;
  *
  * - Hutang barang per GRN = Σ (kredit − debit) baris AKUN HUTANG USAHA di jurnal
  *   `GRN` dan `GRN_REVERSAL` GRN itu (bukan `GRN.totalAmount`: mode PKP sudah
- *   termasuk PPN, dan GRN tanpa jurnal bukan hutang di buku besar). GRN tanpa
- *   jurnal dihitung terpisah (`grnBelumBerjurnal`).
+ *   termasuk PPN, dan GRN tanpa jurnal bukan hutang di buku besar), ditambah
+ *   koreksi selisih harga invoice yang diterima (jurnal
+ *   `SUPPLIER_PAYABLE_CORRECTION` dan pembaliknya, `apKoreksiPerPenerimaan`;
+ *   keputusan pemilik 2026-11-02, P27/P49/P53). GRN tanpa jurnal dihitung
+ *   terpisah (`grnBelumBerjurnal`). GRN TANPA PO yang masih menunggu konfirmasi
+ *   admin (P51a) belum menjadi hutang dan tidak dibaca sama sekali
+ *   (`SYARAT_KONFIRMASI_TANPA_PO`).
  * - Kredit per PO = retur pemasok SELESAI (baris hutang usaha jurnal
  *   `VENDOR_RETURN`-nya — sama dengan yang dibaca tombol lama) +
  *   pembayaran tombol lama "Tandai lunas" yang masih berdiri (jurnal
@@ -165,9 +172,11 @@ async function susunHutangGrn(
   tandaiPo: Map<string, number>;
   /** Per GRN: bagian kredit PO FIFO yang terserap GRN itu (tanpa kredit Vendor Billing per barang). */
   kreditFifoGrn: Map<string, number>;
+  /** Per GRN berjurnal: hutang dari jurnal penerimaannya saja, TANPA koreksi selisih harga (dasar utang tercatat per potong). */
+  hutangTanpaKoreksi: Map<string, number>;
 }> {
   const grns: GrnBaris[] = await klien.gRN.findMany({
-    where,
+    where: { AND: [where, SYARAT_KONFIRMASI_TANPA_PO] },
     select: {
       id: true,
       docNumber: true,
@@ -186,7 +195,8 @@ async function susunHutangGrn(
   const kreditPo = new Map<string, number>();
   const tandaiPo = new Map<string, number>();
   const kreditFifoGrn = new Map<string, number>();
-  if (grns.length === 0) return { dokumen: [], belumBerjurnal, lebihBayar, kreditPo, tandaiPo, kreditFifoGrn };
+  const hutangTanpaKoreksi = new Map<string, number>();
+  if (grns.length === 0) return { dokumen: [], belumBerjurnal, lebihBayar, kreditPo, tandaiPo, kreditFifoGrn, hutangTanpaKoreksi };
 
   const hutangPerGrn = new Map<string, number>();
   const berjurnal = new Set<string>();
@@ -205,6 +215,15 @@ async function susunHutangGrn(
   for (const g of grns) {
     if (!berjurnal.has(g.id) && g.ownerDeclinedAt == null && Math.abs(Number(g.totalAmount)) >= 0.01) {
       belumBerjurnal.set(g.supplierId, (belumBerjurnal.get(g.supplierId) ?? 0) + 1);
+    }
+  }
+  // Koreksi selisih harga invoice yang diterima: hutang usaha bergerak di jurnal koreksinya sendiri,
+  // jadi buku pembantu menambahkannya ke GRN-nya supaya tetap sama dengan buku besar.
+  for (const id of berjurnal) hutangTanpaKoreksi.set(id, hutangPerGrn.get(id) ?? 0);
+  for (const ids of potong([...berjurnal], 500)) {
+    for (const [kunci, k] of await apKoreksiPerPenerimaan(klien, { grnIds: ids }, apAkunId)) {
+      const id = kunci.slice(kunci.indexOf("|") + 1);
+      hutangPerGrn.set(id, (hutangPerGrn.get(id) ?? 0) + k.apSen);
     }
   }
 
@@ -347,10 +366,17 @@ async function susunHutangGrn(
     d.dibayarSen = bayar;
     d.sisaSen = d.sisaSen - bayar;
   }
-  return { dokumen, belumBerjurnal, lebihBayar, kreditPo, tandaiPo, kreditFifoGrn };
+  return { dokumen, belumBerjurnal, lebihBayar, kreditPo, tandaiPo, kreditFifoGrn, hutangTanpaKoreksi };
 }
 
-export type LunasPemasokGrn = { poId: string | null; hutangSen: number; lunasPemasokSen: number };
+export type LunasPemasokGrn = {
+  poId: string | null;
+  /** Hutang GRN di buku pembantu, koreksi selisih harga yang diterima termasuk. */
+  hutangSen: number;
+  /** Hutang dari jurnal penerimaannya saja — dasar utang tercatat per potong (`hutangPerKunciGrn`). */
+  hutangTanpaKoreksiSen: number;
+  lunasPemasokSen: number;
+};
 
 /**
  * Per GRN berjurnal milik PO-PO ini: hutang barangnya dan bagian yang SUDAH dilunasi lewat
@@ -383,7 +409,41 @@ export async function bacaLunasPemasokPerGrn(poIds: string[], klien: Klien = pri
       // karena tagihannya sudah menghitungnya lewat `lineRooms`.
       const fifo = g.kreditFifoGrn.get(d.id) ?? 0;
       const bagianTandai = kredit > 0 && tandai > 0 && fifo > 0 ? Math.round((fifo * Math.min(tandai, kredit)) / kredit) : 0;
-      hasil.set(d.id, { poId: d.poId, hutangSen: d.hutangSen, lunasPemasokSen: d.dibayarSen + bagianTandai });
+      hasil.set(d.id, {
+        poId: d.poId,
+        hutangSen: d.hutangSen,
+        hutangTanpaKoreksiSen: g.hutangTanpaKoreksi.get(d.id) ?? d.hutangSen,
+        lunasPemasokSen: d.dibayarSen + bagianTandai,
+      });
+    }
+  }
+  return hasil;
+}
+
+/**
+ * Seperti `bacaLunasPemasokPerGrn`, untuk GRN TANPA PO (yang sudah dikonfirmasi admin): tidak ada
+ * kredit PO dan tidak ada tombol lama, jadi yang lunas = alokasi pembayaran dokumen ke GRN itu.
+ */
+export async function bacaLunasPemasokGrnTanpaPo(grnIds: string[], klien: Klien = prisma): Promise<Map<string, LunasPemasokGrn>> {
+  const hasil = new Map<string, LunasPemasokGrn>();
+  const unik = [...new Set(grnIds)];
+  if (unik.length === 0) return hasil;
+  let apAkunId: string | null = null;
+  try {
+    apAkunId = await resolveAccount("AP", klien);
+  } catch (e) {
+    if (!(e instanceof UnmappedRoleError)) throw e;
+  }
+  if (!apAkunId) return hasil;
+  for (const ids of potong(unik, 500)) {
+    const g = await susunHutangGrn({ id: { in: ids }, poId: null }, apAkunId, klien);
+    for (const d of g.dokumen) {
+      hasil.set(d.id, {
+        poId: null,
+        hutangSen: d.hutangSen,
+        hutangTanpaKoreksiSen: g.hutangTanpaKoreksi.get(d.id) ?? d.hutangSen,
+        lunasPemasokSen: d.dibayarSen,
+      });
     }
   }
   return hasil;

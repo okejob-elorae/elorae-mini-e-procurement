@@ -3,6 +3,7 @@ import { roundCents } from "@elorae/db/pricing";
 import { generateAutoJournal, type AutoJournalLine, type GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { withRetry } from "@/lib/db/tx-retry";
 import { JENIS_TERTUNDA_LAPANGAN, SUMBER_LAPANGAN } from "@/lib/finance/lapangan/aturan";
+import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { deliveriesWhoseJournalCanStillPost, findDeliveryRevenuePendingFlags, findJournalPendingFlagsOfKinds } from "./journal-pending";
 import { readReceivableJournalStates, type ReceivableJournalState, type StoreReceivableRole } from "./store-receivable-role";
 
@@ -72,6 +73,11 @@ type ReceivableVerdict = { gate: ArReceiptGateCode | null; role: StoreReceivable
  * `faktur_piutang` post is flagged. A return-charge invoice never gets a journal of its own; it is
  * in the ledger on AR_STORE once a GL cutover is set, since its NRI's return journal or the opening
  * balance carries it there (`readReceivableJournalStates`).
+ *
+ * A konsi cycle bill is in the ledger once its cycle's `CONSIGNMENT_CYCLE` journal stands (on
+ * AR_CONSIGNMENT). Without it, it is late when a GL cutover is set and the bill is dated on or after
+ * it — the cycle journal can still post, and will — and outside the ledger otherwise, since a cycle
+ * dated before the cutover never gets one.
  */
 async function classifyReceivables(
   ids: string[],
@@ -86,6 +92,13 @@ async function classifyReceivables(
   const flaggedDeliveries = await findDeliveryRevenuePendingFlags(unjournaled("DELIVERY"));
   const lateDeliveries = await deliveriesWhoseJournalCanStillPost([...flaggedDeliveries.keys()], client);
   const failedInvoicePosts = await findJournalPendingFlagsOfKinds([JENIS_TERTUNDA_LAPANGAN[SUMBER_LAPANGAN.FAKTUR]], unjournaled("INVOICE"));
+  const lateCycleBills = await cycleBillsWhoseJournalCanStillPost(
+    client,
+    ids.filter((id) => {
+      const s = states.get(id);
+      return s?.kind === "CONSIGNMENT_CYCLE" && s.role === null;
+    }),
+  );
 
   const outside: ReceivableVerdict = { gate: "RECEIVABLE_OUTSIDE_LEDGER", role: "AR_STORE" };
   const late: ReceivableVerdict = { gate: "RECEIVABLE_REVENUE_NOT_POSTED_YET", role: "AR_STORE" };
@@ -96,9 +109,27 @@ async function classifyReceivables(
     else if (state.kind === "DELIVERY") result.set(id, lateDeliveries.has(state.sourceId) ? late : outside);
     /* A sell-through report is always invoiced through a revenue post, so its missing journal is always late. */
     else if (state.kind === "SELL_THROUGH") result.set(id, late);
-    else result.set(id, failedInvoicePosts.has(state.sourceId) ? late : outside);
+    else if (state.kind === "CONSIGNMENT_CYCLE") {
+      result.set(id, { ...(lateCycleBills.has(id) ? late : outside), role: "AR_CONSIGNMENT" });
+    } else result.set(id, failedInvoicePosts.has(state.sourceId) ? late : outside);
   }
   return result;
+}
+
+/**
+ * The cycle bills among `receivableIds` whose `CONSIGNMENT_CYCLE` journal can still post: a GL
+ * cutover is set and the bill is dated on or after it. One read for all of them; the cutover is read
+ * on the global client, which never touches `Payment`.
+ */
+async function cycleBillsWhoseJournalCanStillPost(client: AnyClient, receivableIds: string[]): Promise<Set<string>> {
+  if (receivableIds.length === 0) return new Set();
+  const cutover = await readGlCutover();
+  if (cutover === null) return new Set();
+  const rows = await client.receivable.findMany({
+    where: { id: { in: receivableIds } },
+    select: { id: true, invoiceDate: true },
+  });
+  return new Set(rows.filter((r) => r.invoiceDate.getTime() >= cutover.getTime()).map((r) => r.id));
 }
 
 /**

@@ -2,24 +2,27 @@ import { prisma, type Prisma } from "@elorae/db";
 import { formatDisplayDateTime } from "@/lib/date-only";
 import { cariTeks } from "@/lib/db/cari-teks";
 import { wibYearMonth } from "@/lib/spg-commission/month";
-import { terhitungSesudah } from "./opname-hitung";
-import { kunciBaris } from "./stok";
-import { hargaBersihPotong } from "./tutup-hari";
+import { ENTITAS_BEBAN_SPG, nilaiBebanReturPembeli, nilaiBersihBarisRetur, type KeadaanBebanSpg } from "./beban-spg";
+import { bebanMenungguKeputusanBarang, bebanUntukRetur, bebanUntukReturBanyak, type BebanReturKantor, type BebanReturRingkas } from "./beban-spg-queries";
+import { urlFotoReturPembeli } from "./foto-retur-pembeli";
 import type { KondisiRetur } from "./retur-pembeli";
-import { RETUR_PEMBELI_MENUNGGU, qtyMenungguPerBaris } from "./retur-pembeli-berlaku";
+import { RETUR_PEMBELI_DITAHAN_BEBAN, RETUR_PEMBELI_MENUNGGU, qtyMenungguPerBaris } from "./retur-pembeli-berlaku";
 import {
   ENTITAS_RETUR_PEMBELI,
   STATUS_RETUR_PEMBELI,
   bacaStatusReturPembeli,
+  keadaanUangRetur,
+  uangReturTercatat,
+  type KeadaanUangRetur,
   type SaringanReturPembeliKantor,
   type StatusReturPembeli,
 } from "./retur-pembeli-status";
 
 /**
  * Bacaan laporan retur pembeli SPG — antrean kantor (`/backoffice/retur-spg`),
- * rinciannya, hitungan Beranda, dan daftar laporan SPG di HP
- * (`/pwa/spg/retur-pembeli`). Hanya server (menarik Prisma); komponen klien
- * hanya boleh `import type` dari sini.
+ * rinciannya, hitungan Beranda, daftar laporan SPG di HP
+ * (`/pwa/spg/retur-pembeli`), dan barang yang disisihkan di toko. Hanya server
+ * (menarik Prisma); komponen klien hanya boleh `import type` dari sini.
  *
  * Berbeda dari pembaca yang MENGHITUNG retur (yang wajib lewat
  * `returPembeliBerlaku`), layar-layar ini sengaja menampilkan SEMUA status —
@@ -67,25 +70,34 @@ export type BarisReturPembeliKantor = {
   diputuskanPada: Date | null;
   /** Alasan kantor menolak (DITOLAK), atau alasan SPG menarik (DIBATALKAN). */
   alasanTolak: string | null;
-  /** Baris lama: berlaku langsung saat dicatat, sebelum persetujuan kantor ada. */
-  langsungBerlaku: boolean;
+  /** Keadaan uang pembeli. */
+  uang: KeadaanUangRetur;
+  /** Beban SPG laporan ini (ditolak padahal uangnya sudah dikembalikan), atau null. */
+  beban: BebanReturRingkas | null;
 };
 
 /**
- * Antrean kantor. Tab Menunggu terlama dulu (yang paling lama menunggu
- * diputuskan lebih dulu); tab lain terbaru dulu. Hitungan per tab memakai
- * saringan toko + nomor nota yang SAMA dengan barisnya.
+ * Antrean kantor. Tab Menunggu (dan "Perlu keputusan barang") terlama dulu —
+ * yang paling lama menunggu diputuskan lebih dulu; tab lain terbaru dulu.
+ * Hitungan per tab memakai saringan toko + nomor nota yang SAMA dengan barisnya.
  */
-export async function daftarReturPembeliKantor(
-  s: SaringanReturPembeliKantor,
-): Promise<{ baris: BarisReturPembeliKantor[]; total: number; perStatus: Record<StatusReturPembeli, number> }> {
+export async function daftarReturPembeliKantor(s: SaringanReturPembeliKantor): Promise<{
+  baris: BarisReturPembeliKantor[];
+  total: number;
+  perStatus: Record<StatusReturPembeli, number>;
+  /** Laporan yang bebannya sudah diganti SPG dan barangnya menunggu keputusan (P79). */
+  keputusanBarang: number;
+}> {
   const dasar: Prisma.SpgSaleReturnWhereInput = {
     ...(s.storeId ? { storeId: s.storeId } : {}),
     ...(s.cari ? { spgSale: { docNo: cariTeks(s.cari) } } : {}),
   };
-  const where: Prisma.SpgSaleReturnWhereInput = s.status === "SEMUA" ? dasar : { ...dasar, status: s.status };
-  const arah = s.status === "MENUNGGU" ? "asc" : "desc";
-  const [rows, total, grup] = await Promise.all([
+  const perluKeputusan = await bebanMenungguKeputusanBarang({ storeId: s.storeId });
+  const idKeputusan = perluKeputusan.map((x) => x.returnId);
+  const where: Prisma.SpgSaleReturnWhereInput =
+    s.status === "SEMUA" ? dasar : s.status === "KEPUTUSAN_BARANG" ? { ...dasar, id: { in: idKeputusan } } : { ...dasar, status: s.status };
+  const arah = s.status === "MENUNGGU" || s.status === "KEPUTUSAN_BARANG" ? "asc" : "desc";
+  const [rows, total, grup, keputusanBarang] = await Promise.all([
     prisma.spgSaleReturn.findMany({
       where,
       orderBy: [{ createdAt: arah }, { id: arah }],
@@ -101,6 +113,8 @@ export async function daftarReturPembeliKantor(
         decidedById: true,
         decidedAt: true,
         rejectReason: true,
+        refundedAt: true,
+        refundMarkedById: true,
         spgSaleId: true,
         spgSale: { select: { docNo: true } },
         lines: { select: { qty: true, saleLine: { select: { productName: true, variantSku: true } } } },
@@ -108,10 +122,12 @@ export async function daftarReturPembeliKantor(
     }),
     prisma.spgSaleReturn.count({ where }),
     prisma.spgSaleReturn.groupBy({ by: ["status"], where: dasar, _count: { _all: true } }),
+    idKeputusan.length ? prisma.spgSaleReturn.count({ where: { ...dasar, id: { in: idKeputusan } } }) : Promise.resolve(0),
   ]);
-  const [nama, toko] = await Promise.all([
+  const [nama, toko, beban] = await Promise.all([
     namaPengguna(rows.flatMap((r) => [r.createdById, r.decidedById])),
     namaToko(rows.map((r) => r.storeId)),
+    bebanUntukReturBanyak(rows.map((r) => r.id)),
   ]);
   const perStatus = Object.fromEntries(STATUS_RETUR_PEMBELI.map((x) => [x, 0])) as Record<StatusReturPembeli, number>;
   for (const g of grup) {
@@ -121,8 +137,9 @@ export async function daftarReturPembeliKantor(
   return {
     total,
     perStatus,
+    keputusanBarang,
     baris: rows.map((r) => {
-      const status = bacaStatusReturPembeli(r.status) ?? "DISETUJUI";
+      const status = bacaStatusReturPembeli(r.status) ?? "MENUNGGU";
       const lines = r.lines.map((l) => ({ productName: l.saleLine.productName, variantSku: l.saleLine.variantSku, qty: l.qty }));
       return {
         id: r.id,
@@ -139,7 +156,8 @@ export async function daftarReturPembeliKantor(
         diputuskanOleh: r.decidedById ? (nama.get(r.decidedById) ?? "—") : null,
         diputuskanPada: r.decidedAt,
         alasanTolak: r.rejectReason,
-        langsungBerlaku: status === "DISETUJUI" && r.decidedAt === null,
+        uang: keadaanUangRetur({ status, uangTercatat: uangReturTercatat(r) }),
+        beban: beban.get(r.id) ?? null,
       };
     }),
   };
@@ -164,7 +182,14 @@ export type RincianReturPembeliKantor = {
   nota: { id: string; docNo: string; waktu: Date; total: number };
   alasan: string;
   diputuskan: { olehId: string | null; oleh: string | null; pada: Date | null; alasanTolak: string | null };
-  langsungBerlaku: boolean;
+  /** Uang pembeli: keadaannya, kapan dicatat SPG, atau siapa yang menandainya di kantor (P78) dan kenapa. */
+  uang: { keadaan: KeadaanUangRetur; pada: Date | null; olehKantor: { oleh: string; alasan: string | null } | null };
+  /** URL foto dari kunci tersimpannya — null bila tidak ada atau kuncinya tidak cocok. */
+  foto: { barang: string | null; struk: string | null };
+  /** Beban yang lahir kalau laporan ini ditolak sekarang dengan uang dikembalikan (P81: harga bersih nota). */
+  bebanJikaDitolak: number;
+  /** Beban SPG laporan ini (sesudah ditolak), atau null. */
+  beban: BebanReturKantor | null;
   baris: {
     id: string;
     saleLineId: string;
@@ -181,18 +206,26 @@ export type RincianReturPembeliKantor = {
     menungguLain: number;
     /** Nilai bersih potong laporan ini (harga bersih baris nota × qty) — hanya kantor. */
     nilaiBersih: number;
-    /** LAYAK, masih menunggu, dan sudah dihitung opname toko sesudah dilaporkan: rak tidak ditambah lagi saat disetujui. */
-    terhitungOpnameSesudah: boolean;
   }[];
   peringatan: {
-    /** Bulan WIB saat dilaporkan, "YYYY-MM" — bulan pengaruhnya. */
-    bulan: string;
-    /** Laporan penjualan SPG toko putus bulan itu sudah dicek (`SpgSalesCheck`). */
-    komisiPutusDicek: boolean;
-    /** Angka resmi siklus konsinyasi toko itu bulan itu sudah dikunci. */
+    /**
+     * Bulan WIB nota ASLINYA, "YYYY-MM" — bulan komisi yang dikurangi retur ini
+     * (P9: "komisi di kurangi untuk bulan Oktober", lewat koreksi).
+     */
+    bulanKomisi: string;
+    /**
+     * Komisi SPG bulan nota itu sudah ditutup: laporan toko putus sudah dicek
+     * (`SpgSalesCheck`) atau siklus konsinyasinya sudah dikunci — definisi yang
+     * sama dengan `laporanTertutupDi` di `koreksi-queries.ts`.
+     */
+    komisiDitutup: boolean;
+    /** Bulan WIB saat dilaporkan, "YYYY-MM" — bulan laporan konsinyasi yang berkurang (R25). */
+    bulanLaporan: string;
+    /** Angka resmi siklus konsinyasi toko itu di bulan laporan sudah dikunci. */
     siklusKonsiTerkunci: boolean;
   };
-  jejak: { action: string; oleh: string; pada: Date; reason: string | null }[];
+  /** Jejak laporan DAN bebannya, terlama dulu. */
+  jejak: { action: string; entityType: string; oleh: string; pada: Date; reason: string | null }[];
 };
 
 export async function rincianReturPembeliKantor(id: string): Promise<RincianReturPembeliKantor | null> {
@@ -209,6 +242,11 @@ export async function rincianReturPembeliKantor(id: string): Promise<RincianRetu
       decidedById: true,
       decidedAt: true,
       rejectReason: true,
+      goodsPhotoR2Key: true,
+      refundedAt: true,
+      refundSlipR2Key: true,
+      refundMarkedById: true,
+      refundMarkReason: true,
       spgSale: { select: { id: true, docNo: true, createdAt: true, total: true } },
       lines: {
         orderBy: { id: "asc" },
@@ -225,35 +263,52 @@ export async function rincianReturPembeliKantor(id: string): Promise<RincianRetu
     },
   });
   if (!r) return null;
-  const status = bacaStatusReturPembeli(r.status) ?? "DISETUJUI";
-  const bulan = wibYearMonth(r.createdAt);
-  const [tahun, nomorBulan] = bulan.split("-").map(Number);
+  const status = bacaStatusReturPembeli(r.status) ?? "MENUNGGU";
+  // Dua bulan yang berbeda: komisi berkurang di bulan nota ASLINYA (P9), laporan
+  // konsinyasi dan penjualan bersih di bulan laporannya (R25).
+  const bulanKomisi = wibYearMonth(r.spgSale.createdAt);
+  const bulanLaporan = wibYearMonth(r.createdAt);
+  const siklusTerkunci = (bulan: string) => {
+    const [tahun, nomorBulan] = bulan.split("-").map(Number);
+    return prisma.consignmentCycle.findFirst({
+      where: { storeId: r.storeId, periodYear: tahun, periodMonth: nomorBulan, lockedAt: { not: null } },
+      select: { id: true },
+    });
+  };
 
-  const layak = r.lines.filter((l) => l.condition === "LAYAK");
-  const [nama, toko, menungguLain, terhitung, dicek, siklus, jejak] = await Promise.all([
-    namaPengguna([r.createdById, r.decidedById]),
+  const [nama, toko, menungguLain, dicek, siklusKomisi, siklus, jejak, beban] = await Promise.all([
+    namaPengguna([r.createdById, r.decidedById, r.refundMarkedById]),
     namaToko([r.storeId]),
     qtyMenungguPerBaris(
       prisma,
       r.lines.map((l) => l.spgSaleLineId),
       { kecualiReturnId: r.id },
     ),
-    status === "MENUNGGU" && layak.length
-      ? terhitungSesudah(prisma, r.storeId, [...new Set(layak.map((l) => l.itemId))], r.createdAt)
-      : Promise.resolve(new Set<string>()),
-    prisma.spgSalesCheck.findFirst({ where: { storeId: r.storeId, period: bulan }, select: { id: true } }),
-    prisma.consignmentCycle.findFirst({
-      where: { storeId: r.storeId, periodYear: tahun, periodMonth: nomorBulan, lockedAt: { not: null } },
-      select: { id: true },
-    }),
+    prisma.spgSalesCheck.findFirst({ where: { storeId: r.storeId, period: bulanKomisi }, select: { id: true } }),
+    siklusTerkunci(bulanKomisi),
+    siklusTerkunci(bulanLaporan),
     prisma.auditLog.findMany({
       where: { entityType: ENTITAS_RETUR_PEMBELI, entityId: r.id },
       orderBy: { createdAt: "asc" },
-      select: { action: true, userId: true, createdAt: true, reason: true },
+      select: { action: true, entityType: true, userId: true, createdAt: true, reason: true },
     }),
+    bebanUntukRetur(r.id),
   ]);
+  if (beban) {
+    const jejakBeban = await prisma.auditLog.findMany({
+      where: { entityType: ENTITAS_BEBAN_SPG, entityId: beban.chargeId },
+      orderBy: { createdAt: "asc" },
+      select: { action: true, entityType: true, userId: true, createdAt: true, reason: true },
+    });
+    jejak.push(...jejakBeban);
+    jejak.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  }
   const namaJejak = await namaPengguna(jejak.map((j) => j.userId));
   const t = toko.get(r.storeId);
+  const nilai = r.lines.map((l) => ({
+    qty: l.qty,
+    saleLine: { qty: l.saleLine.qty, lineTotal: l.saleLine.lineTotal === null ? null : angka(l.saleLine.lineTotal), unitPrice: angka(l.saleLine.unitPrice) },
+  }));
 
   return {
     id: r.id,
@@ -269,8 +324,18 @@ export async function rincianReturPembeliKantor(id: string): Promise<RincianRetu
       pada: r.decidedAt,
       alasanTolak: r.rejectReason,
     },
-    langsungBerlaku: status === "DISETUJUI" && r.decidedAt === null,
-    baris: r.lines.map((l) => ({
+    uang: {
+      keadaan: keadaanUangRetur({ status, uangTercatat: uangReturTercatat(r) }),
+      pada: r.refundedAt,
+      olehKantor: r.refundMarkedById ? { oleh: nama.get(r.refundMarkedById) ?? "—", alasan: r.refundMarkReason } : null,
+    },
+    foto: {
+      barang: urlFotoReturPembeli({ storeId: r.storeId, key: r.goodsPhotoR2Key }, "barang"),
+      struk: urlFotoReturPembeli({ storeId: r.storeId, key: r.refundSlipR2Key }, "struk"),
+    },
+    bebanJikaDitolak: nilaiBebanReturPembeli(nilai),
+    beban,
+    baris: r.lines.map((l, i) => ({
       id: l.id,
       saleLineId: l.spgSaleLineId,
       productName: l.saleLine.productName,
@@ -280,20 +345,15 @@ export async function rincianReturPembeliKantor(id: string): Promise<RincianRetu
       terjual: l.saleLine.qty,
       sudahKembali: l.saleLine.returnedQty,
       menungguLain: menungguLain.get(l.spgSaleLineId) ?? 0,
-      nilaiBersih:
-        Math.round(
-          l.qty *
-            hargaBersihPotong({
-              qty: l.saleLine.qty,
-              lineTotal: angka(l.saleLine.lineTotal),
-              unitPrice: angka(l.saleLine.unitPrice),
-            }) *
-            100,
-        ) / 100,
-      terhitungOpnameSesudah: l.condition === "LAYAK" && terhitung.has(kunciBaris(l.itemId, l.variantSku)),
+      nilaiBersih: nilaiBersihBarisRetur(nilai[i]),
     })),
-    peringatan: { bulan, komisiPutusDicek: dicek !== null, siklusKonsiTerkunci: siklus !== null },
-    jejak: jejak.map((j) => ({ action: j.action, oleh: namaJejak.get(j.userId) ?? "—", pada: j.createdAt, reason: j.reason })),
+    peringatan: {
+      bulanKomisi,
+      komisiDitutup: dicek !== null || siklusKomisi !== null,
+      bulanLaporan,
+      siklusKonsiTerkunci: siklus !== null,
+    },
+    jejak: jejak.map((j) => ({ action: j.action, entityType: j.entityType, oleh: namaJejak.get(j.userId) ?? "—", pada: j.createdAt, reason: j.reason })),
   };
 }
 
@@ -319,13 +379,20 @@ export type ReturPembeliHp = {
   /** Alasan kantor menolak (DITOLAK) atau alasan Anda menarik (DIBATALKAN). */
   alasanKeputusan: string | null;
   baris: { productName: string; variantSku: string; qty: number; kondisi: KondisiRetur }[];
+  /** Keadaan uang pembeli. */
+  uang: KeadaanUangRetur;
+  /** Keadaan beban (laporan ditolak yang uangnya sudah dikembalikan), tanpa angka — angkanya di "Beban saya". */
+  beban: KeadaanBebanSpg | null;
+  /** Tombol "Uang sudah dikembalikan": menunggu atau disetujui, uang belum tercatat. */
+  bisaCatatUangKembali: boolean;
+  /** Tombol "Tarik": menunggu dan uang belum tercatat — sesudahnya kantor yang memutuskan. */
   bisaDitarik: boolean;
 };
 
 /**
- * Laporan retur pembeli SPG ini di toko tetapnya, terbaru dulu. TANPA harga
- * dan total apa pun — di toko putus maupun konsi (dikunci tes pada muatan yang
- * diserialkan).
+ * Laporan retur pembeli SPG ini di toko tetapnya, terbaru dulu. TANPA harga,
+ * total, atau angka beban apa pun — di toko putus maupun konsi (dikunci tes
+ * pada muatan yang diserialkan).
  */
 export async function returPembeliSaya(userId: string, storeId: string, opsi: { batas?: number } = {}): Promise<ReturPembeliHp[]> {
   if (!userId || !storeId) return [];
@@ -339,13 +406,17 @@ export async function returPembeliSaya(userId: string, storeId: string, opsi: { 
       createdAt: true,
       reason: true,
       rejectReason: true,
+      refundedAt: true,
+      refundMarkedById: true,
       spgSaleId: true,
       spgSale: { select: { docNo: true } },
       lines: { orderBy: { id: "asc" }, select: { qty: true, condition: true, variantSku: true, saleLine: { select: { productName: true, variantSku: true } } } },
     },
   });
+  const beban = await bebanUntukReturBanyak(rows.filter((r) => r.status === "DITOLAK" || r.status === "DISETUJUI").map((r) => r.id));
   return rows.map((r) => {
-    const status = bacaStatusReturPembeli(r.status) ?? "DISETUJUI";
+    const status = bacaStatusReturPembeli(r.status) ?? "MENUNGGU";
+    const tercatat = uangReturTercatat(r);
     return {
       id: r.id,
       status,
@@ -360,7 +431,68 @@ export async function returPembeliSaya(userId: string, storeId: string, opsi: { 
         qty: l.qty,
         kondisi: l.condition,
       })),
-      bisaDitarik: status === "MENUNGGU",
+      uang: keadaanUangRetur({ status, uangTercatat: tercatat }),
+      beban: beban.get(r.id)?.keadaan ?? null,
+      bisaCatatUangKembali: (status === "MENUNGGU" || status === "DISETUJUI") && !tercatat,
+      bisaDitarik: status === "MENUNGGU" && !tercatat,
     };
   });
+}
+
+export type BarangDisisihkan = {
+  productName: string;
+  variantSku: string;
+  qty: number;
+  kondisi: KondisiRetur;
+  docNo: string;
+  /** MENUNGGU_KANTOR: laporannya menunggu kantor. TUNGGU_KEPUTUSAN: ditolak dengan beban, barangnya belum diputuskan. */
+  tanda: "MENUNGGU_KANTOR" | "TUNGGU_KEPUTUSAN";
+};
+
+/**
+ * Barang retur pembeli yang DISISIHKAN di toko (P12) — tidak di rak, tidak
+ * dijual, tidak dihitung opname: baris laporan yang menunggu kantor, dan baris
+ * laporan ditolak dengan beban yang barangnya belum diputuskan (P79). Tanpa harga.
+ */
+export async function barangDisisihkan(storeId: string): Promise<BarangDisisihkan[]> {
+  if (!storeId) return [];
+  const rows = await prisma.spgSaleReturn.findMany({
+    where: { storeId, OR: [RETUR_PEMBELI_MENUNGGU, RETUR_PEMBELI_DITAHAN_BEBAN] },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      status: true,
+      spgSale: { select: { docNo: true } },
+      lines: { orderBy: { id: "asc" }, select: { qty: true, condition: true, variantSku: true, saleLine: { select: { productName: true, variantSku: true } } } },
+    },
+  });
+  const ditolak = rows.filter((r) => r.status === "DITOLAK").map((r) => r.id);
+  const sudahDiputuskan = new Set(
+    ditolak.length
+      ? (
+          await prisma.spgCharge.findMany({
+            where: { source: "RETUR_PEMBELI", sourceId: { in: ditolak }, goodsDecision: { not: null } },
+            select: { sourceId: true },
+          })
+        ).map((c) => c.sourceId)
+      : [],
+  );
+  return rows
+    .filter((r) => r.status === "MENUNGGU" || !sudahDiputuskan.has(r.id))
+    .flatMap((r) =>
+      r.lines.map((l) => ({
+        productName: l.saleLine.productName,
+        variantSku: l.saleLine.variantSku || l.variantSku,
+        qty: l.qty,
+        kondisi: l.condition,
+        docNo: r.spgSale.docNo,
+        tanda: r.status === "MENUNGGU" ? ("MENUNGGU_KANTOR" as const) : ("TUNGGU_KEPUTUSAN" as const),
+      })),
+    );
+}
+
+/** Tugas HP "Kembalikan uang pembeli": laporan SPG ini yang disetujui, uangnya belum tercatat kembali. */
+export async function jumlahReturUangBelumKembali(userId: string, storeId: string): Promise<number> {
+  if (!userId || !storeId) return 0;
+  return prisma.spgSaleReturn.count({ where: { createdById: userId, storeId, status: "DISETUJUI", refundedAt: null, refundMarkedById: null } });
 }

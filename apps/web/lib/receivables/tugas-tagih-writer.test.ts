@@ -18,8 +18,14 @@ type Tugas = {
   receivableIds: unknown;
 };
 
+type Piutang = { id: string; storeId: string; isConsignment?: boolean; status?: string };
+
 const state = {
-  piutang: [] as { id: string; storeId: string }[],
+  piutang: [] as Piutang[],
+  /** Pemegang toko sekarang (`Store.salesmanId`). */
+  pemegang: "s1" as string | null,
+  /** Faktur di tugas yang statusnya VOIDED — tidak terhitung oleh `count` yang menyaringnya. */
+  jumlahDibatalkan: 0,
   sisa: new Map<string, number>(),
   lapangan: true,
   tugasLain: [] as { receivableIds: unknown }[],
@@ -31,11 +37,21 @@ const state = {
   jumlahAda: 0,
 };
 
+/** `where.status.not` yang diminta penulis — penyaring piutang dibatalkan. */
+const kecualiStatus = (args?: { where?: { status?: { not?: string } } }) => args?.where?.status?.not;
+
 const tx = {
   receivable: {
-    findMany: vi.fn(async () => state.piutang),
-    count: vi.fn(async () => state.jumlahAda),
+    findMany: vi.fn(async (args?: { where?: { status?: { not?: string } } }) =>
+      state.piutang
+        .filter((p) => !kecualiStatus(args) || p.status !== kecualiStatus(args))
+        .map((p) => ({ ...p, isConsignment: p.isConsignment ?? false })),
+    ),
+    count: vi.fn(async (args?: { where?: { status?: { not?: string } } }) =>
+      state.jumlahAda - (kecualiStatus(args) === "VOIDED" ? state.jumlahDibatalkan : 0),
+    ),
   },
+  store: { findUnique: vi.fn(async () => ({ salesmanId: state.pemegang })) },
   user: { findFirst: vi.fn(async () => (state.lapangan ? { id: "s1" } : null)) },
   collectionTask: {
     findMany: vi.fn(async () => state.tugasLain),
@@ -87,6 +103,8 @@ beforeEach(() => {
   state.diubah = [];
   state.jejak = [];
   state.jumlahAda = 2;
+  state.pemegang = "s1";
+  state.jumlahDibatalkan = 0;
 });
 
 describe("buatTugasTagih", () => {
@@ -147,6 +165,51 @@ describe("buatTugasTagih", () => {
       { id: "r2", storeId: "t2" },
     ];
     expect(await buatTugasTagih(dasar)).toEqual({ ok: false, alasan: "BEDA_TOKO" });
+  });
+
+  it("faktur yang DIBATALKAN dianggap tidak ada", async () => {
+    state.piutang = [
+      { id: "r1", storeId: "t1" },
+      { id: "r2", storeId: "t1", status: "VOIDED" },
+    ];
+    expect(await buatTugasTagih(dasar)).toEqual({ ok: false, alasan: "FAKTUR_TIDAK_DITEMUKAN" });
+    expect(state.dibuat).toHaveLength(0);
+  });
+
+  // P31 ("pemegang toko"): nominal tagihan konsinyasi hanya untuk pemegang toko sekarang.
+  describe("tagihan konsinyasi", () => {
+    beforeEach(() => {
+      state.piutang = [
+        { id: "r1", storeId: "t1", isConsignment: true },
+        { id: "r2", storeId: "t1" },
+      ];
+    });
+
+    it("ditugaskan ke pemegang toko: dicatat", async () => {
+      const h = await buatTugasTagih(dasar);
+      expect(h).toMatchObject({ ok: true, assigneeId: "s1", jumlahFaktur: 2 });
+      expect(state.dibuat).toHaveLength(1);
+    });
+
+    it("ditugaskan ke orang lapangan yang bukan pemegang: KONSI_HANYA_PEMEGANG tanpa menulis apa pun", async () => {
+      state.pemegang = "s9";
+      expect(await buatTugasTagih(dasar)).toEqual({ ok: false, alasan: "KONSI_HANYA_PEMEGANG" });
+      expect(state.dibuat).toHaveLength(0);
+      expect(state.jejak).toHaveLength(0);
+    });
+
+    it("toko konsinyasi tanpa pemegang: tidak bisa ditugaskan ke siapa pun", async () => {
+      state.pemegang = null;
+      expect(await buatTugasTagih(dasar)).toEqual({ ok: false, alasan: "KONSI_HANYA_PEMEGANG" });
+      expect(state.dibuat).toHaveLength(0);
+    });
+
+    it("faktur putus di toko yang sama tetap boleh ditugaskan ke yang bukan pemegang", async () => {
+      state.pemegang = "s9";
+      state.piutang = [{ id: "r2", storeId: "t1" }];
+      const h = await buatTugasTagih({ ...dasar, receivableIds: ["r2"] });
+      expect(h).toMatchObject({ ok: true, jumlahFaktur: 1 });
+    });
   });
 });
 
@@ -225,6 +288,19 @@ describe("tutupTugasLunasOtomatis", () => {
       ["r1", 0],
       ["r2", 50_000],
     ]);
+    expect(await tutupTugasLunasOtomatis({ taskIds: ["tg1"], olehUserId: "admin" })).toEqual([]);
+    expect(state.diubah).toHaveLength(0);
+    expect(state.jejak).toHaveLength(0);
+  });
+
+  it("faktur yang DIBATALKAN tidak pernah dihitung lunas — kantor yang membatalkannya, bukan toko yang membayar", async () => {
+    // Piutang VOIDED bersisa nol (`bacaRincianSisa`); tanpa penyaring status, tugas ini
+    // akan ditutup "karena semua fakturnya lunas".
+    state.sisa = new Map([
+      ["r1", 0],
+      ["r2", 0],
+    ]);
+    state.jumlahDibatalkan = 1;
     expect(await tutupTugasLunasOtomatis({ taskIds: ["tg1"], olehUserId: "admin" })).toEqual([]);
     expect(state.diubah).toHaveLength(0);
     expect(state.jejak).toHaveLength(0);

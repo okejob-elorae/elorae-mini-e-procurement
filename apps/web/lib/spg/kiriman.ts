@@ -4,10 +4,14 @@ import { bacaPesananKonsiLama } from "./antaran-queries";
 /**
  * Kiriman barang ke toko, dari beberapa sumber, dalam satu bentuk.
  *
- * - PUTUS_DELIVERY  : pengiriman pesanan putus (`FieldSalesDelivery`).
+ * - PUTUS_DELIVERY  : nota tagihan pesanan putus (`FieldSalesDelivery`). Nota
+ *                     sebuah pengiriman terbuka di sini setelah pengirimannya
+ *                     BERANGKAT; nota yang dibatalkan tidak pernah.
  * - KONSI_TRANSFER  : SATU ANTARAN pesanan konsinyasi — `KonsiTransfer` yang
- *                     dibuat saat pengiriman (`DeliveryShipment`) selesai, sebesar
- *                     yang diserahkan di antaran itu. Pesanan 100 pcs yang datang
+ *                     dibuat saat pengiriman (`DeliveryShipment`) DIBUAT (surat
+ *                     jalan, Q1) dan masih DALAM PERJALANAN ke Gudang Toko.
+ *                     Terbuka di sini setelah pengirimannya berangkat; penerimaan
+ *                     toko yang menaruhnya di rak. Pesanan 100 pcs yang dikirim
  *                     60 lalu 40 = dua kiriman, diterima sendiri-sendiri.
  * - KONSI_ORDER     : HANYA pesanan konsinyasi LAMA, yang stoknya keluar saat
  *                     disetujui tanpa pengiriman (`bacaPesananKonsiLama`) — tetap
@@ -24,10 +28,19 @@ import { bacaPesananKonsiLama } from "./antaran-queries";
  *                     (DIKEMBALIKAN) — barangnya kembali dan diterima toko asal.
  *
  * Jumlah yang DIKIRIM selalu dibaca dari dokumen sumbernya di server — layar
- * SPG hanya mengirim jumlah yang DITERIMA. Untuk antaran, "dikirim" adalah yang
- * diserahkan di antaran itu, bukan jumlah pesanan: sisa pesanan yang belum
- * dikirim gudang tidak pernah menjadi kekurangan.
+ * SPG hanya mengirim jumlah yang DITERIMA (dan yang DITOLAK di pintu). Untuk
+ * antaran, "dikirim" adalah isi surat jalan itu dikurangi yang sudah kembali ke
+ * gudang, bukan jumlah pesanan: sisa pesanan yang belum dikirim gudang tidak
+ * pernah menjadi kekurangan. Untuk nota putus, "dikirim" = yang ditagih + yang
+ * sudah dikoreksi kembali/hilang.
  */
+
+/** Status pengiriman yang sudah berangkat dari gudang — kirimannya boleh diterima toko. */
+export const STATUS_PENGIRIMAN_BERANGKAT = ["IN_TRANSIT", "DELIVERED", "PARTIALLY_DELIVERED"] as const;
+
+function berangkat(status: string): boolean {
+  return (STATUS_PENGIRIMAN_BERANGKAT as readonly string[]).includes(status);
+}
 
 export type JenisKiriman = "PUTUS_DELIVERY" | "KONSI_TRANSFER" | "KONSI_ORDER" | "KONSI_SHIPMENT" | "MUTASI" | "MUTASI_KEMBALI";
 export const JENIS_KIRIMAN: JenisKiriman[] = ["PUTUS_DELIVERY", "KONSI_TRANSFER", "KONSI_ORDER", "KONSI_SHIPMENT", "MUTASI", "MUTASI_KEMBALI"];
@@ -54,6 +67,22 @@ export type Kiriman = {
   lines: BarisKiriman[];
   /** Nomor pesanan asal (pengiriman putus, antaran konsinyasi); hanya untuk ditampilkan. */
   pesananNo?: string | null;
+  /** Pengirimannya masih di jalan (belum dikonfirmasi ekspedisi/kurir) — lencana "Dalam perjalanan". */
+  dalamPerjalanan?: boolean;
+  /** Barang boleh dicatat "Ditolak, dibawa pulang kurir" (P40): kiriman gudang lewat pengiriman. */
+  bolehDitolak?: boolean;
+  /**
+   * Nota tagihan yang dicatat tangan sebelum aturan pengiriman (tanpa `DeliveryShipment`). R24:
+   * tetap bisa dibaca dan diterima seperti dulu, tetapi tidak mendapat jalan koreksi atau
+   * pembatalan baru — tidak bisa ditolak di pintu, notanya tidak dikoreksi saat diterima kurang,
+   * dan kekurangannya dibuka sebagai barang hilang sesudah commit seperti sebelumnya.
+   */
+  tanpaPengiriman?: boolean;
+  /**
+   * Pengirimannya sudah dikonfirmasi ekspedisi/kurir (DELIVERED/PARTIALLY_DELIVERED): barangnya
+   * sudah diserahkan ke toko. Syarat penerimaan oleh salesman pemegang (R12, P45a).
+   */
+  diserahkan?: boolean;
 };
 
 type Klien = Prisma.TransactionClient | typeof prisma;
@@ -67,13 +96,14 @@ export async function muatKiriman(
 ): Promise<Kiriman | null> {
   if (sourceType === "PUTUS_DELIVERY") {
     const d = await klien.fieldSalesDelivery.findFirst({
-      where: { id: sourceId, order: { storeId } },
+      where: { id: sourceId, order: { storeId }, voidedAt: null },
       select: {
         id: true,
         docNo: true,
         deliveredAt: true,
         order: { select: { orderNo: true } },
-        lines: { select: { id: true, itemId: true, variantSku: true, productName: true, qty: true } },
+        shipment: { select: { status: true, shippedAt: true, deliveredAt: true } },
+        lines: { select: { id: true, itemId: true, variantSku: true, productName: true, qty: true, returnedQty: true, lostQty: true } },
       },
     });
     if (!d) return null;
@@ -81,25 +111,35 @@ export async function muatKiriman(
       sourceType,
       sourceId: d.id,
       docNo: d.docNo,
-      tanggal: d.deliveredAt,
+      tanggal: d.shipment ? (d.shipment.deliveredAt ?? d.shipment.shippedAt ?? d.deliveredAt) : d.deliveredAt,
       pesananNo: d.order.orderNo,
-      lines: d.lines.map((l) => ({ lineId: l.id, itemId: l.itemId, variantSku: l.variantSku ?? "", productName: l.productName, qty: l.qty })),
+      dalamPerjalanan: d.shipment?.status === "IN_TRANSIT",
+      diserahkan: d.shipment?.status === "DELIVERED" || d.shipment?.status === "PARTIALLY_DELIVERED",
+      bolehDitolak: d.shipment !== null,
+      tanpaPengiriman: d.shipment === null,
+      lines: d.lines.map((l) => ({
+        lineId: l.id,
+        itemId: l.itemId,
+        variantSku: l.variantSku ?? "",
+        productName: l.productName,
+        qty: l.qty + l.returnedQty + l.lostQty,
+      })),
     };
   }
   if (sourceType === "KONSI_TRANSFER") {
-    // Hanya antaran yang lahir dari pengiriman. Transfer lama tanpa pengiriman
-    // (stok keluar saat disetujui) diterima lewat pesanannya (`KONSI_ORDER`), dan
-    // transfer konfirmasi sampai pesanan lama (`oldOrderArrival`) sudah dihitung
-    // saat dikonfirmasi — tanda terimanya dibuat bersamanya, tidak dibuka di sini.
+    // Hanya antaran yang lahir dari pengiriman dan MASIH DI PERJALANAN. Transfer lama
+    // tanpa pengiriman (stok keluar saat disetujui) diterima lewat pesanannya
+    // (`KONSI_ORDER`), dan transfer konfirmasi sampai pesanan lama (`oldOrderArrival`)
+    // sudah dihitung saat dikonfirmasi — tanda terimanya dibuat bersamanya.
     const t = await klien.konsiTransfer.findFirst({
-      where: { id: sourceId, storeId, shipmentId: { not: null } },
+      where: { id: sourceId, storeId, shipmentId: { not: null }, status: "IN_TRANSIT" },
       select: {
         id: true,
         docNo: true,
         createdAt: true,
         order: { select: { orderNo: true } },
-        shipment: { select: { docNo: true, deliveredAt: true } },
-        lines: { select: { id: true, itemId: true, variantSku: true, productName: true, qty: true } },
+        shipment: { select: { docNo: true, status: true, shippedAt: true, deliveredAt: true } },
+        lines: { select: { id: true, itemId: true, variantSku: true, productName: true, qty: true, returnedQty: true } },
       },
     });
     if (!t) return null;
@@ -108,10 +148,19 @@ export async function muatKiriman(
       sourceId: t.id,
       // Nomor pengiriman: itu yang tertulis di surat jalan yang dibawa pengantar.
       docNo: t.shipment?.docNo ?? t.docNo,
-      tanggal: t.shipment?.deliveredAt ?? t.createdAt,
+      tanggal: t.shipment?.deliveredAt ?? t.shipment?.shippedAt ?? t.createdAt,
       pesananNo: t.order.orderNo,
+      dalamPerjalanan: t.shipment?.status === "IN_TRANSIT",
+      diserahkan: t.shipment?.status === "DELIVERED" || t.shipment?.status === "PARTIALLY_DELIVERED",
+      bolehDitolak: true,
       lines: t.lines
-        .map((l) => ({ lineId: l.id, itemId: l.itemId, variantSku: l.variantSku ?? "", productName: l.productName, qty: Math.round(Number(l.qty)) }))
+        .map((l) => ({
+          lineId: l.id,
+          itemId: l.itemId,
+          variantSku: l.variantSku ?? "",
+          productName: l.productName,
+          qty: Math.round(Number(l.qty)) - l.returnedQty,
+        }))
         .filter((l) => l.qty > 0),
     };
   }
@@ -191,9 +240,11 @@ export const HARI_KIRIMAN_AWAL = 30;
 /**
  * Kiriman ke toko yang belum diterima SPG.
  *
- * Sejak awal pelacakan toko (gerakan stok pertama) — kiriman sebelum itu sudah
- * lama ada di rak dan masuk lewat opname, bukan lewat penerimaan. Toko yang
- * belum mulai dilacak melihat kiriman 30 hari terakhir.
+ * Kiriman gudang lewat pengiriman (nota putus, antaran konsinyasi) terbuka sejak
+ * pengirimannya berangkat, tanpa jendela tanggal. Sumber lama (nota tanpa
+ * pengiriman, kiriman modul konsinyasi, pesanan konsi lama) sejak awal pelacakan
+ * toko (gerakan stok pertama) — kiriman sebelum itu sudah lama ada di rak dan
+ * masuk lewat opname. Toko yang belum mulai dilacak melihat 30 hari terakhir.
  */
 export async function kirimanMenunggu(storeId: string, sekarang = new Date()): Promise<Kiriman[]> {
   const pertama = await prisma.storeStockMovement.findFirst({
@@ -204,13 +255,28 @@ export async function kirimanMenunggu(storeId: string, sekarang = new Date()): P
   const sejak = pertama?.createdAt ?? new Date(sekarang.getTime() - HARI_KIRIMAN_AWAL * HARI_MS);
 
   const [putus, antaran, konsiCalon, kirim, diterima, mutasi] = await Promise.all([
+    // Nota sebuah pengiriman: setelah berangkat, TANPA jendela tanggal (kiriman di
+    // jalan harus diterima berapa pun umurnya, dan SPG baru melihat semuanya). Nota
+    // yang dicatat tangan dulu (tanpa pengiriman) tetap memakai jendela lama.
     prisma.fieldSalesDelivery.findMany({
-      where: { order: { storeId }, deliveredAt: { gte: sejak } },
+      where: {
+        order: { storeId },
+        voidedAt: null,
+        OR: [
+          { shipment: { is: { status: { in: [...STATUS_PENGIRIMAN_BERANGKAT] } } } },
+          { shipment: { is: null }, deliveredAt: { gte: sejak } },
+        ],
+      },
       select: { id: true },
     }),
-    // Antaran konsinyasi: satu per pengiriman yang selesai, sebesar yang diserahkan.
+    // Antaran konsinyasi: satu per pengiriman yang berangkat dan masih di perjalanan.
     prisma.konsiTransfer.findMany({
-      where: { storeId, shipmentId: { not: null }, createdAt: { gte: sejak } },
+      where: {
+        storeId,
+        shipmentId: { not: null },
+        status: "IN_TRANSIT",
+        shipment: { is: { status: { in: [...STATUS_PENGIRIMAN_BERANGKAT] } } },
+      },
       select: { id: true },
     }),
     // Calon pesanan konsi LAMA — disaring `bacaPesananKonsiLama` di bawah.
@@ -250,4 +316,73 @@ export async function kirimanMenunggu(storeId: string, sekarang = new Date()): P
   return hasil
     .filter((k): k is Kiriman => k !== null && k.lines.length > 0)
     .sort((a, b) => a.tanggal.getTime() - b.tanggal.getTime());
+}
+
+export type KeadaanKiriman = "SIAP" | "BELUM_BERANGKAT" | "DIBATALKAN";
+
+/**
+ * Bolehkah kiriman ini diterima toko SEKARANG. Hanya kiriman gudang lewat
+ * pengiriman yang punya keadaan: pengiriman yang masih DIKEMAS belum berangkat
+ * (BELUM_BERANGKAT); pengiriman yang "tidak jadi dikirim", antaran yang
+ * dibatalkan, atau nota yang dibatalkan = DIBATALKAN. Sumber lain selalu SIAP.
+ * `null` = dokumennya tidak ada untuk toko ini.
+ */
+export async function keadaanKiriman(
+  klien: Klien,
+  storeId: string,
+  sourceType: JenisKiriman,
+  sourceId: string,
+): Promise<KeadaanKiriman | null> {
+  if (sourceType === "KONSI_TRANSFER") {
+    const t = await klien.konsiTransfer.findFirst({
+      where: { id: sourceId, storeId },
+      select: { status: true, shipment: { select: { status: true } } },
+    });
+    if (!t) return null;
+    if (t.status === "CANCELLED" || t.shipment?.status === "CANCELLED") return "DIBATALKAN";
+    if (t.shipment && !berangkat(t.shipment.status)) return "BELUM_BERANGKAT";
+    return "SIAP";
+  }
+  if (sourceType === "PUTUS_DELIVERY") {
+    const d = await klien.fieldSalesDelivery.findFirst({
+      where: { id: sourceId, order: { storeId } },
+      select: { voidedAt: true, shipment: { select: { status: true } } },
+    });
+    if (!d) return null;
+    if (d.voidedAt || d.shipment?.status === "CANCELLED") return "DIBATALKAN";
+    if (d.shipment && !berangkat(d.shipment.status)) return "BELUM_BERANGKAT";
+    return "SIAP";
+  }
+  return "SIAP";
+}
+
+/**
+ * Jumlah SPG toko ini: pengguna yang toko tetapnya (`assignedStoreId`) toko ini —
+ * aturan yang sama dengan penerima kabar pengiriman. SPG yang hanya tidak masuk
+ * tetap terhitung (P26: barangnya menunggu sampai ia kembali); SPG yang ditandai
+ * berhenti sudah dilepas dari tokonya.
+ */
+export async function jumlahSpgToko(klien: Klien, storeId: string): Promise<number> {
+  return klien.user.count({ where: { assignedStoreId: storeId } });
+}
+
+/**
+ * Kiriman gudang yang menunggu diterima di toko-toko yang DIPEGANG salesman ini dan kini TANPA SPG
+ * (SPG-nya berhenti, P45a): barangnya sudah DISERAHKAN ke toko (pengiriman DELIVERED/PARTIALLY_DELIVERED
+ * — yang masih di jalan diterima lewat konfirmasi ekspedisi/kurir, R6/R12), toko belum menerimanya.
+ * Bahan tugas di HP pemegang — tanpa ini barangnya bisa tertahan "dalam perjalanan" tanpa ada yang
+ * tahu. Toko yang SPG-nya hanya tidak masuk tetap punya SPG dan TIDAK masuk sini (P26: menunggu SPG-nya).
+ */
+export async function kirimanMenungguPemegang(userId: string): Promise<Array<{ storeId: string; kiriman: Kiriman[] }>> {
+  if (!userId) return [];
+  const toko = await prisma.store.findMany({ where: { salesmanId: userId, isActive: true }, select: { id: true } });
+  const hasil: Array<{ storeId: string; kiriman: Kiriman[] }> = [];
+  for (const t of toko) {
+    if ((await jumlahSpgToko(prisma, t.id)) > 0) continue;
+    const kiriman = (await kirimanMenunggu(t.id)).filter(
+      (k) => (k.sourceType === "KONSI_TRANSFER" || k.sourceType === "PUTUS_DELIVERY") && k.diserahkan === true,
+    );
+    if (kiriman.length > 0) hasil.push({ storeId: t.id, kiriman });
+  }
+  return hasil;
 }

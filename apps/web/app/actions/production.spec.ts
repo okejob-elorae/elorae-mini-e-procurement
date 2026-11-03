@@ -6,6 +6,7 @@ const {
   mockAggregate,
   mockFindUnique,
   mockWoFindUnique,
+  mockWoUpdate,
   mockItemFindMany,
   mockTransaction,
 } = vi.hoisted(() => ({
@@ -13,6 +14,7 @@ const {
   mockAggregate: vi.fn(),
   mockFindUnique: vi.fn(),
   mockWoFindUnique: vi.fn(),
+  mockWoUpdate: vi.fn(),
   mockItemFindMany: vi.fn(),
   mockTransaction: vi.fn(),
 }));
@@ -28,7 +30,7 @@ vi.mock("@elorae/db", () => ({
   },
   moveMainStock: vi.fn(),
   prisma: {
-    workOrder: { findUnique: mockWoFindUnique },
+    workOrder: { findUnique: mockWoFindUnique, update: mockWoUpdate },
     item: { findMany: mockItemFindMany },
     inventoryValue: { aggregate: mockAggregate, findUnique: mockFindUnique },
     $transaction: mockTransaction,
@@ -92,6 +94,7 @@ import {
   issueMaterials,
   issueWorkOrder,
   receiveFG,
+  updateWOHppAdjustments,
 } from "./production";
 
 const STOP = "STOP_AT_ISSUE_TRANSACTION";
@@ -443,5 +446,63 @@ describe("issueWorkOrder stock guard", () => {
     expect(tx.workOrder.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "wo1" }, data: expect.objectContaining({ status: "ISSUED" }) })
     );
+  });
+});
+
+describe("markup per WO dihapus (P4a): harga rekomendasi hanya dari pengaturan barang", () => {
+  const woTersimpan = {
+    id: "wo1",
+    docNumber: "WO-1",
+    vendorId: "v1",
+    finishedGoodId: "fg1",
+    outputMode: "GENERIC",
+    plannedQty: 10,
+    targetDate: null,
+    status: "DRAFT",
+    issuedAt: null,
+    completedAt: null,
+    canceledAt: null,
+    canceledReason: null,
+    consumptionPlan: "[]",
+    notes: null,
+    createdById: "u1",
+    createdAt: new Date("2026-11-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-11-01T00:00:00.000Z"),
+    hppAdditionalCost: "2500",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", role: "ADMIN", permissions: ["*"] } });
+  });
+
+  it("updateWOHppAdjustments writes and audits only the additional cost, never the old WO markup", async () => {
+    const { logAudit } = await import("@/lib/audit");
+    mockWoFindUnique.mockResolvedValue({ hppAdditionalCost: "1000" });
+    mockWoUpdate.mockResolvedValue(woTersimpan);
+    await updateWOHppAdjustments("wo1", { hppAdditionalCost: 2500, hppMarginPercent: 30 } as never);
+    expect(mockWoFindUnique).toHaveBeenCalledWith({ where: { id: "wo1" }, select: { hppAdditionalCost: true } });
+    expect(mockWoUpdate).toHaveBeenCalledWith({ where: { id: "wo1" }, data: { hppAdditionalCost: 2500 } });
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "UPDATE_HPP",
+        entityId: "wo1",
+        changes: { before: { hppAdditionalCost: 1000 }, after: { hppAdditionalCost: 2500 } },
+      }),
+    );
+  });
+
+  it("createWorkOrder ignores a markup sent by an old form", async () => {
+    const { generateMaterialPlan } = await import("@/lib/production/planning");
+    const { generateDocNumber } = await import("@/lib/docNumber");
+    vi.mocked(generateMaterialPlan).mockResolvedValue([] as never);
+    vi.mocked(generateDocNumber).mockResolvedValue("WO-1" as never);
+    const create = vi.fn().mockRejectedValue(new Error(STOP));
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb({ workOrder: { create } }));
+    const data = { vendorId: "v1", outputMode: "GENERIC", plannedQty: 10, finishedGoodId: "fg1", hppMarginPercent: 30, hppAdditionalCost: 500 };
+    await expect(createWorkOrder(data as never, "u1")).rejects.toThrow(STOP);
+    const tulis = create.mock.calls[0][0].data as Record<string, unknown>;
+    expect(tulis).not.toHaveProperty("hppMarginPercent");
+    expect(tulis.hppAdditionalCost).toBe(500);
   });
 });

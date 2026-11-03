@@ -4,13 +4,23 @@ import {
   type PendingCheckout,
   type PendingMutasiAjuan,
   type PendingMutasiKirim,
+  type PendingSpgRefund,
   type PendingSpgReturn,
   type PendingStoreOpname,
   type PendingStoreReceipt,
 } from "./db";
 import { PERISTIWA_ANTREAN } from "./hitung";
 import { AJUAN_MUTASI_DITOLAK } from "./luring-klasifikasi";
-import type { CheckinBaru, CheckoutBaru, MutasiAjuanBaru, MutasiKirimBaru, OpnameBaru, ReturPembeliBaru, TerimaBaru } from "./luring-muatan";
+import type {
+  CheckinBaru,
+  CheckoutBaru,
+  MutasiAjuanBaru,
+  MutasiKirimBaru,
+  OpnameBaru,
+  ReturPembeliBaru,
+  TerimaBaru,
+  UangKembaliBaru,
+} from "./luring-muatan";
 
 /**
  * Antrean "tanpa sinyal" untuk kunjungan (check-in, check-out) dan pekerjaan
@@ -52,6 +62,12 @@ export async function antreOpname(r: OpnameBaru): Promise<void> {
 
 export async function antreReturPembeli(r: ReturPembeliBaru): Promise<void> {
   await pwaDb.pendingSpgReturns.put({ ...r, capturedAt: Date.now(), ...awal });
+  kabari();
+}
+
+/** "Uang sudah dikembalikan" retur pembeli, dengan foto struknya (berkas di HP atau kunci R2). */
+export async function antreUangKembali(r: UangKembaliBaru): Promise<void> {
+  await pwaDb.pendingSpgRefunds.put({ ...r, capturedAt: Date.now(), ...awal });
   kabari();
 }
 
@@ -105,12 +121,25 @@ export async function returPembeliTertahanUntuk(spgSaleId: string): Promise<Pend
   }
 }
 
+/**
+ * "Uang sudah dikembalikan" untuk laporan ini yang masih di HP — tombolnya tidak menawarkan
+ * pencatatan kedua. Tak terbaca = tidak ada.
+ */
+export async function uangKembaliTertahanUntuk(returnId: string): Promise<PendingSpgRefund | null> {
+  try {
+    return (await pwaDb.pendingSpgRefunds.where("returnId").equals(returnId).first()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export type AntreanLuring = {
   checkin: PendingCheckin[];
   checkout: PendingCheckout[];
   terima: PendingStoreReceipt[];
   opname: PendingStoreOpname[];
   returPembeli: PendingSpgReturn[];
+  uangKembali: PendingSpgRefund[];
   mutasiAjuan: PendingMutasiAjuan[];
   mutasiKirim: PendingMutasiKirim[];
 };
@@ -118,18 +147,19 @@ export type AntreanLuring = {
 /** Semua antrean kunjungan & stok, yang tertua dulu. Penyimpanan tak terbaca = kosong. */
 export async function daftarAntreanLuring(): Promise<AntreanLuring> {
   try {
-    const [checkin, checkout, terima, opname, returPembeli, mutasiAjuan, mutasiKirim] = await Promise.all([
+    const [checkin, checkout, terima, opname, returPembeli, uangKembali, mutasiAjuan, mutasiKirim] = await Promise.all([
       pwaDb.pendingCheckins.orderBy("capturedAt").toArray(),
       pwaDb.pendingCheckouts.orderBy("capturedAt").toArray(),
       pwaDb.pendingStoreReceipts.orderBy("capturedAt").toArray(),
       pwaDb.pendingStoreOpnames.orderBy("capturedAt").toArray(),
       pwaDb.pendingSpgReturns.orderBy("capturedAt").toArray(),
+      pwaDb.pendingSpgRefunds.orderBy("capturedAt").toArray(),
       pwaDb.pendingMutasiAjuan.orderBy("capturedAt").toArray(),
       pwaDb.pendingMutasiKirim.orderBy("capturedAt").toArray(),
     ]);
-    return { checkin, checkout, terima, opname, returPembeli, mutasiAjuan, mutasiKirim };
+    return { checkin, checkout, terima, opname, returPembeli, uangKembali, mutasiAjuan, mutasiKirim };
   } catch {
-    return { checkin: [], checkout: [], terima: [], opname: [], returPembeli: [], mutasiAjuan: [], mutasiKirim: [] };
+    return { checkin: [], checkout: [], terima: [], opname: [], returPembeli: [], uangKembali: [], mutasiAjuan: [], mutasiKirim: [] };
   }
 }
 
@@ -141,6 +171,7 @@ const TABEL = {
   terima: () => pwaDb.pendingStoreReceipts,
   opname: () => pwaDb.pendingStoreOpnames,
   returPembeli: () => pwaDb.pendingSpgReturns,
+  uangKembali: () => pwaDb.pendingSpgRefunds,
   mutasiAjuan: () => pwaDb.pendingMutasiAjuan,
   mutasiKirim: () => pwaDb.pendingMutasiKirim,
 } as const;

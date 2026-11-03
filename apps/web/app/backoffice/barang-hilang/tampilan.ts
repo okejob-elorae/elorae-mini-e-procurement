@@ -24,5 +24,15 @@ export function nadaPenanggung(b: Penanggung): string {
       return "bg-orange-500/15 text-orange-800 dark:text-orange-300";
     case "ELORAE":
       return "bg-muted text-muted-foreground";
+    case "EKSPEDISI":
+      return "bg-teal-500/15 text-teal-800 dark:text-teal-300";
   }
+}
+
+/** Saringan klaim ekspedisi di daftar kantor (`?klaim=`): hanya klaim yang masih perlu ditindaklanjuti. */
+export const SARINGAN_KLAIM = ["DIAJUKAN", "MENUNGGU_CEK", "DITOLAK"] as const;
+export type SaringanKlaim = (typeof SARINGAN_KLAIM)[number];
+
+export function bacaSaringanKlaim(v: unknown): SaringanKlaim | null {
+  return typeof v === "string" && (SARINGAN_KLAIM as readonly string[]).includes(v) ? (v as SaringanKlaim) : null;
 }

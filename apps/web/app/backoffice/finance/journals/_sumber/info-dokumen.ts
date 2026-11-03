@@ -128,7 +128,10 @@ export async function cariInfoDokumen(pasangan: Pasangan[]): Promise<Map<string,
       prisma.paymentClaim.findMany({ where: { id: { in: bkmIds } }, select: { id: true, docNo: true } }),
     ),
     aman("WarehouseReturn", nriIds, () =>
-      prisma.warehouseReturn.findMany({ where: { id: { in: nriIds } }, select: { id: true, noNri: true, storeReturnId: true } }),
+      prisma.warehouseReturn.findMany({
+        where: { id: { in: nriIds } },
+        select: { id: true, noNri: true, storeReturnId: true, followUpOfStoreReturnId: true },
+      }),
     ),
     aman("StoreExchange", tukarIds, () =>
       prisma.storeExchange.findMany({ where: { id: { in: tukarIds } }, select: { id: true, docNo: true } }),
@@ -139,7 +142,11 @@ export async function cariInfoDokumen(pasangan: Pasangan[]): Promise<Map<string,
   ]);
   for (const r of nota) isi(["FIELD_DELIVERY"], r.id, { nomor: r.docNo, fieldOrderId: r.orderId });
   for (const r of bkm) isi(["FIELD_COLLECTION"], r.id, { nomor: r.docNo });
-  for (const r of nri) isi(["STORE_RETURN"], r.id, { nomor: r.noNri, storeReturnId: r.storeReturnId });
+  // Hitungan susulan (barang selisih retur yang ketemu di toko, P22a) tidak berpasangan 1:1 dengan
+  // notanya: induknya nota retur yang disusulinya.
+  for (const r of nri) {
+    isi(["STORE_RETURN"], r.id, { nomor: r.noNri, storeReturnId: r.storeReturnId ?? r.followUpOfStoreReturnId });
+  }
   for (const r of tukar) isi(["STORE_EXCHANGE"], r.id, { nomor: r.docNo });
   for (const r of faktur) isi(["STORE_INVOICE"], r.id, { nomor: r.invoiceNo, noFaktur: r.invoiceNo });
   // Faktur impor yang batch-nya dibatalkan (barisnya dihapus): jurnal + pembaliknya tetap menunjuk
@@ -177,6 +184,24 @@ export async function cariInfoDokumen(pasangan: Pasangan[]): Promise<Map<string,
   ]);
   for (const r of voucher) isi(["CASH_VOUCHER", "CASH_VOUCHER_REVERSAL"], r.id, { nomor: r.docNumber });
   for (const r of bayarPemasok) isi(["SUPPLIER_PAYMENT_DOC", "SUPPLIER_PAYMENT_DOC_REVERSAL"], r.id, { nomor: r.docNumber });
+
+  // Koreksi utang pemasok (selisih harga invoice): dinamai tagihannya — nomor Vendor Billing dan nomor invoice pemasok.
+  const koreksiIds = idsPer(pasangan, "SUPPLIER_PAYABLE_CORRECTION", "SUPPLIER_PAYABLE_CORRECTION_REVERSAL");
+  const koreksi = await aman("SupplierPayableCorrection", koreksiIds, () =>
+    prisma.supplierPayableCorrection.findMany({ where: { id: { in: koreksiIds } }, select: { id: true, billId: true } }),
+  );
+  const tagihanIds = [...new Set(koreksi.map((r) => r.billId))];
+  const tagihan = await aman("VendorBill", tagihanIds, () =>
+    prisma.vendorBill.findMany({ where: { id: { in: tagihanIds } }, select: { id: true, docNumber: true, vendorInvoiceNo: true } }),
+  );
+  const tagihanPer = new Map(tagihan.map((b) => [b.id, b]));
+  for (const r of koreksi) {
+    const b = tagihanPer.get(r.billId);
+    isi(["SUPPLIER_PAYABLE_CORRECTION", "SUPPLIER_PAYABLE_CORRECTION_REVERSAL"], r.id, {
+      nomor: b ? (b.vendorInvoiceNo ? `${b.docNumber} · ${b.vendorInvoiceNo}` : b.docNumber) : null,
+      billId: r.billId,
+    });
+  }
 
   // Jurnal operasional: konsinyasi, komisi, barang hilang, gudang rusak, stok manual, retur pemasok, biaya perjalanan.
   try {

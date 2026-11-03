@@ -171,6 +171,7 @@ export const ENTRI: EntriBantuan[] = [
         isi: [
           { kunci: "komisiSalesman.laporan.footnote" },
           "Omzet konsinyasi = barang yang LAKU di toko konsinyasi yang dipegang salesman itu saat barangnya laku (buku stok SPG: terjual dikurangi retur pembeli; toko tanpa buku: laporan laku siklus yang sudah dikunci, di akhir bulannya), dinilai dengan harga yang Elorae terima — harga di toko dikurangi margin toko. Transfer konsinyasi yang disetujui bukan omzet. Memindah toko ke salesman lain tidak memindah omzet bulan-bulan sebelumnya. Saat toko tanpa pemegang, lakunya dihitung ke salesman yang terakhir mengirim konsinyasi ke sana.",
+          "Kolom Selisih retur: beban selisih retur toko yang ditanggung salesman — sisa yang belum dipotong, yang dipotong bulan ini, kelebihan potong, dan yang dikembalikan bulan ini — juga di berkas Excel-nya. Komisi salesman dibayar di luar sistem, jadi potongan dan pengembaliannya dicatat dengan tangan tiap bulan lewat Tandai dipotong dan Tandai dikembalikan (izin mengelola piutang).",
           "Bila ada beban barang hilang yang ditanggung salesman, kolomnya tampil di tabel ini dan kantor menandai jumlah yang sudah dipotong per bulan. Bebannya ditetapkan di SPG → Barang hilang oleh pemegang izin memutuskan penanggung (bawaannya hanya admin); batas potongan per pembayaran diatur di Pengaturan → SPG.",
         ],
       },

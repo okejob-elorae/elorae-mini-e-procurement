@@ -16,10 +16,10 @@ import type { JumlahHp, TitikTrenHp } from "@/lib/salesman/penjualan-hp";
  *
  * Putus, konsinyasi, dan van ditampilkan TERPISAH atas permintaan pemilik:
  * salesman harus tahu mana omzet yang sudah pasti (putus, van) dan mana barang
- * titipan yang belum tentu laku (konsi). Aturan mutlak: rupiah konsinyasi tidak
- * pernah sampai ke HP — jadi rupiah di kartu ini (total, capaian target, grafik)
- * hanya putus + van, dan konsinyasi tampil sebagai pcs. Kantor tetap menghitung
- * konsinyasi ke target; kalimat di bawah capaian mengatakannya.
+ * titipan yang laku di toko (konsi). HP salesman menampilkan konsinyasi lengkap
+ * (pemilik P56, 2026-11-02): total, capaian target, dan grafik memakai omzet
+ * yang sama dengan kantor — putus + konsi + van — dan konsinyasi tampil sebagai
+ * rupiah dengan pcs lakunya di bawahnya.
  *
  * Grafik 30 hari dulu kartu sendiri di dasar beranda — di luar layar pertama,
  * jadi jarang terlihat. Di sini ia garis kecil di bawah angka yang sama-sama
@@ -31,7 +31,8 @@ import type { JumlahHp, TitikTrenHp } from "@/lib/salesman/penjualan-hp";
 const nada = (persen: number) => `color-mix(in oklab, var(--primary-foreground) ${persen}%, transparent)`;
 const KANAL = [
   { kunci: "putus", label: "channelPutus", warna: nada(90) },
-  { kunci: "van", label: "channelVan", warna: nada(40) },
+  { kunci: "konsi", label: "channelKonsi", warna: nada(60) },
+  { kunci: "van", label: "channelVan", warna: nada(35) },
 ] as const;
 
 const langgananGerak = (cb: () => void) => {
@@ -65,7 +66,7 @@ export function KartuBulanIni({
     () => true,
   );
 
-  // bandingkanPeriode bekerja pada dua kanal; di sini semua (putus + van) di satu.
+  // bandingkanPeriode bekerja pada dua kanal; di sini semua (putus + konsi + van) di satu.
   const dilipat = useMemo(() => tren.map((x) => ({ tanggal: x.tanggal, marketplace: 0, lapangan: x.nilai })), [tren]);
   const banding = bandingkanPeriode(dilipat, 30);
   // "Rp 0 · ▼ 100%" tidak menyebut dari berapa turunnya — kalimatnya dari
@@ -85,7 +86,7 @@ export function KartuBulanIni({
       <p className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">
         <AngkaNaik nilai={bulanIni.total} format={formatIDR} />
       </p>
-      <p className="text-xs opacity-80">{t("totalPutusVan")}</p>
+      <p className="text-xs opacity-80">{t("totalSemuaKanal")}</p>
 
       {kemajuan ? (
         <>
@@ -108,8 +109,6 @@ export function KartuBulanIni({
               ? t("targetReached")
               : t("targetPerDay", { amount: formatIDR(kemajuan.perHari ?? 0), days: kemajuan.sisaHari })}
           </p>
-          {/* Jujur soal dasar persennya: konsi ikut target di kantor, tapi tidak dihitung di sini. */}
-          {bulanIni.pcsKonsi > 0 ? <p className="mt-1 text-[11px] opacity-80">{t("targetKonsiNote")}</p> : null}
         </>
       ) : (
         // Salesman tidak bisa mengatur targetnya sendiri — kalimatnya menyebut
@@ -124,7 +123,7 @@ export function KartuBulanIni({
         </Link>
       ) : null}
 
-      {/* Rincian per kanal: batang bagian (rupiah putus + van) + angka masing-masing; konsi dalam pcs. */}
+      {/* Rincian per kanal: batang bagian (rupiah putus + konsi + van) + angka masing-masing. */}
       {bulanIni.total > 0 && kanal.length > 1 ? (
         <div className="mt-3 flex h-1.5 overflow-hidden rounded-full" style={{ background: nada(15) }} aria-hidden>
           {kanal.filter((k) => bulanIni[k.kunci] > 0).map((k) => (
@@ -132,30 +131,28 @@ export function KartuBulanIni({
           ))}
         </div>
       ) : null}
-      <dl className={kanal.length === 2 ? "mt-2 grid grid-cols-3 gap-2" : "mt-2 grid grid-cols-2 gap-2"}>
+      {/* Satu baris per kanal: rupiah di HP tidak pernah dipotong, jadi tidak dijejalkan tiga kolom. */}
+      <dl className="mt-2 space-y-1">
         {kanal.map((k) => (
-          <div key={k.kunci} className="min-w-0">
-            <dt className="flex items-center gap-1.5 text-[11px] opacity-80">
-              <span aria-hidden className="h-2 w-2 shrink-0 rounded-sm" style={{ background: k.warna }} />
-              {t(k.label)}
+          <div key={k.kunci} className="flex items-start justify-between gap-3">
+            <dt className="flex items-start gap-1.5 text-[11px] opacity-80">
+              <span aria-hidden className="mt-1 h-2 w-2 shrink-0 rounded-sm" style={{ background: k.warna }} />
+              <span>
+                {t(k.label)}
+                {k.kunci === "konsi" && bulanIni.pcsKonsi > 0 ? (
+                  <span className="block">{t("konsiPcs", { n: angka.format(bulanIni.pcsKonsi) })}</span>
+                ) : null}
+              </span>
             </dt>
-            <dd className="truncate text-sm font-semibold tabular-nums">{formatIDR(bulanIni[k.kunci])}</dd>
+            <dd className="text-right text-sm font-semibold tabular-nums">{formatIDR(bulanIni[k.kunci])}</dd>
           </div>
         ))}
-        {/* Konsinyasi: pcs saja, tidak masuk batang rupiah di atas. */}
-        <div className="min-w-0">
-          <dt className="flex items-center gap-1.5 text-[11px] opacity-80">
-            <span aria-hidden className="h-2 w-2 shrink-0 rounded-sm border" style={{ borderColor: nada(55) }} />
-            {t("channelKonsi")}
-          </dt>
-          <dd className="truncate text-sm font-semibold tabular-nums">{t("konsiPcs", { n: angka.format(bulanIni.pcsKonsi) })}</dd>
-        </div>
       </dl>
 
       {/* Arah 30 hari terakhir. */}
       <div className="mt-3 border-t pt-2.5" style={{ borderColor: nada(18) }}>
         <div className="flex items-baseline justify-between gap-2 text-xs">
-          <span className="opacity-80">{t("trendTitlePutusVan")}</span>
+          <span className="opacity-80">{t("trendTitle")}</span>
           <span className="font-medium tabular-nums">
             {formatIDR(banding.sekarang)}
             {kalimat.jenis === "persen" && banding.sekarang > 0

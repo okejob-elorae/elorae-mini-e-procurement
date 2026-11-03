@@ -65,6 +65,13 @@ export type SaringTugas = {
   status?: StatusTugas | "SEMUA";
   hanyaTerlambat?: boolean;
   storeId?: string;
+  /**
+   * Layar HP orang ini: tagihan konsinyasi hanya terbawa kalau ia pemegang
+   * tokonya SEKARANG (P31, "pemegang toko"). Tugas bisa lebih tua dari rotasi
+   * toko — ditugaskan ke pemegang lama, lalu tokonya dipindah — dan nominalnya
+   * tidak boleh ikut pindah ke HP yang salah. Kosong = layar kantor, semuanya.
+   */
+  penagihId?: string;
 };
 
 const nama = (u: { name: string | null; email: string } | undefined) => u?.name ?? u?.email ?? "—";
@@ -98,7 +105,7 @@ export async function daftarTugasTagih(saring: SaringTugas = {}, hariIni = new D
   const [piutang, users, stores, jejak] = await Promise.all([
     semuaId.length ? daftarPiutang({ receivableIds: semuaId }) : Promise.resolve([] as BarisPiutang[]),
     prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } }),
-    prisma.store.findMany({ where: { id: { in: storeIds } }, select: { id: true, name: true } }),
+    prisma.store.findMany({ where: { id: { in: storeIds } }, select: { id: true, name: true, salesmanId: true } }),
     tertutup.length
       ? prisma.auditLog.findMany({
           where: {
@@ -117,23 +124,30 @@ export async function daftarTugasTagih(saring: SaringTugas = {}, hariIni = new D
   const piutangById = new Map(piutang.map((p) => [p.id, p]));
   const userById = new Map(users.map((u) => [u.id, u]));
   const tokoById = new Map(stores.map((s) => [s.id, s.name]));
+  const pemegangById = new Map(stores.map((s) => [s.id, s.salesmanId]));
   const jejakTerakhir = new Map<string, (typeof jejak)[number]>();
   for (const j of jejak) if (!jejakTerakhir.has(j.entityId)) jejakTerakhir.set(j.entityId, j);
 
-  const hasil = rows.map((r): BarisTugasTagih => {
+  // P31: di HP, tagihan konsinyasi hanya untuk pemegang toko sekarang.
+  const tersembunyi = (p: BarisPiutang) =>
+    saring.penagihId !== undefined && p.konsi && pemegangById.get(p.storeId) !== saring.penagihId;
+
+  const semuaTugas = rows.map((r): BarisTugasTagih | null => {
     const ids = idsPerTugas.get(r.id) ?? [];
-    const faktur = ids
-      .map((id) => piutangById.get(id))
-      .filter((p): p is BarisPiutang => p !== undefined)
-      .map((p) => ({
-        id: p.id,
-        invoiceNo: p.invoiceNo,
-        dueDate: p.dueDate,
-        amount: p.amount,
-        sisa: p.outstanding,
-        keadaan: p.keadaan,
-        noKlaim: p.alasan.noKlaim ?? null,
-      }));
+    const ditemukan = ids.map((id) => piutangById.get(id)).filter((p): p is BarisPiutang => p !== undefined);
+    const terlihat = ditemukan.filter((p) => !tersembunyi(p));
+    // Tugas yang seluruh fakturnya tagihan konsi milik pemegang lain tidak dibawa sama sekali —
+    // kartu tanpa faktur hanya menyuruh datang ke toko yang tagihannya bukan untuknya.
+    if (terlihat.length === 0 && ditemukan.length > 0) return null;
+    const faktur = terlihat.map((p) => ({
+      id: p.id,
+      invoiceNo: p.invoiceNo,
+      dueDate: p.dueDate,
+      amount: p.amount,
+      sisa: p.outstanding,
+      keadaan: p.keadaan,
+      noKlaim: p.alasan.noKlaim ?? null,
+    }));
     const st = bacaStatusTugas(r.status);
     const j = jejakTerakhir.get(r.id);
     return {
@@ -151,7 +165,8 @@ export async function daftarTugasTagih(saring: SaringTugas = {}, hariIni = new D
       note: r.note,
       faktur,
       totalSisa: faktur.reduce((s, f) => s + f.sisa, 0),
-      hilang: ids.length - faktur.length,
+      // Yang disembunyikan untuk penonton ini tidak "hilang": barisnya ada, hanya bukan untuknya.
+      hilang: ids.length - ditemukan.length,
       penutup: j
         ? {
             catatan: j.reason,
@@ -163,6 +178,7 @@ export async function daftarTugasTagih(saring: SaringTugas = {}, hariIni = new D
     };
   });
 
+  const hasil = semuaTugas.filter((b): b is BarisTugasTagih => b !== null);
   const tampil = saring.hanyaTerlambat ? hasil.filter((b) => b.keadaan === "TERLAMBAT") : hasil;
   // Yang terlambat dulu, lalu tenggat terdekat — urutan kerja, bukan urutan dibuat.
   const URUT: KeadaanTugas[] = ["TERLAMBAT", "BERJALAN", "DILAPORKAN", "LUNAS", "SELESAI", "DIBATALKAN"];
@@ -174,9 +190,15 @@ export async function daftarTugasTagih(saring: SaringTugas = {}, hariIni = new D
   );
 }
 
-/** Tugas terbuka milik satu orang lapangan — untuk layar Tagihan di HP. */
+/**
+ * Tugas terbuka milik satu orang lapangan — untuk layar Tagihan di HP.
+ *
+ * Tagihan konsinyasi di tugasnya hanya terbawa selama ia pemegang tokonya
+ * (P31): tugas yang ditugaskan sebelum toko dirotasi tidak membawa nominal
+ * konsi ke pemegang lama. Laporannya pun ditolak `pelaporBolehMelaporkan`.
+ */
 export function tugasTagihSaya(userId: string, hariIni = new Date()): Promise<BarisTugasTagih[]> {
-  return daftarTugasTagih({ assigneeId: userId, status: STATUS_TUGAS.TERBUKA }, hariIni);
+  return daftarTugasTagih({ assigneeId: userId, status: STATUS_TUGAS.TERBUKA, penagihId: userId }, hariIni);
 }
 
 /**
@@ -206,6 +228,8 @@ export type FakturCalonTugas = {
   doc: string | null;
   /** Nama petugas kalau faktur ini sudah berada di tugas terbuka lain. */
   ditugaskanKe: string | null;
+  /** Tagihan konsinyasi — hanya boleh ditugaskan ke pemegang toko (P31). */
+  konsi: boolean;
 };
 
 export type BahanTugasBaru = {
@@ -265,6 +289,7 @@ export async function bahanTugasBaru(): Promise<BahanTugasBaru> {
       keadaanTampil: p.keadaanTampil,
       doc: p.alasan.noKlaim ?? p.alasan.noKontrabon ?? null,
       ditugaskanKe: ditugaskan.get(p.id) ?? null,
+      konsi: p.konsi,
     });
     const t = toko.get(p.storeId) ?? { id: p.storeId, name: p.storeName, total: 0, jumlah: 0, petugasBawaan: "" };
     t.total += p.outstanding;
@@ -272,11 +297,16 @@ export async function bahanTugasBaru(): Promise<BahanTugasBaru> {
     toko.set(p.storeId, t);
   }
   for (const t of toko.values()) {
-    t.petugasBawaan = petugasBawaan({
-      pemegangId: pemegang.get(t.id) ?? null,
-      penjualIds: (fakturPerToko[t.id] ?? []).map((f) => penjualById.get(f.id) ?? null),
-      petugasLapangan: lapangan,
-    });
+    const faktur = fakturPerToko[t.id] ?? [];
+    // Toko yang punya tagihan konsinyasi: petugasnya pemegang toko saja (P31) —
+    // atau kosong, dan formulirnya menolak menyimpan sampai dipilih pemegangnya.
+    t.petugasBawaan = faktur.some((f) => f.konsi)
+      ? (pemegang.get(t.id) ?? "")
+      : petugasBawaan({
+          pemegangId: pemegang.get(t.id) ?? null,
+          penjualIds: faktur.map((f) => penjualById.get(f.id) ?? null),
+          petugasLapangan: lapangan,
+        });
   }
 
   return {

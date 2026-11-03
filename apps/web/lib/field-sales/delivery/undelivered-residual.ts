@@ -4,9 +4,10 @@
  * not lend negative headroom to a sibling order's shortfall, so callers add up the per-order
  * results, not the raw differences.
  *
- * Shared by credit exposure, the dashboard's awaiting-delivery bucket and the store order
- * summary so the three cannot disagree on what "undelivered" is worth. Import-free on purpose:
- * callers convert Decimal columns with `Number()` before passing them in.
+ * Now used only by the dashboard awaiting-delivery bucket and the store order summary; credit
+ * exposure measures the order's own open quantity (`nilaiBelumDinota`), and both remaining callers
+ * move to it once a voided or corrected nota (P16/P25, P24) can leave a phantom residual here
+ * (FOLLOWUPS). Import-free on purpose: callers convert Decimal columns with `Number()` first.
  */
 export function undeliveredResidual(orderTotal: number, deliveredTotals: number[]): number {
   const delivered = deliveredTotals.reduce((sum, total) => sum + total, 0);
@@ -93,4 +94,42 @@ export function deliveredLineNetValues(delivery: {
   }
 
   return delivery.lines.map((_, i) => (grossCents[i] - lineDiscountCents[i] - shares[i]) / 100);
+}
+
+/** One order line as `nilaiBelumDinota` reads it (Decimals converted with `Number()`). */
+export type BarisBelumDinota = {
+  qty: number;
+  deliveredQty: number;
+  cancelledQty: number;
+  lineTotal: number;
+  discountAmount: number;
+};
+
+/**
+ * What an approved putus order still owes that is on NO nota (Q10), measured from the order's own
+ * open quantity: open = max(0, qty − deliveredQty − cancelledQty) per line, valued at the line's
+ * gross less its line discount and its pro-rata share of the order discount — the same pro-rata
+ * keys `allocateDeliveryDiscounts` uses. Because it follows the order lines, it stays right after a
+ * nota is voided (P16/P25: the pieces reopen on the order) or corrected at handover (P24: refused
+ * pieces reopen, lost pieces do not). Unrounded per delivery, so it can differ by the planner's sen
+ * rounding from `total − Σ deliveredGoodsValue`. Lines with qty ≤ 0 are ignored; a fully open order
+ * returns its own total; floored at zero. Computed in sen.
+ */
+export function nilaiBelumDinota(order: { total: number; orderDiscountAmount: number; lines: BarisBelumDinota[] }): number {
+  const baris = order.lines.filter((l) => l.qty > 0);
+  const terbuka = baris.map((l) => Math.max(0, l.qty - l.deliveredQty - l.cancelledQty));
+  if (baris.length > 0 && baris.every((l, i) => terbuka[i] === l.qty)) return Math.max(0, order.total);
+  if (terbuka.reduce((s, n) => s + n, 0) === 0) return 0;
+  let grossTerbuka = 0;
+  let diskonBarisTerbuka = 0;
+  let grossSemua = 0;
+  baris.forEach((l, i) => {
+    const grossSen = Math.round(l.lineTotal * 100);
+    const diskonSen = Math.round(l.discountAmount * 100);
+    grossSemua += grossSen;
+    grossTerbuka += (grossSen * terbuka[i]) / l.qty;
+    diskonBarisTerbuka += (diskonSen * terbuka[i]) / l.qty;
+  });
+  const diskonPesananTerbuka = grossSemua > 0 ? (Math.round(order.orderDiscountAmount * 100) * grossTerbuka) / grossSemua : 0;
+  return Math.max(0, Math.round(grossTerbuka - diskonBarisTerbuka - diskonPesananTerbuka)) / 100;
 }

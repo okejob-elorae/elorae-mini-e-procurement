@@ -112,7 +112,7 @@ d("createItem and updateItem refuse a cross-item SKU or barcode collision (test 
 
   it("createItem refuses a finished-good colour absent from the colour master", async () => {
     await expect(
-      createItem(payload({ sku: `${skuB}-FG`, type: "FINISHED_GOOD", variants: [{ Warna: `Zz${token}`, Ukuran: "M" }] })),
+      createItem(payload({ sku: `${skuB}-FG`, type: "FINISHED_GOOD", salesChannel: "BOTH", variants: [{ Warna: `Zz${token}`, Ukuran: "M" }] })),
     ).rejects.toBeInstanceOf(ColorsNotInMasterError);
   });
 });

@@ -10,6 +10,7 @@ import {
   type KeadaanInden,
   type RingkasBarang,
 } from "./inden";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 
 /**
  * Bacaan pre-order (inden). Keadaan jendela selalu dihitung dari jam saat
@@ -213,10 +214,14 @@ export async function rincianJendelaInden(id: string): Promise<RincianJendelaInd
   };
 }
 
-/** Barang yang boleh dimasukkan ke jendela: barang jadi yang aktif. */
+/**
+ * Barang yang boleh dimasukkan ke jendela: barang jadi yang aktif dan dijual offline. Pre-order
+ * adalah katalog salesman, dan barang "Marketplace saja" tidak pernah muncul di katalog salesman
+ * (pemilik P3a).
+ */
 export async function pilihanBarangInden(): Promise<Array<{ id: string; sku: string; nameId: string; categoryName: string | null }>> {
   const rows = await prisma.item.findMany({
-    where: { isActive: true, type: "FINISHED_GOOD" },
+    where: { isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() },
     orderBy: { sku: "asc" },
     select: { id: true, sku: true, nameId: true, category: { select: { name: true } } },
   });
@@ -303,7 +308,8 @@ export async function jendelaUntukKatalog(
   const barang = await prisma.preorderWindowItem.findMany({ where: { windowId }, select: { itemId: true } });
   const [rows, g] = await Promise.all([
     prisma.item.findMany({
-      where: { id: { in: barang.map((b) => b.itemId) }, isActive: true, type: "FINISHED_GOOD" },
+      // Barang yang sesudah masuk jendela dijadikan "Marketplace saja" tidak ditawarkan lagi (P3a).
+      where: { id: { in: barang.map((b) => b.itemId) }, isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() },
       orderBy: { nameId: "asc" },
       select: {
         id: true,

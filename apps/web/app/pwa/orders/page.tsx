@@ -43,6 +43,7 @@ export default async function PesananSayaPage({
         orderType: b.orderType,
         keadaan: b.keadaan,
         total: b.total,
+        perkiraan: b.perkiraan,
         /*
          * Tanggal diformat di server: format tanggal di klien bisa berbeda antara
          * Node dan Safari (hydration error). Bahasa aplikasi hanya diketahui klien

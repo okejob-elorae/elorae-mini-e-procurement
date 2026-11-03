@@ -51,6 +51,10 @@ type KirimanForm = {
   opnameSesudah?: string | null;
   /** Pengiriman yang membawa kiriman ini dan sisa pesanannya (putus/konsi); tanpa harga. */
   antaran?: InfoAntaran | null;
+  /** Kiriman gudang lewat pengiriman: boleh dicatat "Ditolak, dibawa pulang kurir" (P40). */
+  bolehDitolak?: boolean;
+  /** Pengirimannya belum dikonfirmasi ekspedisi/kurir — barangnya masih tercatat di jalan. */
+  dalamPerjalanan?: boolean;
 };
 
 const KODE_GALAT = new Set([
@@ -65,9 +69,12 @@ const KODE_GALAT = new Set([
   "SIKLUS_TERKUNCI",
   "RUSAK_TIDAK_VALID",
   "KETERANGAN_RUSAK_WAJIB",
+  "KIRIMAN_DIBATALKAN",
+  "BELUM_BERANGKAT",
+  "CATATAN_STOK_TIDAK_COCOK",
 ]);
 /** Kiriman ini sudah tidak bisa diterima dari layar ini — kembali ke daftar. */
-const KODE_KEMBALI = new Set(["KIRIMAN_TIDAK_DITEMUKAN", "SUDAH_DITERIMA"]);
+const KODE_KEMBALI = new Set(["KIRIMAN_TIDAK_DITEMUKAN", "SUDAH_DITERIMA", "KIRIMAN_DIBATALKAN"]);
 const QTY_MAKS = 100_000;
 
 const angka = (s: string | undefined) => (s === undefined || s === "" ? null : Number(s));
@@ -130,6 +137,8 @@ export function FormTerima({
   const [diterima, setDiterima] = useState<Record<string, string>>(() =>
     Object.fromEntries((kiriman?.lines ?? []).map((l) => [l.lineId, String(l.qty)])),
   );
+  // Ditolak di depan pintu, dibawa pulang kurir (P40): kembali ke gudang, tidak ditagih/dititipkan.
+  const [ditolak, setDitolak] = useState<Record<string, string>>({});
   const [catatan, setCatatan] = useState("");
   const [konfirmasi, setKonfirmasi] = useState(false);
   // Barang rusak per baris: tetap dihitung DITERIMA (tiba), tapi tidak masuk
@@ -163,7 +172,16 @@ export function FormTerima({
     const n = angka(diterima[l.lineId]);
     return n !== null && Number.isInteger(n) && n >= 0 && n <= QTY_MAKS;
   });
-  const adaLebih = mutasi && lines.some((l) => (angka(diterima[l.lineId]) ?? 0) > l.qty);
+  const bolehDitolak = kiriman.bolehDitolak === true;
+  const tolakDari = (lineId: string) => (bolehDitolak ? (angka(ditolak[lineId]) ?? 0) : 0);
+  const tolakSah = lines.every((l) => {
+    const t0 = tolakDari(l.lineId);
+    return Number.isInteger(t0) && t0 >= 0;
+  });
+  // Kiriman gudang: tiba + ditolak tidak pernah melebihi isi surat jalan / nota (server menolaknya juga).
+  const adaLebih =
+    (mutasi && lines.some((l) => (angka(diterima[l.lineId]) ?? 0) > l.qty)) ||
+    (bolehDitolak && lines.some((l) => (angka(diterima[l.lineId]) ?? 0) + tolakDari(l.lineId) > l.qty));
 
   /** Jumlah rusak yang berlaku untuk satu baris (0 kalau isiannya ditutup atau kosong). */
   const rusakDari = (lineId: string) => {
@@ -181,10 +199,12 @@ export function FormTerima({
   // Kekurangan PERTAMA menurut urutan isian — kalimat di bawah tombol simpan.
   const kurang = !sudahCheckIn
     ? t("form.needCheckIn")
-    : !semuaSah
+    : !semuaSah || !tolakSah
       ? t("form.fillAll")
       : adaLebih
-        ? t("form.overTransfer")
+        ? bolehDitolak
+          ? t("form.overSentWithRefused")
+          : t("form.overTransfer")
         : rusakSalah
           ? tr("form.kurangJumlah", { name: rusakSalah.productName })
           : rusakTanpaKet
@@ -194,7 +214,11 @@ export function FormTerima({
   const totalTerima = lines.reduce((n, l) => n + (angka(diterima[l.lineId]) ?? 0), 0);
   // Kurang per baris (kelebihan satu baris tidak menutup kurang baris lain) — dasar
   // catatan "kurang di perjalanan" di server, jadi layar membaca angka yang sama.
-  const selisihKirim = hitungSelisihTerima(lines.map((l) => ({ qtySent: l.qty, qtyReceived: angka(diterima[l.lineId]) ?? 0 })));
+  // Yang ditolak di pintu tidak pernah menjadi kekurangan: dasar selisihnya = dikirim − ditolak.
+  const selisihKirim = hitungSelisihTerima(
+    lines.map((l) => ({ qtySent: l.qty - tolakDari(l.lineId), qtyReceived: angka(diterima[l.lineId]) ?? 0 })),
+  );
+  const totalDitolak = lines.reduce((n, l) => n + tolakDari(l.lineId), 0);
   const antaran = kiriman.antaran ?? null;
   const pengiriman = antaran?.pengiriman ?? null;
   const kurangPerjalanan = pengiriman && semuaSah ? selisihKirim.kurang : 0;
@@ -236,6 +260,7 @@ export function FormTerima({
             productName: l.productName,
             qtySent: l.qty,
             qtyReceived: Number(diterima[l.lineId]),
+            ...(tolakDari(l.lineId) > 0 ? { qtyRefused: tolakDari(l.lineId) } : {}),
             ...(r && n > 0
               ? {
                   qtyDamaged: n,
@@ -305,6 +330,7 @@ export function FormTerima({
               return {
                 lineId: l.lineId,
                 qtyReceived: Number(diterima[l.lineId]),
+                ...(tolakDari(l.lineId) > 0 ? { qtyRefused: tolakDari(l.lineId) } : {}),
                 ...(r && n > 0 ? { qtyDamaged: n, damageNote: r.catatan.trim(), damagePhotoUrl: urlFoto.get(l.lineId) ?? null } : {}),
               };
             }),
@@ -386,6 +412,9 @@ export function FormTerima({
         <PerluCheckIn judul={t("checkIn.title")} isi={t("checkIn.body")} tombol={t("checkIn.cta")} />
       ) : null}
 
+      {kiriman.dalamPerjalanan ? (
+        <p className="beranda-kartu text-sm text-muted-foreground">{t("form.inTransitNote")}</p>
+      ) : null}
       {kiriman.opnameSesudah ? (
         <p role="note" className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
           {t("form.opnameAfter", { tanggal: kiriman.opnameSesudah })}
@@ -473,6 +502,25 @@ export function FormTerima({
                       <Plus className="h-4 w-4" />
                     </Button>
                   </div>
+                  {bolehDitolak ? (
+                    <div className="flex items-center gap-2">
+                      <label htmlFor={`tolak-${l.lineId}`} className="min-w-0 flex-1 text-xs text-muted-foreground">
+                        {t("form.refusedLabel")}
+                      </label>
+                      <Input
+                        id={`tolak-${l.lineId}`}
+                        value={ditolak[l.lineId] ?? ""}
+                        placeholder="0"
+                        onChange={(e) =>
+                          setDitolak((lama) => ({ ...lama, [l.lineId]: e.target.value.replace(/\D/g, "").slice(0, 6) }))
+                        }
+                        inputMode="numeric"
+                        aria-label={t("form.refusedFor", { name: l.productName })}
+                        disabled={pending}
+                        className="w-20 text-center tabular-nums"
+                      />
+                    </div>
+                  ) : null}
                   <BarisRusak
                     lineId={l.lineId}
                     namaBarang={l.productName}
@@ -497,6 +545,15 @@ export function FormTerima({
           <span className="text-muted-foreground">{t("form.totalReceived")}</span>
           <span className="font-semibold tabular-nums">{totalTerima}</span>
         </p>
+        {totalDitolak > 0 ? (
+          <p className="flex justify-between gap-2">
+            <span className="text-muted-foreground">{t("form.totalRefused")}</span>
+            <span className="font-semibold tabular-nums">{totalDitolak}</span>
+          </p>
+        ) : null}
+        {bolehDitolak && selisihKirim.kurang > 0 ? (
+          <p className="text-xs text-muted-foreground">{t("form.restIsLost", { pcs: selisihKirim.kurang })}</p>
+        ) : null}
         {totalRusak > 0 ? (
           <p className="flex justify-between gap-2">
             <span className="text-muted-foreground">{tr("form.totalRusak")}</span>

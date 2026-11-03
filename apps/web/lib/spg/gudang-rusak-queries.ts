@@ -65,17 +65,26 @@ async function asalPerBarisNri(klien: Klien, lineIds: string[]): Promise<Map<str
               items: { select: { itemId: true, variantSku: true, condition: true, spgSaleReturnLineId: true, storeReceiptLineId: true } },
             },
           },
+          // Hitungan SUSULAN tidak berpasangan dengan nota toko; nota asalnya `followUpOf`.
+          followUpOf: {
+            select: {
+              noNrt: true,
+              store: { select: { name: true } },
+              items: { select: { itemId: true, variantSku: true, condition: true, spgSaleReturnLineId: true, storeReceiptLineId: true } },
+            },
+          },
         },
       },
     },
   });
   for (const r of rows) {
     const nri = r.warehouseReturn;
+    const nota = nri.storeReturn ?? nri.followUpOf;
     hasil.set(r.id, {
       noNri: nri.noNri,
-      toko: nri.store?.name ?? nri.storeReturn?.store.name ?? null,
-      noNrt: nri.storeReturn?.noNrt ?? null,
-      asal: asalBarisNri(r, nri.storeReturn),
+      toko: nri.store?.name ?? nota?.store.name ?? null,
+      noNrt: nota?.noNrt ?? null,
+      asal: asalBarisNri(r, nota),
     });
   }
   return hasil;

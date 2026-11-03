@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tabInventori } from "./tab-inventori";
+import { konfirmasiGrnDariUrl, tabInventori } from "./tab-inventori";
 
 /*
  * Tab halaman Inventori sekarang ditulis ke `?tab=` (dulu hanya dibaca saat
@@ -17,5 +17,23 @@ describe("tabInventori", () => {
     expect(tabInventori(null)).toBe("stock");
     expect(tabInventori("")).toBe("stock");
     expect(tabInventori("<script>")).toBe("stock");
+  });
+});
+
+/*
+ * Tautan Beranda "GRN tanpa PO menunggu konfirmasi" membuka `?tab=grn&konfirmasi=menunggu`; dulu
+ * halaman tidak membaca `konfirmasi`, jadi angka Beranda membuka daftar GRN lengkap.
+ */
+describe("konfirmasiGrnDariUrl", () => {
+  it("menunggu → saringan menunggu konfirmasi", () => {
+    expect(konfirmasiGrnDariUrl("menunggu")).toBe("menunggu");
+  });
+
+  it("kosong atau tidak dikenal → tanpa saringan", () => {
+    expect(konfirmasiGrnDariUrl(null)).toBeNull();
+    expect(konfirmasiGrnDariUrl(undefined)).toBeNull();
+    expect(konfirmasiGrnDariUrl("")).toBeNull();
+    expect(konfirmasiGrnDariUrl("dikonfirmasi")).toBeNull();
+    expect(konfirmasiGrnDariUrl("MENUNGGU")).toBeNull();
   });
 });

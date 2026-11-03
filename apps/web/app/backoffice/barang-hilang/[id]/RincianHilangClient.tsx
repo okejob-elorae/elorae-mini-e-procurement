@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { nadaPenanggung, nadaStatusHilang } from "../tampilan";
 import { KeputusanHilangDialog } from "./KeputusanHilangDialog";
 import { BatalkanHilang, TandaiTokoDitagih } from "./TombolHilangKantor";
+import { KlaimEkspedisiPanel, type BuktiKlaimEkspedisi } from "./KlaimEkspedisiPanel";
 
 type Orang = { spg: { id: string; nama: string; toko: string | null }[]; sales: { id: string; nama: string }[] };
 
@@ -24,23 +25,37 @@ export function RincianHilangClient({
   rincian: r,
   bolehKelola,
   bolehPutus,
+  bolehPeriksa = false,
   orang,
+  klaim = null,
+  userId = "",
 }: {
   rincian: RincianHilangKantor;
-  /** `receivables:manage`: tandai toko ditagih, batalkan yang masih TERBUKA. */
+  /** `receivables:manage`: tandai toko ditagih, batalkan yang masih TERBUKA, catat jawaban ekspedisi. */
   bolehKelola: boolean;
-  /** `receivables:decide_bearer`: putuskan, ubah, dan batalkan keputusan. */
+  /** `receivables:decide_bearer`: putuskan, ubah, dan batalkan keputusan; ubah nilai klaim ekspedisi. */
   bolehPutus: boolean;
+  /** `payments:verify`: periksa pembayaran klaim ekspedisi ke mutasi rekening. */
+  bolehPeriksa?: boolean;
   orang: Orang;
+  /** Bukti dan klaim ekspedisi bila catatan ini berasal dari sebuah pengiriman. */
+  klaim?: BuktiKlaimEkspedisi | null;
+  userId?: string;
 }) {
   const t = useTranslations("barangHilang");
   const td = dinamis(t);
   const tAudit = useTranslations("auditActions");
 
+  // Klaim ekspedisi yang masih diajukan atau menunggu cek mengunci keputusannya: penulis menolak
+  // "Ubah keputusan" dan pembatalan dengan KLAIM_MENUNGGU sampai klaimnya dibayar atau ditolak.
+  const klaimBerjalan = r.bagian.some(
+    (b) => b.bearer === "EKSPEDISI" && (b.klaim?.status === "DIAJUKAN" || b.klaim?.status === "MENUNGGU_CEK"),
+  );
   const bisaPutuskan = bolehPutus && r.status === "TERBUKA";
-  const bisaUbah = bolehPutus && (r.status === "DITETAPKAN" || r.status === "SELESAI") && !r.terkunci;
+  const bisaUbah = bolehPutus && (r.status === "DITETAPKAN" || r.status === "SELESAI") && !r.terkunci && !klaimBerjalan;
   // Sama dengan `batalkanBarangHilangAction`: yang TERBUKA milik pengelola, keputusan milik pemutus.
-  const bisaBatal = r.status !== "DIBATALKAN" && !r.terkunci && (r.status === "TERBUKA" ? bolehKelola : bolehPutus);
+  const bisaBatal =
+    r.status !== "DIBATALKAN" && !r.terkunci && !klaimBerjalan && (r.status === "TERBUKA" ? bolehKelola : bolehPutus);
   const totalDiubah = keSen(r.total) !== keSen(r.nilaiBarang);
   // Bagian SPG/sales yang sudah dikurangi keringanan diskon pegawai (dari jejak keputusannya).
   const diringankan = (b: { bearer: string; orang: { id: string } | null }) =>
@@ -122,6 +137,7 @@ export function RincianHilangClient({
         </p>
       ) : null}
       {r.terkunci && r.status !== "DIBATALKAN" ? <p className="text-sm text-muted-foreground">{t("rincian.terkunci")}</p> : null}
+      {klaimBerjalan && bolehPutus && !r.terkunci ? <p className="text-sm text-muted-foreground">{t("rincian.klaimBerjalan")}</p> : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card>
@@ -226,6 +242,16 @@ export function RincianHilangClient({
         </CardContent>
       </Card>
 
+      {klaim ? (
+        <KlaimEkspedisiPanel
+          klaim={klaim}
+          bolehMengelola={bolehKelola}
+          bolehMemeriksa={bolehPeriksa}
+          bolehMengubahNilai={bolehPutus}
+          userId={userId}
+        />
+      ) : null}
+
       {r.bagian.length > 0 ? (
         <Card>
           <CardHeader>
@@ -256,7 +282,14 @@ export function RincianHilangClient({
                     <TableRow key={b.id} className="align-top">
                       <TableCell className="min-w-[12rem] whitespace-normal">
                         <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", nadaPenanggung(b.bearer))}>{td(`penanggung.${b.bearer}`)}</span>
-                        <span className="mt-1 block font-medium">{b.orang?.nama ?? (b.bearer === "TOKO" ? r.toko?.name : t("rincian.elorae"))}</span>
+                        <span className="mt-1 block font-medium">
+                          {b.orang?.nama ??
+                            (b.bearer === "TOKO"
+                              ? r.toko?.name
+                              : b.bearer === "EKSPEDISI"
+                                ? (r.buktiKlaim?.ekspedisi ?? t("keputusan.ekspedisi"))
+                                : t("rincian.elorae"))}
+                        </span>
                         {diringankan(b) ? (
                           <span className="mt-0.5 block text-xs text-muted-foreground">
                             {t("rincian.bagianDiringankan", { persen: r.keringanan?.persen ?? 0, nilai: formatIDR(diringankan(b)?.sebelum ?? 0) })}
@@ -301,5 +334,5 @@ export function RincianHilangClient({
   );
 }
 
-const REF_DIKENAL = ["ConsignmentCycle", "TagihanTokoManual", "KomisiSalesman", "SpgCommission", "ConsignmentCommission"];
+const REF_DIKENAL = ["ConsignmentCycle", "TagihanTokoManual", "KomisiSalesman", "SpgCommission", "ConsignmentCommission", "KlaimEkspedisi"];
 const refKunci = (refType: string) => (REF_DIKENAL.includes(refType) ? refType : "LAIN");

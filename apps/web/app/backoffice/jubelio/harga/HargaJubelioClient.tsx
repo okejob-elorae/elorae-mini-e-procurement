@@ -26,14 +26,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { formatRupiah } from "@/lib/format/rupiah";
-import { MAKS_BARIS_KONFIRMASI, selisihHarga, type JenisMenunggu } from "@/lib/jubelio/harga/aturan";
+import { hargaSama, MAKS_BARIS_KONFIRMASI, selisihHarga, type JenisTampilHarga } from "@/lib/jubelio/harga/aturan";
 import type { BarisHargaMenunggu } from "@/lib/jubelio/harga/queries";
-import {
-  batalkanPengajuanJubelioAction,
-  kembalikanHargaErpAction,
-  konfirmasiHargaJubelioAction,
-} from "@/app/actions/jubelio-harga";
+import { kembalikanHargaErpAction, konfirmasiHargaJubelioAction } from "@/app/actions/jubelio-harga";
 import { usePesanGalatJubelio } from "../RincianGalat";
+import { TabelBedaJubelio, type BarisHargaBedaTampil } from "./TabelBedaJubelio";
 
 export type BarisHargaTampil = BarisHargaMenunggu & { diubahPadaTampil: string | null };
 
@@ -41,10 +38,16 @@ type Props = {
   baris: BarisHargaTampil[];
   total: number;
   terpotong: boolean;
-  jenis: JenisMenunggu | null;
+  /** Daftar "Beda di Jubelio" — hanya saat `jenis` = BEDA. */
+  beda: { baris: BarisHargaBedaTampil[]; total: number; terpotong: boolean } | null;
+  /** Barang yang harganya di Jubelio berbeda dengan ERP — spanduk di tampilan lain. */
+  jumlahBeda: number;
+  jenis: JenisTampilHarga | null;
   cari: string;
   /** Barang di Jubelio tanpa harga terkonfirmasi — kirimannya dilewati sampai harganya dikonfirmasi. */
   tanpaHarga: number;
+  /** items:edit — tautan "Ubah 'Dijual di'" ke halaman barang (P76). */
+  bolehUbahBarang: boolean;
 };
 
 const SEMUA = "__semua__";
@@ -53,8 +56,12 @@ const SEMUA = "__semua__";
  * Daftar konfirmasi harga Jubelio. Data dan saringan dari server (URL); di sini hanya pilihan
  * baris dan tombolnya. Setiap tombol memanggil aksi yang digerbangi izin yang sama dengan
  * halamannya (`jubelio_prices:confirm`), jadi tidak ada gerbang tambahan di layar.
+ *
+ * Baris yang juga "Harga di Jubelio berbeda dengan ERP" menyebut harga yang terbaca di Jubelio,
+ * dan setiap dialog yang menimpanya (setujui, kembalikan) menyebut harga yang akan diganti —
+ * penimpaan hanya lewat keputusan yang melihat angkanya (jawaban pemilik P75).
  */
-export function HargaJubelioClient({ baris, total, terpotong, jenis, cari, tanpaHarga }: Props) {
+export function HargaJubelioClient({ baris, total, terpotong, beda, jumlahBeda, jenis, cari, tanpaHarga, bolehUbahBarang }: Props) {
   const t = useTranslations("jubelio.harga");
   const pesanGalat = usePesanGalatJubelio();
   const router = useRouter();
@@ -63,14 +70,14 @@ export function HargaJubelioClient({ baris, total, terpotong, jenis, cari, tanpa
   const [dipilih, setDipilih] = useState<Set<string>>(new Set());
   const [konfirmasiBuka, setKonfirmasiBuka] = useState(false);
   const [kembalikan, setKembalikan] = useState<BarisHargaTampil | null>(null);
-  const [batalkan, setBatalkan] = useState<BarisHargaTampil | null>(null);
 
   const bisaDikirim = useMemo(() => baris.filter((b) => b.alasan == null), [baris]);
   // Diturunkan dari baris yang tampil: pilihan yang barisnya hilang sesudah muat ulang ikut hilang.
   const pilihan = useMemo(() => baris.filter((b) => dipilih.has(b.itemId) && b.alasan == null), [baris, dipilih]);
   const semuaTerpilih = bisaDikirim.length > 0 && pilihan.length === bisaDikirim.length;
+  const pilihanTimpa = useMemo(() => pilihan.filter((b) => b.bedaDiJubelio), [pilihan]);
 
-  const gantiUrl = (perubahan: { jenis?: JenisMenunggu | null; cari?: string }) => {
+  const gantiUrl = (perubahan: { jenis?: JenisTampilHarga | null; cari?: string }) => {
     const p = new URLSearchParams();
     const j = perubahan.jenis === undefined ? jenis : perubahan.jenis;
     const c = perubahan.cari === undefined ? cari : perubahan.cari;
@@ -141,23 +148,17 @@ export function HargaJubelioClient({ baris, total, terpotong, jenis, cari, tanpa
     });
   };
 
-  const jalankanBatalkan = () => {
-    const b = batalkan;
-    if (!b?.diajukanPada) return;
-    startTransition(async () => {
-      const r = await batalkanPengajuanJubelioAction({ itemId: b.itemId, diajukanPada: b.diajukanPada });
-      setBatalkan(null);
-      if (!r.ok) {
-        toast.error(pesanGalat(r));
-        return;
-      }
-      if (r.data.hasil === "DIBATALKAN") toast.success(t("batalkanBerhasil"));
-      else toast.error(t(`galat.${r.data.hasil}`));
-      router.refresh();
-    });
-  };
-
   const harga = (nilai: string | null) => (nilai == null ? t("belumAda") : formatRupiah(nilai));
+  /** Yang terbaca di Jubelio: satu harga, atau rentangnya bila varian berbeda. */
+  const terbaca = (b: { jubelioTertinggi: string | null; jubelioTerendah: string | null }) => {
+    const rp = (v: string | null) => {
+      const n = v == null ? Number.NaN : Number(v);
+      return Number.isFinite(n) && n > 0 ? formatRupiah(n) : t("tanpaHarga");
+    };
+    return b.jubelioTertinggi != null && b.jubelioTerendah != null && !hargaSama(b.jubelioTertinggi, b.jubelioTerendah)
+      ? `${rp(b.jubelioTerendah)}–${rp(b.jubelioTertinggi)}`
+      : rp(b.jubelioTertinggi ?? b.jubelioTerendah);
+  };
 
   return (
     <div className="space-y-6">
@@ -175,7 +176,10 @@ export function HargaJubelioClient({ baris, total, terpotong, jenis, cari, tanpa
             className="pl-9"
           />
         </div>
-        <Select value={jenis ?? SEMUA} onValueChange={(v) => gantiUrl({ jenis: v === "BARU" || v === "UBAH" ? v : null })}>
+        <Select
+          value={jenis ?? SEMUA}
+          onValueChange={(v) => gantiUrl({ jenis: v === "BARU" || v === "UBAH" || v === "BEDA" ? v : null })}
+        >
           <SelectTrigger className="w-[220px]" aria-label={t("colJenis")}>
             <SelectValue />
           </SelectTrigger>
@@ -183,14 +187,27 @@ export function HargaJubelioClient({ baris, total, terpotong, jenis, cari, tanpa
             <SelectItem value={SEMUA}>{t("filterSemua")}</SelectItem>
             <SelectItem value="BARU">{t("filterBaru")}</SelectItem>
             <SelectItem value="UBAH">{t("filterUbah")}</SelectItem>
+            <SelectItem value="BEDA">{t("filterBeda")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {tanpaHarga > 0 ? (
+      {jenis !== "BEDA" && jumlahBeda > 0 ? (
+        <p className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          <span>{t("bedaBanner", { count: jumlahBeda })}</span>
+          <Link href="/backoffice/jubelio/harga?jenis=BEDA" className="font-medium underline underline-offset-2">
+            {t("bedaLihat")}
+          </Link>
+        </p>
+      ) : null}
+
+      {tanpaHarga > 0 && jenis !== "BEDA" ? (
         <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">{t("tanpaHargaInfo", { count: tanpaHarga })}</p>
       ) : null}
 
+      {jenis === "BEDA" && beda ? <TabelBedaJubelio baris={beda.baris} total={beda.total} terpotong={beda.terpotong} /> : null}
+
+      {jenis !== "BEDA" ? (
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -262,7 +279,12 @@ export function HargaJubelioClient({ baris, total, terpotong, jenis, cari, tanpa
                             {b.jenis === "BARU" ? t("jenisBaru") : t("jenisUbah")}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">{harga(b.hargaJubelio)}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          <div>{harga(b.hargaJubelio)}</div>
+                          {b.bedaDiJubelio ? (
+                            <div className="text-xs text-destructive">{t("terbacaDiJubelio", { harga: terbaca(b) })}</div>
+                          ) : null}
+                        </TableCell>
                         <TableCell className="text-right font-medium tabular-nums">{harga(b.hargaErp)}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {selisih ? (
@@ -287,16 +309,16 @@ export function HargaJubelioClient({ baris, total, terpotong, jenis, cari, tanpa
                           ) : b.alasan ? (
                             t(`alasan.${b.alasan}`)
                           ) : null}
+                          {b.jenis === "BARU" && bolehUbahBarang ? (
+                            <Link href={`/backoffice/items/${b.itemId}`} className="block underline underline-offset-2">
+                              {t("ubahDiBarang")}
+                            </Link>
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-right">
                           {b.jenis === "UBAH" && b.hargaJubelio != null ? (
                             <Button variant="ghost" size="sm" disabled={isPending} onClick={() => setKembalikan(b)}>
                               {t("kembalikan")}
-                            </Button>
-                          ) : null}
-                          {b.jenis === "BARU" && b.diajukanPada ? (
-                            <Button variant="ghost" size="sm" disabled={isPending} onClick={() => setBatalkan(b)}>
-                              {t("batalkan")}
                             </Button>
                           ) : null}
                         </TableCell>
@@ -312,6 +334,7 @@ export function HargaJubelioClient({ baris, total, terpotong, jenis, cari, tanpa
           ) : null}
         </CardContent>
       </Card>
+      ) : null}
 
       <AlertDialog open={konfirmasiBuka} onOpenChange={(buka) => !isPending && setKonfirmasiBuka(buka)}>
         <AlertDialogContent>
@@ -319,6 +342,16 @@ export function HargaJubelioClient({ baris, total, terpotong, jenis, cari, tanpa
             <AlertDialogTitle>{t("konfirmasiJudul", { count: pilihan.length })}</AlertDialogTitle>
             <AlertDialogDescription>{t("konfirmasiIsi")}</AlertDialogDescription>
           </AlertDialogHeader>
+          {pilihanTimpa.length > 0 ? (
+            <div className="space-y-1 text-sm">
+              <p className="font-medium text-destructive">{t("konfirmasiTimpaDaftar", { count: pilihanTimpa.length })}</p>
+              <ul className="max-h-48 space-y-0.5 overflow-y-auto tabular-nums">
+                {pilihanTimpa.map((b) => (
+                  <li key={b.itemId}>{t("konfirmasiTimpaBaris", { sku: b.sku, jubelio: terbaca(b), erp: harga(b.hargaErp) })}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{t("batal")}</AlertDialogCancel>
             <AlertDialogAction
@@ -343,6 +376,9 @@ export function HargaJubelioClient({ baris, total, terpotong, jenis, cari, tanpa
             </AlertDialogTitle>
             <AlertDialogDescription>{t("kembalikanIsi")}</AlertDialogDescription>
           </AlertDialogHeader>
+          {kembalikan?.bedaDiJubelio ? (
+            <p className="text-sm text-destructive">{t("konfirmasiTimpa", { harga: terbaca(kembalikan) })}</p>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{t("batal")}</AlertDialogCancel>
             <AlertDialogAction
@@ -359,27 +395,6 @@ export function HargaJubelioClient({ baris, total, terpotong, jenis, cari, tanpa
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={batalkan != null} onOpenChange={(buka) => !buka && !isPending && setBatalkan(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{batalkan ? t("batalkanJudul", { sku: batalkan.sku }) : null}</AlertDialogTitle>
-            <AlertDialogDescription>{t("batalkanIsi")}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isPending}>{t("batal")}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={isPending}
-              onClick={(e) => {
-                e.preventDefault();
-                jalankanBatalkan();
-              }}
-            >
-              {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {t("batalkan")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

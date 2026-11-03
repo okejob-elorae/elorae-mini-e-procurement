@@ -34,7 +34,8 @@ const dasar = (kode: string): StoreFields => ({
   sellThroughMethod: null,
   isPkp: false,
   groupId: null,
-  salesmanId: null,
+  /* A KONSI store must have a holder (P47); the test user holds it, so no holder change is audited. */
+  salesmanId: userId,
 });
 
 d("PPN tagihan konsinyasi per toko (basis data uji)", () => {

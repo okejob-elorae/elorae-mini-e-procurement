@@ -33,6 +33,9 @@ export const POSTING_ROLE_ACCOUNT_TYPES: Record<PostingRole, readonly AccountTyp
   ROUNDING_EXPENSE: ["BEBAN"],
   // CMT / processing fees billed per WO step: a production cost, booked as HPP or as an expense.
   PRODUCTION_SERVICE_COST: ["HPP", "BEBAN"],
+  // The part of an accepted supplier invoice price difference on goods no longer in the main
+  // warehouse (sold or used, so their cost can no longer be corrected — owner answer P49): a cost of sales.
+  PURCHASE_PRICE_VARIANCE: ["HPP"],
   KOL_EXPENSE: ["BEBAN"],
   KOL_PAYABLE: ["LIABILITAS"],
   KOL_PREPAID: ["ASET"],

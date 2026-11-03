@@ -35,6 +35,7 @@ d("sumber sapuan lama (test bed only)", () => {
   let akunB = "";
   let grnTerima = "";
   let grnTolak = "";
+  let grnMenunggu = "";
   let uomId = "";
   let barangId = "";
   let opnameIds: string[] = [];
@@ -45,6 +46,7 @@ d("sumber sapuan lama (test bed only)", () => {
     akunB = "";
     grnTerima = "";
     grnTolak = "";
+    grnMenunggu = "";
     uomId = "";
     barangId = "";
     opnameIds = [];
@@ -61,7 +63,7 @@ d("sumber sapuan lama (test bed only)", () => {
       await prisma.journalLine.deleteMany({ where: { journalId: { in: seededIds(ids) } } });
       await prisma.journal.deleteMany({ where: { id: { in: seededIds(ids) } } });
     }
-    const grn = [grnTerima, grnTolak].filter(Boolean);
+    const grn = [grnTerima, grnTolak, grnMenunggu].filter(Boolean);
     if (grn.length) await prisma.gRN.deleteMany({ where: { id: { in: seededIds(grn) } } });
     if (opnameIds.length) {
       await prisma.stockLedgerEntry.deleteMany({ where: { refId: { in: seededIds(opnameIds) } } });
@@ -133,6 +135,39 @@ d("sumber sapuan lama (test bed only)", () => {
     const baris = hasil.find((x) => x.id === grnTerima);
     expect(baris?.label).toBe(`UJISAPUAN-${token}-A`);
     expect(baris?.tanggal.toISOString()).toBe(tgl.toISOString());
+  });
+
+  /*
+   * P51a: GRN tanpa PO yang menunggu konfirmasi admin belum menjadi hutang. Sapuan harian dan
+   * pemeriksaan tutup periode membaca pencari yang sama, jadi GRN itu tidak boleh tampil sebagai
+   * "tanpa jurnal" dan postingnya tidak boleh menjurnal hutang; sesudah dikonfirmasi ia dicari.
+   */
+  it("GRN tanpa PO yang menunggu konfirmasi admin tidak dicari dan tidak dijurnal; sesudah dikonfirmasi ia dicari", async () => {
+    const pemasok = await prisma.supplier.findFirst({ select: { id: true } });
+    if (!pemasok) return; // basis data tanpa pemasok: SQL sudah diuji di tes pertama
+    const tgl = new Date(Date.UTC(TAHUN, 2, 10, 3));
+    grnMenunggu = (
+      await prisma.gRN.create({
+        data: {
+          docNumber: `UJISAPUAN-${token}-C`,
+          supplierId: pemasok.id,
+          receivedBy: "uji",
+          totalAmount: 3000,
+          items: [],
+          grnDate: tgl,
+          requiresNoPoConfirmation: true,
+        },
+      })
+    ).id;
+    const sumber = semuaSumberSapuan().find((s) => s.sourceType === "GRN")!;
+    const cari = () => sumber.cariTanpaJurnal({ ...rentang, batas: 50, ids: [grnMenunggu] }).then((r) => r.map((x) => x.id));
+
+    expect(await cari()).toEqual([]);
+    expect(await sumber.posting(grnMenunggu, userId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+    expect(await prisma.journal.findUnique({ where: { sourceType_sourceId: { sourceType: "GRN", sourceId: grnMenunggu } } })).toBeNull();
+
+    await prisma.gRN.update({ where: { id: grnMenunggu }, data: { noPoConfirmedAt: new Date(Date.UTC(TAHUN, 2, 11, 3)), noPoConfirmedById: userId } });
+    expect(await cari()).toEqual([grnMenunggu]);
   });
 
   it("OPNAME: membaca buku besar stok seperti `opnameNetDelta` — selisih bernilai dan baris tanpa nilai ditemukan, arsip StockMovement tidak", async () => {

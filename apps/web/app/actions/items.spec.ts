@@ -15,6 +15,7 @@ vi.mock("@/lib/jubelio/harga/pengajuan", () => ({
   dataPengajuanJubelio: vi.fn((olehUserId: string | null) => ({ jubelioCreateRequestedAt: new Date(), jubelioCreateRequestedById: olehUserId })),
   ajukanKeJubelio: vi.fn(),
 }));
+vi.mock("@/lib/db/tx-retry", () => ({ withRetry: (fn: () => Promise<unknown>) => fn(), runSerializable: vi.fn() }));
 vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: vi.fn().mockResolvedValue("Admin") }));
 vi.mock("@/lib/notifications/events", () => ({ notifyItemCreated: vi.fn() }));
 vi.mock("@elorae/db", () => ({
@@ -27,12 +28,16 @@ vi.mock("@/lib/items/mutations", async () => {
 });
 
 import { auth } from "@/lib/auth";
-import { createProductPushRow, fireProductPushNow } from "@/lib/jubelio/product-push";
+import { createProductPushRow, enqueueProductPushOnUpdate, fireProductPushNow } from "@/lib/jubelio/product-push";
 import {
   ColorsNotInMasterError,
   DuplicateVariantBarcodeError,
   DuplicateVariantSkuError,
   ItemSkuExistsError,
+  SalesChannelCannotActivateError,
+  SalesChannelCannotDeactivateError,
+  SalesChannelPushInFlightError,
+  SalesChannelRequiredError,
 } from "@/lib/items/save-refusals";
 import { VariantBarcodeTakenError, VariantSkuTakenError } from "@/lib/items/variant-sku-collisions";
 import { createItem, updateItem } from "./items";
@@ -45,7 +50,7 @@ beforeEach(() => {
 });
 
 describe("createItem", () => {
-  it("passes the session user so a new finished good is requested for Jubelio, and pushes nothing", async () => {
+  it("passes the session user so a new marketplace finished good is requested for Jubelio, and pushes nothing", async () => {
     mockCreate.mockResolvedValue({ item: { id: "i1", nameEn: "t", nameId: "t", sku: "S" }, serialized: { id: "i1" } });
     expect(await createItem(data)).toEqual({ success: true, item: { id: "i1" } });
     expect(mockCreate).toHaveBeenCalledWith(data, { olehUserId: "u1" });
@@ -68,6 +73,7 @@ describe("createItem", () => {
     [new ColorsNotInMasterError(["Merah", "Biru"]), "COLOR_NOT_IN_MASTER", "Merah, Biru"],
     [new DuplicateVariantSkuError("A-2"), "DUPLICATE_VARIANT_SKU", "A-2"],
     [new DuplicateVariantBarcodeError("899"), "DUPLICATE_VARIANT_BARCODE", "899"],
+    [new SalesChannelRequiredError(), "SALES_CHANNEL_REQUIRED", ""],
   ])("returns a typed refusal for %s", async (error, code, detail) => {
     mockCreate.mockRejectedValue(error);
     expect(await createItem(data)).toEqual({ success: false, code, detail });
@@ -102,5 +108,38 @@ describe("updateItem", () => {
   it("still throws unknown errors", async () => {
     mockTx.mockRejectedValue(new Error("boom"));
     await expect(updateItem("i1", data)).rejects.toThrow("boom");
+  });
+
+  it.each([
+    [new SalesChannelPushInFlightError(), "SALES_CHANNEL_PUSH_IN_FLIGHT", ""],
+    [new SalesChannelCannotDeactivateError("TANPA_HARGA_TERKONFIRMASI"), "SALES_CHANNEL_CANNOT_DEACTIVATE", "TANPA_HARGA_TERKONFIRMASI"],
+    [new SalesChannelCannotActivateError("BAWAAN_BELUM_ADA"), "SALES_CHANNEL_CANNOT_ACTIVATE", "BAWAAN_BELUM_ADA"],
+  ])("returns a typed sales-channel refusal for %s, saving nothing", async (error, code, detail) => {
+    mockTx.mockRejectedValue(error);
+    expect(await updateItem("i1", data)).toEqual({ success: false, code, detail });
+    expect(fireProductPushNow).not.toHaveBeenCalled();
+  });
+
+  const hasil = (kirimanSaluran: { outboxId: string } | null) => ({
+    updated: {
+      serialized: { id: "i1" },
+      kirimanSaluran,
+      before: { sellingPrice: 1, nameId: "a" },
+      after: { sellingPrice: 1, nameId: "b" },
+    },
+  });
+
+  it("fires the channel push (P72 deactivation) after commit and queues no second push", async () => {
+    mockTx.mockResolvedValue(hasil({ outboxId: "row-7" }));
+    expect(await updateItem("i1", data)).toEqual({ success: true, item: { id: "i1" } });
+    expect(fireProductPushNow).toHaveBeenCalledWith("row-7", "u1");
+    expect(enqueueProductPushOnUpdate).not.toHaveBeenCalled();
+  });
+
+  it("without a channel push, an ordinary edit goes through enqueueProductPushOnUpdate", async () => {
+    mockTx.mockResolvedValue(hasil(null));
+    await updateItem("i1", data);
+    expect(fireProductPushNow).not.toHaveBeenCalled();
+    expect(enqueueProductPushOnUpdate).toHaveBeenCalledTimes(1);
   });
 });

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
+import { MARGIN_MAKS, MARKUP_MAKS, type DasarAturanHarga } from "@/lib/items/rekomendasi-harga";
 import {
   gagalJubelio,
   jalankanAksiJubelio,
@@ -35,12 +36,14 @@ export type JubelioPushDefaultsState = {
   useSerialNumber: boolean;
   buyPrice: number;
   /**
-   * Margin (%) dan biaya tambahan per pcs bawaan — HANYA bahan rekomendasi harga
-   * jual di halaman barang, untuk barang yang tidak punya margin/biaya sendiri
-   * (keputusan pemilik 2026-11-01). Menyimpannya tidak mengubah harga jual
-   * barang mana pun. null = belum diisi.
+   * Persen rekomendasi bawaan (markup ATAU margin, dasarnya di `defaultPriceRuleBasis`) dan
+   * bantalan margin per pcs bawaan — HANYA bahan rekomendasi harga jual di halaman barang, untuk
+   * barang yang tidak punya aturan/biaya sendiri (keputusan pemilik 2026-11-01, jawaban P4 dan
+   * Q5 2026-11-02). Pasangan persen + dasar dipakai utuh, tidak pernah dicampur dengan dasar
+   * barang. Menyimpannya tidak mengubah harga jual barang mana pun. null = belum diisi.
    */
   defaultMarginPercent: number | null;
+  defaultPriceRuleBasis: DasarAturanHarga;
   defaultAdditionalCost: number | null;
   updatedAt: string;
   updatedById: string | null;
@@ -48,13 +51,15 @@ export type JubelioPushDefaultsState = {
 
 export type JubelioPushDefaultsInput = Omit<
   JubelioPushDefaultsState,
-  "id" | "updatedAt" | "updatedById"
->;
+  "id" | "updatedAt" | "updatedById" | "defaultPriceRuleBasis"
+> & {
+  /** Tidak dikirim (layar lama) = tidak disentuh. */
+  defaultPriceRuleBasis?: DasarAturanHarga;
+};
 
 type BarisBawaan = NonNullable<Awaited<ReturnType<typeof prisma.jubelioPushDefaults.findFirst>>>;
 
-/** Batas kolom `defaultMarginPercent` (Decimal(5,2)) dan `defaultAdditionalCost` (Decimal(15,2)). */
-const MARGIN_BAWAAN_MAKS = 999.99;
+/** Batas kolom `defaultAdditionalCost` (Decimal(15,2)); batas persen per dasar dari rekomendasi-harga. */
 const BIAYA_BAWAAN_MAKS = 9_999_999_999_999.99;
 
 function serialize(row: BarisBawaan): JubelioPushDefaultsState {
@@ -101,15 +106,20 @@ async function simpanBawaan(
   if (!session) return gagalJubelio("TANPA_AKSES");
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
-  const ada = await prisma.jubelioPushDefaults.findFirst({ select: { id: true } });
+  const ada = await prisma.jubelioPushDefaults.findFirst({ select: { id: true, defaultPriceRuleBasis: true } });
   if (!ada) return gagalJubelio("BAWAAN_BELUM_ADA", RINCIAN_TANPA_BARIS);
 
-  // Margin dan biaya tambahan bawaan hanya bahan rekomendasi harga: menyimpannya
+  // Persen dan bantalan margin bawaan hanya bahan rekomendasi harga: menyimpannya
   // TIDAK menghitung ulang harga jual barang mana pun. Klien yang tidak
-  // mengirimnya (layar lama) tidak mengosongkan kolomnya.
-  const { defaultMarginPercent, defaultAdditionalCost, ...isian } = input;
-  if (!angkaBawaanSah(defaultMarginPercent, MARGIN_BAWAAN_MAKS)) {
-    return gagalJubelio("ISIAN_TIDAK_SAH", "defaultMarginPercent: 0–999.99");
+  // mengirimnya (layar lama) tidak mengosongkan kolomnya — dasarnya juga.
+  const { defaultMarginPercent, defaultAdditionalCost, defaultPriceRuleBasis, ...isian } = input;
+  if (defaultPriceRuleBasis !== undefined && defaultPriceRuleBasis !== "MARKUP" && defaultPriceRuleBasis !== "MARGIN") {
+    return gagalJubelio("ISIAN_TIDAK_SAH", "defaultPriceRuleBasis: MARKUP | MARGIN");
+  }
+  const dasar: DasarAturanHarga = defaultPriceRuleBasis ?? ada.defaultPriceRuleBasis;
+  const batasPersen = dasar === "MARGIN" ? MARGIN_MAKS : MARKUP_MAKS;
+  if (!angkaBawaanSah(defaultMarginPercent, batasPersen)) {
+    return gagalJubelio("ISIAN_TIDAK_SAH", dasar === "MARGIN" ? "defaultMarginPercent: margin 0–99.99" : "defaultMarginPercent: markup 0–999.99");
   }
   if (!angkaBawaanSah(defaultAdditionalCost, BIAYA_BAWAAN_MAKS)) {
     return gagalJubelio("ISIAN_TIDAK_SAH", "defaultAdditionalCost: >= 0");
@@ -120,6 +130,7 @@ async function simpanBawaan(
     data: {
       ...isian,
       ...(defaultMarginPercent !== undefined ? { defaultMarginPercent } : {}),
+      ...(defaultPriceRuleBasis !== undefined ? { defaultPriceRuleBasis } : {}),
       ...(defaultAdditionalCost !== undefined ? { defaultAdditionalCost } : {}),
       updatedById: session.user.id,
     },

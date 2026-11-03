@@ -18,10 +18,9 @@ const JUMLAH_BULAN = 6;
  * Hanya milik salesman yang login. SPG punya gaji & komisinya sendiri di
  * beranda SPG, jadi dikembalikan ke sana.
  *
- * Aturan mutlak: rupiah konsinyasi tidak pernah sampai ke HP. `insentifHp`
- * menghitung perkiraan atas putus + van (komisi resmi yang memuat konsi bisa
- * dihitung mundur jadi omzet konsi) dan mengirim konsinyasi hanya sebagai pcs.
- * Perhitungan resmi kantor tidak berubah.
+ * `insentifHp` menghitung perkiraan atas omzet resmi putus + konsi + van, sama
+ * dengan laporan komisi kantor — HP salesman menampilkan konsinyasi lengkap
+ * (pemilik P56, 2026-11-02).
  */
 export default async function InsentifPage({
   searchParams,

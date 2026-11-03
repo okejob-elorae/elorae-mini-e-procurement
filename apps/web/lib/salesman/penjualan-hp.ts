@@ -1,5 +1,5 @@
 import { kunciHariWib } from "@/lib/dashboard/tren";
-import type { BarisJual, TitikSalesman } from "./dasbor";
+import type { TitikSalesman } from "./dasbor";
 import type { DasarKomisi, PeranTagih, TingkatBerikut, TingkatKomisi } from "./komisi";
 import type { Perubahan, TitikBulan } from "./riwayat-penjualan";
 
@@ -8,24 +8,19 @@ import type { Perubahan, TitikBulan } from "./riwayat-penjualan";
  * komponen klien (hanya tipe dan fungsi tanpa Prisma). Kuerinya di
  * `penjualan-hp-queries.ts`.
  *
- * Aturan mutlak pemilik: harga dan total konsinyasi tidak pernah sampai ke
- * aplikasi salesman, tidak di layar dan tidak di payload. Jadi di HP:
- * - rupiah hanya putus + van, dan setiap total rupiah = putus + van;
- * - konsinyasi hanya sebagai pcs LAKU di toko konsinyasi yang ia pegang
- *   (`penjualan-konsi.ts` — sumber dan tanggal yang sama dengan
- *   `penjualanSalesman`). Transfer konsi yang disetujui bukan penjualan.
- *
- * Total yang memuat konsi pun dibuang, bukan hanya kanal konsinya: total −
- * putus − van = konsi, dan konsi ÷ pcs konsi = harga satuan konsinyasi.
- * Perhitungan resmi kantor (komisi, target, peringkat) TIDAK berubah; yang
- * berubah hanya angka yang dibentuk untuk HP.
+ * Jawaban pemilik 2026-11-02 (P18 "berikan selengkapnya saja", P56 "tampilkan
+ * semuanya saja — rupiah konsi juga di omzet/insentif/target/peringkat"): angka
+ * di HP salesman ADALAH angka kantor. Rupiah = putus + konsinyasi LAKU + van;
+ * konsinyasi juga tetap ditunjukkan sebagai pcs laku. Nilai konsi = penilaian
+ * kantor yang sudah ada (`penjualan-konsi.ts`: laku dengan harga Elorae, milik
+ * pemegang toko saat barangnya laku). HP SPG tidak membaca berkas ini.
  */
 
 /** Satu gerakan laku konsinyasi: pcs-nya saja, tanpa nilai. */
 export type BarisPcsKonsi = { tanggal: Date; pcs: number };
 
-/** Jumlah di HP: rupiah putus + van, konsinyasi dalam pcs. Tidak ada kunci `konsi`. */
-export type JumlahHp = { putus: number; van: number; total: number; pcsKonsi: number };
+/** Jumlah di HP: rupiah putus, konsinyasi laku, dan van; `total` = ketiganya; konsinyasi juga dalam pcs. */
+export type JumlahHp = { putus: number; konsi: number; van: number; total: number; pcsKonsi: number };
 export type TitikTrenHp = { tanggal: string; nilai: number };
 export type TitikBulanHp = JumlahHp & { bulan: string };
 export type RingkasanBulanHp = {
@@ -36,15 +31,9 @@ export type RingkasanBulanHp = {
   setahunLalu: Perubahan;
 };
 
-/** Omzet dengan bentuk `OmzetBulan` (komisi) — konsinyasi selalu nol. */
-export type OmzetTanpaKonsi = { putus: number; konsi: 0; van: number; total: number };
-
 /**
- * Halaman Insentif di HP. Komisi, capaian, tingkat, dan kekurangan ke tingkat
- * berikut dihitung atas putus + van (`komisiUntukHp`) — angka resmi kantor yang
- * memuat konsi akan membuka omzet konsi lewat komisi ÷ tarif atau capaian ×
- * target. `omzet.pcsKonsi` > 0 berarti layar harus berkata jujur bahwa kantor
- * ikut menghitung konsinyasi.
+ * Halaman Insentif di HP: `komisiSalesman` atas omzet resmi (putus + konsi +
+ * van), jadi angkanya sama dengan laporan komisi kantor (P56).
  */
 export type InsentifHp = {
   aktif: boolean;
@@ -76,27 +65,14 @@ export type InsentifHp = {
 
 const sen = (n: number) => Math.round(n * 100);
 
-/** Baris penjualan tanpa konsinyasi — bahan setiap angka rupiah di HP. */
-export function tanpaKonsi(baris: readonly BarisJual[]): BarisJual[] {
-  return baris.filter((b) => b.jenis !== "konsi");
+/** Putus + konsi + van dalam sen, supaya pecahan rupiah tidak bergeser. */
+function jumlahRupiah(j: { putus: number; konsi: number; van: number }): number {
+  return (sen(j.putus) + sen(j.konsi) + sen(j.van)) / 100;
 }
 
-/** Putus + van dalam sen, supaya pecahan rupiah tidak bergeser. */
-function putusVan(j: { putus: number; van: number }): number {
-  return (sen(j.putus) + sen(j.van)) / 100;
-}
-
-/**
- * Jumlah untuk HP. Kunci `konsi` dan `total` masukan sengaja diabaikan — apa
- * pun yang masuk, yang keluar hanya putus, van, putus + van, dan pcs konsi.
- */
-export function jumlahHp(j: { putus: number; van: number }, pcsKonsi: number): JumlahHp {
-  return { putus: j.putus, van: j.van, total: putusVan(j), pcsKonsi };
-}
-
-/** Bahan perkiraan komisi di HP: omzet putus + van, konsinyasi nol. */
-export function omzetTanpaKonsi(j: { putus: number; van: number }): OmzetTanpaKonsi {
-  return { putus: j.putus, konsi: 0, van: j.van, total: putusVan(j) };
+/** Jumlah untuk HP: setiap kanal rupiah, totalnya, dan pcs konsinyasi laku. */
+export function jumlahHp(j: { putus: number; konsi: number; van: number }, pcsKonsi: number): JumlahHp {
+  return { putus: j.putus, konsi: j.konsi, van: j.van, total: jumlahRupiah(j), pcsKonsi };
 }
 
 /** Pcs konsinyasi satu bulan kalender WIB; hari sesudah hari ini (WIB) tidak dihitung. */
@@ -110,28 +86,12 @@ export function pcsKonsiBulan(baris: readonly BarisPcsKonsi[], bulan: string, ha
   return n;
 }
 
-/** Grafik 30 hari di beranda: satu nilai per hari = putus + van. */
+/** Grafik beranda: satu nilai per hari = putus + konsi + van. */
 export function trenHp(titik: readonly TitikSalesman[]): TitikTrenHp[] {
-  return titik.map((t) => ({ tanggal: t.tanggal, nilai: putusVan(t) }));
+  return titik.map((t) => ({ tanggal: t.tanggal, nilai: jumlahRupiah(t) }));
 }
 
-/** Grafik 12 bulan: rupiah putus + van, konsinyasi sebagai pcs bulan itu. */
+/** Grafik 12 bulan: rupiah putus + konsi + van, ditambah pcs konsinyasi bulan itu. */
 export function seriHp(seri: readonly TitikBulan[], pcs: readonly BarisPcsKonsi[], hariIni: Date): TitikBulanHp[] {
   return seri.map((s) => ({ bulan: s.bulan, ...jumlahHp(s, pcsKonsiBulan(pcs, s.bulan, hariIni)) }));
-}
-
-/**
- * Apakah komisi final kantor (yang memuat konsi) BISA lebih tinggi dari
- * perkiraan HP (putus + van)? Hanya bila bulan itu ada konsinyasi DAN konsi
- * menyentuh komisinya: dasar PENJUALAN (konsi masuk nilai dasar), atau masih
- * ada tingkat tarif di atas (konsi ikut capaian). Dasar TERTAGIH tanpa tingkat
- * berikut: konsi tidak mengubah apa pun, jadi kalimat "bisa lebih tinggi"
- * tidak jujur.
- */
-export function komisiBisaNaikOlehKonsi(m: {
-  pcsKonsi: number;
-  dasar: DasarKomisi;
-  tingkatBerikut: TingkatBerikut | null;
-}): boolean {
-  return m.pcsKonsi > 0 && (m.dasar === "PENJUALAN" || m.tingkatBerikut !== null);
 }

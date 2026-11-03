@@ -9,7 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
 import type { Dasbor, TindakanHariIni } from '@/lib/receivables/dashboard-queries';
-import type { KeadaanTampil } from '@/lib/receivables/jatuh-tempo';
+import type { KalimatTertahan, KeadaanTampil } from '@/lib/receivables/jatuh-tempo';
 import { tautanPiutang, tautanRetur } from '@/lib/receivables/tindakan-dasbor';
 import { dinamis } from '@/lib/i18n/dinamis';
 
@@ -48,6 +48,39 @@ export function DasborClient({ data }: { data: Dasbor }) {
   const td = dinamis(t);
 
   const puncakSales = Math.max(1, ...data.perSales.map((s) => s.nilai));
+
+  /**
+   * Kalimat baris "Tertahan retur" — tiga bagian yang sama dengan kalimat di Faktur & piutang (Q15):
+   * yang menunggu beserta sebabnya, yang tertahan tetap, lalu bagian bebas yang sudah lewat jatuh
+   * tempo. Bagian yang tidak ada dilewati; nama toko hanya di bagian pertama.
+   */
+  const kalimatTahanan = (toko: string, k: KalimatTertahan): string => {
+    const bagian: string[] = [];
+    if (k.tunggu) {
+      bagian.push(
+        td(
+          k.tunggu.sebab === 'BELUM_DIHITUNG'
+            ? 'why_tertahan_hitung'
+            : k.tunggu.sebab === 'CAMPURAN'
+              ? 'why_tertahan_campur'
+              : 'why_tertahan',
+          { toko, nilai: rupiah(k.tunggu.nilai) },
+        ),
+      );
+      if (k.tetap) bagian.push(td('why_tertahan_tetapJuga', { nilai: rupiah(k.tetap) }));
+    } else {
+      bagian.push(td('why_tertahan_tetap', { toko, nilai: rupiah(k.tetap ?? 0) }));
+    }
+    if (k.lewatTempo) {
+      bagian.push(
+        td(k.tunggu ? 'why_tertahan_lewatTempo' : 'why_tertahan_lewatTempoSemua', {
+          nilai: rupiah(k.lewatTempo.nilai),
+          hari: k.lewatTempo.hari,
+        }),
+      );
+    }
+    return bagian.join(' ');
+  };
 
   return (
     <div className="space-y-6">
@@ -141,11 +174,14 @@ export function DasborClient({ data }: { data: Dasbor }) {
                   <span className="block text-xs text-muted-foreground">
                     {/* Kunci "hari ini" dipakai saat selisihnya nol — "0 hari
                         lalu" bukan bahasa Indonesia yang ditulis orang. */}
-                    {td(a.konteks.hari === 0 ? `why_${kunciTindakan(a)}_today` : `why_${kunciTindakan(a)}`, {
-                      toko: a.konteks.toko ?? '—',
-                      hari: a.konteks.hari ?? 0,
-                      pelapor: a.konteks.pelapor ?? '—',
-                    })}
+                    {a.jenis === 'tertahan' && a.konteks.tahanan
+                      ? kalimatTahanan(a.konteks.toko ?? '—', a.konteks.tahanan)
+                      : td(a.konteks.hari === 0 ? `why_${kunciTindakan(a)}_today` : `why_${kunciTindakan(a)}`, {
+                          toko: a.konteks.toko ?? '—',
+                          hari: a.konteks.hari ?? 0,
+                          pelapor: a.konteks.pelapor ?? '—',
+                          nilai: rupiah(a.nilai),
+                        })}
                   </span>
                 </span>
                 <span className="tabular-nums text-sm font-semibold">

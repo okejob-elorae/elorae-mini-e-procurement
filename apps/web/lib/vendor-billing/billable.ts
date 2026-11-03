@@ -1,5 +1,7 @@
 import { prisma, type Prisma } from "@elorae/db";
-import { splitCents } from "./bill-paid-rule";
+import { grnBelumDiproses } from "@/lib/grn/grn-tanpa-po";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { grnLineKey, grnLineSource, invoicedReturnedQty, readGrnLines, readGrnLinesDetail, splitCents } from "./bill-paid-rule";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -8,25 +10,41 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 /** An over-receive GRN the owner has neither approved nor declined yet. */
 export const PENDING_OWNER_DECISION = { requiresOwnerApproval: true, ownerApprovedAt: null, ownerDeclinedAt: null } as const;
 
-export type BillablePoItem = {
-  poItemId: string;
-  poId: string;
-  poDocNumber: string;
+export type BillableGrnItem = {
+  grnId: string;
+  grnDocNumber: string;
+  /** "YYYY-MM-DD" WIB. */
+  grnDate: string;
+  poId: string | null;
+  poDocNumber: string | null;
+  /** The PO item this key maps to (first by createdAt, id), so the PO page still lists the line. */
+  poItemId: string | null;
   /**
    * Already marked paid (Supplier payments → Pay settled it, or the old toggle did). Still billable:
    * a bill only matches the vendor's invoice to the receipts, and it reads as paid from those
    * payments (`supplier-paid.ts`).
    */
   poPaid: boolean;
+  itemId: string;
   itemName: string;
   sku: string;
   variantSku: string | null;
   uomCode: string;
+  /** Σ qty of this GRN's lines for the key. */
   receivedQty: number;
+  /** Completed vendor returns naming this GRN and key. */
+  returnedQty: number;
+  /** Live GRN_ITEM bill lines on this GRN and key. */
   billedQty: number;
+  /** received − returned − billed: what an invoice may still name. */
   remainingQty: number;
-  price: number;
-  ppnIncluded: boolean;
+  /** The receipt's recorded base price per unit, before PPN: Σ(qty × (hargaPo ?? unitCost)) ÷ Σ qty. */
+  recordedPrice: number;
+  /** The PO price when the key maps to a PO item. */
+  poPrice: number | null;
+  ppnMode: "PPN_MASUKAN" | "PPN_MODAL" | "TANPA";
+  /** Why the row cannot be billed yet; null = billable. */
+  terhalang: null | "MENUNGGU_PEMILIK" | "MENUNGGU_KONFIRMASI";
 };
 
 export type BillableWoStep = {
@@ -40,17 +58,73 @@ export type BillableWoStep = {
   remainingQty: number;
   servicePrice: number;
   servicePpnIncluded: boolean;
+  /** The finished-goods receipts that brought the step's pieces in. */
+  penerimaan: Array<{ nomor: string; tanggal: string; qty: number }>;
 };
 
-/** Qty already on live (non-VOID) bills, per PO item. */
-export async function billedQtyByPoItem(db: Db, poItemIds: string[]): Promise<Map<string, number>> {
-  if (poItemIds.length === 0) return new Map();
+/**
+ * Qty already on live (non-VOID) GRN_ITEM bill lines, per GRN key (`grnLineSource(grnId, key)`). A
+ * legacy PO_ITEM line names no receipt (`grnId` null) and covers nothing.
+ */
+export async function billedQtyByGrnLine(db: Db, grnIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (grnIds.length === 0) return out;
   const rows = await db.vendorBillLine.groupBy({
-    by: ["poItemId"],
-    where: { poItemId: { in: poItemIds }, bill: { status: { not: "VOID" } } },
+    by: ["grnId", "itemId", "variantSku"],
+    where: { grnId: { in: [...new Set(grnIds)] }, bill: { status: { not: "VOID" } } },
     _sum: { qty: true },
   });
-  return new Map(rows.map((r) => [r.poItemId!, Number(r._sum.qty ?? 0)]));
+  for (const r of rows) {
+    if (!r.grnId || !r.itemId) continue;
+    const k = grnLineSource(r.grnId, grnLineKey(r.itemId, r.variantSku));
+    out.set(k, round2((out.get(k) ?? 0) + Number(r._sum.qty ?? 0)));
+  }
+  return out;
+}
+
+/** Qty sent back on COMPLETED vendor returns naming each GRN, per GRN key (`grnLineSource`). */
+export async function returnedQtyByGrnLine(db: Db, grnIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (grnIds.length === 0) return out;
+  const rows = await db.vendorReturn.findMany({
+    where: { grnId: { in: [...new Set(grnIds)] }, status: "COMPLETED" },
+    select: { grnId: true, lines: true },
+  });
+  for (const r of rows) {
+    if (!r.grnId) continue;
+    for (const l of readGrnLines(r.lines)) {
+      const k = grnLineSource(r.grnId, l.key);
+      out.set(k, round2((out.get(k) ?? 0) + l.qty));
+    }
+  }
+  return out;
+}
+
+/**
+ * Invoiced pieces later sent back, per GRN key (`grnLineSource`; keys at zero are absent) — see
+ * `invoicedReturnedQty`. The vendor return credits the PO at the PO price only (`kredit-retur-writer.ts`,
+ * unchanged), so an invoice price difference on such a key cannot be accepted (`ADA_RETUR`), and one
+ * already accepted still counts the returned pieces until its bill is voided and recorded again.
+ */
+export async function invoicedReturnedQtyByGrnLine(db: Db, grnIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const ids = [...new Set(grnIds)];
+  if (ids.length === 0) return out;
+  const [grns, billed, returned] = await Promise.all([
+    db.gRN.findMany({ where: { id: { in: ids } }, select: { id: true, items: true } }),
+    billedQtyByGrnLine(db, ids),
+    returnedQtyByGrnLine(db, ids),
+  ]);
+  for (const g of grns) {
+    const received = new Map<string, number>();
+    for (const l of readGrnLines(g.items)) received.set(l.key, round2((received.get(l.key) ?? 0) + l.qty));
+    for (const [key, qty] of received) {
+      const src = grnLineSource(g.id, key);
+      const n = invoicedReturnedQty({ received: qty, returned: returned.get(src) ?? 0, billed: billed.get(src) ?? 0 });
+      if (n > 0) out.set(src, n);
+    }
+  }
+  return out;
 }
 
 /** Qty already on live (non-VOID) bills, per WO step. */
@@ -261,36 +335,41 @@ export async function oldestBookedBillDateByWo(db: Db, woIds: string[]): Promise
   return result;
 }
 
+
 /**
- * What a supplier can still bill: received PO items of its live POs, and its WO processing steps
- * on live WOs, each less the qty already on live bills. Fully billed rows drop out. A step's `qty`
- * is the accepted pieces of its WO's finished-goods receipts (`receiveFG` stamps it; null before
- * the first receipt), so a step bills only work a receipt has taken in, as a PO line bills only
- * what a GRN received.
+ * What a supplier can still bill (decision 2026-10-29: "admin MEMILIH penerimaan barang mana saja yang
+ * ditagih invoice itu"): one row per GRN and item key, and its WO processing steps on live WOs, each
+ * less what live bills already name. A GRN row is a PROCESSED receipt: its PO not cancelled (or a GRN
+ * without a PO the admin confirmed, P51a) and not declined by the owner; a GRN still awaiting the
+ * owner's over-receive decision or the admin's confirmation is listed with `terhalang` and cannot be
+ * billed yet. Fully billed rows drop out. A step's `qty` is the accepted pieces of its WO's
+ * finished-goods receipts (`receiveFG` stamps it; null before the first receipt), so a step bills
+ * only work a receipt has taken in, as a GRN row bills only what that GRN received.
  */
 export async function listBillableSources(
   supplierId: string,
   db: Db = prisma
-): Promise<{ poItems: BillablePoItem[]; woSteps: BillableWoStep[] }> {
-  const [poItems, woSteps] = await Promise.all([
-    db.pOItem.findMany({
-      // A PO with an over-receive awaiting the owner is not billable until it is decided: a decline
-      // reverses its AP and received qty, which a PO bill line (no journal) cannot follow.
+): Promise<{ grnItems: BillableGrnItem[]; woSteps: BillableWoStep[] }> {
+  const [grns, woSteps] = await Promise.all([
+    db.gRN.findMany({
       where: {
-        receivedQty: { gt: 0 },
-        po: { supplierId, status: { not: "CANCELLED" }, grns: { none: PENDING_OWNER_DECISION } },
+        supplierId,
+        ownerDeclinedAt: null,
+        OR: [{ poId: null }, { po: { status: { not: "CANCELLED" } } }],
       },
       select: {
         id: true,
-        variantSku: true,
-        receivedQty: true,
-        price: true,
-        ppnIncluded: true,
-        uomId: true,
-        item: { select: { nameId: true, sku: true } },
-        po: { select: { id: true, docNumber: true, paidAt: true } },
+        docNumber: true,
+        grnDate: true,
+        poId: true,
+        items: true,
+        requiresOwnerApproval: true,
+        ownerApprovedAt: true,
+        requiresNoPoConfirmation: true,
+        noPoConfirmedAt: true,
+        po: { select: { docNumber: true, paidAt: true, items: { select: { id: true, itemId: true, variantSku: true, price: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] } } },
       },
-      orderBy: [{ po: { docNumber: "asc" } }, { createdAt: "asc" }],
+      orderBy: [{ grnDate: "asc" }, { docNumber: "asc" }],
     }),
     db.workOrderStep.findMany({
       where: { supplierId, qty: { gt: 0 }, wo: { status: { not: "CANCELLED" } } },
@@ -301,41 +380,74 @@ export async function listBillableSources(
         qty: true,
         servicePrice: true,
         servicePpnIncluded: true,
-        wo: { select: { id: true, docNumber: true } },
+        wo: { select: { id: true, docNumber: true, receipts: { select: { docNumber: true, receivedAt: true, qtyAccepted: true }, orderBy: [{ receivedAt: "asc" }, { id: "asc" }] } } },
       },
       orderBy: [{ wo: { docNumber: "asc" } }, { sequence: "asc" }],
     }),
   ]);
 
-  const [poBilled, stepBilled, uoms] = await Promise.all([
-    billedQtyByPoItem(db, poItems.map((i) => i.id)),
+  const grnIds = grns.map((g) => g.id);
+  const lines = new Map(grns.map((g) => [g.id, readGrnLinesDetail(g.items)]));
+  const itemIds = [...new Set([...lines.values()].flatMap((ls) => ls.map((l) => l.itemId)))];
+  const [billed, returned, stepBilled, items] = await Promise.all([
+    billedQtyByGrnLine(db, grnIds),
+    returnedQtyByGrnLine(db, grnIds),
     billedQtyByWoStep(db, woSteps.map((s) => s.id)),
-    db.uOM.findMany({ where: { id: { in: [...new Set(poItems.map((i) => i.uomId))] } }, select: { id: true, code: true } }),
+    itemIds.length > 0
+      ? db.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, nameId: true, sku: true, uom: { select: { code: true } } } })
+      : Promise.resolve([] as Array<{ id: string; nameId: string; sku: string; uom: { code: string } | null }>),
   ]);
-  const uomCode = new Map(uoms.map((u) => [u.id, u.code]));
+  const itemOf = new Map(items.map((i) => [i.id, i]));
+
+  const grnItems: BillableGrnItem[] = [];
+  for (const g of grns) {
+    const ownerPending = g.requiresOwnerApproval && g.ownerApprovedAt == null;
+    const terhalang: BillableGrnItem["terhalang"] = grnBelumDiproses(g) ? "MENUNGGU_KONFIRMASI" : ownerPending ? "MENUNGGU_PEMILIK" : null;
+    const perKey = new Map<string, { itemId: string; variantSku: string | null; qty: number; dasar: number; masukan: boolean; modal: boolean }>();
+    for (const l of lines.get(g.id) ?? []) {
+      const cur = perKey.get(l.key) ?? { itemId: l.itemId, variantSku: l.variantSku, qty: 0, dasar: 0, masukan: false, modal: false };
+      cur.qty += l.qty;
+      cur.dasar += l.qty * l.hargaDasar;
+      cur.masukan = cur.masukan || l.ppnMasukan;
+      cur.modal = cur.modal || l.ppnModal;
+      perKey.set(l.key, cur);
+    }
+    for (const [key, k] of perKey) {
+      const src = grnLineSource(g.id, key);
+      const receivedQty = round2(k.qty);
+      const returnedQty = returned.get(src) ?? 0;
+      const billedQty = billed.get(src) ?? 0;
+      const remainingQty = round2(receivedQty - returnedQty - billedQty);
+      if (remainingQty <= 0.005) continue;
+      const poItem = g.po?.items.find((p) => grnLineKey(p.itemId, p.variantSku) === key) ?? null;
+      const it = itemOf.get(k.itemId);
+      grnItems.push({
+        grnId: g.id,
+        grnDocNumber: g.docNumber,
+        grnDate: formatDateOnlyJakarta(g.grnDate),
+        poId: g.poId,
+        poDocNumber: g.po?.docNumber ?? null,
+        poItemId: poItem?.id ?? null,
+        poPaid: g.po?.paidAt != null,
+        itemId: k.itemId,
+        itemName: it?.nameId ?? k.itemId,
+        sku: it?.sku ?? "",
+        variantSku: k.variantSku,
+        uomCode: it?.uom?.code ?? "",
+        receivedQty,
+        returnedQty,
+        billedQty,
+        remainingQty,
+        recordedPrice: k.qty > 0 ? round2(k.dasar / k.qty) : 0,
+        poPrice: poItem ? Number(poItem.price) : null,
+        ppnMode: k.masukan ? "PPN_MASUKAN" : k.modal ? "PPN_MODAL" : "TANPA",
+        terhalang,
+      });
+    }
+  }
 
   return {
-    poItems: poItems
-      .map((i) => {
-        const receivedQty = Number(i.receivedQty);
-        const billedQty = poBilled.get(i.id) ?? 0;
-        return {
-          poItemId: i.id,
-          poId: i.po.id,
-          poDocNumber: i.po.docNumber,
-          poPaid: i.po.paidAt != null,
-          itemName: i.item.nameId,
-          sku: i.item.sku,
-          variantSku: i.variantSku,
-          uomCode: uomCode.get(i.uomId) ?? "",
-          receivedQty,
-          billedQty,
-          remainingQty: round2(receivedQty - billedQty),
-          price: Number(i.price),
-          ppnIncluded: i.ppnIncluded,
-        };
-      })
-      .filter((i) => i.remainingQty > 0),
+    grnItems,
     woSteps: woSteps
       .map((s) => {
         const qty = Number(s.qty ?? 0);
@@ -351,6 +463,9 @@ export async function listBillableSources(
           remainingQty: round2(qty - billedQty),
           servicePrice: Number(s.servicePrice),
           servicePpnIncluded: s.servicePpnIncluded,
+          penerimaan: s.wo.receipts
+            .filter((r) => Number(r.qtyAccepted) > 0)
+            .map((r) => ({ nomor: r.docNumber, tanggal: formatDateOnlyJakarta(r.receivedAt), qty: Number(r.qtyAccepted) })),
         };
       })
       .filter((s) => s.remainingQty > 0),

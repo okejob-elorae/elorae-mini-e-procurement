@@ -62,6 +62,8 @@ export default async function CompletePodPage({ params }: PageProps) {
       storeLng={shipment.storeLng}
       effectiveRadiusMeters={effectiveRadiusMeters}
       isKonsi={shipment.orderType === "KONSI"}
+      penerimaan={!shipment.tokoPunyaSpg && !shipment.sudahDiterimaToko}
+      sudahDiterima={shipment.sudahDiterimaToko}
       lines={shipment.lines.map((l) => ({
         id: l.id,
         orderLineId: l.orderLineId,

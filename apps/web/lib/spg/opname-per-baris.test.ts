@@ -147,16 +147,21 @@ d("opname toko: sudah terhitung per baris (test bed only)", () => {
     return { id: s.id, baris: s.lines[0].id };
   }
 
-  const kembalikan = (n: { id: string; baris: string }, waktuTangkap: Date) =>
-    catatReturPembeli({
+  /* Dengan foto barang di folder laporannya (P14) dan jawaban uang: belum dikembalikan (P13a). */
+  const kembalikan = (n: { id: string; baris: string }, waktuTangkap: Date) => {
+    const kunci = `${tag}-rp-${waktuTangkap.getTime()}`;
+    return catatReturPembeli({
       spgSaleId: n.id,
       storeId: tokoId,
       userId: spgId,
       baris: [{ saleLineId: n.baris, qty: 1, condition: "LAYAK" }],
       alasan: "ukuran",
-      idempotencyKey: `${tag}-rp-${waktuTangkap.getTime()}`,
+      idempotencyKey: kunci,
+      fotoBarangKey: `spg-sale-returns/${tokoId}/${kunci}/barang.jpg`,
+      uangSudahDikembalikan: false,
       waktuTangkap,
     });
+  };
 
   it("jual tanpa sinyal SESUDAH rak dihitung tapi sebelum opname disimpan tetap memotong buku: 10 → 9, bukan tetap 10", async () => {
     const sekarang = new Date();

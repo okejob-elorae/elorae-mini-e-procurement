@@ -22,6 +22,7 @@ vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => ({ user: { id: sesi.id, p
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 const { simpanPenggunaAction } = await import("./users");
+const { aturMulaiSpgAction } = await import("./spg-berhenti");
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -256,5 +257,239 @@ d("simpanPenggunaAction — akun sistem (test bed only)", () => {
       await simpanPenggunaAction(isian({ id: targetSistem, email: `${tagEmail}-ts@uji.local`, nama: `${tag} TS`, roleId: peranSistem })),
     ).toEqual({ ok: true, id: targetSistem });
     expect(await kolomLama({ id: targetSistem })).toBe("ADMIN");
+  });
+});
+
+/**
+ * SPG di formulir Pengguna (keputusan pemilik 2026-11-02, P62/P66; fakta "SPG tidak mungkin pindah
+ * toko"): SPG yang sudah punya riwayat tidak dipindah toko atau diganti perannya di sini, dan SPG
+ * yang sudah berhenti tidak wajib punya toko tetap — tokonya hanya kembali lewat "Batalkan berhenti".
+ *
+ * Tanggal mulai bekerja (P62, perbaikan peserta gaji B20) WAJIB dibawa setiap kali formulir ini
+ * menyimpan peran SPG dengan toko tetap untuk akun yang belum punya tanggal itu — tanpa tanggal, SPG
+ * baru yang belum punya jadwal, penjualan, atau catatan hadir tidak masuk peserta gaji mana pun.
+ * Aturannya satu: akun baru diperiksa `periksaMulaiSpg` (belum mungkin punya kegiatan atau gaji),
+ * akun lama lewat penulisnya sendiri (`aturMulaiSpgDalamTx`) di transaksi yang sama — ditolak berarti
+ * seluruh penyimpanan batal. Tanggal yang sudah tersimpan tidak pernah ditimpa dari sini; mengubahnya
+ * tetap lewat "Atur tanggal mulai" (`aturMulaiSpgAction`).
+ */
+const tagSpg = `USS-${Math.random().toString(36).slice(2, 8)}`;
+const tagSpgEmail = tagSpg.toLowerCase();
+
+d("simpanPenggunaAction — SPG (test bed only)", () => {
+  let izinDibuat = "";
+  let peranSpg = "";
+  let peranBiasa = "";
+  let pelaku = "";
+  let spg = "";
+  let tokoA = "";
+  let tokoB = "";
+  const emailBaru = `${tagSpgEmail}-baru@uji.local`;
+  const emailSpg = `${tagSpgEmail}-spg@uji.local`;
+
+  const seeded = () => seededIds([pelaku, spg].filter(Boolean));
+  const isian = (o: Record<string, unknown>) => ({
+    id: spg,
+    nama: `${tagSpg} SPG`,
+    email: emailSpg,
+    roleId: peranSpg,
+    tokoId: tokoA,
+    sandi: "",
+    ulangSandi: "",
+    ...o,
+  });
+  const baca = () =>
+    prisma.user.findUniqueOrThrow({
+      where: { id: seededId(spg) },
+      select: { roleId: true, assignedStoreId: true, spgStartedOn: true },
+    });
+
+  beforeAll(async () => {
+    izinDibuat = "";
+    peranSpg = "";
+    peranBiasa = "";
+    pelaku = "";
+    spg = "";
+    tokoA = "";
+    tokoB = "";
+    let izin = await prisma.permission.findUnique({ where: { code: "spg_sales:record" }, select: { id: true } });
+    if (!izin) {
+      izin = await prisma.permission.create({ data: { code: "spg_sales:record", module: "spg_sales", action: "record" }, select: { id: true } });
+      izinDibuat = izin.id;
+    }
+    peranSpg = (
+      await prisma.roleDefinition.create({
+        data: { name: `${tagSpg}-SPG`, isSystem: false, permissions: { create: [{ permissionId: izin.id }] } },
+      })
+    ).id;
+    peranBiasa = (await prisma.roleDefinition.create({ data: { name: `${tagSpg}-BIASA`, isSystem: false } })).id;
+    const toko = async (akhiran: string) =>
+      (await prisma.store.create({ data: { code: `${tagSpg}-${akhiran}`, name: `${tagSpg} ${akhiran}`, address: "uji", termsType: "KONSI" } })).id;
+    tokoA = await toko("A");
+    tokoB = await toko("B");
+    pelaku = (await prisma.user.create({ data: { email: `${tagSpgEmail}-p@uji.local`, name: `${tagSpg} P`, roleId: peranBiasa } })).id;
+    spg = (await prisma.user.create({ data: { email: emailSpg, name: `${tagSpg} SPG`, roleId: peranSpg, assignedStoreId: tokoA } })).id;
+  });
+
+  beforeEach(async () => {
+    await prisma.storeVisit.deleteMany({ where: { userId: seededId(spg) } });
+    await prisma.spgCommission.deleteMany({ where: { userId: seededId(spg) } });
+    await prisma.auditLog.deleteMany({ where: { userId: { in: seeded() } } });
+    await prisma.user.deleteMany({ where: { email: seededId(emailBaru) } });
+    await prisma.user.update({
+      where: { id: seededId(spg) },
+      data: { name: `${tagSpg} SPG`, roleId: peranSpg, assignedStoreId: tokoA, spgStartedOn: "2026-10-01", spgEndedOn: null, spgEndedStoreId: null },
+    });
+    sesi.id = pelaku;
+    sesi.permissions = ["settings_security:manage"];
+  });
+
+  afterAll(async () => {
+    await prisma.storeVisit.deleteMany({ where: { userId: seededId(spg) } });
+    await prisma.spgCommission.deleteMany({ where: { userId: seededId(spg) } });
+    await prisma.auditLog.deleteMany({ where: { userId: { in: seeded() } } });
+    await prisma.auditLog.deleteMany({ where: { entityId: { in: seeded() } } });
+    await prisma.user.deleteMany({ where: { email: seededId(emailBaru) } });
+    await prisma.user.deleteMany({ where: { id: { in: seeded() } } });
+    await prisma.rolePermission.deleteMany({ where: { roleId: seededId(peranSpg) } });
+    await prisma.roleDefinition.deleteMany({ where: { id: { in: seededIds([peranSpg, peranBiasa].filter(Boolean)) } } });
+    await prisma.store.deleteMany({ where: { id: { in: seededIds([tokoA, tokoB].filter(Boolean)) } } });
+    if (izinDibuat) await prisma.permission.delete({ where: { id: izinDibuat } });
+  });
+
+  const adaKunjungan = (checkinAt: Date) =>
+    prisma.storeVisit.create({ data: { storeId: tokoA, userId: spg, checkinAt, checkinLat: 0, checkinLng: 0 } });
+
+  const bacaNama = () =>
+    prisma.user.findUniqueOrThrow({ where: { id: seededId(spg) }, select: { name: true, spgStartedOn: true } });
+  const jejakUbah = () =>
+    prisma.auditLog.findMany({ where: { entityId: seededId(spg), action: "USER_UPDATED" }, select: { changes: true } });
+
+  it("akun SPG baru dengan toko tetap wajib membawa tanggal mulai; tanggalnya ditulis saat akun dibuat dan masuk jejak", async () => {
+    const dasar = { id: null, email: emailBaru, nama: `${tagSpg} Baru`, sandi: SANDI, ulangSandi: SANDI };
+    expect(await simpanPenggunaAction(isian(dasar))).toEqual({ ok: false, codes: ["MULAI_WAJIB"] });
+    expect(await simpanPenggunaAction(isian({ ...dasar, mulai: "" }))).toEqual({ ok: false, codes: ["MULAI_WAJIB"] });
+    expect(await simpanPenggunaAction(isian({ ...dasar, mulai: "2026-02-30" }))).toEqual({ ok: false, codes: ["MULAI_TIDAK_SAH"] });
+    expect(await prisma.user.count({ where: { email: seededId(emailBaru) } })).toBe(0);
+
+    const dibuat = await simpanPenggunaAction(isian({ ...dasar, mulai: "2026-11-01" }));
+    expect(dibuat).toMatchObject({ ok: true });
+    const u = await prisma.user.findUniqueOrThrow({
+      where: { email: seededId(emailBaru) },
+      select: { id: true, assignedStoreId: true, spgStartedOn: true },
+    });
+    expect(u).toMatchObject({ assignedStoreId: tokoA, spgStartedOn: "2026-11-01" });
+    const jejak = await prisma.auditLog.findMany({ where: { entityId: seededId(u.id), action: "USER_CREATED" }, select: { changes: true } });
+    expect(jejak).toHaveLength(1);
+    expect(jejak[0].changes).toMatchObject({ after: { assignedStoreId: tokoA, spgStartedOn: "2026-11-01" } });
+  });
+
+  it("akun bukan SPG tidak dimintai tanggal mulai, dan isian liar `mulai` tidak ditulis", async () => {
+    const dibuat = await simpanPenggunaAction(
+      isian({ id: null, email: emailBaru, nama: `${tagSpg} Baru`, roleId: peranBiasa, tokoId: null, sandi: SANDI, ulangSandi: SANDI, mulai: "2026-11-01" }),
+    );
+    expect(dibuat).toMatchObject({ ok: true });
+    expect(
+      await prisma.user.findUniqueOrThrow({ where: { email: seededId(emailBaru) }, select: { assignedStoreId: true, spgStartedOn: true } }),
+    ).toEqual({ assignedStoreId: null, spgStartedOn: null });
+  });
+
+  it("SPG aktif tanpa tanggal mulai: menyimpan akunnya wajib membawa tanggal itu, diperiksa penulisnya di transaksi yang sama", async () => {
+    await prisma.user.update({ where: { id: seededId(spg) }, data: { spgStartedOn: null } });
+    await adaKunjungan(new Date("2026-10-05T03:00:00.000Z"));
+    // Mengganti sandi saja pun meminta tanggalnya.
+    expect(await simpanPenggunaAction(isian({ sandi: SANDI, ulangSandi: SANDI }))).toEqual({ ok: false, codes: ["MULAI_WAJIB"] });
+
+    // Sesudah check-in pertama → ditolak, dan SELURUH penyimpanan batal (nama tidak berubah, tanpa jejak).
+    expect(await simpanPenggunaAction(isian({ nama: `${tagSpg} SPG Ubah`, mulai: "2026-10-06" }))).toEqual({
+      ok: false,
+      codes: ["MULAI_SESUDAH_KEGIATAN"],
+    });
+    expect(await bacaNama()).toEqual({ name: `${tagSpg} SPG`, spgStartedOn: null });
+    expect(await jejakUbah()).toHaveLength(0);
+
+    expect(await simpanPenggunaAction(isian({ nama: `${tagSpg} SPG Ubah`, mulai: "2026-10-03" }))).toEqual({ ok: true, id: spg });
+    expect(await bacaNama()).toEqual({ name: `${tagSpg} SPG Ubah`, spgStartedOn: "2026-10-03" });
+    const jejak = (await jejakUbah()).map((j) => j.changes);
+    expect(jejak).toHaveLength(2);
+    expect(jejak).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          before: expect.objectContaining({ name: `${tagSpg} SPG` }),
+          after: expect.objectContaining({ name: `${tagSpg} SPG Ubah` }),
+        }),
+        { before: { spgStartedOn: null }, after: { spgStartedOn: "2026-10-03" } },
+      ]),
+    );
+  });
+
+  it("akun lama yang baru diberi peran SPG dan toko tetap wajib membawa tanggal mulai", async () => {
+    await prisma.user.update({ where: { id: seededId(spg) }, data: { roleId: peranBiasa, assignedStoreId: null, spgStartedOn: null } });
+    expect(await simpanPenggunaAction(isian({ tokoId: tokoB }))).toEqual({ ok: false, codes: ["MULAI_WAJIB"] });
+    expect(await baca()).toEqual({ roleId: peranBiasa, assignedStoreId: null, spgStartedOn: null });
+
+    expect(await simpanPenggunaAction(isian({ tokoId: tokoB, mulai: "2026-11-02" }))).toEqual({ ok: true, id: spg });
+    expect(await baca()).toEqual({ roleId: peranSpg, assignedStoreId: tokoB, spgStartedOn: "2026-11-02" });
+  });
+
+  it("tanggal mulai yang sudah tersimpan tidak pernah ditimpa dari formulir ini", async () => {
+    expect(await simpanPenggunaAction(isian({ nama: `${tagSpg} SPG Ubah`, mulai: "2026-10-15" }))).toEqual({ ok: true, id: spg });
+    expect((await baca()).spgStartedOn).toBe("2026-10-01");
+    const jejak = await jejakUbah();
+    expect(jejak).toHaveLength(1);
+    expect(jejak[0].changes).not.toHaveProperty("before.spgStartedOn");
+    expect(jejak[0].changes).not.toHaveProperty("after.spgStartedOn");
+  });
+
+  it("tanggal mulai terkunci begitu ada gaji dibayar — di tombol \"Atur tanggal mulai\" maupun di formulir ini", async () => {
+    await prisma.user.update({ where: { id: seededId(spg) }, data: { spgStartedOn: null } });
+    expect(await aturMulaiSpgAction({ userId: spg, mulai: "2026-02-30" })).toEqual({ ok: false, code: "TANGGAL_TIDAK_SAH" });
+
+    await adaKunjungan(new Date("2026-10-05T03:00:00.000Z"));
+    expect(await aturMulaiSpgAction({ userId: spg, mulai: "2026-10-06" })).toEqual({ ok: false, code: "MULAI_SESUDAH_KEGIATAN" });
+    expect(await aturMulaiSpgAction({ userId: spg, mulai: "2026-10-03" })).toEqual({ ok: true });
+    expect((await baca()).spgStartedOn).toBe("2026-10-03");
+    const jejak = await jejakUbah();
+    expect(jejak[0].changes).toMatchObject({ before: { spgStartedOn: null }, after: { spgStartedOn: "2026-10-03" } });
+
+    await prisma.spgCommission.create({
+      data: { userId: spg, storeId: tokoA, period: "2026-10", unitsSold: 0, commission: 0, basis: "uji", lockedById: pelaku, paidAt: new Date() },
+    });
+    expect(await aturMulaiSpgAction({ userId: spg, mulai: "2026-10-02" })).toEqual({ ok: false, code: "MULAI_TERKUNCI" });
+    expect((await baca()).spgStartedOn).toBe("2026-10-03");
+    // Akun yang tanggalnya sudah ada tetap bisa disimpan sesudah gaji dibayar — tanggalnya tidak disentuh.
+    expect(await simpanPenggunaAction(isian({ nama: `${tagSpg} SPG Baru` }))).toEqual({ ok: true, id: spg });
+    expect((await baca()).spgStartedOn).toBe("2026-10-03");
+
+    // Tanpa tanggal padahal gaji sudah dibayar: penulisnya menolak, dan penyimpanan akunnya batal.
+    await prisma.user.update({ where: { id: seededId(spg) }, data: { spgStartedOn: null } });
+    expect(await simpanPenggunaAction(isian({ nama: `${tagSpg} SPG Lagi`, mulai: "2026-10-02" }))).toEqual({
+      ok: false,
+      codes: ["MULAI_TERKUNCI"],
+    });
+    expect(await bacaNama()).toEqual({ name: `${tagSpg} SPG Baru`, spgStartedOn: null });
+  });
+
+  it("SPG yang sudah punya riwayat tidak dipindah toko atau diganti perannya di sini", async () => {
+    await adaKunjungan(new Date("2026-10-05T03:00:00.000Z"));
+    expect(await simpanPenggunaAction(isian({ tokoId: tokoB }))).toEqual({ ok: false, codes: ["SPG_GUNAKAN_BERHENTI"] });
+    expect(await simpanPenggunaAction(isian({ roleId: peranBiasa, tokoId: null }))).toEqual({ ok: false, codes: ["SPG_GUNAKAN_BERHENTI"] });
+    expect(await baca()).toEqual({ roleId: peranSpg, assignedStoreId: tokoA, spgStartedOn: "2026-10-01" });
+    expect(await simpanPenggunaAction(isian({ nama: `${tagSpg} SPG Ubah` }))).toEqual({ ok: true, id: spg });
+  });
+
+  it("toko SPG yang belum punya riwayat masih bisa dibetulkan", async () => {
+    expect(await simpanPenggunaAction(isian({ tokoId: tokoB }))).toEqual({ ok: true, id: spg });
+    expect((await baca()).assignedStoreId).toBe(tokoB);
+  });
+
+  it("SPG yang sudah berhenti disimpan tanpa toko tetap; memberinya toko ditolak (batalkan berhenti dulu)", async () => {
+    await prisma.user.update({
+      where: { id: seededId(spg) },
+      data: { assignedStoreId: null, spgEndedOn: "2026-10-31", spgEndedStoreId: tokoA },
+    });
+    expect(await simpanPenggunaAction(isian({ tokoId: null }))).toEqual({ ok: true, id: spg });
+    expect(await simpanPenggunaAction(isian({ tokoId: tokoA }))).toEqual({ ok: false, codes: ["BERHENTI_BATALKAN_DULU"] });
+    expect((await baca()).assignedStoreId).toBeNull();
   });
 });

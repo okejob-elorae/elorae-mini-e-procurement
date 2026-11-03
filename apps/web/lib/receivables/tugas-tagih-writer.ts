@@ -94,19 +94,26 @@ export async function buatTugasTagih(input: {
   const hariIni = input.hariIni ?? new Date();
 
   return runSerializable(async (tx) => {
-    // Toko konsinyasi tidak pernah punya piutang (lihat `daftarPiutang`); faktur
-    // yang entah bagaimana menempel ke sana dianggap tidak ada.
+    // Tagihan konsinyasi ikut (keputusan 2026-10-29), tetapi hanya boleh
+    // ditugaskan ke pemegang toko (P31, `periksaTugasBaru`). Piutang yang
+    // dibatalkan dianggap tidak ada.
     const piutang = ids.length
       ? await tx.receivable.findMany({
-          where: { id: { in: ids }, store: { termsType: { not: "KONSI" } } },
-          select: { id: true, storeId: true },
+          where: { id: { in: ids }, status: { not: "VOIDED" } },
+          select: { id: true, storeId: true, isConsignment: true },
         })
       : [];
 
-    const faktur: { id: string; storeId: string; sisa: number }[] = [];
+    const faktur: { id: string; storeId: string; sisa: number; konsi: boolean }[] = [];
     for (const p of piutang) {
-      faktur.push({ id: p.id, storeId: p.storeId, sisa: await hitungUlangPiutang(tx, p.id) });
+      faktur.push({
+        id: p.id,
+        storeId: p.storeId,
+        sisa: await hitungUlangPiutang(tx, p.id),
+        konsi: p.isConsignment,
+      });
     }
+    const toko = await tx.store.findUnique({ where: { id: input.storeId }, select: { salesmanId: true } });
 
     const tugasLain = await tx.collectionTask.findMany({
       where: { storeId: input.storeId, status: STATUS_TUGAS.TERBUKA },
@@ -120,6 +127,8 @@ export async function buatTugasTagih(input: {
       faktur,
       sedangDitugaskan,
       petugasLapangan: await orangLapangan(tx, input.assigneeId),
+      assigneeId: input.assigneeId,
+      pemegangToko: toko?.salesmanId ?? null,
       tenggat: input.tenggat,
       hariIni,
     });
@@ -286,7 +295,9 @@ export async function tutupTugasLunasOtomatis(input: {
         if (ids.length === 0) return false;
         // Faktur yang sudah tidak ada tidak pernah dihitung "lunas" — `hitungUlangPiutang`
         // mengembalikan nol untuk baris yang hilang, jadi keberadaannya diperiksa dulu.
-        const ada = await tx.receivable.count({ where: { id: { in: ids } } });
+        // Faktur yang DIBATALKAN juga bersisa nol tanpa pernah dilunasi: tugasnya
+        // tidak ditutup "karena lunas" — kantor yang membatalkannya.
+        const ada = await tx.receivable.count({ where: { id: { in: ids }, status: { not: "VOIDED" } } });
         if (ada !== ids.length) return false;
         for (const id of ids) {
           if ((await hitungUlangPiutang(tx, id)) > 0) return false;

@@ -52,8 +52,9 @@ const JENIS_VAN = new Map([
 
 /*
  * Jurnal penjualan lapangan & piutang toko (`lib/finance/lapangan/`,
- * `JENIS_TERTUNDA_LAPANGAN`). BKM, retur toko, dan faktur piutang manual/impor berjurnal bergenerasi
- * (`<id>`, `<id>#2`, …) — notifikasinya selesai lewat `readAt` dari
+ * `JENIS_TERTUNDA_LAPANGAN`). Nota tagihan putus (dikoreksi saat toko menolak di pintu atau
+ * dibatalkan "tidak jadi dikirim"), BKM, retur toko, dan faktur piutang manual/impor berjurnal bergenerasi
+ * (`<id>`, `<id>#2`, …; disalin tangan dari `SUMBER_BERGENERASI`) — notifikasinya selesai lewat `readAt` dari
  * penyelarasnya, karena jurnal generasi pertama yang berdiri bukan bukti
  * bahwa keadaan terakhirnya sudah terjurnal.
  */
@@ -64,7 +65,7 @@ const JENIS_LAPANGAN = new Map([
   ["tukar_barang", "STORE_EXCHANGE"],
   ["faktur_piutang", "STORE_INVOICE"],
 ]);
-const LAPANGAN_BERGENERASI = new Set(["FIELD_COLLECTION", "STORE_RETURN", "STORE_INVOICE"]);
+const LAPANGAN_BERGENERASI = new Set(["FIELD_DELIVERY", "FIELD_COLLECTION", "STORE_RETURN", "STORE_INVOICE"]);
 
 /*
  * Jurnal piutang `postArJournalSafely` (`lib/finance/ar/post-ar-journal-safely.ts`,
@@ -109,24 +110,27 @@ const JENIS_OPERASIONAL = new Map([
   ["konsi_siklus", "CONSIGNMENT_CYCLE"],
   ["konsi_komisi", "CONSIGNMENT_COMMISSION"],
   ["konsi_gaji_bayar", "CONSIGNMENT_COMMISSION_PAYMENT"],
-  ["konsi_bayar_toko", "CONSIGNMENT_PAYMENT"],
   ["komisi_spg", "SPG_COMMISSION"],
   ["komisi_spg_bayar", "SPG_COMMISSION_PAYMENT"],
   ["barang_hilang", "STOCK_LOSS"],
   ["potong_sales", "LOSS_SALES_DEDUCTION"],
+  ["potong_sales_retur", "RETURN_SALES_DEDUCTION"],
   ["gudang_rusak", "DAMAGED_STOCK"],
   ["stok_manual", "STOCK_ADJUSTMENT"],
   ["retur_pemasok", "VENDOR_RETURN"],
   ["biaya_perjalanan", "TRAVEL_CLAIM"],
   ["biaya_perjalanan_bayar", "TRAVEL_CLAIM_PAYMENT"],
+  ["spg_utang_bayar", "SPG_DEBT_PAYMENT"],
+  ["spg_bayar_tambahan", "SPG_EXTRA_PAYOUT"],
 ]);
 const OPERASIONAL_BERGENERASI = new Set([
+  "CONSIGNMENT_TRANSFER",
   "CONSIGNMENT_RETURN",
   "CONSIGNMENT_CYCLE",
   "CONSIGNMENT_COMMISSION",
-  "CONSIGNMENT_PAYMENT",
   "SPG_COMMISSION",
   "STOCK_LOSS",
+  "SPG_DEBT_PAYMENT",
 ]);
 
 /** Sumber yang notifikasinya hanya selesai lewat `readAt` penyelarasnya (keberadaan jurnal generasi pertama bukan bukti). */
@@ -222,6 +226,16 @@ function kunciPenyelesai(s: SumberNotifikasiJurnal): string[] {
 }
 
 /**
+ * sourceType yang KEBERADAAN jurnalnya membuktikan sebuah tanda dokumen sudah beres. Sumber
+ * bergenerasi tidak: jurnal generasi pertama yang berdiri bukan bukti bahwa keadaan terakhirnya
+ * sudah terjurnal (hanya `readAt` dari penyelarasnya). Separuh pasangan nota bentuk lama
+ * (`setara`) sekali posting, jadi keberadaannya tetap bukti untuk tandanya sendiri.
+ */
+function jenisBukti(s: Extract<SumberNotifikasiJurnal, { tipe: "dokumen" }>): string[] {
+  return bergenerasi(s.sourceType) ? [...(s.setara ?? [])] : [s.sourceType, ...(s.setara ?? [])];
+}
+
+/**
  * Menandai selesai (`readAt`) setiap notifikasi `JOURNAL_PENDING` yang belum
  * selesai untuk dokumen-dokumen ini — dipanggil sesudah jurnalnya berhasil
  * diposting. Semua alasan kegagalan untuk dokumen yang sama ikut selesai.
@@ -287,9 +301,8 @@ async function idSudahBerjurnal(baris: BarisNotifikasi[]): Promise<Set<string>> 
   for (const { s } of terpetakan) {
     if (!s) continue;
     if (s.tipe === "dokumen") {
-      // Jurnal lapangan bergenerasi: hanya `readAt` dari penyelarasnya yang menyelesaikan.
-      if (bergenerasi(s.sourceType)) continue;
-      for (const sourceType of [s.sourceType, ...(s.setara ?? [])]) {
+      // Jurnal bergenerasi: hanya `readAt` dari penyelarasnya yang menyelesaikan (`jenisBukti`).
+      for (const sourceType of jenisBukti(s)) {
         const ids = perJenis.get(sourceType) ?? new Set<string>();
         ids.add(s.sourceId);
         perJenis.set(sourceType, ids);
@@ -325,7 +338,7 @@ async function idSudahBerjurnal(baris: BarisNotifikasi[]): Promise<Set<string>> 
   for (const { n, s } of terpetakan) {
     if (!s) continue;
     if (s.tipe === "dokumen") {
-      if (!bergenerasi(s.sourceType) && kunciPenyelesai(s).some((k) => ada.has(k))) sudah.add(n.id);
+      if (jenisBukti(s).some((sourceType) => ada.has(kunci(dokumenJurnal(sourceType, s.sourceId))))) sudah.add(n.id);
       continue;
     }
     if (s.tipe === "kolaborasiKol") continue;

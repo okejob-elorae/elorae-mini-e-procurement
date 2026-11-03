@@ -156,6 +156,10 @@ WHERE r.`name` IN ('ADMIN', 'PRODUCTION')
 --                                    <- collections:manage   (approve / reject a store settlement)
 --   receivables:decide_bearer        <- receivables:manage   (who bears a return shortfall / lost SPG goods,
 --                                                              and cancelling a lost-goods record already decided)
+--                                    2026-11-02 (P22): store-return shortfalls moved to their own code,
+--                                    store_returns:decide_shortfall, created with a one-time carry-over to
+--                                    every holder of this code by seed-owner-2026-11-02b-permissions.sql. This
+--                                    run-once file is NOT changed in behaviour.
 --   consignment:note_number          <- consignment:manage   (sales-note number on a locked cycle)
 --   consignment:tax_number           <- consignment:manage   (tax-invoice number on a locked cycle)
 --   consignment:lock                 <- consignment:manage   (lock / unlock the official sold figures)

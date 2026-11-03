@@ -60,7 +60,8 @@ export default async function StoreDetailPage({
     : null;
   /*
    * Batas kredit yang BERLAKU, lewat pemutus yang sama dengan pemeriksaan kredit: kolom kosong
-   * ikut bawaan Pengaturan → Salesman (toko putus), "Tanpa batas kredit" membebaskan toko.
+   * pada toko PUTUS ikut bawaan Pengaturan → Salesman; kolom kosong pada toko KONSI berarti tanpa
+   * batas sama sekali (P21, `BAWAAN_BERLAKU_UNTUK_KONSI`); "Tanpa batas kredit" membebaskan toko.
    * Eksposur dan sisa limit hanya dihitung kalau ada batas yang dinilai.
    */
   const aturanKredit = await bacaAturanKreditDb();
@@ -128,9 +129,9 @@ export default async function StoreDetailPage({
   // stores:view (dijaga di atas) = baca & tambah catatan; stores:manage = kelola semua catatan.
   const catatan = await catatanTokoUntuk(store.id, { userId: session.user.id ?? "", kelolaSemua: canEdit });
 
-  // Kredit & piutang hanya untuk toko PUTUS (konsinyasi tidak punya piutang).
-  // Batasnya data toko (boleh dilihat pemegang stores:view); ringkasan piutang
-  // hanya untuk yang boleh membaca piutang.
+  // Lapisan mode kredit dan batas jumlah faktur terbuka hanya untuk toko PUTUS; tagihan
+  // konsi ada di Faktur & piutang. Batasnya data toko (boleh dilihat pemegang stores:view);
+  // ringkasan piutang hanya untuk yang boleh membaca piutang.
   let kredit: KreditTokoTampil | null = null;
   if (store.termsType === "PUTUS") {
     const bolehPiutang = bolehMembacaPiutang(perms);
@@ -158,6 +159,7 @@ export default async function StoreDetailPage({
         stockCard
           ? {
               rows: stockCard.rows,
+              dalamPerjalananTanpaStok: stockCard.dalamPerjalananTanpaStok,
               negativeCount: stockCard.negativeCount,
               lastPartialCount: stockCard.lastPartialCount,
               inTransitAdminReturn,

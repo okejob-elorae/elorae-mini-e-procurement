@@ -46,6 +46,7 @@ const ERROR_KEY: Record<ItemImportErrorCode, `err.${ItemImportErrorCode}`> = {
   BARCODE_TAKEN: "err.BARCODE_TAKEN",
   DUPLICATE_IN_FILE: "err.DUPLICATE_IN_FILE",
   SKU_TAKEN: "err.SKU_TAKEN",
+  SALES_CHANNEL_REQUIRED: "err.SALES_CHANNEL_REQUIRED",
 };
 
 const COLUMN_HEADER = new Map<ItemImportColumnKey, string>(ITEM_IMPORT_COLUMNS.map((c) => [c.key, c.header]));

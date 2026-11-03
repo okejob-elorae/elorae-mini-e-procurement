@@ -203,12 +203,11 @@ d("target rinci — capaian SPG dari nota penjualannya (test bed only)", () => {
     expect(sen(c.total)).toBe((await bersihDariBaris(spgA)).nilaiSen + sen(5 * 85_000));
   });
 
-  it("targetSaya untuk SPG: capaian dari notanya, target barang rupiah tidak ditandai 'tanpa konsinyasi'", async () => {
+  it("targetSaya untuk SPG: capaian dari notanya", async () => {
     const r = await targetSaya(spgA, BULAN, HARI_INI, { spg: true });
     const kat = r.baris.find((b) => b.scope === "KATEGORI")!;
     expect(kat.kemajuan).toMatchObject({ target: 10, capai: 3, kurang: 7 });
     const brg = r.baris.find((b) => b.scope === "BARANG")!;
-    expect(brg.tanpaKonsi).toBe(false);
     expect(brg.kemajuan).toMatchObject({ target: 300_000, capai: 149_999.99 });
     // Tanpa tanda SPG, orang yang sama dibaca sebagai sales: tidak punya penjualan sales.
     expect((await targetSaya(spgA, BULAN, HARI_INI)).capaian.total).toBe(0);

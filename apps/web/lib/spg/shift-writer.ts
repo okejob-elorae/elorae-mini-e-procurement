@@ -6,6 +6,7 @@ import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { JENIS_KABAR, kabariPengguna, type Kabar } from "@/lib/notifications/kabar-pengguna";
 import { bentrokKunciKiriman } from "@/lib/receivables/idempoten";
 import { bacaAturanShift, KUNCI_SHIFT, type AturanShift } from "./pengaturan";
+import { sentuhJadwalBulan } from "./jadwal-bulan-writer";
 import {
   ENTITAS_JADWAL_SPG,
   ENTITAS_TUKAR_SHIFT,
@@ -122,16 +123,35 @@ export type HasilSimpanJadwalSpg =
   | TolakJadwalSpg
   | { ok: false; kode: "TOKO_TIDAK_DITEMUKAN" };
 
+/** Hari yang berubah per SPG, untuk menyentuh kepala jadwal bulanannya. */
+function hariBerubahPerSpg(perubahan: readonly PerubahanSel[]): Map<string, string[]> {
+  const per = new Map<string, string[]>();
+  for (const p of perubahan) {
+    const d = per.get(p.userId);
+    if (d) d.push(p.day);
+    else per.set(p.userId, [p.day]);
+  }
+  return per;
+}
+
 /**
  * Simpan sel-sel kisi jadwal satu toko. Ditolak seluruhnya bila satu sel
  * salah (hari lewat, bukan SPG toko ini, shift tidak dikenal) — tidak ada
  * simpan setengah jalan. Sel yang tidak berubah tidak ditulis dan tidak
  * dijejak; simpan tanpa perubahan apa pun tidak menulis apa-apa.
+ *
+ * Setiap bulan yang disentuh menaikkan versi kepala jadwal bulanan SPG itu
+ * (`sentuhJadwalBulan`, di transaksi yang sama): bulan yang sudah DISETUJUI
+ * kembali DIAJUKAN kecuali pengubahnya memegang `spg_schedules:approve`
+ * (`bolehSetujui`, diperiksa aksinya) — jadwal yang sudah disetujui tidak bisa
+ * berubah diam-diam. Tanpa `bolehSetujui` dianggap tidak memegangnya.
  */
 export async function simpanJadwalSpg(input: {
   storeId: string;
   olehUserId: string;
   isian: readonly IsianSel[];
+  /** Pengubah memegang `spg_schedules:approve` — bulan yang disetujui tetap disetujui. */
+  bolehSetujui?: boolean;
   sekarang?: Date;
 }): Promise<HasilSimpanJadwalSpg> {
   const hariIni = kunciHariWib(input.sekarang ?? new Date());
@@ -154,6 +174,16 @@ export async function simpanJadwalSpg(input: {
     for (const w of r.tulis) await tulisSel(tx, input.storeId, input.olehUserId, w);
     if (r.hapus.length > 0) {
       await tx.spgShift.deleteMany({ where: { OR: r.hapus.map((h) => ({ userId: h.userId, day: h.day })) } });
+    }
+    for (const [userId, hari] of hariBerubahPerSpg(r.perubahan)) {
+      await sentuhJadwalBulan(tx, {
+        userId,
+        storeId: input.storeId,
+        hari,
+        olehUserId: input.olehUserId,
+        sumber: "KANTOR",
+        bolehSetujui: input.bolehSetujui === true,
+      });
     }
     await tx.auditLog.create({
       data: {
@@ -497,8 +527,20 @@ export async function batalkanTukarShift(input: { swapId: string; userId: string
  * setiap hari yang terlibat bertukar (rekan libur/kosong → shift berpindah,
  * pengaju libur). Jadwal diperiksa ulang lebih dulu — kantor bisa mengubahnya
  * sesudah ajuan dibuat — dan kedua orang harus masih SPG toko itu.
+ *
+ * Bulan yang tersentuh pertukaran menaikkan versi kepala jadwal bulanan kedua
+ * orang (`sentuhJadwalBulan`, sumber `TUKAR`); bulan yang sudah DISETUJUI
+ * kembali DIAJUKAN kecuali penyetujunya memegang `spg_schedules:approve`
+ * (`bolehSetujui`, diperiksa aksinya).
  */
-export async function setujuiTukarShift(input: { swapId: string; olehUserId: string; catatan?: unknown; sekarang?: Date }): Promise<HasilTukar> {
+export async function setujuiTukarShift(input: {
+  swapId: string;
+  olehUserId: string;
+  catatan?: unknown;
+  /** Penyetuju memegang `spg_schedules:approve` — bulan yang disetujui tetap disetujui. */
+  bolehSetujui?: boolean;
+  sekarang?: Date;
+}): Promise<HasilTukar> {
   const sekarang = input.sekarang ?? new Date();
   const hariIni = kunciHariWib(sekarang);
   const catatan = teksCatatan(input.catatan, false, { wajib: "CATATAN_WAJIB", panjang: "CATATAN_TERLALU_PANJANG" });
@@ -535,6 +577,16 @@ export async function setujuiTukarShift(input: { swapId: string; olehUserId: str
 
     const t = hasilTukar({ pengajuId: s.requesterId, rekanId: s.partnerId, hari, baris });
     for (const w of t.tulis) await tulisSel(tx, s.storeId, input.olehUserId, w);
+    for (const [userId, hariOrang] of hariBerubahPerSpg(t.perubahan)) {
+      await sentuhJadwalBulan(tx, {
+        userId,
+        storeId: s.storeId,
+        hari: hariOrang,
+        olehUserId: input.olehUserId,
+        sumber: "TUKAR",
+        bolehSetujui: input.bolehSetujui === true,
+      });
+    }
     const j = jejakSel(t.perubahan);
     await catatJejakTukar(tx, {
       userId: input.olehUserId,

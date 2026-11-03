@@ -134,6 +134,11 @@ const ISIAN: Record<KodeIzin, Isian> = {
     persetujuan: true,
   },
   [P.FIELD_SALES_ORDERS_DELIVER]: { grup: "pesananLapangan", butuh: P.FIELD_SALES_ORDERS_VIEW },
+  // Tidak jadi dikirim untuk pengiriman putus yang sudah bernota: Admin Penjualan menekannya
+  // sendiri, alasan wajib, Keuangan langsung dikabari (keputusan pemilik 2026-11-02, P41a). Bukan
+  // persetujuan. Halaman Pengiriman membukanya sendiri; di rincian pesanan lapangan tombolnya
+  // tampil bagi pembaca pesanan yang memegang izin ini.
+  [P.DELIVERIES_CANCEL_NOTA]: { grup: "pesananLapangan", halaman: ["/backoffice/deliveries"] },
   [P.FIELD_SALES_ORDERS_CREDIT_OVERRIDE]: { grup: "pesananLapangan", butuh: P.FIELD_SALES_ORDERS_APPROVE, persetujuan: true },
   [P.STORES_VIEW]: {
     grup: "pesananLapangan",
@@ -190,6 +195,7 @@ const ISIAN: Record<KodeIzin, Isian> = {
       "/backoffice/spg-pelanggan",
       "/backoffice/jadwal-spg",
       "/backoffice/komisi-spg",
+      "/backoffice/komisi-spg/catatan-hadir",
       "/backoffice/spg-requests",
       "/backoffice/spg-lost-sales",
       "/backoffice/spg-transfers",
@@ -205,8 +211,18 @@ const ISIAN: Record<KodeIzin, Isian> = {
     halaman: ["/backoffice/settings/spg-commission"],
     butuh: P.SPG_SALES_VIEW,
   },
-  // Persetujuan dan pembayaran — bawaannya hanya admin (keputusan pemilik 2026-11-01).
-  [P.SPG_COMMISSION_PAY]: { grup: "spg", butuh: P.SPG_SALES_VIEW, persetujuan: true },
+  // Persetujuan dan pembayaran. Bawaannya admin dan Keuangan (keputusan pemilik 2026-11-02, Q9),
+  // dan izin ini sendiri membuka halaman Komisi SPG — tanpa Awasi SPG, jadi Keuangan tidak melihat
+  // layar SPG lain (P28). Karena itu tanpa `butuh`.
+  [P.SPG_COMMISSION_PAY]: { grup: "spg", halaman: ["/backoffice/komisi-spg"], persetujuan: true },
+  // Jadwal kerja bulanan yang diisi SPG di HP, disetujui kantor (P7c). Persetujuan — bawaannya
+  // hanya admin. Tab "Jadwal bulanan" ada di halaman Jadwal & shift milik Awasi SPG.
+  [P.SPG_SCHEDULES_APPROVE]: { grup: "spg", butuh: P.SPG_SALES_VIEW, persetujuan: true },
+  // Catatan check-in toko dari kertas/Excel bila SPG tidak mengisi jadwalnya: dimasukkan admin
+  // kantor (bawaannya Admin Penjualan, P7e) dan diperiksa orang lain (bawaannya Keuangan, P61a).
+  // Keduanya membuka halaman catatannya sendiri; bukan persetujuan.
+  [P.SPG_ATTENDANCE_RECORD]: { grup: "spg", halaman: ["/backoffice/komisi-spg/catatan-hadir"] },
+  [P.SPG_ATTENDANCE_VERIFY]: { grup: "spg", halaman: ["/backoffice/komisi-spg/catatan-hadir"] },
   // Dua layar: mutasi SPG (/backoffice/spg-transfers, pagar spg_sales:view) dan Transfer Toko kantor
   // (/backoffice/store-transfers, pagar stores:view). `butuh` hanya satu kode dan stores:view tidak selalu perlu,
   // jadi prasyarat kedua ditulis di keterangannya.
@@ -234,22 +250,33 @@ const ISIAN: Record<KodeIzin, Isian> = {
       "/backoffice/piutang/impor",
       "/backoffice/barang-hilang",
       "/backoffice/settings/jenis-potongan",
+      "/backoffice/settings/piutang",
     ],
     butuh: P.RECEIVABLES_VIEW,
   },
-  // Persetujuan — bawaannya hanya admin (keputusan pemilik 2026-11-01). Barang
-  // hilang memagari dirinya dengan izin ini juga; `butuh` tetap receivables:view
-  // untuk beban selisih retur.
+  // Persetujuan — bawaannya hanya admin (keputusan pemilik 2026-11-01). Sejak 2026-11-02 (P22)
+  // hanya barang hilang — di toko SPG maupun di perjalanan pengiriman — dan halaman Barang hilang
+  // memagari dirinya dengan izin ini, jadi tanpa `butuh`. Selisih retur toko pindah ke izin di
+  // bawahnya.
   [P.RECEIVABLES_DECIDE_BEARER]: {
     grup: "piutang",
     halaman: ["/backoffice/barang-hilang"],
-    butuh: P.RECEIVABLES_VIEW,
     persetujuan: true,
   },
+  // Selisih retur toko, dipecah dari izin di atas (keputusan pemilik 2026-11-02, P22). Persetujuan —
+  // bawaannya hanya admin. Halaman retur toko dan beban selisih dibuka lewat Lihat piutang.
+  [P.STORE_RETURNS_DECIDE_SHORTFALL]: { grup: "piutang", butuh: P.RECEIVABLES_VIEW, persetujuan: true },
+  // Hanya MENERIMA pengingat jatuh tempo kantor (keputusan pemilik 2026-11-02, P48). Tautan
+  // pengingatnya membuka faktur, jadi perlu Lihat piutang. Bukan persetujuan.
+  [P.RECEIVABLES_OVERDUE_REMINDER]: { grup: "piutang", butuh: P.RECEIVABLES_VIEW },
   // Periksa pembayaran (BKM, giro): admin dan keuangan. Pembaca BKM dan nota
   // retur (`bolehMembacaPelunasan`/`bolehMembacaRetur`, lib/receivables/izin.ts).
   // Juga memverifikasi setoran penagih dan menyetujui pelunasan toko (keduanya
-  // memagari dirinya).
+  // memagari dirinya), dan memeriksa pembayaran utang SPG yang sudah berhenti di
+  // halaman Komisi SPG (`bolehMembukaKomisiSpg`). Pemeriksaan uang klaim ekspedisi TIDAK
+  // dicantumkan: tombolnya di halaman Barang hilang, yang tidak dibuka Keuangan (P28 —
+  // "Keuangan hanya halaman Komisi SPG", pertanyaannya menyebut barang hilang) sampai pemilik
+  // memutuskan lain.
   [P.PAYMENTS_VERIFY]: {
     grup: "piutang",
     halaman: [
@@ -257,12 +284,14 @@ const ISIAN: Record<KodeIzin, Isian> = {
       "/backoffice/retur-toko",
       "/backoffice/finance/collections",
       "/backoffice/finance/pelunasan",
+      "/backoffice/komisi-spg",
     ],
   },
   [P.PAYMENTS_MANAGE]: { grup: "piutang", halaman: ["/backoffice/finance/payments"] },
+  // Pengaturan → Piutang pindah ke Kelola piutang (keputusan pemilik 2026-11-02, Q14).
   [P.COLLECTIONS_MANAGE]: {
     grup: "piutang",
-    halaman: ["/backoffice/finance/collections", "/backoffice/finance/pelunasan", "/backoffice/settings/piutang"],
+    halaman: ["/backoffice/finance/collections", "/backoffice/finance/pelunasan"],
   },
 
   // ── Konsinyasi ──
@@ -342,11 +371,22 @@ const ISIAN: Record<KodeIzin, Isian> = {
   [P.SUPPLIER_PAYMENTS_EDIT]: { grup: "pembelian", butuh: P.SUPPLIER_PAYMENTS_VIEW },
   [P.ITEM_REQUESTS_VIEW]: { grup: "pembelian", halaman: ["/backoffice/item-requests"] },
   [P.ITEM_REQUESTS_MANAGE]: { grup: "pembelian", butuh: P.ITEM_REQUESTS_VIEW },
-  [P.VENDOR_BILLS_VIEW]: { grup: "pembelian", halaman: ["/backoffice/vendor-bills"] },
+  [P.VENDOR_BILLS_VIEW]: {
+    grup: "pembelian",
+    halaman: ["/backoffice/vendor-bills", "/backoffice/vendor-bills/belum-ditagih", "/backoffice/vendor-bills/selisih-harga"],
+  },
   [P.VENDOR_BILLS_MANAGE]: {
     grup: "pembelian",
     halaman: ["/backoffice/vendor-bills/new"],
     butuh: P.VENDOR_BILLS_VIEW,
+  },
+  // Selisih harga invoice vs utang tercatat (keputusan pemilik 2026-11-02, P27 + P53). Persetujuan —
+  // bawaannya hanya admin. Halamannya berada di bawah Tagihan pemasok (`vendor_bills:view`).
+  [P.VENDOR_BILLS_DECIDE_PRICE]: {
+    grup: "pembelian",
+    halaman: ["/backoffice/vendor-bills/selisih-harga"],
+    butuh: P.VENDOR_BILLS_VIEW,
+    persetujuan: true,
   },
   [P.VENDOR_RETURNS_VIEW]: { grup: "pembelian", halaman: ["/backoffice/vendor-returns"] },
   [P.VENDOR_RETURNS_CREATE]: {
@@ -378,6 +418,14 @@ const ISIAN: Record<KodeIzin, Isian> = {
       "/backoffice/tukar-barang",
     ],
     butuh: P.INVENTORY_VIEW,
+  },
+  // Penerimaan barang tanpa PO baru diproses sesudah dikonfirmasi (keputusan pemilik 2026-11-02,
+  // P51a). Persetujuan — bawaannya hanya admin. Kartu konfirmasinya ada di rincian GRN.
+  [P.GOODS_RECEIPTS_CONFIRM_NO_PO]: {
+    grup: "gudang",
+    halaman: ["/backoffice/inventory/grn/[id]"],
+    butuh: P.INVENTORY_VIEW,
+    persetujuan: true,
   },
   [P.INVENTORY_OPNAME_VIEW]: { grup: "gudang", halaman: ["/backoffice/inventory/stock-opname"] },
   [P.INVENTORY_OPNAME_COUNT]: {
@@ -516,8 +564,10 @@ export const IZIN_PERSETUJUAN: readonly KodeIzin[] = (Object.keys(ISIAN) as Kode
 
 /**
  * Izin persetujuan yang SENGAJA dipegang peran kantor sejak awal, karena pemilik
- * memutuskannya sendiri — selebihnya persetujuan bawaannya hanya admin. Retur pembeli
- * SPG disetujui admin dan Admin Penjualan (keputusan pemilik 2026-11-02).
+ * memutuskannya sendiri — selebihnya persetujuan bawaannya hanya admin. Dua pengecualian,
+ * keduanya keputusan pemilik 2026-11-02: retur pembeli SPG disetujui admin dan Admin
+ * Penjualan, dan Keuangan menandai gaji & komisi SPG dibayar (Q9) — dari halaman Komisi SPG
+ * saja, tanpa layar SPG lain (P28).
  *
  * `peran-kantor.test.ts` mewajibkan izin persetujuan tiap peran kantor di `seed.ts` dan
  * di kedua `seed-office-roles-permissions.sql` sama PERSIS dengan daftar ini, jadi
@@ -526,7 +576,7 @@ export const IZIN_PERSETUJUAN: readonly KodeIzin[] = (Object.keys(ISIAN) as Kode
 export const PERSETUJUAN_BAWAAN_PERAN_KANTOR: Readonly<
   Record<"KEUANGAN" | "ADMIN_PENJUALAN" | "ADMIN_PAJAK", readonly KodeIzin[]>
 > = {
-  KEUANGAN: [],
+  KEUANGAN: [P.SPG_COMMISSION_PAY],
   ADMIN_PENJUALAN: [P.SPG_RETURNS_APPROVE],
   ADMIN_PAJAK: [],
 };

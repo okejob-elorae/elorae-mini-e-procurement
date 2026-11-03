@@ -109,4 +109,25 @@ describe("tautanKabar", () => {
     // Laporan yang MENUNGGU adalah kategori lonceng kantor, bukan kabar HP.
     expect(tautanKabar("RETUR_PEMBELI_MENUNGGU", { returnId: "r1" })).toBeNull();
   });
+
+  // Kabar ketiga untuk SPG (Q24): pengiriman yang sudah berangkat tidak jadi dikirim.
+  it("pengiriman yang dibatalkan membawa SPG ke daftar kiriman, bukan ke formulir terima", () => {
+    expect(JENIS_KABAR.KIRIMAN_DIBATALKAN).toBe("KIRIMAN_DIBATALKAN");
+    expect(tautanKabar("KIRIMAN_DIBATALKAN", { storeId: "s1", shipmentId: "shp1" })).toBe("/pwa/spg/terima");
+    expect(tautanKabar("KIRIMAN_DIBATALKAN", { sourceType: "PUTUS_DELIVERY", sourceId: "d1" })).toBe("/pwa/spg/terima");
+    expect(tautanKabar("KIRIMAN_DIBATALKAN", {})).toBe("/pwa/spg/terima");
+  });
+
+  // Selisih retur toko (P22, P84, P85): ke pemegang toko sekarang.
+  it("selisih retur yang perlu dicek membawa ke daftar retur; yang ditanggung toko ke tagihan tokonya", () => {
+    expect(JENIS_KABAR.RETUR_SELISIH_CEK).toBe("RETUR_SELISIH_CEK");
+    expect(JENIS_KABAR.RETUR_DITANGGUNG_TOKO).toBe("RETUR_DITANGGUNG_TOKO");
+    expect(tautanKabar("RETUR_SELISIH_CEK", { chargeId: "c1", returnId: "r1", storeId: "s1" })).toBe("/pwa/retur");
+    expect(tautanKabar("RETUR_SELISIH_CEK", {})).toBe("/pwa/retur");
+    expect(tautanKabar("RETUR_DITANGGUNG_TOKO", { chargeId: "c1", returnId: "r1", storeId: "s1" })).toBe("/pwa/piutang/s1");
+    expect(tautanKabar("RETUR_DITANGGUNG_TOKO", { chargeId: "c1" })).toBe("/pwa/piutang");
+    expect(tautanKabar("RETUR_DITANGGUNG_TOKO", { storeId: "../x" })).toBe("/pwa/piutang/..%2Fx");
+    // Lonceng kantor selisih retur bukan kabar HP.
+    expect(tautanKabar("RETUR_SELISIH", { storeReturnId: "r1" })).toBeNull();
+  });
 });

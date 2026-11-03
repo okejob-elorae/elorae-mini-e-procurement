@@ -8,7 +8,11 @@ export type R2KeyPrefix =
   | "field-returns"
   | "items"
   | "payments"
-  | "uploads";
+  | "uploads"
+  | "spg-sale-returns"
+  | "store-receipt-photos"
+  | "spg-catatan-hadir"
+  | "spg-utang";
 
 const SEGMENT_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const EXT_PATTERN = /^[a-z0-9]{2,5}$/;

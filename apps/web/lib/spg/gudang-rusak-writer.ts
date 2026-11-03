@@ -6,10 +6,12 @@ import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { lengkapiNilaiMasukRusak, nilaiKeluarBerikutnya, nilaiMasukRusak } from "@/lib/finance/operasional/nilai-rusak-queries";
 import { hppJualTerakhir } from "@/lib/receivables/hpp-retur";
+import { biayaSatuanKonsi } from "@/lib/finance/operasional/biaya-konsi";
 import {
   ENTITAS_GERAK_RUSAK,
   JEJAK_GUDANG_RUSAK,
   REF_BARIS_NRI,
+  REF_BARIS_RETUR_LAPANGAN,
   REF_PENYESUAIAN,
   kondisiRusak,
   periksaKeputusanRusak,
@@ -87,6 +89,50 @@ export async function masukkanGudangRusakDariNri(
       refId: b.id,
       value: new Prisma.Decimal(nilai[i]),
       note: `${input.noNri} · ${b.condition}`,
+      createdById: input.olehUserId,
+    })),
+  });
+  return baru.length;
+}
+
+/**
+ * Barang retur lapangan toko KONSINYASI yang DITOLAK saat retur disetujui masuk Gudang Barang Rusak
+ * (Q25, P23 "anda benar") — di dalam transaksi persetujuannya. Idempoten per baris retur
+ * (`REF_BARIS_RETUR_LAPANGAN` + id baris). Nilai = qty × biaya konsinyasi barang itu saat retur
+ * disetujui (`biayaSatuanKonsi`), yang juga didebit jurnal returnya ke `INVENTORY_DAMAGED`.
+ * Toko putus tidak lewat sini (pemanggil menyaring).
+ */
+export async function masukkanGudangRusakDariReturLapangan(
+  tx: Klien,
+  input: {
+    docNo: string;
+    olehUserId: string;
+    baris: { id: string; itemId: string; variantSku: string | null; productName: string; qty: number }[];
+    /** Saat retur disetujui — biaya konsinyasi sampai saat itu. */
+    sebelum: Date;
+  },
+): Promise<number> {
+  const tolak = input.baris.filter((b) => b.itemId && Number.isInteger(b.qty) && b.qty > 0);
+  if (tolak.length === 0) return 0;
+  const sudah = await tx.damagedStockMovement.findMany({
+    where: { refType: REF_BARIS_RETUR_LAPANGAN, refId: { in: tolak.map((b) => b.id) } },
+    select: { refId: true },
+  });
+  const ada = new Set(sudah.map((s) => s.refId));
+  const baru = tolak.filter((b) => !ada.has(b.id));
+  if (baru.length === 0) return 0;
+  const biaya = await biayaSatuanKonsi(tx, baru.map((b) => b.itemId), input.sebelum);
+  await tx.damagedStockMovement.createMany({
+    data: baru.map((b) => ({
+      itemId: b.itemId,
+      variantSku: b.variantSku?.trim() ?? "",
+      productName: b.productName.trim() || b.itemId,
+      qty: qtyBertanda("MASUK_RETUR", b.qty),
+      kind: "MASUK_RETUR",
+      refType: REF_BARIS_RETUR_LAPANGAN,
+      refId: b.id,
+      value: new Prisma.Decimal(Math.round(b.qty * (biaya.get(b.itemId)?.biaya ?? 0) * 100) / 100),
+      note: `${input.docNo} · RETUR_LAPANGAN`,
       createdById: input.olehUserId,
     })),
   });

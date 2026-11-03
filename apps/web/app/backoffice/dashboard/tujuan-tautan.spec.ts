@@ -27,6 +27,7 @@ const data = vi.hoisted(() => ({
   /** Saringan yang diterima kueri daftar halaman tujuan, terakhir kali dipanggil. */
   saringanReturPembeli: null as null | { status: string },
   opsiHargaJubelio: null as null | { jenis?: string; cari?: string },
+  opsiHargaBeda: null as null | { cari?: string },
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => ({ user: { id: "u-admin", permissions: ["*"] } })) }));
@@ -171,7 +172,12 @@ vi.mock("@/lib/jubelio/harga/queries", () => ({
     data.opsiHargaJubelio = opsi;
     return { baris: [], total: 0, terpotong: false };
   }),
+  daftarHargaBedaDiJubelio: vi.fn(async (opsi: { cari?: string }) => {
+    data.opsiHargaBeda = opsi;
+    return { baris: [], total: 0, terpotong: false };
+  }),
   hitungBarangJubelioTanpaHarga: vi.fn(async () => 0),
+  hitungHargaBedaDiJubelio: vi.fn(async () => 0),
 }));
 
 // Komponen klien tidak dirender — yang diuji props yang dikirim halaman.
@@ -260,6 +266,7 @@ beforeEach(() => {
   ];
   data.saringanReturPembeli = null;
   data.opsiHargaJubelio = null;
+  data.opsiHargaBeda = null;
 });
 
 describe("tujuan tautan Beranda — halaman menerapkan saringan yang sama dengan angkanya", () => {
@@ -330,7 +337,15 @@ describe("tujuan tautan Beranda — halaman menerapkan saringan yang sama dengan
   it("Harga menunggu konfirmasi Jubelio → daftar tanpa saringan jenis maupun cari", async () => {
     const p = await buka(ANTREAN_KANTOR.jubelioPricesPending.href, "@/app/backoffice/jubelio/harga/page");
     expect(data.opsiHargaJubelio).toEqual({ jenis: undefined, cari: undefined });
+    expect(data.opsiHargaBeda).toBeNull();
     expect(p.jenis).toBeNull();
+  });
+
+  it("Harga di Jubelio berbeda dengan ERP → daftar BEDA tanpa saringan cari, bukan daftar menunggu", async () => {
+    const p = await buka(ANTREAN_KANTOR.jubelioPricesDiffer.href, "@/app/backoffice/jubelio/harga/page");
+    expect(data.opsiHargaBeda).toEqual({ cari: undefined });
+    expect(data.opsiHargaJubelio).toBeNull();
+    expect(p.jenis).toBe("BEDA");
   });
 
   it("Daftar toko tanpa saringan perubahan tetap hanya toko aktif", async () => {

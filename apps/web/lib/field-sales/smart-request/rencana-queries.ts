@@ -6,6 +6,7 @@ import { barangBaru, HARI_BARU_MAKS } from "@/lib/salesman/saran-tawar";
 import { bahanSaranTawar } from "@/lib/salesman/saran-tawar-queries";
 import { loadSmartRequestCandidates, type KandidatMuat } from "./load-candidates";
 import type { BahanRencana, KandidatRencana, StokTokoBarang, SumberRencana } from "./rencana";
+import { hargaKonsiHp } from "@/lib/field-sales/perkiraan-konsi";
 
 /**
  * Pemuat bahan rencana kirim. Aturannya murni di `rencana.ts`; di sini hanya
@@ -115,7 +116,10 @@ export async function muatBahanRencana(input: {
 
   const info = new Map<string, InfoBarangRencana>();
   const kandidat: KandidatRencana[] = muat.map((k) => {
-    // Harga konsinyasi TIDAK PERNAH dihitung untuk HP — bukan disembunyikan, memang tidak ada.
+    // Toko PUTUS: harga toko, dipakai penyusun untuk anggaran. Toko KONSI: penyusun tidak pernah
+    // memakai harga (anggaran hanya untuk putus), jadi `kandidat.harga` tetap null; harga retail
+    // konsi hanya untuk TAMPILAN di HP salesman (pemilik P18 "berikan selengkapnya saja",
+    // `hargaKonsiHp` — rumus yang sama dengan katalog dan pesanan konsi).
     const harga = konsi
       ? null
       : computeStorePrice({
@@ -124,7 +128,8 @@ export async function muatBahanRencana(input: {
           markupPercent: input.markupPercent,
           priceDiscountPercent: input.priceDiscountPercent,
         }).price;
-    info.set(k.itemId, { sku: k.sku, nama: k.nama, kategoriId: k.kategoriId, variantsMentah: k.variantsMentah, harga });
+    const hargaTampil = konsi ? hargaKonsiHp(k.hargaJual, input.markupPercent) : harga;
+    info.set(k.itemId, { sku: k.sku, nama: k.nama, kategoriId: k.kategoriId, variantsMentah: k.variantsMentah, harga: hargaTampil });
     return { itemId: k.itemId, sku: k.sku, kategoriId: k.kategoriId, variants: k.variants, available: k.available, harga };
   });
 

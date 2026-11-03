@@ -58,8 +58,9 @@ export async function muatPanelKredit(orderId: string): Promise<PanelKredit | nu
   const kredit = await muatKreditToko(order.storeId);
   if (!kredit) return null;
 
-  // Selama menunggu persetujuan, pesanan ini belum menjadi faktur — nilainya
-  // ikut dihitung seperti saat dibuat. Sesudah diputuskan, yang dinilai hanya tagihan toko.
+  // Selama menunggu persetujuan, pesanan ini menambah totalnya SEKALI sebagai
+  // `nilaiPesanan`, seperti saat dibuat. Sesudah disetujui nilainya sudah ada di
+  // `keadaan.belumDinota` (sampai masuk nota), jadi `nilaiPesanan` nol.
   const nilaiPesanan = order.status === "PENDING_APPROVAL" ? Number(order.total) : 0;
   const sekarang = kredit.keadaan
     ? { ...nilaiKredit(kredit.keadaan, kredit.aturan, kredit.batas, nilaiPesanan), keadaan: kredit.keadaan, nilaiPesanan }

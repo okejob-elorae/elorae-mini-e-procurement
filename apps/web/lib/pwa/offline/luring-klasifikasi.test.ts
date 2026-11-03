@@ -25,6 +25,9 @@ describe("kunciAlasanLuring", () => {
     expect(kunciAlasanLuring("DI_LUAR_RADIUS")).toBe("DI_LUAR_RADIUS");
     expect(kunciAlasanLuring(KUNJUNGAN_DITOLAK)).toBe("KUNJUNGAN_DITOLAK");
     expect(kunciAlasanLuring("FOTO_TERLALU_BESAR")).toBe("FOTO");
+    // A server refusal whose name starts with FOTO_ keeps its own text, not the upload one.
+    expect(kunciAlasanLuring("FOTO_STRUK_WAJIB")).toBe("FOTO_STRUK_WAJIB");
+    expect(kunciAlasanLuring("KIRIMAN_DIBATALKAN")).toBe("KIRIMAN_DIBATALKAN");
     expect(kunciAlasanLuring("APA_INI")).toBe("UMUM");
     expect(kunciAlasanLuring(undefined)).toBe("UMUM");
   });
@@ -44,6 +47,18 @@ describe("reason texts", () => {
       }
       for (const kode of KODE_ALASAN_NOTA_SPG) {
         expect(pesan.pwa.spgAntrean.alasan[kode], `${bahasa}: pwa.spgAntrean.alasan.${kode}`).toBeTruthy();
+      }
+    }
+  });
+
+  it("a code several queued jobs can return has text that names no single job", async () => {
+    const { KODE_ALASAN_LINTAS_PEKERJAAN, KODE_ALASAN_LURING } = await import("./luring-klasifikasi");
+    for (const bahasa of ["id", "en"] as const) {
+      const pesan = (await import(`@/lib/i18n/messages/${bahasa}.json`)).default as { pwaLuring: { alasan: Record<string, string> } };
+      for (const kode of KODE_ALASAN_LINTAS_PEKERJAAN) {
+        expect((KODE_ALASAN_LURING as readonly string[]).includes(kode)).toBe(true);
+        // kirimMutasi returns TIDAK_DITEMUKAN too: a failed transfer must never read as a missing return.
+        expect(pesan.pwaLuring.alasan[kode], `${bahasa}: pwaLuring.alasan.${kode}`).not.toMatch(/retur|return|mutasi|transfer|kiriman|shipment/i);
       }
     }
   });

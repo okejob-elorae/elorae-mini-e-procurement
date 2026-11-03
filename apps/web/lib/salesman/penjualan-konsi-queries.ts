@@ -2,7 +2,7 @@ import { prisma } from "@elorae/db";
 import { kunciHariWib } from "@/lib/dashboard/tren";
 import { nilaiBarisHilang } from "@/lib/spg/hilang-db";
 import { gerakLakuBersih } from "@/lib/spg/laku-bersih";
-import { AKSI_PINDAH_TOKO } from "@/lib/stores/penanggung-jawab-writer";
+import { riwayatPemegang } from "@/lib/stores/riwayat-pemegang";
 import {
   kunciBulanSiklus,
   laporanSiklusDipakai,
@@ -12,7 +12,6 @@ import {
   pengirimPada,
   tanggalLaporanSiklus,
   type BarisLakuKonsi,
-  type GantiPemegang,
   type KirimanKonsi,
 } from "./penjualan-konsi";
 
@@ -33,32 +32,6 @@ type TokoKonsi = {
   pemilikPada: (t: Date) => string | null;
 };
 
-/** Nama tindakan jejak pindah pemegang toko — diambil dari penulisnya, bukan disalin. */
-const JEJAK_PINDAH_PEMEGANG = AKSI_PINDAH_TOKO;
-
-/** `changes` jejak sebagai objek — kolom JSON bisa saja terbaca sebagai teks. */
-function objekJejak(changes: unknown): { before?: { salesmanId?: unknown }; after?: { salesmanId?: unknown } } | null {
-  let x = changes;
-  if (typeof x === "string") {
-    try {
-      x = JSON.parse(x);
-    } catch {
-      return null;
-    }
-  }
-  return x && typeof x === "object" ? (x as { before?: { salesmanId?: unknown }; after?: { salesmanId?: unknown } }) : null;
-}
-
-function sebelumDariJejak(changes: unknown): string | null {
-  const before = objekJejak(changes)?.before;
-  return typeof before?.salesmanId === "string" && before.salesmanId ? before.salesmanId : null;
-}
-
-function sesudahDariJejak(changes: unknown): string | null {
-  const after = objekJejak(changes)?.after;
-  return typeof after?.salesmanId === "string" && after.salesmanId ? after.salesmanId : null;
-}
-
 /**
  * Toko KONSI yang omzet lakunya BISA milik salah satu `salesmanIds`: pernah
  * atau sedang ia pegang (jejak pindah pemegang), atau pernah tanpa pemegang
@@ -73,28 +46,25 @@ async function tokoKonsiMilik(salesmanIds: readonly string[]): Promise<TokoKonsi
   });
   if (toko.length === 0) return [];
   const storeIds = toko.map((t) => t.id);
-  const [jejak, kiriman] = await Promise.all([
-    prisma.auditLog.findMany({
-      where: { action: JEJAK_PINDAH_PEMEGANG, entityType: "Store", entityId: { in: storeIds } },
-      select: { entityId: true, createdAt: true, changes: true },
-    }),
+  // Riwayat pemegang dibaca lewat SATU penafsir jejak (`riwayatPemegang`), yang sama dengan
+  // pemegang saat retur toko — dua penafsir jejak yang sama cepat atau lambat berbeda pendapat.
+  const [riwayat, kiriman] = await Promise.all([
+    riwayatPemegang(prisma, storeIds),
     prisma.fieldSalesOrder.findMany({
       where: { storeId: { in: storeIds }, orderType: "KONSI", status: "APPROVED", approvedAt: { not: null } },
       select: { storeId: true, salesmanId: true, approvedAt: true },
     }),
   ]);
-  const riwayat = new Map<string, GantiPemegang[]>();
   const pernahPegang = new Map<string, Set<string>>();
   const catat = <T,>(peta: Map<string, T[]>, k: string, v: T) => {
     const d = peta.get(k);
     if (d) d.push(v);
     else peta.set(k, [v]);
   };
-  for (const j of jejak) {
-    catat(riwayat, j.entityId, { pada: j.createdAt, sebelum: sebelumDariJejak(j.changes) });
-    const orang = pernahPegang.get(j.entityId) ?? new Set<string>();
-    for (const x of [sebelumDariJejak(j.changes), sesudahDariJejak(j.changes)]) if (x) orang.add(x);
-    pernahPegang.set(j.entityId, orang);
+  for (const [storeId, ganti] of riwayat) {
+    const orang = new Set<string>();
+    for (const g of ganti) for (const x of [g.sebelum, g.sesudah]) if (x) orang.add(x);
+    pernahPegang.set(storeId, orang);
   }
   const kirimPerToko = new Map<string, KirimanKonsi[]>();
   for (const k of kiriman) catat(kirimPerToko, k.storeId, { pada: k.approvedAt as Date, salesmanId: k.salesmanId });

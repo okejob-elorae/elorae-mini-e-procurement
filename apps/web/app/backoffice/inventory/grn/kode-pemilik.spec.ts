@@ -15,6 +15,7 @@ describe("kodeTolakPemilikGrn", () => {
     expect(kodeTolakPemilikGrn(new Error(PESAN_PEMILIK_GRN.TIDAK_MENUNGGU))).toBe("TIDAK_MENUNGGU");
     expect(kodeTolakPemilikGrn(new Error(PESAN_PEMILIK_GRN.ROL_SUDAH_DIPAKAI))).toBe("ROL_SUDAH_DIPAKAI");
     expect(kodeTolakPemilikGrn(new Error(PESAN_PEMILIK_GRN.STOK_KURANG))).toBe("STOK_KURANG");
+    expect(kodeTolakPemilikGrn(new Error(PESAN_PEMILIK_GRN.SUDAH_DITAGIH))).toBe("SUDAH_DITAGIH");
     expect(kodeTolakPemilikGrn(new Error(PESAN_PEMILIK_GRN.QTY_PO_NEGATIF))).toBe("DATA_TIDAK_KONSISTEN");
     expect(kodeTolakPemilikGrn(new Error(PESAN_PEMILIK_GRN.TANPA_BARIS))).toBe("DATA_TIDAK_KONSISTEN");
   });

@@ -1,4 +1,4 @@
-import { buildCreateProductRequest, resolvePushPrice } from "./product-push.payload";
+import { buildCreateProductRequest, jubelioAktifUntukKirim, resolvePushPrice, tahanKarenaHargaBeda } from "./product-push.payload";
 
 const defaults = {
   sellTaxId: -1, buyTaxId: -1, salesAcctId: 28, cogsAcctId: 30, invtAcctId: 4,
@@ -389,5 +389,47 @@ describe("buildCreateProductRequest — images", () => {
     });
     expect(body.variation_images).toEqual([]);
     expect(body.use_single_image_set).toBe(true);
+  });
+});
+
+/*
+ * Owner answer P75 (2026-11-02): while Jubelio shows a price other than the confirmed one and no
+ * admin decided it after that reading changed, the whole push is held.
+ */
+describe("tahanKarenaHargaBeda", () => {
+  const ubah = new Date("2026-11-03T01:00:00Z");
+  const sebelum = new Date("2026-11-03T00:30:00Z");
+  const sesudah = new Date("2026-11-03T01:30:00Z");
+  const dasar = {
+    mapped: true,
+    observedAt: ubah,
+    observedMax: 175000 as number | null,
+    observedMin: 175000 as number | null,
+    confirmed: 150000 as number | null,
+    decidedAt: null as Date | null,
+    observedChangedAt: ubah as Date | null,
+  };
+
+  it.each([
+    ["never observed", { observedAt: null }, false],
+    ["Jubelio shows the confirmed price", { observedMax: 150000, observedMin: 150000 }, false],
+    ["differs, no decision", {}, true],
+    ["differs, decided after the change", { decidedAt: sesudah }, false],
+    ["differs, decision older than the change", { decidedAt: sebelum }, true],
+    ["a variant without a price in Jubelio", { observedMax: 150000, observedMin: 0 }, true],
+    ["unmapped (a create push)", { mapped: false }, false],
+  ])("%s", (_label, lain, hasil) => {
+    expect(tahanKarenaHargaBeda({ ...dasar, ...lain })).toBe(hasil);
+  });
+});
+
+describe("jubelioAktifUntukKirim (P72)", () => {
+  it.each([
+    [true, "BOTH", true],
+    [true, "MARKETPLACE", true],
+    [true, "OFFLINE", false],
+    [false, "BOTH", false],
+  ])("isActive %p + %s → %p", (aktif, saluran, hasil) => {
+    expect(jubelioAktifUntukKirim(aktif, saluran)).toBe(hasil);
   });
 });

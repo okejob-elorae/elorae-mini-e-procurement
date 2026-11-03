@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { getPromoById } from "@/lib/promos/queries";
 import { PromoForm } from "../PromoForm";
 
@@ -30,7 +31,8 @@ export default async function EditPromoPage({ params }: PageProps) {
     prisma.item.findMany({
       where: {
         OR: [
-          { isActive: true, type: "FINISHED_GOOD" },
+          // Pilihan baru hanya barang yang dijual offline (P3a); yang sudah tersimpan tetap tampil.
+          { isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() },
           { id: { in: bonus?.bonusItemId ? [...promo.itemIds, bonus.bonusItemId] : promo.itemIds } },
         ],
       },

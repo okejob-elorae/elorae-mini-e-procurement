@@ -40,6 +40,8 @@ export async function bacaKesiapanBukuBesar(opts: { jurnalTertunda?: number } = 
     const saldoAwal = await bacaKesiapanSaldoAwal(teksMulai);
     // Status PKP: PKP → peran PPN ikut wajib; belum ditetapkan → spanduk mengingatkan.
     const { statusPkp } = await bacaPengaturanPpn();
+    // Q26: toko konsinyasi aktif → persediaan konsinyasi ikut wajib dipetakan.
+    const adaTokoKonsiAktif = (await prisma.store.count({ where: { termsType: "KONSI", isActive: true } })) > 0;
     return nilaiKesiapan({
       peranTerpetakan: pemetaan.filter((m) => m.chartAccountId && m.typeValid).map((m) => m.role),
       jumlahJurnal,
@@ -47,6 +49,7 @@ export async function bacaKesiapanBukuBesar(opts: { jurnalTertunda?: number } = 
       jurnalTertunda,
       saldoAwal,
       statusPkp,
+      adaTokoKonsiAktif,
     });
   } catch (e) {
     console.error("[kesiapan-buku-besar] gagal membaca kesiapan buku besar", e);

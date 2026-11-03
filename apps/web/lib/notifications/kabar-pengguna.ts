@@ -104,6 +104,22 @@ export const JENIS_KABAR = {
   RETUR_PEMBELI_DISETUJUI: "RETUR_PEMBELI_DISETUJUI",
   /** Kantor menolak laporan retur pembeli → SPG pelapornya ({ returnId, spgSaleId }). */
   RETUR_PEMBELI_DITOLAK: "RETUR_PEMBELI_DITOLAK",
+  /**
+   * Pengiriman yang SUDAH BERANGKAT tidak jadi dikirim → setiap SPG toko itu kecuali pelakunya, sekali
+   * per pengiriman (kabar ketiga, keputusan Q24): tidak ada yang perlu diterima ({ storeId, shipmentId }).
+   */
+  KIRIMAN_DIBATALKAN: "KIRIMAN_DIBATALKAN",
+  /**
+   * Selisih retur toko (hitungan gudang kurang dari nota retur) → salesman pemegang toko SEKARANG
+   * (P85), untuk ditanyakan ke toko dan SPG-nya; juga sisa sesudah hitungan barang susulan
+   * ({ chargeId, returnId, storeId }).
+   */
+  RETUR_SELISIH_CEK: "RETUR_SELISIH_CEK",
+  /**
+   * Selisih retur ditanggung toko → salesman pemegang toko: tagih saat berkunjung; juga saat bebannya
+   * berkurang atau dialihkan dari toko (P84, keputusan 1 2026-10-29) ({ chargeId, returnId, storeId }).
+   */
+  RETUR_DITANGGUNG_TOKO: "RETUR_DITANGGUNG_TOKO",
 } as const;
 
 export type JenisKabar = (typeof JENIS_KABAR)[keyof typeof JENIS_KABAR];

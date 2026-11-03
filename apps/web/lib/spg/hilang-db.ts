@@ -323,6 +323,31 @@ export async function potongBagianOrang(
 }
 
 /**
+ * Bagian barang hilang SPG ini yang belum lunas (bearer SPG, catatan DITETAPKAN), terlama dulu
+ * (tanggal diputuskan, lalu dibuat, lalu id) — bahan rencana pembayaran komisi/gaji SPG yang
+ * memotong beban SELURUHNYA (P11a, tanpa batas persen) dan sisa yang dialihkan ke utang SPG.
+ */
+export async function bagianHilangTerbukaSpg(
+  klien: Tx | typeof prisma,
+  userId: string,
+): Promise<Array<{ shareId: string; lossId: string; storeId: string | null; sisaSen: number }>> {
+  if (!userId) return [];
+  const rows = await klien.stockLossShare.findMany({
+    where: { bearer: "SPG", bearerUserId: userId, settledAt: null, loss: { status: "DITETAPKAN" } },
+    orderBy: [{ loss: { decidedAt: "asc" } }, { loss: { createdAt: "asc" } }, { id: "asc" }],
+    select: { id: true, lossId: true, amount: true, settledAmount: true, loss: { select: { storeId: true } } },
+  });
+  return rows
+    .map((r) => ({
+      shareId: r.id,
+      lossId: r.lossId,
+      storeId: r.loss.storeId,
+      sisaSen: Math.max(0, keSen(angka(r.amount)) - keSen(angka(r.settledAmount))),
+    }))
+    .filter((r) => r.sisaSen > 0);
+}
+
+/**
  * Lepas semua potongan/tagihan yang tercatat untuk satu dokumen (`refType` +
  * `refId`): `settledAmount` setiap bagian dikembalikan, bagian yang belum
  * lunas lagi kehilangan `settledAt`, catatan SELESAI kembali DITETAPKAN.

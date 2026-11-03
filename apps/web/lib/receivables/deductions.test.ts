@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { potonganRetur } from './deductions';
-import { returTertahan } from './rules';
+import { nilaiFisikNota, potonganRetur } from './deductions';
+import { returTertahan, tertahanPiutang } from './rules';
 
 /**
  * Penerjemahan baris basis data ke aturan uang. Setiap kasus di sini adalah
@@ -11,6 +11,7 @@ const RETUR = (over: Record<string, unknown> = {}) => ({
   claimedAmount: 1_000_000,
   status: 'MENUNGGU',
   warehouseReturn: null,
+  followUps: [],
   charges: [],
   ...over,
 });
@@ -62,7 +63,7 @@ describe('potonganRetur', () => {
         storeReturn: RETUR({
           status: 'SELISIH',
           warehouseReturn: NRI(800_000),
-          charges: [{ status: 'DITETAPKAN' }],
+          charges: [{ status: 'DITETAPKAN', bearer: 'SALES' }],
         }),
       },
     ]);
@@ -93,7 +94,7 @@ describe('potonganRetur', () => {
         storeReturn: RETUR({
           status: 'SELISIH',
           warehouseReturn: NRI(800_000),
-          charges: [{ status: 'TERBUKA' }],
+          charges: [{ status: 'TERBUKA', bearer: null }],
         }),
       },
     ]);
@@ -108,7 +109,7 @@ describe('potonganRetur', () => {
         storeReturn: RETUR({
           status: 'SELISIH',
           warehouseReturn: NRI(800_000),
-          charges: [{ status: 'LUNAS' }],
+          charges: [{ status: 'LUNAS', bearer: 'GUDANG' }],
         }),
       },
     ]);
@@ -125,7 +126,7 @@ describe('potonganRetur', () => {
         storeReturn: RETUR({
           status: 'BATAL',
           warehouseReturn: NRI(800_000),
-          charges: [{ status: 'DITETAPKAN' }],
+          charges: [{ status: 'DITETAPKAN', bearer: 'SALES' }],
         }),
       },
     ]);
@@ -144,5 +145,97 @@ describe('potonganRetur', () => {
     ]);
     expect(returTertahan(bahan)).toBe(600_000);
     expect(bahan[0].nilaiFisik).toBe(0);
+  });
+
+  it('barang susulan yang sudah final ikut menjadi nilai fisik dan mengecilkan tahanan', () => {
+    // NRT 1 jt, hitungan asli 800 rb, susulan 150 rb → fisik 950 rb.
+    // Potongan 600 rb diprorata: 600 rb − 570 rb = 30 rb.
+    const bahan = potonganRetur([
+      {
+        amount: 600_000,
+        storeReturnId: 'nrt1',
+        storeReturn: RETUR({
+          status: 'SELISIH',
+          warehouseReturn: NRI(800_000),
+          followUps: [{ physicalAmount: 150_000 }],
+          charges: [{ status: 'TERBUKA', bearer: null }],
+        }),
+      },
+    ]);
+    expect(returTertahan(bahan)).toBeCloseTo(30_000, 6);
+  });
+
+  it('beban yang ditetapkan ke TOKO tetap ditahan di faktur asal sebagai tahanan tetap (P84)', () => {
+    const bahan = potonganRetur([
+      {
+        amount: 600_000,
+        storeReturnId: 'nrt1',
+        storeReturn: RETUR({
+          status: 'SELISIH',
+          warehouseReturn: NRI(800_000),
+          charges: [{ status: 'DITETAPKAN', bearer: 'TOKO' }],
+        }),
+      },
+    ]);
+    // Bagian selisihnya tidak dikreditkan ke toko …
+    expect(returTertahan(bahan)).toBeCloseTo(120_000, 6);
+    expect(bahan[0].tetap).toBe(true);
+    expect(bahan[0].ditanggungToko).toBe(true);
+    // … tapi bukan tahanan yang lepas sendiri: BKM berikutnya boleh melunasinya.
+    expect(
+      tertahanPiutang([{ status: 'TERVERIFIKASI', nilaiFaktur: 1_000_000, potonganRetur: bahan, nilaiDilunasiPiutangIni: 1_000_000 }]),
+    ).toBe(0);
+  });
+
+  it('beban yang ditetapkan ke SALES, GUDANG, atau PERUSAHAAN melepas tahanannya', () => {
+    for (const bearer of ['SALES', 'GUDANG', 'PERUSAHAAN']) {
+      const bahan = potonganRetur([
+        {
+          amount: 600_000,
+          storeReturnId: 'nrt1',
+          storeReturn: RETUR({
+            status: 'SELISIH',
+            warehouseReturn: NRI(800_000),
+            charges: [{ status: 'DITETAPKAN', bearer }],
+          }),
+        },
+      ]);
+      expect(returTertahan(bahan)).toBe(0);
+      expect(bahan[0].ditanggungToko).toBeUndefined();
+    }
+  });
+
+  it('menandai hanya potongan yang ditanggung toko, berurutan, di antara potongan bukan retur', () => {
+    const bahan = potonganRetur([
+      { amount: 50_000, storeReturnId: null, storeReturn: null },
+      {
+        amount: 600_000,
+        storeReturnId: 'nrt1',
+        storeReturn: RETUR({ status: 'SELISIH', warehouseReturn: NRI(800_000), charges: [{ status: 'DITETAPKAN', bearer: 'TOKO' }] }),
+      },
+      { amount: 100_000, storeReturnId: 'nrt2', storeReturn: RETUR() },
+    ]);
+    expect(bahan).toHaveLength(2);
+    expect(bahan[0].ditanggungToko).toBe(true);
+    expect(bahan[1].ditanggungToko).toBeUndefined();
+  });
+});
+
+describe('nilaiFisikNota', () => {
+  it('menjumlah hitungan asli dan susulan yang final, dalam sen', () => {
+    expect(
+      nilaiFisikNota({ warehouseReturn: NRI(100_000.1), followUps: [{ physicalAmount: 0.2 }, { physicalAmount: 50_000 }] }),
+    ).toBe(150_000.3);
+  });
+
+  it('mengabaikan susulan yang masih draft', () => {
+    expect(
+      nilaiFisikNota({ warehouseReturn: NRI(100_000), followUps: [{ physicalAmount: 50_000, status: 'DRAFT' }] }),
+    ).toBe(100_000);
+  });
+
+  it('null selama hitungan aslinya belum ada atau belum final, walau ada susulan', () => {
+    expect(nilaiFisikNota({ warehouseReturn: null, followUps: [{ physicalAmount: 50_000 }] })).toBeNull();
+    expect(nilaiFisikNota({ warehouseReturn: NRI(80_000, 'DRAFT'), followUps: [{ physicalAmount: 50_000 }] })).toBeNull();
   });
 });

@@ -129,6 +129,10 @@ d("laporan tutup hari SPG (test bed only)", () => {
             reason: "uji",
             idempotencyKey: `${tag}-r1`,
             createdAt: pagi,
+            // Disetujui kantor, dan kasir mengembalikan uangnya pagi ini (P13a): dihitung hari ini.
+            status: "DISETUJUI",
+            decidedAt: pagi,
+            refundedAt: pagi,
             lines: { create: [{ spgSaleLineId: lama.lines[0].id, itemId: item1, qty: 1 }] },
           },
         })

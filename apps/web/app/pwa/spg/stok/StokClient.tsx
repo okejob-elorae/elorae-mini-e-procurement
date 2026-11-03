@@ -11,6 +11,8 @@ import { hampirHabis } from "@/lib/spg/stok";
 import { cn } from "@/lib/utils";
 import { DaftarPermintaan, type PermintaanTampil } from "./DaftarPermintaan";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
+import { BarangDisisihkanBanner } from "../BarangDisisihkanBanner";
+import type { BarangDisisihkan } from "@/lib/spg/retur-pembeli-queries";
 
 type Saringan = "semua" | "hampir";
 
@@ -32,12 +34,15 @@ export function StokClient({
   batasHampirHabis,
   permintaan,
   saringAwal = "semua",
+  disisihkan = [],
 }: {
   namaToko: string;
   baris: BarisStok[];
   batasHampirHabis: number;
   permintaan: PermintaanTampil[];
   saringAwal?: Saringan;
+  /** Barang retur pembeli yang disisihkan (P12) — ditunjukkan jumlahnya dengan tautan. */
+  disisihkan?: BarangDisisihkan[];
 }) {
   const t = useTranslations("pwa.spgStok");
   const [cari, setCari] = useState("");
@@ -63,6 +68,8 @@ export function StokClient({
         </div>
         <p className="truncate text-sm text-muted-foreground">{namaToko}</p>
       </header>
+
+      <BarangDisisihkanBanner barang={disisihkan} tampilan="ringkas" />
 
       {/* Pekerjaan stok selalu di depan mata, bukan hanya saat stok masih kosong.
           Ubin, bukan tombol sebaris: label boleh dua baris tanpa terpotong. */}

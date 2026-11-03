@@ -43,6 +43,30 @@ d("hitungan saldo awal dari modul (basis data uji)", () => {
   let tipePemasokId = "";
   let pemasokIds: string[] = [];
   let grnIds: string[] = [];
+  /* Diisi di beforeEach (butuh token dan id pemasok); kasus yang butuh dokumen tambahan memakainya. */
+  let piutang: (
+    no: string,
+    storeId: string,
+    tanggal: string,
+    amount: number,
+    lain?: { isConsignment?: boolean; status?: "VOIDED" },
+  ) => Promise<string> = async () => {
+    throw new Error("piutang dipanggil sebelum beforeEach");
+  };
+  let grn: (
+    n: string,
+    tanggal: string,
+    total: number,
+    lain?: {
+      requiresNoPoConfirmation?: boolean;
+      noPoConfirmedAt?: Date;
+      noPoConfirmedById?: string;
+      requiresOwnerApproval?: boolean;
+      ownerDeclinedAt?: Date;
+    },
+  ) => Promise<string> = async () => {
+    throw new Error("grn dipanggil sebelum beforeEach");
+  };
 
   beforeEach(async () => {
     token = "";
@@ -72,16 +96,16 @@ d("hitungan saldo awal dari modul (basis data uji)", () => {
     // ── Piutang toko ──
     tokoPutusId = (await prisma.store.create({ data: { code: `SA-${token}-P`, name: `Toko ${token}`, address: "uji", termsType: "PUTUS" } })).id;
     tokoKonsiId = (await prisma.store.create({ data: { code: `SA-${token}-K`, name: `Konsi ${token}`, address: "uji", termsType: "KONSI" } })).id;
-    const piutang = async (no: string, storeId: string, tanggal: string, amount: number) =>
+    piutang = async (no, storeId, tanggal, amount, lain = {}) =>
       (
         await prisma.receivable.create({
-          data: { invoiceNo: `SA-${token}-${no}`, storeId, invoiceDate: tgl(tanggal), dueDate: tgl(tanggal), amount, outstanding: 999, source: "MANUAL" },
+          data: { invoiceNo: `SA-${token}-${no}`, storeId, invoiceDate: tgl(tanggal), dueDate: tgl(tanggal), amount, outstanding: 999, source: "MANUAL", ...lain },
         })
       ).id;
     const r1 = await piutang("R1", tokoPutusId, "2091-01-10", 5_000_000);
     const r2 = await piutang("R2", tokoPutusId, "2091-02-01", 1_000_000);
     const r3 = await piutang("R3", tokoPutusId, "2091-03-05", 7_000_000); // sesudah tanggal mulai
-    const r4 = await piutang("R4", tokoKonsiId, "2091-01-10", 9_000_000); // toko konsinyasi
+    const r4 = await piutang("R4", tokoKonsiId, "2091-01-10", 9_000_000, { isConsignment: true }); // tagihan konsinyasi
     piutangIds = [r1, r2, r3, r4];
     const klaim = async (no: string, receivableId: string, nilai: number, verifiedAt: string | null, status: "TERVERIFIKASI" | "DIKIRIM") => {
       const k = await prisma.paymentClaim.create({
@@ -195,10 +219,10 @@ d("hitungan saldo awal dari modul (basis data uji)", () => {
     tipePemasokId = (await prisma.supplierType.create({ data: { code: `ST-SA-${token}`, name: "Uji" } })).id;
     const pemasok = async (n: string) => (await prisma.supplier.create({ data: { code: `SUP-SA-${token}-${n}`, name: `Pemasok ${n} ${token}`, typeId: tipePemasokId } })).id;
     pemasokIds = [await pemasok("A"), await pemasok("B")];
-    const grn = async (n: string, tanggal: string, total: number) =>
+    grn = async (n, tanggal, total, lain = {}) =>
       (
         await prisma.gRN.create({
-          data: { docNumber: `GRN-SA-${token}-${n}`, supplierId: pemasokIds[0], grnDate: tgl(tanggal), receivedBy: "uji", totalAmount: total, items: [] },
+          data: { docNumber: `GRN-SA-${token}-${n}`, supplierId: pemasokIds[0], grnDate: tgl(tanggal), receivedBy: "uji", totalAmount: total, items: [], ...lain },
         })
       ).id;
     grnIds = [await grn("1", "2091-02-05", 4_860_000), await grn("2", "2091-03-03", 1_000_000)];
@@ -228,6 +252,18 @@ d("hitungan saldo awal dari modul (basis data uji)", () => {
   it("piutang toko: sisa per tanggal mulai — hanya BKM terverifikasi SEBELUM tanggal mulai mengurangi; konsinyasi dan faktur sesudahnya tidak ikut", async () => {
     const baris = await hitungPiutangTokoAwal(MULAI, { storeIds: [tokoPutusId, tokoKonsiId] });
     expect(baris).toEqual([{ storeId: tokoPutusId, kode: `SA-${token}-P`, nama: `Toko ${token}`, faktur: 2, jumlah: 3_000_000 + 1_000_000 }]);
+  });
+
+  it("piutang toko: tanda konsinyasi di FAKTURNYA yang menentukan, bukan syarat toko hari ini; faktur dibatalkan tidak ikut", async () => {
+    // Faktur putus yang tercatat sebelum toko pindah ke konsinyasi tetap piutang toko.
+    const r5 = await piutang("R5", tokoKonsiId, "2091-01-20", 2_500_000);
+    const r6 = await piutang("R6", tokoPutusId, "2091-01-25", 800_000, { status: "VOIDED" });
+    piutangIds.push(r5, r6);
+    const baris = await hitungPiutangTokoAwal(MULAI, { storeIds: [tokoPutusId, tokoKonsiId] });
+    expect(baris).toEqual([
+      { storeId: tokoKonsiId, kode: `SA-${token}-K`, nama: `Konsi ${token}`, faktur: 1, jumlah: 2_500_000 },
+      { storeId: tokoPutusId, kode: `SA-${token}-P`, nama: `Toko ${token}`, faktur: 2, jumlah: 3_000_000 + 1_000_000 },
+    ]);
   });
 
   it("piutang toko: pembayaran kantor POSTED sebelum tanggal mulai mengurangi; sesudahnya dan yang dibatalkan tidak", async () => {
@@ -296,6 +332,17 @@ d("hitungan saldo awal dari modul (basis data uji)", () => {
   it("hutang: GRN sebelum mulai yang belum lunas dan belum berjurnal", async () => {
     expect(await hitungHutangPemasokAwal(MULAI, { grnIds })).toEqual([
       { supplierId: pemasokIds[0], kode: `SUP-SA-${token}-A`, nama: `Pemasok A ${token}`, grn: 1, jumlah: 4_860_000 },
+    ]);
+  });
+
+  it("hutang: GRN tanpa PO baru menjadi utang sesudah dikonfirmasi admin; yang masih menunggu dan yang ditolak pemilik tidak ikut", async () => {
+    grnIds.push(
+      await grn("3", "2091-02-06", 700_000, { requiresNoPoConfirmation: true }),
+      await grn("4", "2091-02-07", 300_000, { requiresNoPoConfirmation: true, noPoConfirmedAt: tgl("2091-02-08"), noPoConfirmedById: userId }),
+      await grn("5", "2091-02-09", 900_000, { requiresOwnerApproval: true, ownerDeclinedAt: tgl("2091-02-10") }),
+    );
+    expect(await hitungHutangPemasokAwal(MULAI, { grnIds })).toEqual([
+      { supplierId: pemasokIds[0], kode: `SUP-SA-${token}-A`, nama: `Pemasok A ${token}`, grn: 2, jumlah: 4_860_000 + 300_000 },
     ]);
   });
 

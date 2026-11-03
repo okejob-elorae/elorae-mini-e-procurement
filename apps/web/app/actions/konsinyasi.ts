@@ -4,20 +4,16 @@ import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
 import {
   bolehMembayarKomisiSpg,
-  bolehMemverifikasi,
   bolehMencatatNomorKonsi,
   bolehMengelolaKonsi,
   bolehMengunciKonsi,
 } from "@/lib/receivables/izin";
 import {
-  batalkanPembayaranToko,
   bayarKomisi,
   bukaKunci,
   bukaSiklus,
   catatLaporan,
   catatNomorDokumen,
-  catatPembayaranToko,
-  kirimTitipan,
   kunciAngka,
   type AlasanGagalKonsi,
   type BarisKirim,
@@ -25,22 +21,27 @@ import {
   type BarisLaporan,
   type BarisResmi,
 } from '@/lib/konsinyasi/writer';
+import { aturBulanSiklusPertama, type AlasanGagalSiklusPertama } from "@/lib/konsinyasi/siklus-pertama";
 import { bahanLaporanSpg, type BarisBahan } from '@/lib/konsinyasi/laporan-spg';
 import { pilihanVarianKirim, type PilihanVarianKirim } from '@/lib/konsinyasi/varian-kirim';
-import { antrekanPushStok } from '@/lib/jubelio/antre-push-stok';
-import { kabarkanKirimanBerangkat } from '@/lib/spg/pesanan-menuju-toko';
-import {
-  kaitBayarGajiKonsi,
-  kaitBayarTokoKonsi,
-  kaitKirimTitipan,
-  kaitSiklusKonsi,
-} from '@/lib/finance/operasional/kait';
+import { kaitBayarGajiKonsi, kaitSiklusKonsi } from '@/lib/finance/operasional/kait';
 
-export type KodeAksiKonsi = 'TANPA_AKSES' | 'TANGGAL_TIDAK_VALID' | AlasanGagalKonsi | 'GAGAL';
+/**
+ * `PAKAI_PENGIRIMAN`: "Kirim titipan" dihentikan (keputusan 2026-10-29 #3) — barang ke toko konsi
+ * berangkat lewat Dorong konsi + dokumen pengiriman gudang→toko.
+ */
+export type KodeAksiKonsi = 'TANPA_AKSES' | 'TANGGAL_TIDAK_VALID' | AlasanGagalKonsi | 'PAKAI_PENGIRIMAN' | 'GAGAL';
 export type HasilAksiKonsi = { ok: true } | { ok: false; kode: KodeAksiKonsi };
 
 function segarkan() {
   revalidatePath('/backoffice/konsinyasi');
+}
+
+/** Kunci dan buka kunci melahirkan / membatalkan tagihan siklus di piutang (tagihan konsi). */
+function segarkanPiutang() {
+  revalidatePath("/backoffice/piutang");
+  revalidatePath("/backoffice/pelunasan/baru");
+  revalidatePath("/pwa/tagihan");
 }
 
 /** Kunci, buka kunci, dan bayar gaji mengubah komisi SPG — layar komisi kantor dan HP SPG ikut segar. */
@@ -67,7 +68,8 @@ function tanggalWib(teks: string): Date | null {
  * mengunci/membuka kunci angka (`consignment:lock`, manager), nomor nota
  * (`consignment:note_number`, admin penjualan), dan nomor faktur pajak
  * (`consignment:tax_number`, admin pajak). Menandai gaji SPG dibayar memakai
- * `spg_commission:pay`, dan pembayaran toko memakai pemeriksa pembayaran.
+ * `spg_commission:pay`. Pembayaran toko tidak dicatat di sini lagi: kunci angka melahirkan tagihan
+ * siklus di piutang, dan uang toko masuk lewat BKM seperti tagihan lain.
  */
 async function butuh(): Promise<string | null> {
   return butuhIzin(bolehMengelolaKonsi);
@@ -108,81 +110,23 @@ export type HasilKirimTitipanAksi =
   | { ok: true; noKirim: string; ulang: boolean }
   | { ok: false; kode: KodeAksiKonsi; kurang?: BarisKurangKirim[] };
 
-/** Baris dari formulir: bentuk dan angkanya diperiksa di sini, sebelum penulis. */
-function barisKirimSah(items: unknown): BarisKirim[] | null {
-  if (!Array.isArray(items)) return null;
-  const hasil: BarisKirim[] = [];
-  for (const b of items as Record<string, unknown>[]) {
-    if (!b || typeof b !== 'object') return null;
-    const { itemId, variantSku, itemName, qty, price } = b;
-    if (typeof itemName !== 'string') return null;
-    if (itemId != null && typeof itemId !== 'string') return null;
-    if (variantSku != null && typeof variantSku !== 'string') return null;
-    // Kolom qty bilangan bulat; harga tidak boleh negatif atau kosong terbaca NaN.
-    if (typeof qty !== 'number' || !Number.isInteger(qty) || qty < 0) return null;
-    if (typeof price !== 'number' || !Number.isFinite(price) || price < 0) return null;
-    hasil.push({ itemId: itemId ?? null, variantSku: variantSku ?? null, itemName, qty, price });
-  }
-  return hasil;
-}
-
-export async function kirimTitipanAction(input: {
+/**
+ * "Kirim titipan" dihentikan (keputusan 2026-10-29 #3): menolak `PAKAI_PENGIRIMAN` tanpa menulis
+ * apa pun. Barang ke toko konsi berangkat lewat Dorong konsi (`/backoffice/stores/<id>/konsi-push`)
+ * dan dokumen pengiriman gudang→toko. Penulis `kirimTitipan` tetap ada sampai kueri buktinya
+ * (kiriman titipan sesudah tanggal ini) menunjukkan 0.
+ */
+export async function kirimTitipanAction(_input: {
   storeId: string;
   cycleId?: string | null;
   shippedAt: string;
   items: BarisKirim[];
   note?: string;
-  /** Dibuat formulir SEKALI per isian: klik ganda / kirim ulang = kiriman yang sama. */
   idempotencyKey?: string;
 }): Promise<HasilKirimTitipanAksi> {
   const userId = await butuh();
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
-
-  const tanggal = tanggalWib(input.shippedAt);
-  if (!tanggal) return { ok: false, kode: 'TANGGAL_TIDAK_VALID' };
-
-  const items = barisKirimSah(input.items);
-  if (!items) return { ok: false, kode: 'NILAI_TIDAK_VALID' };
-  const kunci =
-    typeof input.idempotencyKey === 'string' && input.idempotencyKey.trim().length <= 200
-      ? input.idempotencyKey.trim() || null
-      : null;
-
-  let hasil: Awaited<ReturnType<typeof kirimTitipan>>;
-  try {
-    hasil = await kirimTitipan({
-      storeId: input.storeId,
-      cycleId: input.cycleId,
-      note: input.note,
-      items,
-      shippedAt: tanggal,
-      olehUserId: userId,
-      idempotencyKey: kunci,
-    });
-  } catch (err) {
-    console.error('kirimTitipan gagal:', err);
-    return { ok: false, kode: 'GAGAL' };
-  }
-  if (!hasil.ok) {
-    return 'kurang' in hasil ? { ok: false, kode: hasil.alasan, kurang: hasil.kurang } : { ok: false, kode: hasil.alasan };
-  }
-
-  // Stok gudang sudah berkurang dan sudah commit: kabari Jubelio supaya marketplace tidak
-  // menjual barang yang sudah di toko konsinyasi. Best-effort — kirimannya sudah sah. Kiriman
-  // ulang tidak mengantre lagi: pushnya sudah diantrekan oleh kiriman pertama.
-  if (!hasil.ulang && hasil.barangBerubah.length > 0) {
-    try {
-      await antrekanPushStok(hasil.barangBerubah, { sumber: 'ADJUSTMENT', ref: hasil.noKirim, userId });
-    } catch (err) {
-      console.error(`push stok kiriman titipan ${hasil.noKirim} tidak masuk antrean:`, err);
-    }
-  }
-  // Barang berangkat ke toko → SPG toko itu dikabari, sekali per kiriman (kiriman ulang tidak).
-  void kabarkanKirimanBerangkat({ sourceType: 'KONSI_SHIPMENT', sourceId: hasil.id, pelakuId: userId });
-  // Jurnal pindah gudang ke persediaan konsinyasi (sesudah commit, tidak pernah melempar; idempoten).
-  await kaitKirimTitipan(hasil.id, userId);
-  segarkan();
-  return { ok: true, noKirim: hasil.noKirim, ulang: hasil.ulang };
+  return { ok: false, kode: 'PAKAI_PENGIRIMAN' };
 }
 
 /** Varian barang untuk pemilih "Kirim titipan" — stok tersedia per varian di gudang. */
@@ -229,20 +173,23 @@ export async function catatLaporanAction(input: {
   }
 }
 
-export async function kunciAngkaAction(
-  cycleId: string,
-  baris: BarisResmi[],
-  gajiPokokPerSpg?: number,
-): Promise<HasilAksiKonsi> {
+/**
+ * Kunci angka siklus. Gaji pokok SPG TIDAK diketik di sini lagi: dihitung dari gaji bulanan dan
+ * jadwal / catatan check-in yang disetujui (P7a–P7e). Mengunci juga melahirkan tagihan siklus di
+ * piutang (nomor = nomor konsi), jadi halaman piutang ikut segar.
+ */
+export async function kunciAngkaAction(cycleId: string, baris: BarisResmi[]): Promise<HasilAksiKonsi> {
   const userId = await butuhIzin(bolehMengunciKonsi);
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
+  if (typeof cycleId !== "string" || !cycleId || !Array.isArray(baris)) return { ok: false, kode: "NILAI_TIDAK_VALID" };
 
   try {
-    const hasil = await kunciAngka({ cycleId, baris, gajiPokokPerSpg, olehUserId: userId });
+    const hasil = await kunciAngka({ cycleId, baris, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
-    // Penjualan siklus + gaji SPG ke buku besar (sesudah commit, tidak pernah melempar).
+    // Penjualan siklus, tagihannya, dan gaji SPG ke buku besar (sesudah commit, tidak pernah melempar).
     await kaitSiklusKonsi(cycleId, userId);
     segarkanKomisi();
+    segarkanPiutang();
     return { ok: true };
   } catch (err) {
     console.error('kunciAngka gagal:', err);
@@ -257,9 +204,10 @@ export async function bukaKunciAction(cycleId: string): Promise<HasilAksiKonsi> 
   try {
     const hasil = await bukaKunci({ cycleId, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
-    // Jurnal siklus dan gaji SPG-nya dibalik (generasi penyesuaian), tidak dihapus.
+    // Jurnal siklus dan gaji SPG-nya dibalik (generasi penyesuaian), tidak dihapus; tagihannya dibatalkan.
     await kaitSiklusKonsi(cycleId, userId);
     segarkanKomisi();
+    segarkanPiutang();
     return { ok: true };
   } catch (err) {
     console.error('bukaKunci gagal:', err);
@@ -329,67 +277,22 @@ export async function bahanLaporanSpgAction(
 }
 
 /**
- * Pembayaran toko dicatat oleh pemeriksa pembayaran (`payments:verify`), bukan
- * oleh admin konsinyasi: yang dicatat adalah uang yang sudah terlihat di
- * rekening, dan memverifikasi uang masuk adalah tugas yang sama dengan
- * memverifikasi BKM.
+ * Bulan siklus pertama konsinyasi (P59) — `consignment:lock`. Selama belum diatur, siklus mana pun
+ * tidak bisa dikunci. Ditolak kalau sudah ada siklus terkunci sebelumnya atau tagihan konsi
+ * impor/manual sejak bulan itu (`nomor` menyebut dokumennya).
  */
-async function butuhKeuangan(): Promise<string | null> {
-  return butuhIzin(bolehMemverifikasi);
-}
-
-export async function catatPembayaranTokoAction(input: {
-  cycleId: string;
-  jumlah: number;
-  tanggal: string;
-  cara: string;
-  catatan?: string;
-  /** Dibuat dialog SEKALI per isian: klik ganda / simpan ulang = pembayaran yang sama. */
-  idempotencyKey?: string;
-}): Promise<HasilAksiKonsi> {
-  const userId = await butuhKeuangan();
-  if (!userId) return { ok: false, kode: "TANPA_AKSES" };
-
-  const tanggal = tanggalWib(input.tanggal);
-  if (!tanggal) return { ok: false, kode: "TANGGAL_TIDAK_VALID" };
-  const kunci =
-    typeof input.idempotencyKey === "string" && input.idempotencyKey.trim().length <= 100
-      ? input.idempotencyKey.trim() || null
-      : null;
-
+export async function aturBulanSiklusPertamaAction(
+  bulan: string,
+): Promise<{ ok: true } | { ok: false; kode: 'TANPA_AKSES' | 'GAGAL' | AlasanGagalSiklusPertama; nomor?: string }> {
+  const userId = await butuhIzin(bolehMengunciKonsi);
+  if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
   try {
-    const hasil = await catatPembayaranToko({
-      cycleId: input.cycleId,
-      jumlah: Number(input.jumlah),
-      tanggal,
-      cara: input.cara,
-      catatan: input.catatan,
-      olehUserId: userId,
-      idempotencyKey: kunci,
-    });
-    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
-    await kaitBayarTokoKonsi(hasil.id, userId);
+    const hasil = await aturBulanSiklusPertama({ bulan: typeof bulan === "string" ? bulan : "", olehUserId: userId });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan, ...(hasil.nomor ? { nomor: hasil.nomor } : {}) };
     segarkan();
     return { ok: true };
   } catch (err) {
-    console.error("catatPembayaranToko gagal:", err);
-    return { ok: false, kode: "GAGAL" };
-  }
-}
-
-export async function batalkanPembayaranTokoAction(paymentId: string, alasan: string): Promise<HasilAksiKonsi> {
-  const userId = await butuhKeuangan();
-  if (!userId) return { ok: false, kode: "TANPA_AKSES" };
-
-  try {
-    const hasil = await batalkanPembayaranToko({ paymentId, alasan, olehUserId: userId });
-    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
-    // Jurnal pembayarannya dibalik (generasi penyesuaian).
-    await kaitBayarTokoKonsi(paymentId, userId);
-    segarkan();
-    return { ok: true };
-  } catch (err) {
-    console.error("batalkanPembayaranToko gagal:", err);
+    console.error("aturBulanSiklusPertama gagal:", err);
     return { ok: false, kode: "GAGAL" };
   }
 }

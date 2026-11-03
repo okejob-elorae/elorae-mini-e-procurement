@@ -6,6 +6,7 @@ import { getItemsByType } from "@/app/actions/items";
 import { getSuppliersForSelect } from "@/app/actions/suppliers";
 import { ItemType } from "@/lib/constants/enums";
 import { batasRentangWib } from "@/lib/dashboard/hari-wib";
+import { rekomendasiUntukBarang } from "@/lib/items/rekomendasi-harga-queries";
 import { bacaSaringanHpp, lolosStatus } from "./hpp-tampil";
 import { HppPageClient, type BarisHpp } from "./HppPageClient";
 
@@ -16,6 +17,9 @@ export const dynamic = "force-dynamic";
  * `?vendor=`, `?dari=`, `?sampai=`, `?status=`) dan diterapkan di server, jadi
  * tautannya bisa dibagikan dan bertahan sesudah muat ulang. WO dibatalkan
  * tersembunyi kecuali diminta (`?status=SEMUA` atau `CANCELLED`).
+ *
+ * Kolom "Rekomendasi harga barang" adalah SATU rekomendasi barang jadinya (jawaban pemilik P4a,
+ * 2026-11-02) — angka yang sama dengan formulir barang, bukan hitungan per WO.
  */
 export default async function HPPPage({
   searchParams,
@@ -45,9 +49,14 @@ export default async function HPPPage({
     : [];
   const statusById = new Map(statusSpk.map((w) => [w.id, String(w.status)]));
 
-  const baris: BarisHpp[] = hpp
+  const tersaring = hpp
     .map((r) => ({ ...r, status: statusById.get(r.woId) ?? "DRAFT" }))
     .filter((r) => lolosStatus(r.status, saringan.status));
+  const rekomendasi = await rekomendasiUntukBarang(prisma, tersaring.map((r) => r.finishedGoodId));
+  const baris: BarisHpp[] = tersaring.map((r) => ({
+    ...r,
+    rekomendasi: rekomendasi.get(r.finishedGoodId) ?? { ada: false, kurang: ["HPP", "ATURAN"] },
+  }));
 
   return (
     <HppPageClient
@@ -61,7 +70,7 @@ export default async function HPPPage({
         value: x.id,
         label: x.code ? `${x.name} (${x.code})` : x.name,
       }))}
-      // Penyimpan markup/biaya tambahan (`updateWOHppAdjustments`) hanya menerima ADMIN.
+      // Penyimpan biaya tambahan WO (`updateWOHppAdjustments`) hanya menerima ADMIN.
       bolehAtur={session.user.role === "ADMIN"}
     />
   );

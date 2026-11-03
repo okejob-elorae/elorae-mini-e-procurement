@@ -4,9 +4,7 @@ import { variantDetailForSku } from "@/lib/items/variants";
 import { isLineHeld, roundQty, type SellThroughMethodValue, type SellThroughResolutionValue } from "./derive";
 import { checkSellThroughPreconditions } from "./writer";
 import { SellThroughError, type SellThroughErrorCode } from "./errors";
-import { priceSellThroughLines } from "./pricing";
 import { sellThroughCostTotals, sellThroughJournalGaps } from "./journal";
-import { defaultSellThroughSalesmanId } from "./salesman-candidates";
 import { wibMonthStart } from "@/lib/forecast/marketplace-demand";
 import { isYearMonth } from "@/lib/spg-commission/month";
 
@@ -25,6 +23,8 @@ export type SellThroughListItem = {
   billedTotalQty: number;
   createdAt: Date;
   baseline: boolean;
+  /** Legacy invoiced report (an approved report with an invoice date). RECORD approvals bill nothing. */
+  invoiced: boolean;
 };
 
 /** `[start, next month start)` of a `YYYY-MM` key in WIB, never the host timezone. */
@@ -75,6 +75,7 @@ export async function listSellThroughs(input: {
         periodEnd: true,
         createdAt: true,
         baseline: true,
+        invoiceDate: true,
         store: { select: { name: true } },
       },
     }),
@@ -122,6 +123,7 @@ export async function listSellThroughs(input: {
       billedTotalQty: billedTotalByReportId.get(r.id) ?? 0,
       createdAt: r.createdAt,
       baseline: r.baseline,
+      invoiced: r.status === "APPROVED" && !r.baseline && r.invoiceDate !== null,
     })),
     total,
   };
@@ -197,7 +199,6 @@ export type SellThroughDetail = {
   taxInvoiceStatus: string | null;
   taxInvoiceNo: string | null;
   journalPending: boolean;
-  defaultSalesmanId: string | null;
   lines: SellThroughLineDetail[];
 };
 
@@ -289,20 +290,9 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
   const labelFor = (userId: string | null): string | null => (userId ? labelById.get(userId) ?? "—" : null);
 
   /**
-   * The DRAFT preview runs the same pricing rule the approve writer uses, so the screen never shows
-   * a number invoicing would then disagree with. Once APPROVED (and not a baseline), the lines and
-   * total already carry the stored, invoiced figures instead.
+   * No DRAFT price preview any more: a sell-through report bills nothing (konsi bills come from the
+   * consignment cycle, decision 2026-10-29). An approved report shows the line prices it froze.
    */
-  const preview =
-    doc.status === "DRAFT"
-      ? priceSellThroughLines({
-          lines: doc.lines.map((l) => ({
-            key: `${l.itemId}::${l.variantSku}`,
-            billedQty: roundQty(l.billedQty.toNumber()),
-            sellingPrice: l.item.sellingPrice === null ? null : Number(l.item.sellingPrice),
-          })),
-        })
-      : null;
   /* DRAFT lines that bill or carry a gap at a zero unit cost: approving books no cost of goods, shrinkage or surplus for them, which the approve dialog warns about. */
   const uncostedKeys =
     doc.status === "DRAFT"
@@ -311,10 +301,7 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
           .map((l) => `${l.itemId}::${l.variantSku}`)
       : [];
   const invoiced = doc.status === "APPROVED" && !doc.baseline;
-  const [defaultSalesmanId, journalGaps] = await Promise.all([
-    doc.status === "DRAFT" ? defaultSellThroughSalesmanId(doc.storeId) : Promise.resolve(null),
-    invoiced || doc.status === "VOIDED" ? sellThroughJournalGaps(doc.id) : Promise.resolve([]),
-  ]);
+  const journalGaps = invoiced || doc.status === "VOIDED" ? await sellThroughJournalGaps(doc.id) : [];
   /* A baseline period was billed outside the ERP, or approved before invoicing existed: nothing here relieved its cost from GL inventory. */
   const unrelievedCost = doc.baseline
     ? (() => {
@@ -357,8 +344,8 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
     voidedAt: doc.voidedAt,
     voidReason: doc.voidReason,
     storePaymentTempo: doc.store.paymentTempo,
-    total: preview ? preview.total : doc.total === null ? null : Number(doc.total),
-    unpricedKeys: preview?.unpricedKeys ?? [],
+    total: doc.total === null ? null : Number(doc.total),
+    unpricedKeys: [],
     uncostedKeys,
     invoiceDate: doc.invoiceDate,
     dueDate: doc.dueDate,
@@ -373,8 +360,7 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
     taxInvoiceStatus: doc.taxInvoice?.status ?? null,
     taxInvoiceNo: doc.taxInvoice?.invoiceNo ?? null,
     journalPending: journalGaps.length > 0,
-    defaultSalesmanId,
-    lines: doc.lines.map((l, i) => ({
+    lines: doc.lines.map((l) => ({
       id: l.id,
       itemId: l.itemId,
       variantSku: l.variantSku,
@@ -395,8 +381,8 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
       resolution: l.resolution,
       resolutionReason: l.resolutionReason,
       unitCost: l.unitCost.toNumber(),
-      unitPrice: preview ? preview.lines[i].unitPrice : l.unitPrice === null ? null : Number(l.unitPrice),
-      lineTotal: preview ? preview.lines[i].lineTotal : l.lineTotal === null ? null : Number(l.lineTotal),
+      unitPrice: l.unitPrice === null ? null : Number(l.unitPrice),
+      lineTotal: l.lineTotal === null ? null : Number(l.lineTotal),
       held: isLineHeld({ gapQty: roundQty(l.gapQty.toNumber()), resolution: l.resolution }, doc.method),
     })),
   };

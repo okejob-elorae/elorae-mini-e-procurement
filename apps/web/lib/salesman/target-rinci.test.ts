@@ -4,7 +4,6 @@ import {
   bulanBerikutnya,
   bulanSebelumnya,
   capaianUntuk,
-  capaianUntukHp,
   dokumenSpg,
   kemajuanRinci,
   MAKS_BARIS_TARGET,
@@ -14,8 +13,6 @@ import {
   samaIsiTarget,
   susunCapaianRinci,
   TANPA_KATEGORI,
-  tanpaKonsiDiHp,
-  totalUntukHp,
   type DokumenJual,
 } from "./target-rinci";
 
@@ -339,11 +336,11 @@ describe("susunCapaianRinci", () => {
 });
 
 /*
- * Aplikasi salesman tidak pernah menampilkan harga konsinyasi. Target BARANG
- * dalam rupiah membocorkannya: nilai konsi satu barang ÷ pcs yang ia kirim =
- * harga satuan konsi. Di HP nilainya dihitung tanpa konsinyasi.
+ * P56 (jawaban pemilik 2026-11-02 "tampilkan semuanya saja"): HP salesman
+ * memakai capaian yang sama dengan kantor — konsinyasi ikut di setiap target
+ * rupiah. Bagian konsinyasi tetap dicatat terpisah per barang/kategori.
  */
-describe("capaianUntukHp — target barang dalam rupiah tanpa konsinyasi", () => {
+describe("capaian konsinyasi dicatat terpisah, capaian tetap satu", () => {
   const kategoriBarang = new Map<string, string | null>([["i1", "katA"]]);
   const dok: DokumenJual[] = [
     { jenis: "putus", totalSen: 50_000, baris: [{ itemId: "i1", qty: 2, bobotSen: 50_000, bonus: false }] },
@@ -352,62 +349,16 @@ describe("capaianUntukHp — target barang dalam rupiah tanpa konsinyasi", () =>
   ];
   const c = susunCapaianRinci(dok, kategoriBarang);
 
-  it("mencatat bagian konsinyasi per barang terpisah", () => {
+  it("mencatat bagian konsinyasi per barang dan kategori terpisah", () => {
     expect(c.barang.i1).toEqual({ nilai: 900, pcs: 6 });
     expect(c.barangKonsi.i1).toEqual({ nilai: 300, pcs: 3 });
-  });
-
-  it("barang + NILAI di HP = putus + van saja; kantor tetap melihat semuanya", () => {
-    const t = { scope: "BARANG" as const, refId: "i1", measure: "NILAI" as const };
-    expect(capaianUntukHp(c, t)).toBe(600);
-    expect(capaianUntuk(c, t)).toBe(900);
-  });
-
-  it("pcs tidak berubah di HP — jumlah barang tidak memuat harga", () => {
-    expect(capaianUntukHp(c, { scope: "BARANG", refId: "i1", measure: "PCS" })).toBe(6);
-    expect(capaianUntukHp(c, { scope: "KATEGORI", refId: "katA", measure: "PCS" })).toBe(6);
-  });
-
-  it("kategori + NILAI di HP juga putus + van saja; kantor tetap melihat semuanya", () => {
-    // Nilai gabungan kategori − putus − van kategori itu = konsi kategori itu.
     expect(c.kategoriKonsi.katA).toEqual({ nilai: 300, pcs: 3 });
-    const t = { scope: "KATEGORI" as const, refId: "katA", measure: "NILAI" as const };
-    expect(capaianUntukHp(c, t)).toBe(600);
-    expect(capaianUntuk(c, t)).toBe(900);
   });
 
-  it("setiap target dalam rupiah ditandai 'tanpa konsinyasi' di HP; target pcs tidak", () => {
-    expect(tanpaKonsiDiHp({ scope: "BARANG", measure: "NILAI" })).toBe(true);
-    expect(tanpaKonsiDiHp({ scope: "KATEGORI", measure: "NILAI" })).toBe(true);
-    expect(tanpaKonsiDiHp({ scope: "BARANG", measure: "PCS" })).toBe(false);
-    expect(tanpaKonsiDiHp({ scope: "KATEGORI", measure: "PCS" })).toBe(false);
-  });
-
-  it("dokumen konsi tanpa baris masuk 'tanpa kategori' — di HP nilainya juga dibuang", () => {
-    const tanpaBaris = susunCapaianRinci([...dok, { jenis: "konsi", totalSen: 77_700, baris: [] }], kategoriBarang);
-    expect(tanpaBaris.kategoriKonsi[TANPA_KATEGORI]).toEqual({ nilai: 777, pcs: 0 });
-    expect(capaianUntukHp(tanpaBaris, { scope: "KATEGORI", refId: TANPA_KATEGORI, measure: "NILAI" })).toBe(0);
-  });
-
-  it("total di HP = putus + van (+ SPG), tanpa konsinyasi", () => {
+  it("target rupiah dan total memuat konsinyasi", () => {
+    expect(capaianUntuk(c, { scope: "BARANG", refId: "i1", measure: "NILAI" })).toBe(900);
+    expect(capaianUntuk(c, { scope: "KATEGORI", refId: "katA", measure: "NILAI" })).toBe(900);
     expect(c.total).toBe(900);
-    expect(totalUntukHp(c)).toBe(600);
-    const pecahan = susunCapaianRinci(
-      [
-        { jenis: "putus", totalSen: 1_001, baris: [] },
-        { jenis: "van", totalSen: 2_002, baris: [] },
-        { jenis: "konsi", totalSen: 4_123_700, baris: [] },
-      ],
-      kategoriBarang,
-    );
-    expect(totalUntukHp(pecahan)).toBe(30.03);
-    const spg = susunCapaianRinci([{ jenis: "spg", totalSen: 5_000_000, baris: [] }], kategoriBarang);
-    expect(totalUntukHp(spg)).toBe(50_000);
-  });
-
-  it("barang yang hanya terjual lewat konsinyasi bernilai 0 di HP, bukan nilai konsinya", () => {
-    const hanyaKonsi = susunCapaianRinci([dok[1]], kategoriBarang);
-    expect(capaianUntukHp(hanyaKonsi, { scope: "BARANG", refId: "i1", measure: "NILAI" })).toBe(0);
   });
 });
 

@@ -49,12 +49,6 @@ export const JEJAK = {
   /** Sales meminta kantor membetulkan laporan yang sudah diproses (terverifikasi / dihitung gudang). */
   KOREKSI_DIMINTA: 'CORRECTION_REQUESTED',
   /**
-   * Baris lama: retur pembeli di counter SPG (`SpgSaleReturn`) yang langsung
-   * berlaku sebelum 2026-11-02; penulis baru tidak memakainya. Uangnya
-   * dikembalikan kasir toko — yang dicatat hanya barang dan jumlahnya.
-   */
-  RETUR_PEMBELI_DICATAT: "SPG_SALE_RETURN_RECORDED",
-  /**
    * Retur pembeli sejak 2026-11-02 (keputusan pemilik): SPG MELAPORKAN, dan
    * laporannya baru berpengaruh (buku stok toko, penjualan bersih, komisi)
    * setelah kantor menyetujui. Ditolak kantor atau ditarik SPG = tidak pernah
@@ -64,8 +58,52 @@ export const JEJAK = {
   RETUR_PEMBELI_DISETUJUI: "SPG_SALE_RETURN_APPROVED",
   RETUR_PEMBELI_DITOLAK: "SPG_SALE_RETURN_REJECTED",
   RETUR_PEMBELI_DITARIK: "SPG_SALE_RETURN_WITHDRAWN",
+  /** SPG mencatat uang retur sudah dikembalikan ke pembeli (foto struk; P77). */
+  RETUR_PEMBELI_UANG_DIKEMBALIKAN: "SPG_SALE_RETURN_REFUNDED",
+  /** Penolakan retur pembeli yang keliru dibatalkan kantor (P82) — sebelum/sesudah. */
+  RETUR_PEMBELI_PENOLAKAN_DIBATALKAN: "SPG_SALE_RETURN_REJECTION_REVERSED",
+  /** Retur yang sudah dibebankan ke SPG akhirnya diterima (uang SPG dikembalikan, P79). */
+  RETUR_PEMBELI_DITERIMA_SESUDAH_BEBAN: "SPG_SALE_RETURN_ACCEPTED_AFTER_CHARGE",
+  /** Beban SPG (`SpgCharge`) lahir dari retur pembeli yang ditolak sesudah uangnya dikembalikan. */
+  BEBAN_SPG_DIBUAT: "SPG_CHARGE_CREATED",
+  /** Besar beban SPG diubah kantor (P81) — sebelum/sesudah dan alasannya. */
+  BEBAN_SPG_DIUBAH: "SPG_CHARGE_AMOUNT_CHANGED",
+  /** Beban SPG dipotong dari komisi/gaji pada pembayaran bulan itu. */
+  BEBAN_SPG_DIPOTONG: "SPG_CHARGE_DEDUCTED",
+  BEBAN_SPG_DIBATALKAN: "SPG_CHARGE_CANCELLED",
+  /** Barang retur yang dibebankan: kembali ke stok atau dibeli SPG (P79). */
+  BEBAN_SPG_BARANG_DIPUTUSKAN: "SPG_CHARGE_GOODS_DECIDED",
+  /** Potongan beban SPG dikembalikan pada pembayaran berikutnya. */
+  BEBAN_SPG_DIKEMBALIKAN: "SPG_CHARGE_PAID_BACK",
   BEBAN_DIPUTUSKAN: 'RETURN_CHARGE_ASSIGNED',
   BEBAN_LUNAS: 'RETURN_CHARGE_SETTLED',
+  /** Sales pemegang toko melaporkan hasil mencari barang selisih retur (ketemu / tidak ketemu, P88). */
+  BEBAN_HASIL_CEK: "RETURN_CHARGE_CHECK_REPORTED",
+  /** Gudang menghitung barang susulan sebuah nota retur toko. */
+  RETUR_SUSULAN_DIHITUNG: "STORE_RETURN_FOLLOW_UP_COUNTED",
+  /** Hitungan gudang tanpa nota dijadikan susulan sebuah nota retur toko. */
+  RETUR_SUSULAN_DIJODOHKAN: "STORE_RETURN_FOLLOW_UP_MATCHED",
+  RETUR_SUSULAN_DILEPAS: "STORE_RETURN_FOLLOW_UP_UNMATCHED",
+  /** Besar beban selisih retur berubah karena barang susulan — sebelum/sesudah. */
+  BEBAN_DISESUAIKAN: "RETURN_CHARGE_ADJUSTED",
+  /** Beban selisih retur dipotong dari komisi sales (bulan dan jumlahnya). */
+  BEBAN_DIPOTONG: "RETURN_CHARGE_DEDUCTED",
+  /** Kelebihan potongan beban selisih retur dikembalikan ke sales (P87). */
+  BEBAN_DIKEMBALIKAN: "RETURN_CHARGE_REFUNDED",
+  /** Nota putus dibatalkan lewat "tidak jadi dikirim" — piutangnya ikut dibatalkan. */
+  PIUTANG_NOTA_DIBATALKAN: "RECEIVABLE_DELIVERY_VOIDED",
+  /** Nota putus dikoreksi karena barang ditolak/hilang di pintu toko — sebelum/sesudah. */
+  PIUTANG_NOTA_DIKOREKSI: "RECEIVABLE_DELIVERY_CORRECTED",
+  /**
+   * Tagihan siklus konsinyasi lahir saat angka terjual dikunci (keputusan 2026-10-29):
+   * bernomor konsi, atas nama pemegang toko saat dikunci (P55). Jatuh temponya
+   * SEMENTARA hari dikunci + tempo toko (`jatuhTempoSiklus`) — dasar tanggalnya
+   * (akhir bulan siklus / hari dikunci / nomor nota dicatat) masih ditanyakan ke
+   * pemilik (P54); jejak ini mencatat tanggal yang benar-benar dipakai.
+   */
+  TAGIHAN_KONSI_DIBUAT: "CONSIGNMENT_RECEIVABLE_CREATED",
+  /** Tagihan siklus konsinyasi dibatalkan karena kunci siklusnya dibuka — sebelum/sesudah. */
+  TAGIHAN_KONSI_DIBATALKAN: "CONSIGNMENT_RECEIVABLE_VOIDED",
 
   FAKTUR_MANUAL: 'RECEIVABLE_CREATED_MANUAL',
   FAKTUR_IMPOR: 'RECEIVABLE_IMPORTED',
@@ -78,6 +116,8 @@ export const JEJAK = {
   KONSI_DIBUKA_KUNCI: 'CONSIGNMENT_UNLOCKED',
   KONSI_GAJI_DIBAYAR: 'CONSIGNMENT_SALARY_PAID',
   KONSI_NOMOR: 'CONSIGNMENT_DOCUMENT_NUMBER',
+  /** Bulan siklus konsinyasi pertama di sistem diatur (P59) — sebelum/sesudah. */
+  KONSI_SIKLUS_PERTAMA: "CONSIGNMENT_FIRST_CYCLE_MONTH_SET",
 
   JENIS_POTONGAN_DIBUAT: 'DEDUCTION_TYPE_CREATED',
   JENIS_POTONGAN_DIUBAH: 'DEDUCTION_TYPE_UPDATED',
@@ -86,6 +126,22 @@ export const JEJAK = {
   TUGAS_TAGIH_SELESAI: 'COLLECTION_TASK_DONE',
   TUGAS_TAGIH_SELESAI_OTOMATIS: 'COLLECTION_TASK_AUTO_DONE',
   TUGAS_TAGIH_DIBATALKAN: 'COLLECTION_TASK_CANCELLED',
+
+  /*
+   * Utang pemasok: koreksi selisih harga invoice, permintaan invoice, invoice
+   * tidak perlu, dan penerimaan barang tanpa PO yang menunggu konfirmasi admin.
+   */
+  KOREKSI_UTANG_DIBUAT: "SUPPLIER_PAYABLE_CORRECTION_CREATED",
+  KOREKSI_UTANG_DITERIMA: "SUPPLIER_PAYABLE_CORRECTION_ACCEPTED",
+  KOREKSI_UTANG_INVOICE_DIKOREKSI: "SUPPLIER_PAYABLE_CORRECTION_INVOICE_CORRECTED",
+  KOREKSI_UTANG_DIBATALKAN: "SUPPLIER_PAYABLE_CORRECTION_CANCELLED",
+  PERMINTAAN_INVOICE_DIBUAT: "SUPPLIER_INVOICE_REQUEST_CREATED",
+  PERMINTAAN_INVOICE_DIULANG: "SUPPLIER_INVOICE_REQUEST_FOLLOWED_UP",
+  PERMINTAAN_INVOICE_DIBATALKAN: "SUPPLIER_INVOICE_REQUEST_CANCELLED",
+  INVOICE_TIDAK_PERLU: "SUPPLIER_INVOICE_WAIVED",
+  INVOICE_TIDAK_PERLU_DIBATALKAN: "SUPPLIER_INVOICE_WAIVER_CANCELLED",
+  GRN_TANPA_PO_DIKONFIRMASI: "GRN_NO_PO_CONFIRMED",
+  GRN_TANPA_PO_DITOLAK: "GRN_NO_PO_DECLINED",
 
   /*
    * Creative marketing. Ikut di sini, bukan di daftarnya sendiri, karena

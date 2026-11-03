@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { AlertTriangle, ArrowLeft, BadgeCheck, Loader2, Wallet } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -38,6 +39,10 @@ import type { TarifPajakKreatif } from "@/lib/creative/pph";
 import type { HutangPemasok } from "@/lib/purchasing/pembayaran-hutang-queries";
 import type { RekeningKasBank } from "@/lib/finance/pajak/setoran-queries";
 import { catatPembayaranPemasokAction, hutangPemasokAction } from "@/app/actions/pembayaran-pemasok";
+import { invoiceUntukBayarAction } from "@/app/actions/supplier-payment-invoice";
+import type { DataBayarInvoice } from "@/lib/vendor-billing/invoice-bayar-queries";
+import { catatanDariInvoice, isiDariInvoice, ringkasInvoiceTerpilih, terapkanPilihanInvoice } from "@/lib/purchasing/bayar-dari-invoice";
+import { PilihInvoiceCard } from "./PilihInvoiceCard";
 import { UnggahBukti } from "@/app/backoffice/finance/kas/_bersama/UnggahBukti";
 import { pesanGalatPembayaran } from "../pesan-pembayaran";
 
@@ -49,18 +54,54 @@ type Props = {
   awal: HutangPemasok | null;
   apBelumDipetakanAwal: boolean;
   poAwal: string | null;
+  /** "Bayar per invoice" pemasok awal; null = tanpa kartu (basis data tanpa tagihan vendor, atau gagal dibaca). */
+  invoiceAwal: DataBayarInvoice | null;
+  /** `?invoice=` — tagihan terbuka pemasok itu yang dicentang di awal. */
+  invoicePilihAwal: string | null;
+  /** `?invoice=` menunjuk tagihan yang sudah lunas: nomor invoicenya, untuk "Invoice ini sudah lunas". */
+  invoiceLunasDariUrl: string | null;
+  /** `vendor_bills:view` — tautan ke tagihan di kartu invoice. */
+  bolehBukaTagihan: boolean;
 };
+
+/** Isian bayar + isian pemilih dari invoice yang dicentang (dipakai saat awal dan setiap centang berubah). */
+function terapkanInvoice(data: DataBayarInvoice | null, dipilih: Set<string>, bayar: Record<string, string>, isiSebelum: Record<string, string>) {
+  const isi = data ? isiDariInvoice(data, dipilih) : new Map();
+  const r = terapkanPilihanInvoice({ bayar, isiSebelum, isiBaru: new Map([...isi].map(([k, v]) => [k, v.isiSen])) });
+  return { ...r, rinci: isi };
+}
 
 const TANPA = "__tanpa__";
 
-function isiAwalBayar(h: HutangPemasok | null, poId: string | null): Record<string, string> {
+/** Kunci penerimaan yang selisih harga invoicenya masih menunggu keputusan (P50): tidak pernah diisi otomatis. */
+function kunciKoreksiMenunggu(data: DataBayarInvoice | null): Set<string> {
+  return new Set((data?.penerimaan ?? []).filter((p) => p.koreksiMenunggu.length > 0).map((p) => p.kunci));
+}
+
+/** `?po=`: penerimaan PO itu diisi sebesar sisanya — kecuali yang menunggu keputusan selisih harga. */
+function isiAwalBayar(h: HutangPemasok | null, poId: string | null, menunggu: ReadonlySet<string>): Record<string, string> {
   if (!h || !poId) return {};
   const isi: Record<string, string> = {};
-  for (const d of h.dokumen) if (d.poId === poId && d.sisaSen > 0) isi[kunciDokumenHutang(d.jenis, d.id)] = String(d.sisaSen / 100);
+  for (const d of h.dokumen) {
+    const k = kunciDokumenHutang(d.jenis, d.id);
+    if (d.poId === poId && d.sisaSen > 0 && !menunggu.has(k)) isi[k] = String(d.sisaSen / 100);
+  }
   return isi;
 }
 
-export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal, apBelumDipetakanAwal, poAwal }: Props) {
+export function FormPembayaranPemasok({
+  pemasok,
+  rekening,
+  tarif,
+  hariIni,
+  awal,
+  apBelumDipetakanAwal,
+  poAwal,
+  invoiceAwal,
+  invoicePilihAwal,
+  invoiceLunasDariUrl,
+  bolehBukaTagihan,
+}: Props) {
   const t = useTranslations("supplierPayments.dokumen");
   const tSp = useTranslations("supplierPayments");
   const locale = useLocale();
@@ -70,20 +111,39 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
   const [hutang, setHutang] = useState<HutangPemasok | null>(awal);
   const [apBelum, setApBelum] = useState(apBelumDipetakanAwal);
   const [pemasokId, setPemasokId] = useState(awal?.supplierId ?? "");
-  const [bayar, setBayar] = useState<Record<string, string>>(() => isiAwalBayar(awal, poAwal));
+  const [dataInvoice, setDataInvoice] = useState<DataBayarInvoice | null>(invoiceAwal);
+  const [dipilih, setDipilih] = useState<Set<string>>(() =>
+    invoicePilihAwal && invoiceAwal?.invoice.some((i) => i.id === invoicePilihAwal) ? new Set([invoicePilihAwal]) : new Set(),
+  );
+  const awalInvoice = useMemo(() => terapkanInvoice(invoiceAwal, dipilih, isiAwalBayar(awal, poAwal, kunciKoreksiMenunggu(invoiceAwal)), {}), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [isiPicker, setIsiPicker] = useState<Record<string, string>>(awalInvoice.isi);
+  const [bayar, setBayar] = useState<Record<string, string>>(awalInvoice.bayar);
   const [uangMuka, setUangMuka] = useState("");
   const [tanggal, setTanggal] = useState(hariIni);
   const [cara, setCara] = useState<(typeof CARA_BAYAR)[number]>("TRANSFER");
   const [rekeningId, setRekeningId] = useState(rekening[0]?.id ?? "");
   const [referensi, setReferensi] = useState("");
   const [jatuhTempoGiro, setJatuhTempoGiro] = useState("");
-  const [catatan, setCatatan] = useState("");
+  const [catatan, setCatatan] = useState(() => (invoiceAwal && dipilih.size > 0 ? catatanDariInvoice(invoiceAwal, dipilih) : ""));
   const [foto, setFoto] = useState<string | null>(null);
   const [potong, setPotong] = useState<string>(() => bacaJenisPotongPemasok(awal?.jenisPotong) ?? TANPA);
   const [dasarKetik, setDasarKetik] = useState("");
   const [kunci, setKunci] = useState(() => newLocalId());
 
   const dokumen = useMemo(() => (hutang?.dokumen ?? []).filter((d) => d.sisaSen > 0), [hutang]);
+  // Penerimaan yang selisih harga invoicenya menunggu keputusan (P50) dan yang belum ada invoice-nya (P19).
+  const penerimaanInvoice = useMemo(() => new Map((dataInvoice?.penerimaan ?? []).map((p) => [p.kunci, p])), [dataInvoice]);
+  const rinciInvoice = useMemo(() => (dataInvoice ? isiDariInvoice(dataInvoice, dipilih) : new Map()), [dataInvoice, dipilih]);
+  const ringkasInvoice = useMemo(() => (dataInvoice ? ringkasInvoiceTerpilih(dataInvoice, dipilih, bayar) : null), [dataInvoice, dipilih, bayar]);
+  const tanpaInvoice = dokumen.filter((d) => (penerimaanInvoice.get(kunciDokumenHutang(d.jenis, d.id))?.qtyBelumDitagih ?? 0) > 0.005).length;
+
+  const ubahInvoice = (next: Set<string>) => {
+    const r = terapkanInvoice(dataInvoice, next, bayar, isiPicker);
+    setDipilih(next);
+    setBayar(r.bayar);
+    setIsiPicker(r.isi);
+    if (!catatan.trim() && dataInvoice) setCatatan(catatanDariInvoice(dataInvoice, next));
+  };
   const sisa = useMemo(() => {
     const m = new Map<string, SisaDokumen>();
     for (const d of hutang?.dokumen ?? []) {
@@ -94,10 +154,12 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
 
   const alokasi: AlokasiSah[] = [];
   const salahBaris = new Set<string>();
+  let adaMenunggu = false;
   for (const d of dokumen) {
     const k = kunciDokumenHutang(d.jenis, d.id);
     const teks = bayar[k]?.trim();
     if (!teks) continue;
+    if ((penerimaanInvoice.get(k)?.koreksiMenunggu.length ?? 0) > 0 && (bacaRupiahSen(teks) ?? 0) > 0) adaMenunggu = true;
     const s = bacaRupiahSen(teks);
     if (s == null || s > d.sisaSen) {
       salahBaris.add(k);
@@ -120,6 +182,8 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
       ? t("alasan.rekening")
       : salahBaris.size > 0
         ? t("alasan.melebihiSisa")
+        : adaMenunggu
+          ? t("alasan.koreksiMenunggu")
         : uangMukaSen == null
           ? t("alasan.uangMuka")
           : dasarSen == null || dasarSen > batasDasarPotongSen(alokasi, sisa, brutoSen)
@@ -133,13 +197,21 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
     setBayar({});
     setUangMuka("");
     setDasarKetik("");
+    setDipilih(new Set());
+    setIsiPicker({});
+    setDataInvoice(null);
     if (!id) {
       setHutang(null);
       return;
     }
     setMemuat(true);
     try {
-      const r = await hutangPemasokAction({ pemasokId: id });
+      const [r, inv] = await Promise.all([
+        hutangPemasokAction({ pemasokId: id }),
+        invoiceUntukBayarAction({ pemasokId: id }).catch(() => ({ ok: false as const, kode: "GAGAL" as const })),
+      ]);
+      if (inv.ok) setDataInvoice(inv.data);
+      else if (inv.kode !== "TANPA_AKSES") toast.error(t("invoice.gagalMemuat"));
       if (!r.ok) {
         toast.error(t("gagalMemuat"));
         return;
@@ -263,11 +335,24 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
         </div>
       )}
 
+      {dataInvoice && pemasokId && ringkasInvoice && (
+        <PilihInvoiceCard
+          data={dataInvoice}
+          dipilih={dipilih}
+          onUbah={ubahInvoice}
+          isi={rinciInvoice}
+          ringkas={ringkasInvoice}
+          invoiceLunasDariUrl={pemasokId === awal?.supplierId ? invoiceLunasDariUrl : null}
+          bolehBukaTagihan={bolehBukaTagihan}
+        />
+      )}
+
       <Card className="py-0">
         <CardHeader className="pt-6">
           <CardTitle className="flex items-center gap-2">
             <Wallet className="h-5 w-5" />
             {t("dokumenTerbuka")}
+            {tanpaInvoice > 0 && <span className="text-sm font-normal text-muted-foreground">· {t("invoice.jumlahBelumDiterima", { count: tanpaInvoice })}</span>}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 pb-6">
@@ -298,13 +383,20 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
                   {dokumen.map((d) => {
                     const k = kunciDokumenHutang(d.jenis, d.id);
                     const penuh = bayar[k]?.trim() && bacaRupiahSen(bayar[k]) === d.sisaSen;
+                    const pi = penerimaanInvoice.get(k);
+                    const menunggu = pi?.koreksiMenunggu ?? [];
+                    // Menunggu keputusan selisih harga (P50): tidak bisa diisi, tetapi isian yang sudah ada selalu bisa dikosongkan.
+                    const terkunci = menunggu.length > 0 && !bayar[k]?.trim();
                     return (
                       <TableRow key={k}>
                         <TableCell className="align-top">
                           <Checkbox
+                            disabled={terkunci}
                             checked={Boolean(penuh)}
                             aria-label={t("lunasiDokumen", { nomor: d.nomor })}
-                            onCheckedChange={(v) => setBayar((b) => ({ ...b, [k]: v === true ? String(d.sisaSen / 100) : "" }))}
+                            onCheckedChange={(v) =>
+                              setBayar((b) => ({ ...b, [k]: v === true && menunggu.length === 0 ? String(d.sisaSen / 100) : "" }))
+                            }
                           />
                         </TableCell>
                         <TableCell className="align-top whitespace-normal">
@@ -315,6 +407,16 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
                             {d.keterangan ? ` · ${d.keterangan}` : ""}
                           </p>
                           <p className="text-xs text-muted-foreground xl:hidden">{labelTanggal(d.tanggal, locale)}</p>
+                          {menunggu.length > 0 && (
+                            <p className="text-xs text-amber-700 dark:text-amber-400">
+                              {t("invoice.menungguKeputusan", { invoice: menunggu.map((m) => m.vendorInvoiceNo).join(", ") })}
+                            </p>
+                          )}
+                          {(pi?.qtyBelumDitagih ?? 0) > 0.005 && (
+                            <Badge variant="outline" className="mt-1">
+                              {t("invoice.belumDiterima")}
+                            </Badge>
+                          )}
                           {d.uangMukaBelumDipotongSen > 0 && porsiPotongEfektif(jenisPotong, sisa.get(k)) > 0 && (
                             <p className="text-xs text-muted-foreground">{t("uangMukaBelumDipotong", { nilai: formatRupiah(d.uangMukaBelumDipotongSen / 100) })}</p>
                           )}
@@ -325,6 +427,7 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
                         <TableCell className="align-top">
                           <Input
                             inputMode="decimal"
+                            disabled={terkunci}
                             value={bayar[k] ?? ""}
                             onChange={(e) => setBayar((b) => ({ ...b, [k]: e.target.value }))}
                             aria-label={t("bayarDokumen", { nomor: d.nomor })}
@@ -342,7 +445,24 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
           )}
           {pemasokId && (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <Button type="button" variant="outline" size="sm" disabled={dokumen.length === 0} onClick={() => setBayar(Object.fromEntries(dokumen.map((d) => [kunciDokumenHutang(d.jenis, d.id), String(d.sisaSen / 100)])))}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={dokumen.length === 0}
+                onClick={() => {
+                  // Penerimaan yang menunggu keputusan selisih harga (P50) tidak ikut dilunasi.
+                  const menunggu = kunciKoreksiMenunggu(dataInvoice);
+                  setBayar(
+                    Object.fromEntries(
+                      dokumen.map((d) => {
+                        const k = kunciDokumenHutang(d.jenis, d.id);
+                        return [k, menunggu.has(k) ? "" : String(d.sisaSen / 100)];
+                      }),
+                    ),
+                  );
+                }}
+              >
                 {t("lunasiSemua")}
               </Button>
               <div className="flex items-center gap-2">

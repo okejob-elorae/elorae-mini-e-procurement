@@ -8,6 +8,7 @@ import {
   completeDeliveryShipment,
 } from "@/lib/delivery/shipment-writer";
 import { recordSpgSale } from "@/lib/spg/sale-writer";
+import { terimaKiriman } from "@/lib/spg/stok-writer";
 import { createStoreStocktake, saveStocktakeCounts, approveStoreStocktake } from "@/lib/stores/stocktake/writer";
 import { getStoreStocktakeById } from "@/lib/stores/stocktake/queries";
 import { createSellThrough, resolveSellThroughLine, approveSellThrough } from "./writer";
@@ -123,57 +124,77 @@ d("konsi lifecycle — KLC fixture end to end (opt-in)", () => {
     record("T-08", "PASS", `${res.orderNo} reserved 10, on-hand unchanged`);
   });
 
-  it("T-14/T-23/T-15/T-16 shipment: double-claim refused, short main stock rolls back, then partial delivery", async () => {
+  it("T-23/T-14/T-15/T-16 shipment: short main stock refuses at creation, double-claim refused, then partial delivery received by the SPG", async () => {
     const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId }, orderBy: { id: "asc" } });
-    const { shipmentId } = await createDeliveryShipment({
-      orderId, method: "EXPEDITION", packedById: ids.admin,
-      lines: lines.map((l) => ({ orderLineId: l.id, qty: l.qty })),
-    });
-    const second = await codeOf(createDeliveryShipment({ orderId, method: "EXPEDITION", packedById: ids.admin, lines: [{ orderLineId: lines[0].id, qty: 1 }] }));
+    const all = lines.map((l) => ({ orderLineId: l.id, qty: l.qty }));
+    const pack = (key: string, packLines: Array<{ orderLineId: string; qty: number }>) =>
+      createDeliveryShipment({ orderId, method: "EXPEDITION", packedById: ids.admin, idempotencyKey: `klc-${key}-${run}`, lines: packLines });
+
+    /* Stock leaves main when the shipment is CREATED, so a short main warehouse refuses there and writes nothing. */
+    const never = await mainQty(ids.never);
+    const simpleBefore = await mainQty(ids.simple);
+    await prisma.inventoryValue.update({ where: { id: never.id }, data: { qtyOnHand: 2 } });
+    const shortCode = await codeOf(pack("short", all));
+    const shipmentsAfterFail = await prisma.deliveryShipment.count({ where: { orderId } });
+    const transfersAfterFail = await prisma.konsiTransfer.count({ where: { orderId } });
+    const simpleAfterFail = await mainQty(ids.simple);
+    await prisma.inventoryValue.update({ where: { id: never.id }, data: { qtyOnHand: never.onHand } });
+    expect(shortCode).toBe("INSUFFICIENT_STOCK");
+    expect(shipmentsAfterFail).toBe(0);
+    expect(transfersAfterFail).toBe(0);
+    expect(simpleAfterFail.onHand).toBe(simpleBefore.onHand);
+    expect(await storeQty(ids.storeA, ids.simple)).toBe(0);
+    record("T-23", "PASS", `${shortCode} at creation; no shipment, no transfer, main and store stock untouched`);
+
+    const { shipmentId, transferId } = await pack("full", all);
+    expect((await mainQty(ids.simple)).onHand).toBe(simpleBefore.onHand - 10);
+    const second = await codeOf(pack("second", [{ orderLineId: lines[0].id, qty: 1 }]));
     expect(second).not.toBe("OK");
     record("T-14", "PASS", second);
 
-    await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: `KLC-${run}` });
+    await updateShipmentTracking({
+      shipmentId, carrierName: "JNE", resiNumber: `KLC-${run}`, weightKg: 2.5,
+      handoverPhotoUrl: `https://r2.example/delivery-handover/${shipmentId}/1.jpg`,
+      handoverPhotoR2Key: `delivery-handover/${shipmentId}/1.jpg`,
+    });
     await shipDeliveryShipment({ shipmentId, shippedById: ids.admin });
     const shipment = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId }, include: { lines: true } });
     const byOrderLine = new Map(shipment.lines.map((l) => [l.orderLineId, l.id]));
     const neverLine = lines.find((l) => l.itemId === ids.never)!;
+    /* One never-sent piece does not arrive: handed over 3 of 4. */
+    const arrived = (itemId: string, qty: number) => (itemId === ids.never ? qty - 1 : qty);
 
-    const complete = (delivered: (itemId: string, qty: number) => number) =>
+    const complete = () =>
       completeDeliveryShipment({
         shipmentId, deliveredById: ids.admin,
         proofPhotoUrl: "https://r2.example/klc-proof.jpg",
         proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
-        lines: lines.map((l) => ({ shipmentLineId: byOrderLine.get(l.id)!, deliveredQty: delivered(l.itemId, l.qty) })),
+        lines: lines.map((l) => ({ shipmentLineId: byOrderLine.get(l.id)!, deliveredQty: arrived(l.itemId, l.qty) })),
       });
+    /* Store A has an SPG, so the courier's confirmation is information only: store stock waits for her receipt. */
+    const pod = await complete();
+    expect(pod.mode).toBe("INFO_ONLY");
+    expect(await storeQty(ids.storeA, ids.simple)).toBe(0);
 
-    const never = await mainQty(ids.never);
-    await prisma.inventoryValue.update({ where: { id: never.id }, data: { qtyOnHand: 2 } });
-    const shortCode = await codeOf(complete((_, q) => q));
-    const afterFail = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId } });
-    const transfersAfterFail = await prisma.konsiTransfer.count({ where: { orderId } });
-    const simpleStoreAfterFail = await storeQty(ids.storeA, ids.simple);
-    await prisma.inventoryValue.update({ where: { id: never.id }, data: { qtyOnHand: never.onHand } });
-    expect(shortCode).not.toBe("OK");
-    expect(afterFail.status).toBe("IN_TRANSIT");
-    expect(transfersAfterFail).toBe(0);
-    expect(simpleStoreAfterFail).toBe(0);
-    record("T-23", "PASS", `${shortCode}; shipment still IN_TRANSIT, no transfer, no store stock`);
-
-    const simpleMain = await mainQty(ids.simple);
-    await complete((itemId, q) => (itemId === ids.never ? q - 1 : q));
+    const transferLines = await prisma.konsiTransferLine.findMany({ where: { transferId: transferId! } });
+    const receipt = await terimaKiriman({
+      storeId: ids.storeA, userId: ids.spg, sourceType: "KONSI_TRANSFER", sourceId: transferId!,
+      idempotencyKey: `klc-terima-${run}`,
+      diterima: transferLines.map((t) => ({ lineId: t.id, qtyReceived: arrived(t.itemId, Number(t.qty)) })),
+    });
+    expect(receipt.ok).toBe(true);
     expect(await prisma.konsiTransfer.count({ where: { orderId } })).toBe(1);
     expect(await storeQty(ids.storeA, ids.simple)).toBe(10);
     expect(await storeQty(ids.storeA, ids.variant, "KLC-VAR-M")).toBe(5);
     expect(await storeQty(ids.storeA, ids.never)).toBe(3);
-    expect((await mainQty(ids.simple)).onHand).toBe(simpleMain.onHand - 10);
+    /* The missing piece left main at creation and is barang hilang, never re-sent (P38): the order line keeps all 4. */
     const neverOrderLine = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: neverLine.id } });
-    expect(neverOrderLine.deliveredQty).toBe(3);
+    expect(neverOrderLine.deliveredQty).toBe(4);
     expect(await prisma.fieldSalesDelivery.count({ where: { orderId } })).toBe(0);
     expect(await prisma.receivable.count({ where: { sellThrough: { storeId: ids.storeA } } })).toBe(0);
-    record("T-15/T-16/Z-02", "PASS", "1 transfer for delivered qty, never-sent line 3 of 4, no delivery/receivable");
+    record("T-15/T-16/Z-02", "PASS", "1 transfer, SPG receipt puts 10/5/3 on the store, never-sent line 3 of 4 arrived, no delivery/receivable");
 
-    const replay = await codeOf(complete((itemId, q) => (itemId === ids.never ? q - 1 : q)));
+    const replay = await codeOf(complete());
     expect(await prisma.konsiTransfer.count({ where: { orderId } })).toBe(1);
     record("T-22", "PASS", `same-actor replay → ${replay}, still 1 transfer`);
   });

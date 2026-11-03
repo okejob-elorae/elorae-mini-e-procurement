@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { PERMISSIONS } from "@/lib/rbac";
+import { PERMISSIONS, getRequiredPermission } from "@/lib/rbac";
+import { getNotificationHref } from "@/lib/notifications/navigation";
 import { bolehMelapor, bolehMembacaArsip, bolehMemverifikasi, bolehMencatatNomorKonsi } from "@/lib/receivables/izin";
 import {
   DESKRIPSI_PERAN_BAWAAN,
@@ -29,6 +30,8 @@ const sqlPeranPg = readFileSync(path.join(PRISMA, "postgres", "seed-office-roles
 const sqlIzin = readFileSync(path.join(PRISMA, "seed-max-features-permissions.sql"), "utf8");
 const sqlIzin1102 = readFileSync(path.join(PRISMA, "seed-owner-2026-11-02-permissions.sql"), "utf8");
 const sqlIzin1102Pg = readFileSync(path.join(PRISMA, "postgres", "seed-owner-2026-11-02-permissions.sql"), "utf8");
+const sqlIzin1102b = readFileSync(path.join(PRISMA, "seed-owner-2026-11-02b-permissions.sql"), "utf8");
+const sqlIzin1102bPg = readFileSync(path.join(PRISMA, "postgres", "seed-owner-2026-11-02b-permissions.sql"), "utf8");
 
 const PERAN = ["KEUANGAN", "ADMIN_PENJUALAN", "ADMIN_PAJAK"] as const;
 type Peran = (typeof PERAN)[number];
@@ -196,9 +199,9 @@ describe("izin keputusan pemilik 2026-11-02", () => {
     expect(penjelasanIzin(PERMISSIONS.JUBELIO_PRICES_CONFIRM)?.halaman).toEqual(["/backoffice/jubelio/harga"]);
   });
 
-  it("pengecualian pemilik: hanya ADMIN_PENJUALAN, hanya retur pembeli SPG; konfirmasi harga Jubelio tetap hanya admin", () => {
+  it("pengecualian pemilik: ADMIN_PENJUALAN retur pembeli SPG, KEUANGAN bayar gaji & komisi SPG (Q9); konfirmasi harga Jubelio tetap hanya admin", () => {
     expect(PERSETUJUAN_BAWAAN_PERAN_KANTOR).toEqual({
-      KEUANGAN: [],
+      KEUANGAN: [PERMISSIONS.SPG_COMMISSION_PAY],
       ADMIN_PENJUALAN: [PERMISSIONS.SPG_RETURNS_APPROVE],
       ADMIN_PAJAK: [],
     });
@@ -229,5 +232,166 @@ describe("izin keputusan pemilik 2026-11-02", () => {
     expect(sqlPeranPg).toContain("seed-owner-2026-11-02-permissions.sql");
     const pre = /SELECT COUNT\(\*\) FROM Permission WHERE code IN \(([^)]*)\)\) = (\d+)/.exec(sqlPeran);
     expect(kodeDalam(pre![1])).toContain(PERMISSIONS.SPG_RETURNS_APPROVE);
+  });
+});
+
+/*
+ * Izin baru dari jawaban pemilik putaran 4 (2026-11-02 malam, P22–P88). Barisnya di produksi dibuat
+ * berkas sendiri (`seed-owner-2026-11-02b-permissions.sql`), dengan alasan yang sama seperti berkas
+ * 2026-11-02: berkas sekali-jalan yang lama memberi lagi tautan turunan bila dijalankan ulang.
+ */
+describe("izin keputusan pemilik putaran 4 (2026-11-02b)", () => {
+  const PERSETUJUAN_1102B: string[] = [
+    PERMISSIONS.STORE_RETURNS_DECIDE_SHORTFALL,
+    PERMISSIONS.VENDOR_BILLS_DECIDE_PRICE,
+    PERMISSIONS.GOODS_RECEIPTS_CONFIRM_NO_PO,
+    PERMISSIONS.SPG_SCHEDULES_APPROVE,
+  ];
+  const KERJA_1102B: string[] = [
+    PERMISSIONS.DELIVERIES_CANCEL_NOTA,
+    PERMISSIONS.RECEIVABLES_OVERDUE_REMINDER,
+    PERMISSIONS.SPG_ATTENDANCE_RECORD,
+    PERMISSIONS.SPG_ATTENDANCE_VERIFY,
+  ];
+  const KODE_1102B = [...PERSETUJUAN_1102B, ...KERJA_1102B];
+
+  it("setiap kode punya baris Permission di seed.ts, di berkas SQL produksinya, dan di salinan PostgreSQL-nya — tidak di berkas sekali-jalan lama", () => {
+    for (const kode of KODE_1102B) {
+      expect(seedTs, kode).toContain(`code: "${kode}"`);
+      expect(sqlIzin1102b, kode).toContain(`WHERE NOT EXISTS (SELECT 1 FROM \`Permission\` WHERE \`code\` = '${kode}')`);
+      expect(sqlIzin1102bPg, kode).toContain(`WHERE NOT EXISTS (SELECT 1 FROM "Permission" WHERE code = '${kode}')`);
+      expect(sqlIzin, kode).not.toContain(`'${kode}'`);
+      expect(sqlIzin1102, kode).not.toContain(`'${kode}'`);
+    }
+  });
+
+  it("empat izin persetujuan (bawaannya hanya admin); empat izin kerja kantor bukan persetujuan", () => {
+    for (const kode of PERSETUJUAN_1102B) expect(penjelasanIzin(kode)?.persetujuan, kode).toBe(true);
+    for (const kode of KERJA_1102B) expect(penjelasanIzin(kode)?.persetujuan, kode).toBeUndefined();
+    for (const peran of PERAN) {
+      for (const kode of PERSETUJUAN_1102B) expect(dariSeedTs(peran), `${peran} ${kode}`).not.toContain(kode);
+    }
+  });
+
+  it("bawaan pemilik: Admin Penjualan membatalkan nota bernota dan memasukkan catatan check-in; Keuangan memeriksanya, menerima pengingat jatuh tempo, dan membayar gaji SPG", () => {
+    const keuangan = dariSeedTs("KEUANGAN");
+    const penjualan = dariSeedTs("ADMIN_PENJUALAN");
+    expect(penjualan).toContain(PERMISSIONS.DELIVERIES_CANCEL_NOTA);
+    expect(penjualan).toContain(PERMISSIONS.SPG_ATTENDANCE_RECORD);
+    expect(keuangan).toContain(PERMISSIONS.RECEIVABLES_OVERDUE_REMINDER);
+    expect(keuangan).toContain(PERMISSIONS.SPG_ATTENDANCE_VERIFY);
+    expect(keuangan).toContain(PERMISSIONS.SPG_COMMISSION_PAY);
+    // Yang memasukkan catatan check-in bukan yang memeriksanya (P61a: "admin keuangan saja yang memeriksa").
+    expect(penjualan).not.toContain(PERMISSIONS.SPG_ATTENDANCE_VERIFY);
+    expect(keuangan).not.toContain(PERMISSIONS.SPG_ATTENDANCE_RECORD);
+    expect(dariSeedTs("ADMIN_PAJAK").filter((k) => KODE_1102B.includes(k))).toEqual([]);
+  });
+
+  it("Keuangan membuka Komisi SPG dengan izin bayar saja, tanpa layar SPG lain (P28)", () => {
+    expect(dariSeedTs("KEUANGAN")).not.toContain(PERMISSIONS.SPG_SALES_VIEW);
+    expect(penjelasanIzin(PERMISSIONS.SPG_COMMISSION_PAY)?.butuh).toBeUndefined();
+    expect(penjelasanIzin(PERMISSIONS.SPG_COMMISSION_PAY)?.halaman).toContain("/backoffice/komisi-spg");
+    // Peta rute hanya bisa satu izin; halamannya memagari dirinya sendiri.
+    expect(getRequiredPermission("/backoffice/komisi-spg")).toBeNull();
+    expect(getRequiredPermission("/backoffice/komisi-spg/catatan-hadir")).toBeNull();
+  });
+
+  it("izin bawaan Keuangan tidak menjanjikan layar SPG yang ditolak P28 (register penjualan, barang hilang, mutasi)", () => {
+    // P28 menanyakan "register penjualan, barang hilang, mutasi"; jawabannya "Keuangan hanya halaman
+    // Komisi SPG". Penjelasan izin yang mencantumkan halaman itu untuk kode bawaan Keuangan berarti
+    // menjanjikan tombol yang tidak bisa ia capai — mis. memeriksa uang klaim ekspedisi di Barang hilang.
+    const layarSpgLain = ["/backoffice/spg-sales", "/backoffice/barang-hilang", "/backoffice/spg-transfers"];
+    const dibuka = dariSeedTs("KEUANGAN").flatMap((kode) => penjelasanIzin(kode)?.halaman ?? []);
+    expect(dibuka.filter((r) => layarSpgLain.some((l) => r === l || r.startsWith(`${l}/`)))).toEqual([]);
+  });
+
+  it("menerima pengingat jatuh tempo terpisah dari mengubah ambangnya (P48, Q14)", () => {
+    expect(getRequiredPermission("/backoffice/settings/piutang")).toBe(PERMISSIONS.RECEIVABLES_MANAGE);
+    expect(penjelasanIzin(PERMISSIONS.RECEIVABLES_OVERDUE_REMINDER)?.butuh).toBe(PERMISSIONS.RECEIVABLES_VIEW);
+    expect(penjelasanIzin(PERMISSIONS.RECEIVABLES_OVERDUE_REMINDER)?.halaman).toEqual([]);
+  });
+
+  /*
+   * Lonceng nota tagihan putus yang dibatalkan atau dikoreksi (P25, P34, P41a) sampai ke Keuangan
+   * (`payments:verify`) dan ke admin pajak (`tax_invoices:manage`). Tautannya harus terbuka bagi mereka
+   * dengan izin bawaannya: rincian pesanan butuh `field_sales_orders:view`, yang tidak dipegang keduanya,
+   * jadi ketukannya dulu dipentalkan ke /backoffice.
+   */
+  it.each<[Peran, string, string]>([
+    ["KEUANGAN", PERMISSIONS.PAYMENTS_VERIFY, "DELIVERY_NOTA_VOIDED"],
+    ["KEUANGAN", PERMISSIONS.PAYMENTS_VERIFY, "DELIVERY_NOTA_CORRECTED"],
+    ["ADMIN_PAJAK", PERMISSIONS.TAX_INVOICES_MANAGE, "TAX_INVOICE_NOTA_CHANGED"],
+  ])("%s (penerima %s) bisa membuka tautan lonceng %s", (peran, penerima, jenis) => {
+    const izin = dariSeedTs(peran);
+    expect(izin).toContain(penerima);
+    for (const data of [{ orderId: "fso-1", deliveryId: "d-1", docNo: "DLV/2026/0001" }, { orderId: "fso-1" }, {}]) {
+      const href = getNotificationHref(jenis, data);
+      expect(href, jenis).not.toBeNull();
+      const wajib = getRequiredPermission(href!.split(/[?#]/)[0]);
+      expect(wajib, href!).not.toBeNull();
+      expect(izin, `${jenis} → ${href} butuh ${wajib}`).toContain(wajib);
+    }
+  });
+
+  it("berkas produksinya hanya menautkan ADMIN, ADMIN_PENJUALAN, dan KEUANGAN", () => {
+    const peran = [...sqlIzin1102b.matchAll(/r\.`name` = '([A-Z_]+)'/g)].map((m) => m[1]);
+    expect(urut(peran)).toEqual(["ADMIN", "ADMIN_PENJUALAN", "KEUANGAN"]);
+  });
+
+  it.each([
+    ["ADMIN_PENJUALAN", "deliveries:cancel_nota", "cancel_nota_is_new", "cancel_nota_baru"],
+    ["ADMIN_PENJUALAN", "spg_attendance:record", "attendance_record_is_new", "attendance_record_baru"],
+    ["KEUANGAN", "receivables:overdue_reminder", "overdue_reminder_is_new", "overdue_reminder_baru"],
+    ["KEUANGAN", "spg_attendance:verify", "attendance_verify_is_new", "attendance_verify_baru"],
+    ["KEUANGAN", "spg_commission:pay", "spg_schedules_approve_is_new", "spg_schedules_approve_baru"],
+  ])("tautan bawaan %s → %s hanya sekali, pada run yang membuat barisnya", (peran, kode, penanda, penandaPg) => {
+    expect(sqlIzin1102b).toMatch(new RegExp(`r\\.\`name\` = '${peran}'\\s*AND p\\.\`code\` = '${kode}'\\s*AND @${penanda} = 1`));
+    expect(sqlIzin1102bPg).toMatch(new RegExp(`r\\.name = '${peran}'\\s*AND p\\.code = '${kode}'\\s*AND \\(SELECT ${penandaPg} FROM`));
+  });
+
+  it("setiap penanda ditangkap SEBELUM baris izinnya dibuat", () => {
+    const PENANDA: [string, string][] = [
+      ["cancel_nota_is_new", "deliveries:cancel_nota"],
+      ["overdue_reminder_is_new", "receivables:overdue_reminder"],
+      ["return_shortfall_is_new", "store_returns:decide_shortfall"],
+      ["spg_schedules_approve_is_new", "spg_schedules:approve"],
+      ["attendance_record_is_new", "spg_attendance:record"],
+      ["attendance_verify_is_new", "spg_attendance:verify"],
+    ];
+    for (const [penanda, kode] of PENANDA) {
+      const [modul, aksi] = kode.split(":");
+      const tangkap = sqlIzin1102b.indexOf(`SET @${penanda}`);
+      expect(tangkap, penanda).toBeGreaterThan(-1);
+      expect(tangkap, penanda).toBeLessThan(sqlIzin1102b.indexOf(`'${kode}', '${modul}', '${aksi}'`));
+    }
+    const tangkapPg = sqlIzin1102bPg.indexOf("CREATE TEMP TABLE izin_pemilik_2026_11_02b");
+    expect(tangkapPg).toBeGreaterThan(-1);
+    expect(tangkapPg).toBeLessThan(sqlIzin1102bPg.indexOf('INSERT INTO "Permission"'));
+  });
+
+  it("pemecahan P22: setiap pemegang receivables:decide_bearer ikut memegang store_returns:decide_shortfall, sekali saja", () => {
+    expect(sqlIzin1102b).toMatch(
+      /p_ada\.`code` = 'receivables:decide_bearer'\s*CROSS JOIN `Permission` p\s*WHERE p\.`code` = 'store_returns:decide_shortfall'\s*AND @return_shortfall_is_new = 1/,
+    );
+    expect(sqlIzin1102bPg).toMatch(
+      /p_ada\.code = 'receivables:decide_bearer'\s*CROSS JOIN "Permission" p\s*WHERE p\.code = 'store_returns:decide_shortfall'\s*AND \(SELECT return_shortfall_baru FROM/,
+    );
+  });
+
+  it("berkas peran kantor menuntut baris izin kerja baru sebelum menulis, di kedua salinan", () => {
+    expect(sqlPeran).toContain("seed-owner-2026-11-02b-permissions.sql");
+    expect(sqlPeranPg).toContain("seed-owner-2026-11-02b-permissions.sql");
+    const pre = /SELECT COUNT\(\*\) FROM Permission WHERE code IN \(([^)]*)\)\) = (\d+)/.exec(sqlPeran);
+    for (const kode of KERJA_1102B) expect(kodeDalam(pre![1]), kode).toContain(kode);
+    expect(kodeDalam(pre![1])).toContain(PERMISSIONS.SPG_COMMISSION_PAY);
+  });
+
+  it("pemeriksaan akhir berkas peran kantor menampilkan izin persetujuan baru, tetapi tidak bayar gaji SPG pada KEUANGAN", () => {
+    for (const teks of [sqlPeran, sqlPeranPg]) {
+      const cek = teks.slice(teks.lastIndexOf("SELECT r.name AS peran"));
+      for (const kode of PERSETUJUAN_1102B) expect(cek, kode).toContain(`'${kode}'`);
+      expect(cek).toContain("'spg_commission:pay'");
+      expect(cek).toMatch(/AND NOT \(r\.name = 'KEUANGAN' AND p\.code = 'spg_commission:pay'\)/);
+    }
   });
 });

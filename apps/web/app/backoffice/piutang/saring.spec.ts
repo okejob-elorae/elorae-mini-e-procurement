@@ -84,3 +84,78 @@ describe("hitungPilPiutang", () => {
     }
   });
 });
+
+describe("saringan jenis tagihan — konsi / non-konsi (keputusan 2026-10-29)", () => {
+  const dgnJenis = [
+    { ...f("INV/2026/0201", "belum"), outstanding: 1_000, konsi: false },
+    { ...f("KNS/2026/0001", "belum", "Toko Titip"), outstanding: 5_000, konsi: true },
+    { ...f("KNS/2026/0002", "jatuh_tempo", "Toko Titip"), outstanding: 7_000, konsi: true },
+    { ...f("INV/2026/0202", "jatuh_tempo"), outstanding: 2_000 },
+  ];
+
+  it("tanpa jenis: semuanya", () => {
+    expect(saringPiutang(dgnJenis, { keadaan: null, cari: "" })).toHaveLength(4);
+    expect(saringPiutang(dgnJenis, { keadaan: null, cari: "", jenis: null })).toHaveLength(4);
+  });
+
+  it("konsi saja / non-konsi saja; baris tanpa penanda dibaca non-konsi", () => {
+    expect(saringPiutang(dgnJenis, { keadaan: null, cari: "", jenis: "konsi" }).map((b) => b.invoiceNo)).toEqual([
+      "KNS/2026/0001",
+      "KNS/2026/0002",
+    ]);
+    expect(saringPiutang(dgnJenis, { keadaan: null, cari: "", jenis: "nonkonsi" }).map((b) => b.invoiceNo)).toEqual([
+      "INV/2026/0201",
+      "INV/2026/0202",
+    ]);
+  });
+
+  it("jenis bergabung dengan keadaan dan cari", () => {
+    expect(
+      saringPiutang(dgnJenis, { keadaan: "jatuh_tempo", cari: "", jenis: "konsi" }).map((b) => b.invoiceNo),
+    ).toEqual(["KNS/2026/0002"]);
+    expect(saringPiutang(dgnJenis, { keadaan: null, cari: "0001", jenis: "nonkonsi" })).toHaveLength(0);
+  });
+
+  it("angka pil mengikuti jenis", () => {
+    const pil = hitungPilPiutang(dgnJenis, "", "konsi");
+    expect(pil.semua).toEqual({ jumlah: 2, nilai: 12_000 });
+    expect(pil.perKeadaan.jatuh_tempo).toEqual({ jumlah: 1, nilai: 7_000 });
+    expect(pil.perKeadaan.belum).toEqual({ jumlah: 1, nilai: 5_000 });
+  });
+});
+
+describe("P46 — nota sebagian ditahan yang bagian bebasnya lewat tempo", () => {
+  const dgnTahanan = [
+    { ...f("INV/2026/0301", "jatuh_tempo"), outstanding: 1_000 },
+    {
+      ...f("INV/2026/0302", "tertahan"),
+      outstanding: 700,
+      alasan: { lewatTempoDiLuarTahanan: { hari: 30, nilai: 400 } },
+    },
+    { ...f("INV/2026/0303", "tertahan"), outstanding: 500, alasan: {} },
+  ];
+
+  it("masuk saringan lewat jatuh tempo DAN tetap di saringan tertahan", () => {
+    expect(saringPiutang(dgnTahanan, { keadaan: "jatuh_tempo", cari: "" }).map((b) => b.invoiceNo)).toEqual([
+      "INV/2026/0301",
+      "INV/2026/0302",
+    ]);
+    expect(saringPiutang(dgnTahanan, { keadaan: "tertahan", cari: "" }).map((b) => b.invoiceNo)).toEqual([
+      "INV/2026/0302",
+      "INV/2026/0303",
+    ]);
+  });
+
+  it("nilai pil lewat jatuh tempo menghitung bagian bebasnya saja (400, bukan 700)", () => {
+    const pil = hitungPilPiutang(dgnTahanan, "");
+    expect(pil.perKeadaan.jatuh_tempo).toEqual({ jumlah: 2, nilai: 1_400 });
+    expect(pil.perKeadaan.tertahan).toEqual({ jumlah: 2, nilai: 1_200 });
+  });
+
+  it("angka setiap pil = panjang daftarnya", () => {
+    const pil = hitungPilPiutang(dgnTahanan, "");
+    for (const [k, j] of Object.entries(pil.perKeadaan)) {
+      expect(j.jumlah).toBe(saringPiutang(dgnTahanan, { keadaan: k as never, cari: "" }).length);
+    }
+  });
+});

@@ -1,24 +1,20 @@
 /*
- * How much of a vendor bill has been paid, split over its two payment paths. Import-free: a pure
- * rule, tested on its own (`bill-paid-rule.test.ts`), shared by the vendor payment split in
- * `billable.ts` and the Supplier payments split in `supplier-paid.ts`.
+ * How much of a vendor bill has been paid through Supplier payments → Pay. Import-free: a pure rule,
+ * tested on its own (`bill-paid-rule.test.ts`), used by `supplier-paid.ts` (the bill status) and by
+ * `invoice-bayar-queries.ts` (the "Bayar per invoice" picker), so the two always agree.
  *
- * Supplier payments → Pay pays receipts, not invoices: an allocation names a GRN (goods) or a WO
- * step (CMT and other step work). A bill only matches those receipts. So what Supplier payments
- * settled is read in PIECES, per SOURCE — the PO item for a PO item line, the WO step for a step line:
- * - a GRN's settled share (`paidFraction`: what Supplier payments paid on it over its booked payable,
- *   PPN included) applies to every piece it received, so each PO item gets that share of its OWN
- *   pieces in that GRN (`paidPiecesByPoItem`) — a payment on one GRN never pays an item another GRN
- *   brought in;
- * - a WO step's settled share of its booked payable applies to its booked pieces.
- * Those pieces are handed to the live bill lines on that source in the order the bills were saved —
- * the order `createVendorBill` books unbooked step pieces in, so the bills that booked a payable are
- * the first to read as paid — each line taking at most what is left of it after its share of the
- * bill's own vendor payments (the old Vendor Billing payment path), at the line's own invoice price.
- * Counting pieces rather than rupiah keeps the receipt's basis (PPN, receipt price) apart from the
- * invoice's: a bill line reads paid exactly as far as the receipts its pieces came on are settled,
- * and a rupiah is never counted on a bill twice. Pieces a source holds beyond its lines are received
- * work no bill has matched yet.
+ * Supplier payments pay RECEIPTS, not invoices: an allocation names a GRN (goods) or a WO step (CMT
+ * and other step work). An invoice names the receipts it bills (a GRN line per item + variant, or a
+ * WO step). The rule is VALUE-based, per receipt (owner 2026-11-02, P20 + P29):
+ * - what Supplier payments settled on a receipt, in cents, goes to the live bill lines on it, OLDEST
+ *   INVOICE FIRST BY THE DATE ON THE PAPER (`urutkanInvoice`: the WIB calendar date of `billDate`,
+ *   then `createdAt`, then `id`) — the order the owner confirmed in P29;
+ * - each line takes at most its RECORDED payable: its received pieces × the receipt's recorded payable
+ *   per piece (the AP its receipt journal booked, PPN included), plus its own price-difference
+ *   correction while that correction waits or was accepted;
+ * - pieces no invoice names get only what is left, so a payment on a receipt never makes an invoice
+ *   for goods with no invoice read as paid, and a correction moves only its own line.
+ * A line's paid amount is then read back in invoice terms (its room in cents × taken ÷ recorded).
  */
 
 /** `total` cents split over `weights`, largest remainder first, so the parts add up to `total` exactly. */
@@ -43,19 +39,28 @@ export function lineRooms(vendorPaidCents: number, lineAmountCents: number[]): n
   return amounts.map((a, i) => Math.max(0, a - vendor[i]));
 }
 
-/** 0..1: the share of a receipt's booked payable that payments settled. Nothing booked settles nothing. */
-export function paidFraction(paidCents: number, payableCents: number): number {
-  if (payableCents <= 0 || paidCents <= 0) return 0;
-  return Math.min(1, paidCents / payableCents);
-}
-
 /** The key a GRN line and a PO item match on — item and trimmed variant, as `createGRN` matches them. */
 export function grnLineKey(itemId: string, variantSku?: string | null): string {
   return `${itemId}\t${variantSku?.trim() ?? ""}`;
 }
 
-/** The lines stored on `GRN.items` (a JSON array, or that array as a JSON string), as key and qty. */
-export function readGrnLines(raw: unknown): Array<{ key: string; qty: number }> {
+/** The pool key of one GRN key: `GRN:<grnId>|<item\tvariant>`. */
+export function grnLineSource(grnId: string, key: string): string {
+  return `GRN:${grnId}|${key}`;
+}
+
+/**
+ * Invoiced pieces of one GRN key that a completed vendor return later took back:
+ * max(0, billed + returned − received), 0 below half a cent of a piece. The bill cap nets completed
+ * returns out before an invoice may bill a piece, so returns leave the un-invoiced pieces first, and
+ * a key reads above zero only when a return completed AFTER an invoice had billed the pieces it took.
+ */
+export function invoicedReturnedQty(a: { received: number; returned: number; billed: number }): number {
+  const n = Math.round((a.billed + a.returned - a.received) * 100) / 100;
+  return n > 0.005 ? n : 0;
+}
+
+function bacaLarik(raw: unknown): unknown[] {
   let arr: unknown = raw;
   if (typeof raw === "string") {
     try {
@@ -64,64 +69,139 @@ export function readGrnLines(raw: unknown): Array<{ key: string; qty: number }> 
       return [];
     }
   }
-  if (!Array.isArray(arr)) return [];
-  const out: Array<{ key: string; qty: number }> = [];
-  for (const l of arr) {
+  return Array.isArray(arr) ? arr : [];
+}
+
+/** The lines stored on `GRN.items` (a JSON array, or that array as a JSON string), as key and qty. */
+export function readGrnLines(raw: unknown): Array<{ key: string; qty: number }> {
+  return readGrnLinesDetail(raw).map((l) => ({ key: l.key, qty: l.qty }));
+}
+
+export type GrnLineDetail = {
+  key: string;
+  itemId: string;
+  variantSku: string | null;
+  qty: number;
+  /** Stored line total: qty × unit cost on the stock card, capitalised PPN included. */
+  totalCost: number;
+  /** The base price per unit before PPN: the PO price (`hargaPo`) when PPN was capitalised, else `unitCost`. */
+  hargaDasar: number;
+  /** A PO "Exclude PPN" line received while Elorae was PKP: its PPN is input VAT (`GRN.ppnAmount`). */
+  ppnMasukan: boolean;
+  /** A PO "Exclude PPN" line received while Elorae was not PKP: its PPN is part of the cost. */
+  ppnModal: boolean;
+  itemType: string | null;
+};
+
+const angka = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/** Every stored GRN line with the fields the payable and the price difference are computed from. */
+export function readGrnLinesDetail(raw: unknown): GrnLineDetail[] {
+  const out: GrnLineDetail[] = [];
+  for (const l of bacaLarik(raw)) {
     if (typeof l !== "object" || l === null) continue;
-    const { itemId, variantSku, qty } = l as { itemId?: unknown; variantSku?: unknown; qty?: unknown };
-    const n = Number(qty);
-    if (typeof itemId !== "string" || !Number.isFinite(n) || n <= 0) continue;
-    out.push({ key: grnLineKey(itemId, typeof variantSku === "string" ? variantSku : null), qty: n });
+    const r = l as Record<string, unknown>;
+    const qty = Number(r.qty);
+    if (typeof r.itemId !== "string" || !Number.isFinite(qty) || qty <= 0) continue;
+    const variantSku = typeof r.variantSku === "string" && r.variantSku.trim() !== "" ? r.variantSku.trim() : null;
+    const unitCost = angka(r.unitCost);
+    const totalCost = r.totalCost != null && Number.isFinite(Number(r.totalCost)) ? Number(r.totalCost) : qty * unitCost;
+    const ppnModal = angka(r.ppnDikapitalisasi) > 0;
+    out.push({
+      key: grnLineKey(r.itemId, variantSku),
+      itemId: r.itemId,
+      variantSku,
+      qty,
+      totalCost,
+      hargaDasar: ppnModal && r.hargaPo != null ? angka(r.hargaPo) : unitCost,
+      ppnMasukan: r.ppnIncluded === false,
+      ppnModal,
+      itemType: typeof r.itemType === "string" ? r.itemType : null,
+    });
   }
   return out;
 }
 
-export type GrnPaidPieces = { fraction: number; lines: ReadonlyArray<{ key: string; qty: number }> };
-export type PoItemSlot = { id: string; key: string; receivedQty: number };
+const SELISIH_WIB_MS = 7 * 3_600_000;
 
-/**
- * Pieces of each PO item that payments settled: of every GRN of the PO, its settled `fraction` of the
- * pieces it brought in under each key, handed to the PO's items with that key in the order given,
- * each up to what it received. A PO item no settled GRN brought in gets 0.
- */
-export function paidPiecesByPoItem(grns: readonly GrnPaidPieces[], items: readonly PoItemSlot[]): Map<string, number> {
-  const perKey = new Map<string, number>();
-  for (const g of grns) {
-    if (g.fraction <= 0) continue;
-    for (const l of g.lines) perKey.set(l.key, (perKey.get(l.key) ?? 0) + l.qty * g.fraction);
-  }
-  const out = new Map<string, number>();
-  for (const it of items) {
-    const left = perKey.get(it.key) ?? 0;
-    const take = Math.max(0, Math.min(left, it.receivedQty));
-    out.set(it.id, take);
-    perKey.set(it.key, left - take);
-  }
-  return out;
+function waktu(v: Date | string): number {
+  const t = v instanceof Date ? v.getTime() : new Date(v).getTime();
+  return Number.isFinite(t) ? t : 0;
 }
 
-export type SupplierPaidLine = { billId: string; source: string; qty: number; amountCents: number; roomCents: number };
-
-const QTY_EPS = 1e-6;
+/** "YYYY-MM-DD" of an instant in Asia/Jakarta (UTC+7, no daylight saving). */
+function tanggalWib(v: Date | string): string {
+  return new Date(waktu(v) + SELISIH_WIB_MS).toISOString().slice(0, 10);
+}
 
 /**
- * Hands each source's settled pieces to its lines, in the order given (oldest saved bill first). A
- * line's room in pieces is its qty in the proportion its `roomCents` bears to its amount; it takes at
- * most that, at its own price, and a full room takes exactly `roomCents`. Returns cents per bill; a
- * bill no pool reached is absent.
+ * Invoices in the order they are paid: the WIB calendar date of the invoice (`billDate`, the date on
+ * the paper — owner 2026-11-02, P29), then when it was recorded, then id. Returns a sorted copy. The
+ * one comparator for paid attribution, the "Bayar per invoice" picker and its "ikut melunasi" notes.
  */
-export function allocateSupplierPaid(lines: readonly SupplierPaidLine[], poolPieces: ReadonlyMap<string, number>): Map<string, number> {
-  const left = new Map(poolPieces);
-  const byBill = new Map<string, number>();
-  for (const l of lines) {
-    const pool = left.get(l.source) ?? 0;
-    if (pool <= QTY_EPS || l.roomCents <= 0 || l.amountCents <= 0 || l.qty <= 0) continue;
-    const roomCents = Math.min(l.roomCents, l.amountCents);
-    const roomQty = (l.qty * roomCents) / l.amountCents;
-    const take = Math.min(pool, roomQty);
-    const cents = take >= roomQty - QTY_EPS ? roomCents : Math.round((roomCents * take) / roomQty);
-    left.set(l.source, pool - take);
-    if (cents > 0) byBill.set(l.billId, (byBill.get(l.billId) ?? 0) + cents);
+export function urutkanInvoice<T extends { billDate: Date | string; createdAt: Date | string; id: string }>(rows: readonly T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const ta = tanggalWib(a.billDate);
+    const tb = tanggalWib(b.billDate);
+    if (ta !== tb) return ta < tb ? -1 : 1;
+    const ca = waktu(a.createdAt);
+    const cb = waktu(b.createdAt);
+    if (ca !== cb) return ca - cb;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+}
+
+/**
+ * A GRN's recorded payable (cents, PPN included) split over its item keys: weight = the key's stored
+ * line value (capitalised PPN included) plus its share of the GRN's input VAT, which is split over the
+ * PPN-masukan keys by value. The parts add up to `hutangSen` exactly; a negative payable splits the
+ * same way with the sign kept.
+ */
+export function hutangPerKunciGrn(a: {
+  baris: ReadonlyArray<{ key: string; nilaiSen: number; ppnMasukan: boolean }>;
+  ppnSen: number;
+  hutangSen: number;
+}): Map<string, number> {
+  const kunci: string[] = [];
+  const nilai = new Map<string, number>();
+  const masukan = new Set<string>();
+  for (const b of a.baris) {
+    if (!nilai.has(b.key)) kunci.push(b.key);
+    nilai.set(b.key, (nilai.get(b.key) ?? 0) + Math.max(0, b.nilaiSen));
+    if (b.ppnMasukan) masukan.add(b.key);
   }
-  return byBill;
+  const ppnPart = splitCents(
+    Math.max(0, a.ppnSen),
+    kunci.map((k) => (masukan.has(k) ? nilai.get(k) ?? 0 : 0)),
+  );
+  const bobot = kunci.map((k, i) => (nilai.get(k) ?? 0) + ppnPart[i]);
+  const tanda = a.hutangSen < 0 ? -1 : 1;
+  const bagian = splitCents(Math.abs(a.hutangSen), bobot.some((w) => w > 0) ? bobot : kunci.map(() => 1));
+  return new Map(kunci.map((k, i) => [k, tanda * bagian[i]]));
+}
+
+/**
+ * Hands a receipt's settled cents to its live lines in the order given (`urutkanInvoice`, then line
+ * id): each line takes at most its recorded payable `tercatatSen`; its paid amount in invoice terms is
+ * its open room `ruangSen` × taken ÷ recorded, exactly `ruangSen` when it took all of it. A line with
+ * nothing recorded takes nothing. What is left over belongs to pieces no invoice names.
+ */
+export function bagiLunasKeBaris(
+  lunasSen: number,
+  baris: ReadonlyArray<{ billId: string; lineId: string; tercatatSen: number; ruangSen: number }>,
+): Map<string, { diambilSen: number; dibayarInvoiceSen: number }> {
+  const hasil = new Map<string, { diambilSen: number; dibayarInvoiceSen: number }>();
+  let sisa = Math.max(0, lunasSen);
+  for (const b of baris) {
+    const tercatat = Math.max(0, Math.round(b.tercatatSen));
+    const ambil = Math.min(sisa, tercatat);
+    sisa -= ambil;
+    const ruang = Math.max(0, Math.round(b.ruangSen));
+    const dibayar = tercatat <= 0 || ambil <= 0 ? 0 : ambil >= tercatat ? ruang : Math.round((ruang * ambil) / tercatat);
+    hasil.set(b.lineId, { diambilSen: ambil, dibayarInvoiceSen: dibayar });
+  }
+  return hasil;
 }

@@ -9,7 +9,17 @@ import {
   parseOverdueThresholds,
 } from "@/lib/finance/ar/overdue-thresholds";
 
+/*
+ * The page, both actions and its Settings hub card share ONE permission, `receivables:manage`
+ * (owner decision Q14, 2026-11-02: the thresholds are set by "Kelola piutang" holders). RECEIVING
+ * the reminder is a separate permission, `receivables:overdue_reminder` (P48), which opens nothing
+ * here.
+ */
 export async function getOverdueThresholds(): Promise<number[]> {
+  const session = await auth();
+  if (!session) throw new Error("Unauthorized");
+  requirePermission(session.user.permissions, PERMISSIONS.RECEIVABLES_MANAGE);
+
   const row = await prisma.systemSetting.findUnique({
     where: { key: OVERDUE_THRESHOLD_SETTING_KEY },
     select: { value: true },
@@ -22,7 +32,7 @@ export async function setOverdueThresholds(
 ): Promise<{ ok: true; thresholds: number[] } | { ok: false; code: "EMPTY" | "INVALID" }> {
   const session = await auth();
   if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.COLLECTIONS_MANAGE);
+  requirePermission(session.user.permissions, PERMISSIONS.RECEIVABLES_MANAGE);
 
   const trimmed = raw.trim();
   if (trimmed === "") return { ok: false, code: "EMPTY" };

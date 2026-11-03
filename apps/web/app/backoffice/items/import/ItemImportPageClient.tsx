@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { commitItemImport, previewItemImport } from "@/app/actions/item-import";
+import { saluranDariCentang } from "@/lib/items/saluran-jual";
 import {
   ITEM_IMPORT_MAX_BYTES,
   ITEM_IMPORT_MAX_ROWS,
@@ -77,10 +78,14 @@ function withParseErrors(
 
 export function ItemImportPageClient() {
   const t = useTranslations("itemImport");
+  const tItems = useTranslations("items");
   const errorMessage = useImportErrorMessage();
   const fileInput = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
-  const [pushToJubelio, setPushToJubelio] = useState(false);
+  // Saluran jual semua produk di berkas ini (jawaban pemilik P3): minimal satu centang.
+  const [saluranMarketplace, setSaluranMarketplace] = useState(false);
+  const [saluranOffline, setSaluranOffline] = useState(false);
+  const salesChannel = saluranDariCentang({ marketplace: saluranMarketplace, offline: saluranOffline });
   const [dragging, setDragging] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [commitError, setCommitError] = useState(false);
@@ -157,10 +162,14 @@ export function ItemImportPageClient() {
   async function commit() {
     if (phase.kind !== "preview") return;
     const { fileName, rows, result } = phase;
+    if (!salesChannel) {
+      toast.error(t("saluranWajib"));
+      return;
+    }
     setCommitError(false);
     setPhase({ kind: "committing", fileName, rows, result });
     try {
-      const r = await commitItemImport(rows, { pushToJubelio });
+      const r = await commitItemImport(rows, { salesChannel });
       if (r.status === "created") {
         setPhase({ kind: "done", result: r });
       } else if (r.status === "invalid") {
@@ -183,7 +192,8 @@ export function ItemImportPageClient() {
 
   function reset() {
     setPhase({ kind: "idle" });
-    setPushToJubelio(false);
+    setSaluranMarketplace(false);
+    setSaluranOffline(false);
     setCommitError(false);
     if (fileInput.current) fileInput.current.value = "";
   }
@@ -200,7 +210,9 @@ export function ItemImportPageClient() {
               <CheckCircle2 className="h-5 w-5 text-emerald-600" />
               {t("doneTitle", { count: result.items.length, variants: result.variantCount })}
             </div>
-            <p className="text-sm text-muted-foreground">{jubelioLine}</p>
+            <p className="text-sm text-muted-foreground">
+              {tItems(`saluran.${result.salesChannel}`)} · {jubelioLine}
+            </p>
             <ul className="divide-y rounded-md border">
               {result.items.map((item) => (
                 <li key={item.id}>
@@ -355,28 +367,35 @@ export function ItemImportPageClient() {
               {errorCount > 0 ? (
                 <p className="text-sm text-destructive">{t("fixAndReupload", { count: errorCount })}</p>
               ) : (
-                <label className="flex min-h-10 cursor-pointer items-start gap-2 text-sm">
-                  <Checkbox
-                    checked={pushToJubelio}
-                    onCheckedChange={(v) => setPushToJubelio(v === true)}
-                    disabled={busy}
-                    className="mt-0.5"
-                  />
-                  <span>
-                    <span className="font-medium">{t("jubelioLabel")}</span>
-                    <span className="block text-xs text-muted-foreground">{t("jubelioHint")}</span>
-                    {pushToJubelio && jubelioNoCategoryCount > 0 ? (
-                      <span className="block text-xs text-muted-foreground">
-                        {t("jubelioNoCategory", { count: jubelioNoCategoryCount })}
-                      </span>
-                    ) : null}
-                  </span>
-                </label>
+                <fieldset className="space-y-1 text-sm">
+                  <legend className="font-medium">{t("saluranJudul")}</legend>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    <label className="flex min-h-10 cursor-pointer items-center gap-2">
+                      <Checkbox
+                        checked={saluranMarketplace}
+                        onCheckedChange={(v) => setSaluranMarketplace(v === true)}
+                        disabled={busy}
+                      />
+                      <span>{t("saluranMarketplace")}</span>
+                    </label>
+                    <label className="flex min-h-10 cursor-pointer items-center gap-2">
+                      <Checkbox checked={saluranOffline} onCheckedChange={(v) => setSaluranOffline(v === true)} disabled={busy} />
+                      <span>{t("saluranOffline")}</span>
+                    </label>
+                  </div>
+                  <span className="block text-xs text-muted-foreground">{t("saluranHint")}</span>
+                  {!salesChannel ? <span className="block text-xs text-destructive">{t("saluranWajib")}</span> : null}
+                  {saluranMarketplace && jubelioNoCategoryCount > 0 ? (
+                    <span className="block text-xs text-muted-foreground">
+                      {t("jubelioNoCategory", { count: jubelioNoCategoryCount })}
+                    </span>
+                  ) : null}
+                </fieldset>
               )}
               <Button
                 className="h-10 shrink-0"
                 onClick={() => void commit()}
-                disabled={busy || errorCount > 0}
+                disabled={busy || errorCount > 0 || !salesChannel}
               >
                 {phase.kind === "committing" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {phase.kind === "committing" ? t("committing") : t("commit", { count: validated.artikelCount })}

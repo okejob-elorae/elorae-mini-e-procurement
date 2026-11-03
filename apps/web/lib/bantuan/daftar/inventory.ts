@@ -19,7 +19,8 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Satu GRN: pemasok, PO asalnya, siapa yang menerima, nilai, barang yang diterima beserta qty dan harga satuannya, foto, roll kain, serta retur pemasok yang berasal dari GRN ini.",
       "Bila penerimaan melebihi jumlah PO lebih dari batas barangnya, kartu Terima-lebih menunggu keputusan pemilik. Menyetujui menerima kelebihannya apa adanya; menolak membalik stok dan qty diterima di PO, dan tidak bisa dilakukan lagi bila roll kainnya sudah dipakai atau stoknya sudah keluar.",
-      "Jurnal GRN (persediaan dan utang) diposting saat GRN dibuat. Bila gagal, pemegang izin kelola jurnal bisa memposting ulang dari sini; GRN yang ditolak pemilik memakai jurnal pembalik.",
+      "GRN tanpa PO tersimpan, tetapi belum masuk stok dan belum menjadi utang sampai dikonfirmasi admin (kartu Konfirmasi admin, izin Konfirmasi penerimaan tanpa PO). GRN yang ditolak admin tidak pernah diproses. Sebelum dikonfirmasi, penerimaan itu juga belum bisa ditagih, dibayar, atau diretur ke pemasok.",
+      "Jurnal GRN (persediaan dan utang) diposting saat GRN diproses — saat dibuat, atau untuk GRN tanpa PO saat dikonfirmasi. Bila gagal, pemegang izin kelola jurnal bisa memposting ulang dari sini; GRN yang ditolak pemilik memakai jurnal pembalik.",
     ],
   },
   {
@@ -29,6 +30,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Layar gudang untuk menghitung barang retur toko yang datang (NRT). Hitung setiap baris yang benar-benar sampai beserta kondisinya; klaim toko baru diperlihatkan sesudah hitungan disimpan, supaya hitungan tidak ikut angka klaim.",
       "Hitungan hanya bisa dicatat sekali, dan orang yang melaporkan nota tidak boleh menghitungnya sendiri. Barang layak masuk stok jual; barang rusak atau kedaluwarsa masuk Gudang barang rusak. Selisih antara klaim dan fisik diputuskan kantor.",
+      "Barang susulan (selisih retur): barang yang dikirim balik karena gudang sebelumnya menerima kurang dari nota toko. Hitungannya buta (klaim tidak ditampilkan), menjadi hitungan gudang tersendiri yang mengurangi selisih nota asalnya, dan tidak boleh dihitung oleh salesman yang terlibat. Yang sudah dilaporkan sales sebagai ditemukan tampil paling atas.",
       "Layar ini berdiri di luar menu samping karena dibuka orang gudang yang hanya punya izin menghitung.",
     ],
   },
@@ -55,6 +57,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "inventory.grnForm.pageTitle" },
     isi: [
       { kunci: "inventory.grnForm.pageSubtitle" },
+      "Penerimaan tanpa PO hanya bisa dicatat untuk pemasok yang disetujui, dan baru masuk stok serta menjadi utang setelah dikonfirmasi admin.",
       "Untuk kain, panjang setiap roll dicatat satu per satu. Bila jumlah yang diterima melebihi jumlah PO lebih dari batas lebih-terima barangnya, penerimaan ini menunggu persetujuan pemilik di tab Penerimaan Barang sebelum status PO ikut berubah.",
       "Menyimpan GRN butuh sinyal. Selama diisi, isian formulir (termasuk foto) disimpan sebagai draf di perangkat ini untuk akun Anda, jadi sinyal putus atau halaman tertutup tidak menghapusnya; draf hilang setelah GRN tersimpan atau setelah Anda menekan Buang draf. Bila sambungan putus tepat saat menyimpan, tekan Simpan lagi tanpa mengubah isian: setiap isian membawa tanda kirimnya sendiri (ikut tersimpan di draf), jadi penerimaan yang sudah tercatat dikembalikan apa adanya dan barang tidak diterima dua kali. Membuang draf memulai isian baru.",
       "GRN yang dulu disimpan di perangkat saat offline tidak pernah terkirim ke sistem. Daftarnya muncul di atas formulir: muat ke formulir lalu simpan, atau hapus bila sudah dicatat ulang.",
@@ -150,10 +153,11 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "deliveryShipments.title" },
     isi: [
       "Daftar pengiriman barang ke toko untuk pesanan lapangan yang sudah disetujui, putus maupun konsinyasi. Pengiriman dibuat dari halaman pesanannya lewat Buat Pengiriman: pilih metode dan jumlah yang dikemas. Satu pesanan boleh dikirim beberapa kali sampai seluruhnya terkirim.",
-      "Alurnya Dikemas → Dalam Perjalanan → Terkirim, atau Terkirim Sebagian bila toko menerima kurang dari rencana. Lewat ekspedisi: isi nama ekspedisi dan nomor resi di Ubah Pelacakan, lalu Kirim; kantor menyelesaikannya dari daftar ini dengan foto bukti dan jumlah yang diterima per baris. Dibawa salesman: pilih salesman pembawanya, lalu Kirim; salesman itu menyelesaikannya dari HP di toko, dengan foto dan lokasi. Selama dalam perjalanan, pembawanya masih bisa diganti.",
-      "Untuk pesanan putus, tanggal nota dan jatuh tempo diisi sebelum dikirim bila barangnya dibawa salesman, atau saat menyelesaikan bila lewat ekspedisi. Pengiriman yang masih Dikemas bisa dibatalkan dari dialog Ubah Pelacakan.",
-      "Menyelesaikan pengiriman putus mencatat nota tagihan sebesar jumlah yang benar-benar diterima, dan stoknya keluar saat itu. Pengiriman konsinyasi tidak membuat tagihan: jumlah yang diterima pindah ke stok konsinyasi toko.",
-      "Membuka halaman ini butuh izin mengirim barang atau izin bukti terima. Mengatur pelacakan, mengirim, membatalkan, dan mengganti pembawa butuh izin mengirim barang; menyelesaikan butuh izin bukti terima.",
+      "Stok keluar dari Gudang Utama saat pengiriman DIBUAT. Konsinyasi masuk perjalanan ke gudang toko, dan surat jalannya mencantumkan harga tiap artikel (tanpa faktur). Putus membuat nota tagihan, piutang, dan antrean faktur pajaknya dengan tanggal hari itu, dan jatuh temponya dihitung dari tanggal itu.",
+      "Alurnya Dikemas → Dalam Perjalanan → Terkirim, atau Terkirim Sebagian bila toko menerima kurang dari rencana. Lewat ekspedisi: isi nama ekspedisi, nomor resi, berat (kg), dan foto serah ke kurir yang memperlihatkan beratnya di Ubah Pelacakan — wajib sebelum dikirim — lalu Kirim; kantor menyelesaikannya dari daftar ini dengan foto bukti. Di toko tanpa SPG, Selesaikan sekaligus mencatat penerimaan toko: diterima, retur langsung, dan hilang harus berjumlah sama dengan yang dikirim. Dibawa salesman: pilih salesman pembawanya, lalu Kirim; salesman itu menyelesaikannya dari HP di toko, dengan foto dan lokasi. Selama dalam perjalanan, pembawanya masih bisa diganti.",
+      "Yang menggolongkan barang adalah penerimaan toko — oleh SPG di toko ber-SPG, oleh penyelesaian bukti terima di toko tanpa SPG, atau oleh sales pemegang bila SPG-nya sudah berhenti: tiba, rusak, ditolak (dibawa pulang kurir), atau hilang. Yang ditolak kembali ke gudang dan nota putusnya dikoreksi; yang hilang langsung dicatat sebagai barang hilang.",
+      "Tidak jadi dikirim (alasan wajib) bisa ditekan selama pengiriman Dikemas atau Dalam Perjalanan. Untuk putus hanya Admin Penjualan (izin batalkan pengiriman bernota) yang boleh menekannya; ditolak begitu nota itu punya laporan pembayaran atau toko sudah menerima, dan Keuangan langsung dikabari. Konsinyasi dibatalkan dengan izin mengirim barang.",
+      "Membuka halaman ini butuh izin mengirim barang, izin bukti terima, atau izin batalkan pengiriman bernota. Mengatur pelacakan, mengirim, dan mengganti pembawa butuh izin mengirim barang; menyelesaikan butuh izin bukti terima.",
     ],
   },
   {
@@ -161,7 +165,7 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "inventory",
     judul: "Rincian pengiriman",
     isi: [
-      "Satu pengiriman: toko, pesanan asalnya, pembawa atau ekspedisi beserta resinya, tanggal nota dan jatuh tempo (putus), dan dokumen yang dihasilkannya — catatan pengiriman untuk putus, transfer konsinyasi untuk konsi. Belum dibuat berarti pengirimannya belum selesai.",
+      "Satu pengiriman: toko, pesanan asalnya, pembawa atau ekspedisi beserta resi, berat, dan foto serah ke kurirnya, tanggal nota dan jatuh tempo (putus), dan dokumen yang dihasilkannya — nota tagihan untuk putus, transfer konsinyasi untuk konsi. Keadaan penerimaannya: dalam perjalanan, diterima toko (tanggal, oleh siapa, lewat SPG, bukti terima, atau sales pemegang beserta nama penanggung jawab dan fotonya), atau dibatalkan beserta alasannya; per baris tampil yang ditolak dan yang hilang, dan nota yang batal atau dikoreksi diberi tanda.",
       "Riwayat mencatat kapan dan oleh siapa barangnya dikemas, dikirim, dan diterima. Pengiriman yang diselesaikan tanpa sinyal juga menyebut kapan penyelesaiannya tersinkron.",
       "Bukti pengiriman berisi foto barang, foto dokumen bertanda tangan beserta nama penerimanya (khusus yang dibawa salesman), dan lokasi saat diselesaikan dengan jaraknya dari titik toko. Tabel barang menyandingkan qty rencana dengan qty terkirim; baris yang diterima kurang ditandai. Halaman ini hanya untuk dibaca.",
     ],

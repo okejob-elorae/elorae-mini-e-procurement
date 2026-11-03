@@ -1,10 +1,22 @@
 import { prisma } from "@elorae/db";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { SARING_JURNAL_BERLAKU } from "@/lib/finance/journals/status-jurnal";
 import { PPN_BAWAAN } from "@/lib/finance/pajak/ppn";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { daftarkanSumberSapuan, type DokumenTanpaJurnal, type OpsiCariSapuan } from "@/lib/finance/sapuan/registri";
-import { barisKlaim, barisRetur, barisTukar, peranPotongan, SEMUA_SUMBER_JURNAL_NOTA, SUMBER_LAPANGAN, type SumberLapangan } from "./aturan";
-import { bacaBahanRetur } from "./jurnal";
+import {
+  barisKlaim,
+  barisRetur,
+  barisTukar,
+  generasiSourceId,
+  peranPotongan,
+  selisihBaris,
+  SEMUA_SUMBER_JURNAL_NOTA,
+  SUMBER_LAPANGAN,
+  type SumberLapangan,
+} from "./aturan";
+import { bacaBahanRetur, susunJurnalNota } from "./jurnal";
+import { bacaJurnalTerposting } from "./selaras";
 import { postingJurnalLapanganAman } from "./tertunda";
 
 /*
@@ -17,9 +29,11 @@ import { postingJurnalLapanganAman } from "./tertunda";
  * "Tanpa jurnal" = belum punya jurnal GENERASI PERTAMA (sourceId = id dokumen).
  * Jurnal bergenerasi yang sudah ada tetapi tertinggal dari keadaan dokumennya
  * diselaraskan oleh kait pasca-commit dan tombol "Selaraskan" di layar
- * rekonsiliasi, bukan oleh sapuan ini. Nota yang berjurnal bentuk lama
- * (`SUMBER_NOTA_LAMA`) juga terhitung berjurnal: sapuan tidak pernah
- * memberinya jurnal nota kedua.
+ * rekonsiliasi; untuk NOTA, yang berubah sesudah generasi terakhirnya (dikoreksi
+ * atau dibatalkan) juga dicari sapuan ini (`cariNotaTertinggal`), karena
+ * koreksinya mengubah piutang, pendapatan, PPN, dan HPP sekaligus. Nota yang
+ * berjurnal bentuk lama (`SUMBER_NOTA_LAMA`) juga terhitung berjurnal: sapuan
+ * tidak pernah memberinya jurnal nota kedua.
  */
 
 /** sourceType yang berarti dokumen ini sudah berjurnal. */
@@ -68,11 +82,12 @@ async function kumpulkan(
   return hasil;
 }
 
+/** Nota putus tanpa generasi pertama. Nota yang dibatalkan sebelum pernah dijurnal tidak punya apa pun untuk dijurnal. */
 export function cariNotaTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpaJurnal[]> {
   return kumpulkan(SUMBER_LAPANGAN.NOTA, opsi, async (lewati, ambil, sejak) =>
     (
       await prisma.fieldSalesDelivery.findMany({
-        where: { invoiceDate: { gte: sejak, lte: opsi.sampai }, order: { orderType: "PUTUS" }, ...saringId(opsi) },
+        where: { invoiceDate: { gte: sejak, lte: opsi.sampai }, voidedAt: null, order: { orderType: "PUTUS" }, ...saringId(opsi) },
         orderBy: [{ invoiceDate: "asc" }, { id: "asc" }],
         skip: lewati,
         take: ambil,
@@ -82,6 +97,74 @@ export function cariNotaTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpaJ
   );
 }
 
+/**
+ * Nota yang jurnalnya TERTINGGAL dari keadaannya: dikoreksi (ditolak sebagian di pintu, barang
+ * hilang di jalan) atau dibatalkan ("tidak jadi dikirim") SESUDAH generasi terakhirnya diposting —
+ * proses yang mati di antara commit dan kaitnya tidak meninggalkan apa pun, dan koreksinya mengubah
+ * piutang, pendapatan, PPN, dan HPP. Kandidat = nota putus yang berubah dalam jendela (`voidedAt`,
+ * atau `correctedAt` bila belum dibatalkan), sudah punya generasi `FIELD_DELIVERY`, dan generasi
+ * terakhirnya lebih tua dari perubahannya. Yang dikembalikan hanya yang sasarannya sekarang
+ * (`susunJurnalNota`, penyusun yang sama dengan penyelarasnya) berbeda dari yang terposting —
+ * dibandingkan ISINYA, jadi nota yang sudah diselaraskan tidak pernah tampil lagi. Nota tanpa
+ * generasi sama sekali urusan `cariNotaTanpaJurnal`. Menghormati `sejak`/`sampai`/`batas`/`ids`
+ * (cakupan diterapkan di kueri), tidak pernah sebelum tanggal mulai buku besar.
+ */
+export async function cariNotaTertinggal(opsi: OpsiCariSapuan, kecuali: readonly DokumenTanpaJurnal[] = []): Promise<DokumenTanpaJurnal[]> {
+  const mulai = await readGlCutover();
+  const batas = opsi.batas - kecuali.length;
+  if (!mulai || batas <= 0 || opsi.ids?.length === 0) return [];
+  const sejak = opsi.sejak.getTime() < mulai.getTime() ? mulai : opsi.sejak;
+  if (sejak.getTime() > opsi.sampai.getTime()) return [];
+  const sudah = new Set(kecuali.map((k) => k.id));
+  const jendela = { gte: sejak, lte: opsi.sampai };
+  const hasil: DokumenTanpaJurnal[] = [];
+  for (let lewati = 0; hasil.length < batas; lewati += HALAMAN) {
+    const nota = await prisma.fieldSalesDelivery.findMany({
+      where: {
+        order: { orderType: "PUTUS" },
+        OR: [{ voidedAt: jendela }, { voidedAt: null, correctedAt: jendela }],
+        ...saringId(opsi),
+      },
+      orderBy: [{ id: "asc" }],
+      skip: lewati,
+      take: HALAMAN,
+      select: { id: true, docNo: true, voidedAt: true, correctedAt: true },
+    });
+    if (nota.length === 0) break;
+    const jurnal = await prisma.journal.findMany({
+      where: {
+        sourceType: SUMBER_LAPANGAN.NOTA,
+        ...SARING_JURNAL_BERLAKU,
+        OR: nota.flatMap((n) => [{ sourceId: n.id }, { sourceId: { startsWith: `${n.id}#` } }]),
+      },
+      select: { sourceId: true, createdAt: true },
+    });
+    const terakhir = new Map<string, number>();
+    for (const j of jurnal) {
+      const sourceId = j.sourceId;
+      const milik = sourceId ? nota.find((n) => generasiSourceId(n.id, sourceId) !== null) : undefined;
+      if (milik) terakhir.set(milik.id, Math.max(terakhir.get(milik.id) ?? 0, j.createdAt.getTime()));
+    }
+    for (const n of nota) {
+      if (hasil.length >= batas) break;
+      const ubah = n.voidedAt ?? n.correctedAt;
+      const t = terakhir.get(n.id);
+      if (!ubah || sudah.has(n.id) || t === undefined || t >= ubah.getTime()) continue;
+      const ada = await bacaJurnalTerposting(prisma, SUMBER_LAPANGAN.NOTA, n.id);
+      const s = await susunJurnalNota(prisma, n.id, mulai, ada.baris);
+      if ("jawab" in s || ada.sourceIds.length === 0) continue;
+      if (selisihBaris(s.sasaran, ada.baris).length > 0) hasil.push({ id: n.id, tanggal: ubah, label: n.docNo });
+    }
+    if (nota.length < HALAMAN) break;
+  }
+  return hasil;
+}
+
+/**
+ * BKM terverifikasi tanpa jurnal — termasuk BKM toko konsinyasi: tagihan konsi dilunasi lewat BKM
+ * dan jurnalnya mengkredit AR_CONSIGNMENT (`barisKlaim`), jadi BKM konsi yang kaitnya gagal
+ * harus ditemukan di sini juga.
+ */
 export function cariKlaimTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpaJurnal[]> {
   const nilaiPerKlaim = new Map<string, boolean>();
   return kumpulkan(
@@ -89,7 +172,7 @@ export function cariKlaimTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpa
     opsi,
     async (lewati, ambil, sejak) => {
       const rows = await prisma.paymentClaim.findMany({
-        where: { status: "TERVERIFIKASI", verifiedAt: { gte: sejak, lte: opsi.sampai }, store: { termsType: { not: "KONSI" } }, ...saringId(opsi) },
+        where: { status: "TERVERIFIKASI", verifiedAt: { gte: sejak, lte: opsi.sampai }, ...saringId(opsi) },
         orderBy: [{ verifiedAt: "asc" }, { id: "asc" }],
         skip: lewati,
         take: ambil,
@@ -239,7 +322,10 @@ async function postingSapuan(sumber: SumberLapangan, id: string, olehUserId: str
 daftarkanSumberSapuan({
   sourceType: SUMBER_LAPANGAN.NOTA,
   label: "Nota tagihan putus",
-  cariTanpaJurnal: cariNotaTanpaJurnal,
+  cariTanpaJurnal: async (opsi) => {
+    const pertama = await cariNotaTanpaJurnal(opsi);
+    return [...pertama, ...(await cariNotaTertinggal(opsi, pertama))];
+  },
   posting: (id, olehUserId) => postingSapuan(SUMBER_LAPANGAN.NOTA, id, olehUserId),
 });
 

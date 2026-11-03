@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { deliveredGoodsValue, deliveredLineNetValues, undeliveredResidual } from "./undelivered-residual";
+import { deliveredGoodsValue, deliveredLineNetValues, nilaiBelumDinota, undeliveredResidual } from "./undelivered-residual";
+import { nextDeliveryStatus } from "./plan";
 
 describe("undeliveredResidual", () => {
   it("returns the whole order total when nothing was delivered", () => {
@@ -162,5 +163,68 @@ describe("deliveredLineNetValues", () => {
 
   it("returns nothing for a delivery with no lines", () => {
     expect(deliveredLineNetValues({ discountAmount: 50, lines: [] })).toEqual([]);
+  });
+});
+
+describe("nilaiBelumDinota", () => {
+  const baris = (qty: number, deliveredQty: number, cancelledQty: number, lineTotal: number, discountAmount = 0) => ({
+    qty,
+    deliveredQty,
+    cancelledQty,
+    lineTotal,
+    discountAmount,
+  });
+
+  it("an order with no nota owes its whole total", () => {
+    expect(nilaiBelumDinota({ total: 4_000_000, orderDiscountAmount: 0, lines: [baris(16, 0, 0, 4_000_000)] })).toBe(4_000_000);
+  });
+
+  it("a fully open order with an order discount returns its own total exactly", () => {
+    expect(nilaiBelumDinota({ total: 99_999.67, orderDiscountAmount: 0.33, lines: [baris(3, 0, 0, 100_000)] })).toBe(99_999.67);
+  });
+
+  it("values the open quantity net of its share of the order discount", () => {
+    const order = {
+      total: 180_000,
+      orderDiscountAmount: 20_000,
+      lines: [baris(10, 4, 0, 100_000), baris(5, 0, 0, 100_000)],
+    };
+    expect(nilaiBelumDinota(order)).toBe(144_000);
+  });
+
+  it("takes the open share of a line discount", () => {
+    expect(nilaiBelumDinota({ total: 900, orderDiscountAmount: 0, lines: [baris(2, 1, 0, 1_000, 100)] })).toBe(450);
+  });
+
+  it("is zero once every line is delivered or cancelled", () => {
+    expect(nilaiBelumDinota({ total: 1_000, orderDiscountAmount: 0, lines: [baris(4, 3, 1, 1_000), baris(2, 2, 0, 500)] })).toBe(0);
+  });
+
+  it("an over-delivered line contributes nothing", () => {
+    expect(nilaiBelumDinota({ total: 2_000, orderDiscountAmount: 0, lines: [baris(10, 12, 0, 1_000), baris(1, 0, 0, 1_000)] })).toBe(1_000);
+  });
+
+  it("an open bonus line adds nothing", () => {
+    expect(nilaiBelumDinota({ total: 1_000, orderDiscountAmount: 0, lines: [baris(2, 1, 0, 1_000), baris(1, 0, 0, 0)] })).toBe(500);
+  });
+
+  it("no lines → 0", () => {
+    expect(nilaiBelumDinota({ total: 0, orderDiscountAmount: 0, lines: [] })).toBe(0);
+  });
+
+  it("anything owed ⇒ the order still reads PENDING or PARTIAL", () => {
+    const kasus = [
+      [baris(4, 0, 0, 400)],
+      [baris(4, 2, 0, 400), baris(1, 1, 0, 100)],
+      [baris(4, 4, 0, 400), baris(3, 0, 2, 300)],
+      [baris(4, 4, 0, 400)],
+      [baris(4, 2, 2, 400)],
+    ];
+    for (const lines of kasus) {
+      const total = lines.reduce((s, l) => s + l.lineTotal, 0);
+      if (nilaiBelumDinota({ total, orderDiscountAmount: 0, lines }) > 0) {
+        expect(["PENDING", "PARTIAL"]).toContain(nextDeliveryStatus(lines));
+      }
+    }
   });
 });

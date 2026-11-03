@@ -16,6 +16,7 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { formatPersen, namaBulan, type DasarKomisi } from "@/lib/salesman/komisi";
 import type { PotonganHilangSales } from "@/lib/spg/hilang-queries";
+import type { PotonganReturSales } from "./potongan-retur";
 import { eksporLaporanKomisi } from "./actions";
 import { TandaiDipotongDialog } from "./TandaiDipotongDialog";
 
@@ -41,6 +42,8 @@ type Props = {
   /** Beban barang hilang bagian SALES per salesman (sisa, dipotong bulan ini, saran). */
   potonganHilang: Record<string, PotonganHilangSales>;
   maksPotongPersen: number;
+  /** Selisih retur yang dibebankan ke sales (P22) per salesman. */
+  potonganRetur: Record<string, PotonganReturSales>;
   /** `receivables:manage` — yang boleh menandai potongan beban. */
   bolehPotong: boolean;
 };
@@ -49,9 +52,19 @@ type Props = {
  * Laporan komisi salesman satu bulan. Bulan dipilih lewat alamat (`?bulan=`),
  * jadi laporan bulan tertentu bisa dibuka ulang dan dibagikan.
  */
-export function KomisiSalesmanClient({ bulan, pilihan, skema, baris, potonganHilang, maksPotongPersen, bolehPotong }: Props) {
+export function KomisiSalesmanClient({
+  bulan,
+  pilihan,
+  skema,
+  baris,
+  potonganHilang,
+  maksPotongPersen,
+  potonganRetur,
+  bolehPotong,
+}: Props) {
   const t = useTranslations("komisiSalesman.laporan");
   const tHilang = useTranslations("komisiSalesmanHilang");
+  const tRetur = useTranslations("komisiSalesmanRetur");
   const tBulan = dinamis(useTranslations("komisiSalesman"));
   const tDinamis = dinamis(t);
   const locale = useLocale();
@@ -65,6 +78,13 @@ export function KomisiSalesmanClient({ bulan, pilihan, skema, baris, potonganHil
   const totalKomisi = jumlah((b) => b.komisi);
   const hilang = (id: string): PotonganHilangSales => potonganHilang[id] ?? { sisa: 0, dipotongBulanIni: 0, saran: 0 };
   const adaHilang = baris.some((b) => hilang(b.salesmanId).sisa > 0 || hilang(b.salesmanId).dipotongBulanIni > 0);
+  const retur = (id: string): PotonganReturSales =>
+    potonganRetur[id] ?? { sisa: 0, dipotongBulanIni: 0, kelebihan: 0, dikembalikanBulanIni: 0 };
+  const adaReturPada = (id: string) => {
+    const r = retur(id);
+    return r.sisa > 0 || r.dipotongBulanIni > 0 || r.kelebihan > 0 || r.dikembalikanBulanIni > 0;
+  };
+  const adaRetur = baris.some((b) => adaReturPada(b.salesmanId));
 
   async function ekspor() {
     setMengekspor(true);
@@ -86,6 +106,9 @@ export function KomisiSalesmanClient({ bulan, pilihan, skema, baris, potonganHil
           komisi: t("colCommission"),
           bebanHilang: tHilang("excelSisa"),
           dipotongHilang: tHilang("excelDipotong"),
+          bebanRetur: tRetur("excelSisa"),
+          dipotongRetur: tRetur("excelDipotong"),
+          kelebihanRetur: tRetur("excelKelebihan"),
         },
         total: t("total"),
         catatan: t("footnote"),
@@ -188,6 +211,7 @@ export function KomisiSalesmanClient({ bulan, pilihan, skema, baris, potonganHil
                     <TableHead className="text-right">{t("colRate")}</TableHead>
                     <TableHead className="text-right">{t("colCommission")}</TableHead>
                     {adaHilang ? <TableHead className="text-right">{tHilang("kolom")}</TableHead> : null}
+                    {adaRetur ? <TableHead className="text-right">{tRetur("kolom")}</TableHead> : null}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -246,6 +270,54 @@ export function KomisiSalesmanClient({ bulan, pilihan, skema, baris, potonganHil
                           )}
                         </TableCell>
                       ) : null}
+                      {adaRetur ? (
+                        <TableCell className="text-right tabular-nums">
+                          {adaReturPada(b.salesmanId) ? (
+                            <>
+                              <span className="block">{tRetur("sisa", { nilai: formatIDR(retur(b.salesmanId).sisa) })}</span>
+                              {retur(b.salesmanId).dipotongBulanIni > 0 ? (
+                                <span className="block text-xs text-muted-foreground">
+                                  {tRetur("dipotongBulanIni", { nilai: formatIDR(retur(b.salesmanId).dipotongBulanIni) })}
+                                </span>
+                              ) : null}
+                              {retur(b.salesmanId).kelebihan > 0 ? (
+                                <span className="block text-xs text-amber-700 dark:text-amber-400">
+                                  {tRetur("kelebihan", { nilai: formatIDR(retur(b.salesmanId).kelebihan) })}
+                                </span>
+                              ) : null}
+                              {retur(b.salesmanId).dikembalikanBulanIni > 0 ? (
+                                <span className="block text-xs text-muted-foreground">
+                                  {tRetur("dikembalikanBulanIni", { nilai: formatIDR(retur(b.salesmanId).dikembalikanBulanIni) })}
+                                </span>
+                              ) : null}
+                              {bolehPotong && retur(b.salesmanId).sisa > 0 ? (
+                                <TandaiDipotongDialog
+                                  jenis="RETUR"
+                                  salesmanId={b.salesmanId}
+                                  nama={b.nama}
+                                  bulan={bulan}
+                                  bulanLabel={namaBulan(tBulan, bulan, "panjang")}
+                                  sisa={retur(b.salesmanId).sisa}
+                                  saran={0}
+                                />
+                              ) : null}
+                              {bolehPotong && retur(b.salesmanId).kelebihan > 0 ? (
+                                <TandaiDipotongDialog
+                                  jenis="KEMBALI"
+                                  salesmanId={b.salesmanId}
+                                  nama={b.nama}
+                                  bulan={bulan}
+                                  bulanLabel={namaBulan(tBulan, bulan, "panjang")}
+                                  sisa={retur(b.salesmanId).kelebihan}
+                                  saran={0}
+                                />
+                              ) : null}
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      ) : null}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -269,12 +341,18 @@ export function KomisiSalesmanClient({ bulan, pilihan, skema, baris, potonganHil
                         {formatIDR(baris.reduce((n, b) => n + hilang(b.salesmanId).sisa, 0))}
                       </TableCell>
                     ) : null}
+                    {adaRetur ? (
+                      <TableCell className="text-right font-semibold tabular-nums">
+                        {formatIDR(baris.reduce((n, b) => n + retur(b.salesmanId).sisa, 0))}
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 </TableFooter>
               </Table>
             </div>
           )}
           {adaHilang ? <p className="mt-4 text-xs text-muted-foreground">{tHilang("catatanKaki", { persen: maksPotongPersen })}</p> : null}
+          {adaRetur ? <p className="mt-2 text-xs text-muted-foreground">{tRetur("catatanKaki")}</p> : null}
         </CardContent>
       </Card>
     </div>

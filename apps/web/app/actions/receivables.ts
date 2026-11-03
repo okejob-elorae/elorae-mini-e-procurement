@@ -128,6 +128,7 @@ export type HasilAksiKlaim =
         | 'MELEBIHI_SISA'
         | 'RETUR_DITAHAN'
         | 'RETUR_TERPAKAI'
+        | "PIUTANG_DIBATALKAN"
         | 'GAGAL';
     };
 
@@ -244,6 +245,9 @@ function tanggalWib(teks: string): Date | null {
  *   dan menerima yang tidak tampil membuka toko orang lain.
  *   `TOKO_TIDAK_DIIZINKAN`.
  * - Kunci mati: seperti sebelumnya.
+ * - TAGIHAN KONSINYASI hanya boleh dilaporkan pemegang toko sekarang (P31,
+ *   "pemegang toko") — kunci menyala atau mati. Penjual di masa lalu atau
+ *   petugas tugas tagih yang bukan pemegang ditolak `TOKO_TIDAK_DIIZINKAN`.
  *
  * Kiriman ulang BKM miliknya sendiri yang SUDAH tercatat (kunci kiriman sama)
  * dilewatkan ke penulis, yang mengembalikannya: jawaban pertama bisa hilang di
@@ -264,10 +268,19 @@ async function pelaporBolehMelaporkan(
   }
 
   if (await ambilTokoTetap(userId)) return { ok: false, kode: 'TANPA_AKSES' };
-  if (!(await tokoTerkunci())) return { ok: true };
 
   // Hanya baris yang melunasi sesuatu — baris bernilai nol dibuang penulisnya.
   const ids = [...new Set(input.pelunasan.filter((p) => p.nilai > 0).map((p) => p.receivableId))];
+
+  if (ids.length > 0) {
+    const konsi = await prisma.receivable.findMany({
+      where: { id: { in: ids }, isConsignment: true },
+      select: { store: { select: { salesmanId: true } } },
+    });
+    if (konsi.some((k) => k.store.salesmanId !== userId)) return { ok: false, kode: "TOKO_TIDAK_DIIZINKAN" };
+  }
+
+  if (!(await tokoTerkunci())) return { ok: true };
   if (ids.length === 0) return { ok: true }; // penulis menolaknya sebagai TANPA_PIUTANG
   const ditagih = new Set((await daftarPiutang({ penagihId: userId, receivableIds: ids })).map((p) => p.id));
   return ids.every((id) => ditagih.has(id)) ? { ok: true } : { ok: false, kode: 'TOKO_TIDAK_DIIZINKAN' };
@@ -353,6 +366,7 @@ export type KodeKoreksi =
   | 'ALASAN_WAJIB'
   | 'RETUR_BEDA_TOKO'
   | 'RETUR_TERPAKAI'
+  | "RETUR_TOKO_KONSI"
   | 'GAGAL';
 
 export type HasilKoreksiAksi = { ok: true } | { ok: false; kode: KodeKoreksi };

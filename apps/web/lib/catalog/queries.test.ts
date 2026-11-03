@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { serializeCatalogItem, listCatalogForPwa } from "./queries";
+import { serializeCatalogItem, listCatalogForPwa, listReturCatalogForPwa } from "./queries";
 import { prisma, seededId } from "@elorae/db";
+import { katalogPortal } from "@/lib/field-sales/portal-writer";
+import { ATURAN_PORTAL_BAWAAN } from "@/lib/field-sales/portal-toko-aturan";
 
 const store = { id: "s1", termsType: "KONSI" as const, markupPercent: 20, priceDiscountPercent: null };
 
@@ -19,8 +21,8 @@ describe("serializeCatalogItem", () => {
     ],
   };
 
-  it("maps fields, computes available, and hides price for konsi (spec D9)", () => {
-    /* Konsi is a consignment transfer — the salesman sees no pricing; the retail price must not even reach the wire, so price/priceLabel are null server-side. */
+  it("maps fields, computes available, and hides price for konsi by default (spec D9, P18a)", () => {
+    /* Konsi is a consignment transfer — unless the caller asks (the salesman phone only), the retail price must not even reach the wire, so price/priceLabel are null server-side. */
     expect(serializeCatalogItem(baseRow, store, "https://cdn/x.jpg", true, 6)).toEqual({
       itemId: "i1",
       sku: "FG-RED-M",
@@ -35,6 +37,22 @@ describe("serializeCatalogItem", () => {
       minOrderQty: 6,
       variants: [],
     });
+  });
+
+  /* Owner answer P18: the salesman phone shows konsi fully, prices included; P18a keeps every other caller price-free. */
+  it("prices a konsi item at the store's retail price only when the salesman phone asks for it", () => {
+    const out = serializeCatalogItem(baseRow, store, null, true, 6, { hargaKonsi: true });
+    expect(out.price).toBe(12000); // 10000 × (1 + 20/100)
+    expect(out.priceLabel).toBe("Harga retail");
+    expect(serializeCatalogItem(baseRow, store, null, true, 6, { hargaKonsi: false }).price).toBeNull();
+  });
+
+  it("never prices a konsi item whose store markup cannot price it, even when asked", () => {
+    for (const markupPercent of [null, -1, 1000]) {
+      const out = serializeCatalogItem(baseRow, { ...store, markupPercent }, null, true, 6, { hargaKonsi: true });
+      expect(out.price, String(markupPercent)).toBeNull();
+      expect(out.priceLabel, String(markupPercent)).toBeNull();
+    }
   });
 
   it("returns the real selling price + label for a putus store", () => {
@@ -319,5 +337,95 @@ d("listCatalogForPwa — store price discount (test bed only)", () => {
     expect(payload).not.toBeNull();
     const item = payload!.items.find((i) => i.itemId === itemId);
     expect(item?.price).toBe(5000);
+  });
+});
+
+/*
+ * Owner answers 2026-11-02:
+ * - P3a: a "Marketplace saja" item is never offered in an offline sale picker — this catalog feeds
+ *   the salesman phone, the store portal and the WhatsApp catalogue at once. The retur catalog is
+ *   not filtered: goods already at the store stay returnable (P73).
+ * - P18: the salesman phone shows a konsi store's prices (`hargaKonsi`).
+ * - P18a: every other caller, the store portal included, stays konsi-price-free.
+ */
+d("listCatalogForPwa — sales channel and konsi price (test bed only)", () => {
+  const sku = `TEST-CQ-SAL-${Math.random().toString(36).slice(2, 10)}`;
+  let uomId = "";
+  let marketplaceId = "";
+  let offlineId = "";
+  let keduanyaId = "";
+  let konsiId = "";
+  let putusId = "";
+
+  beforeEach(async () => {
+    uomId = ""; marketplaceId = ""; offlineId = ""; keduanyaId = ""; konsiId = ""; putusId = "";
+    uomId = (await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } })).id;
+    const barang = async (akhiran: string, salesChannel: "MARKETPLACE" | "OFFLINE" | "BOTH") =>
+      (
+        await prisma.item.create({
+          data: { sku: `${sku}-${akhiran}`, nameId: `Saluran ${akhiran}`, nameEn: `Channel ${akhiran}`, type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 100_000, salesChannel },
+        })
+      ).id;
+    marketplaceId = await barang("MP", "MARKETPLACE");
+    offlineId = await barang("OFF", "OFFLINE");
+    keduanyaId = await barang("BOTH", "BOTH");
+    konsiId = (await prisma.store.create({ data: { code: `S-${sku}-K`, name: "Toko Konsi Saluran", address: "T", termsType: "KONSI", markupPercent: 20, isActive: true } })).id;
+    putusId = (await prisma.store.create({ data: { code: `S-${sku}-P`, name: "Toko Putus Saluran", address: "T", termsType: "PUTUS", isActive: true } })).id;
+  });
+
+  afterEach(async () => {
+    await prisma.item.deleteMany({ where: { id: { in: [marketplaceId, offlineId, keduanyaId].map(seededId) } } });
+    await prisma.store.deleteMany({ where: { id: { in: [konsiId, putusId].map(seededId) } } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+  });
+
+  const milikUji = (items: { itemId: string }[]) =>
+    items.map((i) => i.itemId).filter((id) => [marketplaceId, offlineId, keduanyaId].includes(id)).sort();
+
+  it("leaves a Marketplace saja item out and keeps Toko offline saja and Keduanya", async () => {
+    const payload = await listCatalogForPwa(putusId);
+    expect(payload).not.toBeNull();
+    expect(milikUji(payload!.items)).toEqual([offlineId, keduanyaId].sort());
+  });
+
+  it("the retur catalog still lists the Marketplace saja item", async () => {
+    const retur = await listReturCatalogForPwa(putusId);
+    expect(retur).not.toBeNull();
+    expect(milikUji(retur!.items)).toEqual([marketplaceId, offlineId, keduanyaId].sort());
+  });
+
+  it("a putus store's catalog is always priced", async () => {
+    const payload = await listCatalogForPwa(putusId);
+    expect(payload!.hargaKonsiTampil).toBe(true);
+    expect(payload!.items.find((i) => i.itemId === offlineId)?.price).toBe(100_000);
+  });
+
+  it("a konsi store's catalog carries no price unless the salesman phone asks for it", async () => {
+    const tanpa = await listCatalogForPwa(konsiId);
+    expect(tanpa!.hargaKonsiTampil).toBe(false);
+    for (const b of tanpa!.items.filter((i) => [offlineId, keduanyaId].includes(i.itemId))) {
+      expect(b.price).toBeNull();
+      expect(b.priceLabel).toBeNull();
+    }
+
+    const salesman = await listCatalogForPwa(konsiId, { hargaKonsi: true });
+    expect(salesman!.hargaKonsiTampil).toBe(true);
+    const baris = salesman!.items.find((i) => i.itemId === keduanyaId);
+    expect(baris?.price).toBe(120_000); // 100.000 × (1 + 20/100)
+    expect(baris?.priceLabel).toBe("Harga retail");
+  });
+
+  it("the store portal of a konsi store carries no price key at all", async () => {
+    const kat = await katalogPortal({
+      linkId: "uji-saluran",
+      toko: { id: konsiId, name: "Toko Konsi Saluran", termsType: "KONSI", salesmanId: "uji-pemegang", namaSalesman: null },
+      aturan: ATURAN_PORTAL_BAWAAN,
+    });
+    expect(kat).not.toBeNull();
+    expect(kat!.barang.some((b) => b.itemId === keduanyaId)).toBe(true);
+    expect(kat!.barang.some((b) => b.itemId === marketplaceId)).toBe(false);
+    const json = JSON.stringify(kat);
+    expect(json).not.toContain("\"harga\"");
+    expect(json).not.toContain("\"price\"");
   });
 });

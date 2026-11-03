@@ -92,6 +92,8 @@ export const KODE_GALAT_PEMBAYARAN = [
   "BUKAN_UANG_MUKA",
   "MELEBIHI_UANG_MUKA",
   "FOTO_TIDAK_SAH",
+  // Penerimaan (GRN / langkah WO) yang selisih harga invoicenya masih menunggu keputusan (P50).
+  "KOREKSI_MENUNGGU",
 ] as const;
 export type KodeGalatPembayaran = (typeof KODE_GALAT_PEMBAYARAN)[number];
 

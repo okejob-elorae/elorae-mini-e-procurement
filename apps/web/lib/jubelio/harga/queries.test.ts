@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { hargaKeTeks, jenisMenunggu, keadaanHargaJubelio } from "./aturan";
-import { bacaHargaJubelioBarang, daftarHargaMenunggu, hitungBarangJubelioTanpaHarga, hitungHargaMenungguKonfirmasi } from "./queries";
+import { bedaDiJubelio, hargaKeTeks, jenisMenunggu, keadaanHargaJubelio } from "./aturan";
+import {
+  bacaHargaJubelioBarang,
+  daftarHargaBedaDiJubelio,
+  daftarHargaMenunggu,
+  hitungBarangJubelioTanpaHarga,
+  hitungHargaBedaDiJubelio,
+  hitungHargaMenungguKonfirmasi,
+  idKirimanTertahanSiapDilepas,
+} from "./queries";
 import { buatFixtureHarga } from "./test-fixtures";
 
 /*
@@ -61,13 +69,14 @@ d("kueri konfirmasi harga Jubelio (test bed only)", () => {
     const menunggu = new Map((await daftarHargaMenunggu({ hanyaBarang })).baris.map((b) => [b.itemId, b.jenis]));
     const barang = await prisma.item.findMany({
       where: { id: { in: hanyaBarang.map(seededId) } },
-      select: { id: true, type: true, source: true, sellingPrice: true, jubelioConfirmedPrice: true, jubelioCreateRequestedAt: true, _count: { select: { jubelioProductMappings: true } } },
+      select: { id: true, type: true, source: true, salesChannel: true, sellingPrice: true, jubelioConfirmedPrice: true, jubelioCreateRequestedAt: true, _count: { select: { jubelioProductMappings: true } } },
     });
     for (const b of barang) {
       const jenis = jenisMenunggu(
         keadaanHargaJubelio({
           barangJadi: b.type === "FINISHED_GOOD",
           sumber: b.source,
+          saluran: b.salesChannel,
           terpetakan: b._count.jubelioProductMappings > 0,
           hargaErp: hargaKeTeks(b.sellingPrice),
           hargaJubelio: hargaKeTeks(b.jubelioConfirmedPrice),
@@ -142,5 +151,116 @@ d("kueri konfirmasi harga Jubelio (test bed only)", () => {
     expect((await bacaHargaJubelioBarang(s.nolDuaSisi))?.keadaan).toBe("TANPA_HARGA");
     expect((await bacaHargaJubelioBarang(s.belumDiajukan))?.keadaan).toBe("BELUM_DI_JUBELIO");
     expect(await bacaHargaJubelioBarang("tidak-ada")).toBeNull();
+  });
+  /*
+   * Jawaban pemilik 2026-11-02: "Toko offline saja" tidak pernah menunggu (P3a), dan "Harga di
+   * Jubelio berbeda dengan ERP" (P2/P75) — fragmen SQL `sumberBeda` dan `bedaDiJubelio` sepakat.
+   */
+  it("Toko offline saja tidak pernah menunggu dan tidak dihitung tanpa harga", async () => {
+    const ubah = await fx.barang({ salesChannel: "OFFLINE", terpetakan: true, sellingPrice: 120_000, jubelioConfirmedPrice: 100_000 });
+    const baru = await fx.barang({ salesChannel: "OFFLINE", jubelioCreateRequestedAt: new Date() });
+    const kosong = await fx.barang({ salesChannel: "OFFLINE", terpetakan: true, sellingPrice: null, jubelioConfirmedPrice: null });
+    const hanyaBarang = [ubah, baru, kosong];
+    expect((await daftarHargaMenunggu({ hanyaBarang })).baris).toEqual([]);
+    expect(await hitungHargaMenungguKonfirmasi({ hanyaBarang })).toBe(0);
+    expect(await hitungBarangJubelioTanpaHarga({ hanyaBarang })).toBe(0);
+    expect((await bacaHargaJubelioBarang(ubah))?.keadaan).toBe("SALURAN_OFFLINE");
+  });
+
+  it("BEDA: daftar SQL = bedaDiJubelio atas seluruh semaian; hitungan = jumlah baris", async () => {
+    const tadi = new Date("2026-11-03T01:00:00.000Z");
+    const sebelum = new Date("2026-11-03T00:30:00.000Z");
+    const sesudah = new Date("2026-11-03T01:30:00.000Z");
+    const dasar = { terpetakan: true, jubelioConfirmedPrice: 100_000, terbacaPada: tadi, jubelioTertinggi: 125_000, jubelioTerendah: 125_000 };
+    const ids = {
+      beda: await fx.barang(dasar),
+      sama: await fx.barang({ ...dasar, jubelioTertinggi: 100_000, jubelioTerendah: 100_000 }),
+      terendahNol: await fx.barang({ ...dasar, jubelioTertinggi: 100_000, jubelioTerendah: 0 }),
+      belumTerbaca: await fx.barang({ terpetakan: true, jubelioConfirmedPrice: 100_000 }),
+      belumDiJubelio: await fx.barang({ ...dasar, terpetakan: false }),
+      putusBerlakuDikirim: await fx.barang({ ...dasar, diputuskanPada: sesudah }),
+      putusBerlakuTanpaKiriman: await fx.barang({ ...dasar, diputuskanPada: sesudah }),
+      putusBasiDikirim: await fx.barang({ ...dasar, diputuskanPada: sebelum }),
+      offlineDitahan: await fx.barang({ ...dasar, salesChannel: "OFFLINE" }),
+      offlineSudahNonaktif: await fx.barang({ ...dasar, salesChannel: "OFFLINE" }),
+      kain: await fx.barang({ ...dasar, type: "FABRIC" }),
+    };
+    await fx.kiriman(ids.putusBerlakuDikirim, { status: "PENDING" });
+    await fx.kiriman(ids.putusBasiDikirim, { status: "PROCESSING" });
+    await fx.kiriman(ids.offlineDitahan, { status: "SKIPPED", skipReason: "price_differs_held" });
+    await fx.kiriman(ids.offlineSudahNonaktif, { status: "DONE" });
+    const hanyaBarang = Object.values(ids);
+
+    const { baris, total } = await daftarHargaBedaDiJubelio({ hanyaBarang });
+    const diSql = new Set(baris.map((b) => b.itemId));
+    expect(await hitungHargaBedaDiJubelio({ hanyaBarang })).toBe(total);
+
+    const barang = await prisma.item.findMany({
+      where: { id: { in: hanyaBarang.map(seededId) } },
+      select: {
+        id: true,
+        type: true,
+        jubelioConfirmedPrice: true,
+        jubelioObservedPriceMax: true,
+        jubelioObservedPriceMin: true,
+        jubelioObservedAt: true,
+        jubelioObservedChangedAt: true,
+        jubelioPriceDecidedAt: true,
+        _count: { select: { jubelioProductMappings: true } },
+      },
+    });
+    for (const b of barang) {
+      const kiriman = await prisma.jubelioOutbox.findMany({
+        where: { entityId: seededId(b.id), entityType: "product_push" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: { status: true },
+      });
+      const murni = bedaDiJubelio({
+        barangJadi: b.type === "FINISHED_GOOD",
+        terpetakan: b._count.jubelioProductMappings > 0,
+        terbacaPada: b.jubelioObservedAt,
+        jubelioTertinggi: hargaKeTeks(b.jubelioObservedPriceMax),
+        jubelioTerendah: hargaKeTeks(b.jubelioObservedPriceMin),
+        hargaTerkonfirmasi: hargaKeTeks(b.jubelioConfirmedPrice),
+        diputuskanPada: b.jubelioPriceDecidedAt,
+        berubahPada: b.jubelioObservedChangedAt,
+        sedangDikirim: kiriman.some((k) => k.status === "PENDING" || k.status === "PROCESSING"),
+      });
+      expect(diSql.has(b.id), b.id).toBe(murni);
+    }
+    /* R22: "Toko offline saja" tetap BEDA apa pun keadaan kiriman terakhirnya (ditahan atau sudah DONE). */
+    expect([...diSql].sort()).toEqual(
+      [
+        ids.beda,
+        ids.terendahNol,
+        ids.putusBerlakuTanpaKiriman,
+        ids.putusBasiDikirim,
+        ids.offlineDitahan,
+        ids.offlineSudahNonaktif,
+      ].sort(),
+    );
+    expect(baris.find((b) => b.itemId === ids.offlineDitahan)).toMatchObject({ saluran: "OFFLINE", kirimanDitahan: true });
+    expect(baris.find((b) => b.itemId === ids.offlineSudahNonaktif)).toMatchObject({ saluran: "OFFLINE", kirimanDitahan: false });
+  });
+
+  it("baris UBAH yang juga BEDA membawa bacaan Jubelio; kiriman tertahan siap dilepas hanya bila tidak beda", async () => {
+    const tadi = new Date("2026-11-03T01:00:00.000Z");
+    const ubah = await fx.barang({
+      terpetakan: true,
+      sellingPrice: 120_000,
+      jubelioConfirmedPrice: 100_000,
+      terbacaPada: tadi,
+      jubelioTertinggi: 110_000,
+      jubelioTerendah: 110_000,
+    });
+    const per = new Map((await daftarHargaMenunggu({ hanyaBarang: [ubah] })).baris.map((b) => [b.itemId, b]));
+    expect(per.get(ubah)).toMatchObject({ jenis: "UBAH", bedaDiJubelio: true, jubelioTertinggi: "110000.00", jubelioTerendah: "110000.00" });
+
+    const lepas = await fx.barang({ terpetakan: true, jubelioConfirmedPrice: 100_000, terbacaPada: tadi, jubelioTertinggi: 100_000, jubelioTerendah: 100_000 });
+    const tahan = await fx.barang({ terpetakan: true, jubelioConfirmedPrice: 100_000, terbacaPada: tadi, jubelioTertinggi: 125_000, jubelioTerendah: 125_000 });
+    // Ditahan, tidak beda, tetapi produknya sudah dihapus dari Jubelio: melepasnya akan membuat produk baru.
+    const tanpaPeta = await fx.barang({ terpetakan: false, jubelioConfirmedPrice: 100_000, terbacaPada: tadi, jubelioTertinggi: 100_000, jubelioTerendah: 100_000 });
+    for (const id of [lepas, tahan, tanpaPeta]) await fx.kiriman(id, { status: "SKIPPED", skipReason: "price_differs_held" });
+    expect(await idKirimanTertahanSiapDilepas({ hanyaBarang: [lepas, tahan, tanpaPeta] })).toEqual([lepas]);
   });
 });

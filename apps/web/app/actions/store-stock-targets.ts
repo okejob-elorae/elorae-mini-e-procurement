@@ -7,6 +7,7 @@ import { cariTeks } from "@/lib/db/cari-teks";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { parseItemVariants } from "@/lib/items/variants";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { kunciStok, periksaTarget, type KodeTarget } from "@/lib/konsinyasi/isi-ulang";
 import { labelVarian } from "@/lib/konsinyasi/stok-di-toko";
 
@@ -38,6 +39,11 @@ async function bolehKelola(): Promise<string | null> {
   return session.user.id;
 }
 
+/**
+ * Barang untuk editor target. Barang "Marketplace saja" tidak dijual di toko offline (P3a), jadi
+ * tidak ditawarkan — target stok toko akan memunculkan saran isi ulang untuk barang yang tidak
+ * boleh dikirim ke toko. Target yang sudah tersimpan tetap terbaca dan bisa diubah.
+ */
 export async function cariBarangTargetAction(
   query: string,
 ): Promise<{ ok: true; barang: BarangTarget[] } | { ok: false; code: "FORBIDDEN" }> {
@@ -48,6 +54,7 @@ export async function cariBarangTargetAction(
     where: {
       isActive: true,
       type: "FINISHED_GOOD",
+      ...syaratDijualOffline(),
       OR: [{ sku: cariTeks(q) }, { nameId: cariTeks(q) }],
     },
     orderBy: { nameId: "asc" },

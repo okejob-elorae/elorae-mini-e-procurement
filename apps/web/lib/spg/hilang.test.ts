@@ -413,3 +413,33 @@ describe("pengaturan, teks, tanggal, isian", () => {
     for (const n of [0, 5, 999, 1000, 33_333.33, 12_345_678.9]) expect(bacaIsianRupiah(tulisIsianRupiah(n))).toBe(n);
   });
 });
+
+describe("klaim ekspedisi (P36, P42)", () => {
+  it("EKSPEDISI hanya untuk catatan dari pengiriman lewat ekspedisi", () => {
+    expect(periksaBagian([{ bearer: "EKSPEDISI", bearerUserId: null, amount: 50_000 }], 50_000, true)).toEqual({
+      ok: false,
+      kode: "EKSPEDISI_TIDAK_ADA",
+    });
+    expect(periksaBagian([{ bearer: "EKSPEDISI", bearerUserId: null, amount: 50_000 }], 50_000, true, true)).toMatchObject({ ok: true });
+  });
+
+  it("EKSPEDISI selalu satu-satunya bagian", () => {
+    const r = periksaBagian(
+      [
+        { bearer: "EKSPEDISI", bearerUserId: null, amount: 30_000 },
+        { bearer: "ELORAE", bearerUserId: null, amount: 20_000 },
+      ],
+      50_000,
+      true,
+      true,
+    );
+    expect(r).toEqual({ ok: false, kode: "EKSPEDISI_HARUS_SENDIRI" });
+  });
+
+  it("preset EKSPEDISI memakai nilai klaim (nilai jual di nota), bukan nilai menurut pengaturan", () => {
+    const konteks = { total: 40_000, adaToko: true, spgIds: [], salesmanId: null, adaEkspedisi: true, nilaiKlaim: 75_000 };
+    expect(presetBagian("EKSPEDISI", konteks)).toEqual([{ bearer: "EKSPEDISI", bearerUserId: null, amount: 75_000 }]);
+    expect(presetBagian("EKSPEDISI", { ...konteks, adaEkspedisi: false })).toBeNull();
+    expect(presetBagian("EKSPEDISI", { ...konteks, nilaiKlaim: null })).toEqual([{ bearer: "EKSPEDISI", bearerUserId: null, amount: 40_000 }]);
+  });
+});

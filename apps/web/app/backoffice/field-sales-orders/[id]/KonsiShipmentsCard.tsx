@@ -42,8 +42,9 @@ import { SHIPMENT_STATUS_BADGE, SHIPMENT_STATUS_LABEL_KEY } from "@/lib/delivery
 import { closeRemainderAction } from "@/app/actions/field-sales-deliveries";
 import { logPrint } from "@/app/actions/audit";
 import { buildSuratKeluarPrintHtml } from "@/lib/print/konsi-surat-keluar-html";
+import { muatSuratJalanKonsiAction } from "@/app/actions/delivery-shipments";
 import { printHtmlInIframe } from "@/lib/print/print-html-in-iframe";
-import { deliveryErrorKey } from "./DeliveryFormDialog";
+import { deliveryErrorKey } from "./nota-dialog";
 import { CreateShipmentDialog } from "./CreateShipmentDialog";
 import { buildSuratKeluarLabels } from "./surat-keluar-labels";
 import { DELIVERY_BADGE_CLASS, DELIVERY_BADGE_VARIANT } from "../delivery-status-badge";
@@ -132,18 +133,32 @@ export function KonsiShipmentsCard({
   const handlePrint = async (shipment: OrderShipmentSummary) => {
     /* Its own entity type: the legacy header print logs "KonsiSuratKeluar" against the ORDER id. */
     await logPrint("KonsiShipmentSuratKeluar", shipment.id);
+    /*
+     * The surat jalan lists each article with its konsi price like a nota, without a faktur (P37):
+     * the transfer written when the shipment was created carries the price snapshot. A shipment of
+     * the old rule has no transfer and prints quantities only.
+     */
+    const berharga = await muatSuratJalanKonsiAction(shipment.id).catch(() => null);
     const html = buildSuratKeluarPrintHtml({
       orderNo: shipment.docNo,
       storeName,
       salesmanName,
       approvedAt: shipment.packedAt,
       status: tShipments(SHIPMENT_STATUS_LABEL_KEY[shipment.status]),
-      lines: shipment.lines.map((line) => ({
-        productName: line.productName,
-        variantSku: line.variantSku,
-        variantLabel: lines.find((l) => l.id === line.orderLineId)?.variantLabel ?? null,
-        qty: line.plannedQty,
-      })),
+      lines: berharga
+        ? berharga.lines.map((line) => ({
+            productName: line.productName,
+            variantSku: line.variantSku,
+            variantLabel: lines.find((l) => l.id === line.orderLineId)?.variantLabel ?? null,
+            qty: line.qty,
+            unitPrice: line.unitPrice,
+          }))
+        : shipment.lines.map((line) => ({
+            productName: line.productName,
+            variantSku: line.variantSku,
+            variantLabel: lines.find((l) => l.id === line.orderLineId)?.variantLabel ?? null,
+            qty: line.plannedQty,
+          })),
       labels: buildSuratKeluarLabels(t as (key: string) => string),
     });
     printHtmlInIframe(html, t("print.suratKeluar"));
@@ -302,6 +317,7 @@ export function KonsiShipmentsCard({
 
       <CreateShipmentDialog
         orderId={orderId}
+        orderType="KONSI"
         lines={lines}
         open={createShipmentOpen}
         onOpenChange={setCreateShipmentOpen}

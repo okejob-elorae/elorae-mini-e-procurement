@@ -20,6 +20,8 @@ import {
   terapkanDiskonPegawai,
   REF_KOMISI_SALESMAN,
   REF_TAGIH_TOKO_MANUAL,
+  REF_KLAIM_EKSPEDISI,
+  bacaCaraBayarKlaim,
   type BarisKurang,
   type IsianBagian,
   type JejakKeringanan,
@@ -67,7 +69,7 @@ export type HasilBukaHilang = { ok: true; id: string; ulang: boolean } | { ok: f
  * (`opname:<id>`, `mutasi:<id>`, `penerimaan:<id>`, `manual:<kunci>`): kunci
  * yang sudah dipakai mengembalikan catatan yang ada.
  */
-export async function bukaCatatanHilang(input: {
+export type InputBukaHilang = {
   storeId: string | null;
   source: SumberHilang;
   sourceId: string | null;
@@ -82,16 +84,42 @@ export async function bukaCatatanHilang(input: {
    */
   keteranganAsal?: string | null;
   sekarang?: Date;
-}): Promise<HasilBukaHilang> {
+};
+
+export async function bukaCatatanHilang(input: InputBukaHilang): Promise<HasilBukaHilang> {
+  const sesudah: { notif: AdminNotification | null } = { notif: null };
+  const tulis = () => runSerializable((tx) => bukaCatatanHilangDalamTx(tx, input, sesudah));
+  let hasil: HasilBukaHilang;
+  try {
+    hasil = await tulis();
+  } catch (err) {
+    // Dua pemicu yang sama tiba bersamaan: yang kalah membaca catatan pemenang.
+    if (!bentrokKunciKiriman(err)) throw err;
+    hasil = await tulis();
+  }
+  if (hasil.ok && !hasil.ulang && sesudah.notif) void fanOutAdminNotification(sesudah.notif);
+  return hasil;
+}
+
+/**
+ * `bukaCatatanHilang` di dalam transaksi PEMANGGIL — untuk penerimaan toko atas kiriman
+ * gudang lewat pengiriman, yang membuka catatannya di transaksi penerimaan itu sendiri
+ * (penerimaan yang batal tidak meninggalkan catatan, dan catatan tidak pernah tertinggal).
+ * `shipmentId` = pengiriman asal barang yang hilang di perjalanan; `claimValueSen` = nilai
+ * klaim ekspedisi (nilai jual di nota / surat jalan, P37/P42), hanya untuk pengiriman lewat
+ * EKSPEDISI. Notifikasi kantornya ditaruh di `sesudah.notif` untuk disebar pemanggil.
+ */
+export async function bukaCatatanHilangDalamTx(
+  tx: Tx,
+  input: InputBukaHilang & { shipmentId?: string | null; claimValueSen?: number | null },
+  sesudah: { notif: AdminNotification | null },
+): Promise<HasilBukaHilang> {
   const baris = input.baris.filter((b) => Number.isInteger(b.qty) && b.qty > 0);
   if (baris.length === 0) return { ok: false, kode: "TANPA_BARIS" };
   const sekarang = input.sekarang ?? new Date();
   const keteranganAsal = input.keteranganAsal?.trim() || "";
-
-  // Diisi di dalam transaksi; percobaan ulang menyetelnya ulang.
-  const sesudah: { notif: AdminNotification | null } = { notif: null };
-  const tulis = () =>
-    runSerializable(async (tx): Promise<HasilBukaHilang> => {
+  {
+    {
       sesudah.notif = null;
       const ada = await tx.stockLoss.findUnique({ where: { idempotencyKey: input.idempotencyKey }, select: { id: true } });
       if (ada) return { ok: true, id: ada.id, ulang: true };
@@ -118,6 +146,8 @@ export async function bukaCatatanHilang(input: {
           createdById: input.createdById,
           idempotencyKey: input.idempotencyKey,
           createdAt: sekarang,
+          ...(input.shipmentId ? { shipmentId: input.shipmentId } : {}),
+          ...(input.claimValueSen !== undefined && input.claimValueSen !== null ? { claimValue: desimal(input.claimValueSen) } : {}),
           lines: {
             create: dinilai.map((b) => ({
               itemId: b.itemId,
@@ -183,18 +213,8 @@ export async function bukaCatatanHilang(input: {
         reason: input.note,
       });
       return { ok: true, id: loss.id, ulang: false };
-    });
-
-  let hasil: HasilBukaHilang;
-  try {
-    hasil = await tulis();
-  } catch (err) {
-    // Dua pemicu yang sama tiba bersamaan: yang kalah membaca catatan pemenang.
-    if (!bentrokKunciKiriman(err)) throw err;
-    hasil = await tulis();
+    }
   }
-  if (hasil.ok && !hasil.ulang && sesudah.notif) void fanOutAdminNotification(sesudah.notif);
-  return hasil;
 }
 
 const KALIMAT_SUMBER: Record<SumberHilang, (docNo: string | null) => string> = {
@@ -307,6 +327,8 @@ export type KodeTolakKeputusanHilang =
   | "TEKS_TERLALU_PANJANG"
   | "KERINGANAN_TIDAK_SAH"
   | "KERINGANAN_TANPA_ORANG"
+  /** Bagian EKSPEDISI masih DIAJUKAN atau MENUNGGU_CEK: tunggu jawaban/cek klaimnya dulu. */
+  | "KLAIM_MENUNGGU"
   | "BERUBAH";
 
 export type HasilKeputusanHilang = { ok: true; id: string; status: StatusHilang } | { ok: false; kode: KodeTolakKeputusanHilang };
@@ -327,6 +349,23 @@ const ringkasBagian = (b: { bearer: string; bearerUserId: string | null; amount:
  * dipotong atau ditagih (sebagian pun). Bagian ELORAE dihapusbukukan saat
  * diputuskan — itu bukan uang siapa pun, jadi tidak mengunci.
  */
+/** Klaim ekspedisi yang masih berjalan (DIAJUKAN atau MENUNGGU_CEK) mengunci keputusannya. */
+async function adaKlaimBerjalan(tx: Tx, lossId: string): Promise<boolean> {
+  return (
+    (await tx.stockLossShare.count({ where: { lossId, bearer: "EKSPEDISI", claimStatus: { in: ["DIAJUKAN", "MENUNGGU_CEK"] } } })) > 0
+  );
+}
+
+/** Catatan ini berasal dari pengiriman lewat EKSPEDISI (hanya itu yang boleh diklaim ke ekspedisi). */
+async function dariEkspedisi(tx: Tx, shipmentId: string | null): Promise<boolean> {
+  if (!shipmentId) return false;
+  const s = await tx.deliveryShipment.findUnique({ where: { id: shipmentId }, select: { method: true } });
+  return s?.method === "EXPEDITION";
+}
+
+/** Catatan otomatis saat klaim ekspedisi memakai nilai bawaannya (P42: hanya klaim ekspedisi yang memakai nilai nota). */
+const CATATAN_NILAI_KLAIM = "Nilai klaim ekspedisi = nilai jual di nota";
+
 async function adaPotongan(tx: Tx, lossId: string): Promise<boolean> {
   const shares = await tx.stockLossShare.findMany({ where: { lossId }, select: { id: true, bearer: true, settledAmount: true } });
   const bukanElorae = shares.filter((s) => s.bearer !== "ELORAE");
@@ -395,23 +434,44 @@ async function tetapkan(mode: "PUTUSKAN" | "UBAH", input: IsianTetapkan): Promis
         totalAmount: true,
         decisionNote: true,
         updatedAt: true,
-        shares: { select: { bearer: true, bearerUserId: true, amount: true } },
+        shipmentId: true,
+        claimValue: true,
+        shares: { select: { bearer: true, bearerUserId: true, amount: true, claimStatus: true } },
+        lines: { select: { amount: true } },
       },
     });
     if (!loss) return { ok: false, kode: "TIDAK_DITEMUKAN" };
     if (loss.status === "DIBATALKAN") return { ok: false, kode: "SUDAH_DIBATALKAN" };
     if (mode === "PUTUSKAN" && loss.status !== "TERBUKA") return { ok: false, kode: "SUDAH_DIPUTUSKAN" };
     if (mode === "UBAH" && loss.status === "TERBUKA") return { ok: false, kode: "BELUM_DIPUTUSKAN" };
+    if (mode === "UBAH" && (await adaKlaimBerjalan(tx, loss.id))) return { ok: false, kode: "KLAIM_MENUNGGU" };
     if (mode === "UBAH" && (await adaPotongan(tx, loss.id))) return { ok: false, kode: "SUDAH_ADA_POTONGAN" };
+    const adaEkspedisi = await dariEkspedisi(tx, loss.shipmentId);
 
     const totalLama = angka(loss.totalAmount);
-    const total = input.total === undefined || input.total === null || input.total === "" ? totalLama : input.total;
+    /*
+     * Total bawaan saat isiannya kosong. Sesudah klaim ekspedisi DITOLAK, total catatan masih nilai
+     * klaimnya (nilai jual di nota / surat jalan) — penanggung lain dinilai menurut pengaturan barang
+     * hilang (P42), jadi bawaannya kembali ke Σ nilai baris (R19).
+     */
+    const klaimDitolak = mode === "UBAH" && loss.shares.some((b) => b.bearer === "EKSPEDISI" && b.claimStatus === "DITOLAK");
+    const totalBawaan = klaimDitolak ? dariSen(loss.lines.reduce((n, l) => n + keSen(angka(l.amount)), 0)) : totalLama;
+    const total = input.total === undefined || input.total === null || input.total === "" ? totalBawaan : input.total;
     if (typeof total !== "number") return { ok: false, kode: "TOTAL_TIDAK_SAH" };
     const totalBerubah = keSen(total) !== keSen(totalLama);
-    const catatan = rapikanTeksHilang(input.catatan, mode === "UBAH" || totalBerubah);
+    /*
+     * Klaim ekspedisi SATU-SATUNYA bagian dengan total = nilai klaim bawaannya (nilai jual di nota /
+     * surat jalan) tidak butuh alasan ketikan — catatannya otomatis. Total lain butuh alasan
+     * ("sesuai kesepakatan dengan ekspedisi").
+     */
+    const isianBagian = Array.isArray(input.bagian) ? (input.bagian as Array<{ bearer?: unknown }>) : [];
+    const nilaiKlaim = loss.claimValue === null ? null : angka(loss.claimValue);
+    const klaimBawaan =
+      adaEkspedisi && isianBagian.length === 1 && isianBagian[0]?.bearer === "EKSPEDISI" && nilaiKlaim !== null && keSen(total) === keSen(nilaiKlaim);
+    const catatan = rapikanTeksHilang(input.catatan, mode === "UBAH" || (totalBerubah && !klaimBawaan));
     if (!catatan.ok) return { ok: false, kode: catatan.kode };
 
-    const periksa = periksaBagian(input.bagian, total, Boolean(loss.storeId));
+    const periksa = periksaBagian(input.bagian, total, Boolean(loss.storeId), adaEkspedisi);
     if (!periksa.ok) return { ok: false, kode: periksa.kode };
     let bagian: IsianBagian[] = periksa.bagian;
 
@@ -430,7 +490,7 @@ async function tetapkan(mode: "PUTUSKAN" | "UBAH", input: IsianTetapkan): Promis
       }
     }
     const kalimat = jejakKeringanan ? kalimatKeringanan(jejakKeringanan.persen, keSen(jejakKeringanan.diserap)) : null;
-    const catatanKeputusan = [catatan.teks, kalimat].filter(Boolean).join("\n") || null;
+    const catatanKeputusan = [catatan.teks, kalimat, klaimBawaan ? CATATAN_NILAI_KLAIM : null].filter(Boolean).join("\n") || null;
 
     const orangIds = [...new Set(bagian.map((b) => b.bearerUserId).filter((x): x is string => Boolean(x)))];
     if (orangIds.length > 0 && (await tx.user.count({ where: { id: { in: orangIds } } })) !== orangIds.length) {
@@ -463,6 +523,8 @@ async function tetapkan(mode: "PUTUSKAN" | "UBAH", input: IsianTetapkan): Promis
           ...(elorae
             ? { settledAmount: desimal(keSen(b.amount)), settledAt: sekarang, settledById: input.olehUserId, settleNote: "Dihapusbukukan (ditanggung Elorae)" }
             : {}),
+          // Klaim ekspedisi diajukan saat diputuskan; jawabannya dicatat lewat `putuskanKlaimEkspedisi`.
+          ...(b.bearer === "EKSPEDISI" ? { claimStatus: "DIAJUKAN", claimSubmittedAt: sekarang } : {}),
         },
       });
     }
@@ -514,7 +576,15 @@ export function ubahKeputusanHilang(input: IsianTetapkan & { catatan: unknown })
   return tetapkan("UBAH", input);
 }
 
-export type KodeTolakBatalHilang = "TIDAK_DITEMUKAN" | "SUDAH_DIBATALKAN" | "SUDAH_ADA_POTONGAN" | "ALASAN_WAJIB" | "TEKS_TERLALU_PANJANG" | "BERUBAH" | "TANPA_IZIN";
+export type KodeTolakBatalHilang =
+  | "TIDAK_DITEMUKAN"
+  | "SUDAH_DIBATALKAN"
+  | "SUDAH_ADA_POTONGAN"
+  | "KLAIM_MENUNGGU"
+  | "ALASAN_WAJIB"
+  | "TEKS_TERLALU_PANJANG"
+  | "BERUBAH"
+  | "TANPA_IZIN";
 
 /**
  * Batalkan catatan (mis. ternyata terjual tanpa nota, atau ketemu). Alasan
@@ -555,6 +625,7 @@ export async function batalkanBarangHilang(input: {
     if (loss.status === "TERBUKA" ? input.bolehBatalkanTerbuka === false : input.bolehBatalkanKeputusan === false) {
       return { ok: false, kode: "TANPA_IZIN" };
     }
+    if (await adaKlaimBerjalan(tx, loss.id)) return { ok: false, kode: "KLAIM_MENUNGGU" };
     if (await adaPotongan(tx, loss.id)) return { ok: false, kode: "SUDAH_ADA_POTONGAN" };
 
     const cas = await tx.stockLoss.updateMany({
@@ -704,5 +775,219 @@ export async function tandaiSalesDipotong(input: {
       sekarang: input.sekarang,
     });
     return { ok: true as const, dipotong: dariSen(dipotong), ulang: false };
+  });
+}
+
+// ─── Klaim ekspedisi ─────────────────────────────────────────────────────────
+
+const BATAS_REFERENSI_KLAIM = 191;
+
+/** Bagian EKSPEDISI dengan catatannya — `null` bila bukan bagian klaim ekspedisi. */
+async function bacaBagianKlaim(tx: Tx, shareId: string) {
+  const share = await tx.stockLossShare.findUnique({
+    where: { id: shareId },
+    select: {
+      id: true,
+      lossId: true,
+      bearer: true,
+      amount: true,
+      claimStatus: true,
+      claimRecordedById: true,
+      loss: { select: { id: true, status: true, totalAmount: true, shares: { select: { id: true } } } },
+    },
+  });
+  return share;
+}
+
+export type KodeTolakKlaimEkspedisi =
+  | "TIDAK_DITEMUKAN"
+  | "BUKAN_KLAIM_EKSPEDISI"
+  | "SUDAH_DIPUTUSKAN"
+  | "BELUM_DITETAPKAN"
+  | "CARA_TIDAK_SAH"
+  | "REFERENSI_WAJIB"
+  | "ALASAN_WAJIB"
+  | "TEKS_TERLALU_PANJANG";
+
+/**
+ * Jawaban ekspedisi atas klaimnya (P36), oleh pemegang `receivables:manage`:
+ * - `DIBAYAR` = pembayarannya DICATAT (transfer, tunai, atau potong tagihan ongkir — nomor tagihan
+ *   ongkirnya wajib untuk potong ongkir): DIAJUKAN → MENUNGGU_CEK. Uangnya baru diakui setelah
+ *   dicek Keuangan (`periksaKlaimEkspedisi`, keputusan 11).
+ * - `DITOLAK` (alasan wajib): DIAJUKAN → DITOLAK; kantor lalu memilih penanggung lain lewat
+ *   "Ubah keputusan".
+ * Bandingkan-lalu-tukar pada `claimStatus` di dalam `runSerializable`, jejaknya di transaksi yang sama.
+ */
+export async function putuskanKlaimEkspedisi(input: {
+  shareId: string;
+  hasil: "DIBAYAR" | "DITOLAK";
+  cara?: unknown;
+  referensi?: unknown;
+  catatan: unknown;
+  olehUserId: string;
+  sekarang?: Date;
+}): Promise<{ ok: true; lossId: string } | { ok: false; kode: KodeTolakKlaimEkspedisi }> {
+  const sekarang = input.sekarang ?? new Date();
+  const catatan = rapikanTeksHilang(input.catatan, input.hasil === "DITOLAK");
+  if (!catatan.ok) return { ok: false, kode: catatan.kode };
+  let cara: ReturnType<typeof bacaCaraBayarKlaim> = null;
+  let referensi: string | null = null;
+  if (input.hasil === "DIBAYAR") {
+    cara = bacaCaraBayarKlaim(input.cara);
+    if (!cara) return { ok: false, kode: "CARA_TIDAK_SAH" };
+    const ref = typeof input.referensi === "string" ? input.referensi.replace(/\s+/g, " ").trim() : "";
+    if (ref.length > BATAS_REFERENSI_KLAIM) return { ok: false, kode: "TEKS_TERLALU_PANJANG" };
+    if (cara === "potong_ongkir" && !ref) return { ok: false, kode: "REFERENSI_WAJIB" };
+    referensi = ref || null;
+  }
+
+  return runSerializable(async (tx) => {
+    const share = await bacaBagianKlaim(tx, input.shareId);
+    if (!share) return { ok: false as const, kode: "TIDAK_DITEMUKAN" as const };
+    if (share.bearer !== "EKSPEDISI") return { ok: false as const, kode: "BUKAN_KLAIM_EKSPEDISI" as const };
+    if (share.loss.status !== "DITETAPKAN") return { ok: false as const, kode: "BELUM_DITETAPKAN" as const };
+    if (share.claimStatus !== "DIAJUKAN") return { ok: false as const, kode: "SUDAH_DIPUTUSKAN" as const };
+    const cas = await tx.stockLossShare.updateMany({
+      where: { id: share.id, claimStatus: "DIAJUKAN" },
+      data:
+        input.hasil === "DIBAYAR"
+          ? {
+              claimStatus: "MENUNGGU_CEK",
+              claimPaidMethod: cara,
+              claimReference: referensi,
+              claimRecordedAt: sekarang,
+              claimRecordedById: input.olehUserId,
+              claimNote: catatan.teks,
+            }
+          : { claimStatus: "DITOLAK", claimDecidedAt: sekarang, claimDecidedById: input.olehUserId, claimNote: catatan.teks },
+    });
+    if (cas.count !== 1) return { ok: false as const, kode: "SUDAH_DIPUTUSKAN" as const };
+    await jejakHilang(tx, {
+      userId: input.olehUserId,
+      action: input.hasil === "DIBAYAR" ? JEJAK_HILANG.KLAIM_DICATAT : JEJAK_HILANG.KLAIM_DITOLAK,
+      lossId: share.lossId,
+      changes: {
+        before: { claimStatus: "DIAJUKAN" },
+        after: { claimStatus: input.hasil === "DIBAYAR" ? "MENUNGGU_CEK" : "DITOLAK", cara, referensi },
+      },
+      metadata: { shareId: share.id, nilai: angka(share.amount) },
+      reason: catatan.teks,
+    });
+    return { ok: true as const, lossId: share.lossId };
+  });
+}
+
+export type KodeTolakPeriksaKlaim = "TIDAK_DITEMUKAN" | "BUKAN_MENUNGGU_CEK" | "PEMERIKSA_SAMA" | "ALASAN_WAJIB" | "TEKS_TERLALU_PANJANG";
+
+/**
+ * Pemeriksaan pembayaran klaim ekspedisi oleh Keuangan (`payments:verify`, keputusan 11): pemeriksa
+ * BUKAN pencatatnya (admin juga). `SAH` → DIBAYAR: bagiannya lunas sebesar nilainya, satu
+ * `StockLossDeduction` (`KlaimEkspedisi`), status catatan disegarkan. `KEMBALIKAN` (catatan wajib)
+ * → kembali DIAJUKAN, isian pembayarannya dihapus, supaya pencatat merevisinya.
+ */
+export async function periksaKlaimEkspedisi(input: {
+  shareId: string;
+  hasil: "SAH" | "KEMBALIKAN";
+  catatan: unknown;
+  olehUserId: string;
+  sekarang?: Date;
+}): Promise<{ ok: true; lossId: string; dibayar: boolean } | { ok: false; kode: KodeTolakPeriksaKlaim }> {
+  const sekarang = input.sekarang ?? new Date();
+  const catatan = rapikanTeksHilang(input.catatan, input.hasil === "KEMBALIKAN");
+  if (!catatan.ok) return { ok: false, kode: catatan.kode };
+
+  return runSerializable(async (tx) => {
+    const share = await bacaBagianKlaim(tx, input.shareId);
+    if (!share || share.bearer !== "EKSPEDISI") return { ok: false as const, kode: "TIDAK_DITEMUKAN" as const };
+    if (share.claimStatus !== "MENUNGGU_CEK") return { ok: false as const, kode: "BUKAN_MENUNGGU_CEK" as const };
+    if (share.claimRecordedById === input.olehUserId) return { ok: false as const, kode: "PEMERIKSA_SAMA" as const };
+    const nilaiSen = keSen(angka(share.amount));
+    const cas = await tx.stockLossShare.updateMany({
+      where: { id: share.id, claimStatus: "MENUNGGU_CEK", claimRecordedById: share.claimRecordedById },
+      data:
+        input.hasil === "SAH"
+          ? {
+              claimStatus: "DIBAYAR",
+              claimDecidedAt: sekarang,
+              claimDecidedById: input.olehUserId,
+              settledAmount: desimal(nilaiSen),
+              settledAt: sekarang,
+              settledById: input.olehUserId,
+              settleNote: "Klaim ekspedisi dibayar (dicek Keuangan)",
+            }
+          : {
+              claimStatus: "DIAJUKAN",
+              claimPaidMethod: null,
+              claimReference: null,
+              claimRecordedAt: null,
+              claimRecordedById: null,
+              claimNote: catatan.teks,
+            },
+    });
+    if (cas.count !== 1) return { ok: false as const, kode: "BUKAN_MENUNGGU_CEK" as const };
+    if (input.hasil === "SAH") {
+      await tx.stockLossDeduction.create({
+        data: {
+          shareId: share.id,
+          amount: desimal(nilaiSen),
+          refType: REF_KLAIM_EKSPEDISI,
+          refId: share.id,
+          note: catatan.teks,
+          createdById: input.olehUserId,
+          createdAt: sekarang,
+        },
+      });
+      await segarkanStatusHilang(tx, [share.lossId]);
+    }
+    await jejakHilang(tx, {
+      userId: input.olehUserId,
+      action: input.hasil === "SAH" ? JEJAK_HILANG.KLAIM_DIBAYAR : JEJAK_HILANG.KLAIM_DIKEMBALIKAN,
+      lossId: share.lossId,
+      changes: { before: { claimStatus: "MENUNGGU_CEK" }, after: { claimStatus: input.hasil === "SAH" ? "DIBAYAR" : "DIAJUKAN" } },
+      metadata: { shareId: share.id, nilai: dariSen(nilaiSen), pencatat: share.claimRecordedById },
+      reason: catatan.teks,
+    });
+    return { ok: true as const, lossId: share.lossId, dibayar: input.hasil === "SAH" };
+  });
+}
+
+export type KodeTolakUbahNilaiKlaim = "TIDAK_DITEMUKAN" | "BUKAN_DIAJUKAN" | "TOTAL_TIDAK_SAH" | "ALASAN_WAJIB" | "TEKS_TERLALU_PANJANG" | "BERUBAH";
+
+/**
+ * Nilai klaim ekspedisi diubah selama masih DIAJUKAN (kesepakatan dengan ekspedisi), alasan wajib.
+ * Bagian EKSPEDISI selalu satu-satunya, jadi nilai bagian dan total catatan berubah bersama.
+ */
+export async function ubahNilaiKlaimEkspedisi(input: {
+  shareId: string;
+  nilai: unknown;
+  catatan: unknown;
+  olehUserId: string;
+}): Promise<{ ok: true; lossId: string } | { ok: false; kode: KodeTolakUbahNilaiKlaim }> {
+  if (typeof input.nilai !== "number" || !Number.isFinite(input.nilai) || input.nilai <= 0) return { ok: false, kode: "TOTAL_TIDAK_SAH" };
+  const nilaiSen = keSen(input.nilai);
+  if (Math.abs(nilaiSen - input.nilai * 100) > 1e-6) return { ok: false, kode: "TOTAL_TIDAK_SAH" };
+  const catatan = rapikanTeksHilang(input.catatan, true);
+  if (!catatan.ok) return { ok: false, kode: catatan.kode };
+
+  return runSerializable(async (tx) => {
+    const share = await bacaBagianKlaim(tx, input.shareId);
+    if (!share || share.bearer !== "EKSPEDISI") return { ok: false as const, kode: "TIDAK_DITEMUKAN" as const };
+    if (share.claimStatus !== "DIAJUKAN") return { ok: false as const, kode: "BUKAN_DIAJUKAN" as const };
+    const lamaSen = keSen(angka(share.amount));
+    const cas = await tx.stockLossShare.updateMany({
+      where: { id: share.id, claimStatus: "DIAJUKAN", amount: desimal(lamaSen) },
+      data: { amount: desimal(nilaiSen) },
+    });
+    if (cas.count !== 1) return { ok: false as const, kode: "BERUBAH" as const };
+    await tx.stockLoss.update({ where: { id: share.lossId }, data: { totalAmount: desimal(nilaiSen) } });
+    await jejakHilang(tx, {
+      userId: input.olehUserId,
+      action: JEJAK_HILANG.KLAIM_DIUBAH,
+      lossId: share.lossId,
+      changes: { before: { nilai: dariSen(lamaSen) }, after: { nilai: dariSen(nilaiSen) } },
+      metadata: { shareId: share.id },
+      reason: catatan.teks,
+    });
+    return { ok: true as const, lossId: share.lossId };
   });
 }

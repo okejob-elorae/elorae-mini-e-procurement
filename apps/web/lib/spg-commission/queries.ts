@@ -1,7 +1,6 @@
 import { prisma, type Prisma } from "@elorae/db";
-import { aturanLama } from "@/lib/spg/komisi";
-import { alasanTahan, labelLaporanKomisi } from "@/lib/spg/koreksi";
-import { koreksiBulanBayar, laporanKonsiTidakLengkap, siklusAturanLama } from "@/lib/spg/koreksi-queries";
+import { labelLaporanKomisi } from "@/lib/spg/koreksi";
+import { koreksiBulanBayar } from "@/lib/spg/koreksi-queries";
 import { REF_KOMISI_KONSI } from "@/lib/spg/hilang";
 import { summariseRecap, type CommissionEvent, type RecapDetailRow } from "./compute";
 import { SpgCommissionRateError } from "./errors";
@@ -115,62 +114,34 @@ export async function getCommissionRecap(
     koreksiBulanBayar(client, yearMonth, scope.storeIds !== undefined ? { storeIds: scope.storeIds } : {}),
   ]);
   const reportKeys = [...konsi.map((k) => k.key), ...putus.map((p) => p.key)];
-  const [konsiStored, oldRuleCycles, appliedRows] = await Promise.all([
+  const [konsiStored, appliedRows] = await Promise.all([
     konsi.length
       ? client.consignmentCommission.findMany({
           where: { cycleId: { in: konsi.map((k) => k.cycleId) } },
           select: { cycleId: true, spgUserId: true, commission: true, paidAt: true },
         })
       : Promise.resolve([]),
-    siklusAturanLama(client, konsi.map((k) => k.cycleId)),
     reportKeys.length
-      ? client.spgCommissionCorrection.findMany({ where: { sourceKey: { in: reportKeys } }, select: { sourceKey: true, spgUserId: true, amount: true } })
+      ? client.spgCommissionCorrection.findMany({ where: { sourceKey: { in: reportKeys } }, select: { sourceKey: true, spgUserId: true, amount: true, salaryAmount: true } })
       : Promise.resolve([]),
   ]);
   const applied = new Map<string, Map<string, number>>();
   for (const a of appliedRows) {
     const per = applied.get(a.sourceKey) ?? new Map<string, number>();
-    per.set(a.spgUserId, Math.round((per.get(a.spgUserId) ?? 0) * 100 + Number(a.amount) * 100) / 100);
+    // Rekap ini hanya komisi: bagian gaji pokok sebuah koreksi tidak ikut.
+    per.set(a.spgUserId, Math.round((per.get(a.spgUserId) ?? 0) * 100 + (Number(a.amount) - Number(a.salaryAmount)) * 100) / 100);
     applied.set(a.sourceKey, per);
   }
 
   const reports: SalesReport[] = [...konsi, ...putus];
   const summary = summariseRecap(salesReportEvents(reports, rates), yearMonth);
 
-  // The same hold as Komisi SPG and the payment writers (`alasanTahan`, `unitKomisiSpg`): on a report
-  // set or locked under the old rule, an SPG with pieces that have no category rate — or, konsi, a
-  // cycle whose official figures were not all recorded on the phones — waits for an owner decision
-  // and carries no difference, whether or not she has a row on it.
-  const heldOf = (
-    kind: "KONSI" | "PUTUS",
-    reportOldRule: boolean,
-    stored: ReadonlyArray<{ salesmanId: string; oldRule: boolean }>,
-    computed: ReturnType<typeof commissionPerSpg>,
-    incomplete: boolean,
-  ) => {
-    const byId = new Map(computed.map((c) => [c.salesmanId, c]));
-    const storedById = new Map(stored.map((s) => [s.salesmanId, s]));
-    const ids = new Set([...storedById.keys(), ...byId.keys()]);
-    return new Set(
-      [...ids].filter(
-        (id) =>
-          alasanTahan({
-            jenis: kind,
-            dasarLama: reportOldRule || (storedById.get(id)?.oldRule ?? false),
-            potongTanpaTarif: byId.get(id)?.noRatePieces ?? 0,
-            laporanTidakLengkap: incomplete,
-          }) !== null,
-      ),
-    );
-  };
-
   const inputs: PayoutReportInput[] = [
     ...konsi.map((k) => {
       const computed = commissionPerSpg(k, rates);
-      const oldRule = oldRuleCycles.has(k.cycleId);
       const stored = konsiStored
         .filter((s) => s.cycleId === k.cycleId)
-        .map((s) => ({ salesmanId: s.spgUserId, commission: Number(s.commission), pieces: null, oldRule, paid: s.paidAt !== null }));
+        .map((s) => ({ salesmanId: s.spgUserId, commission: Number(s.commission), pieces: null, paid: s.paidAt !== null }));
       return {
         key: k.key,
         kind: "KONSI" as const,
@@ -181,7 +152,6 @@ export async function getCommissionRecap(
         stored,
         computed,
         appliedBySalesman: applied.get(k.key) ?? new Map<string, number>(),
-        heldSalesmen: heldOf("KONSI", oldRule, stored, computed, laporanKonsiTidakLengkap(k, computed)),
       };
     }),
     ...putus.map((p) => {
@@ -192,7 +162,6 @@ export async function getCommissionRecap(
             salesmanId: s.userId,
             commission: s.commission,
             pieces: s.unitsSold,
-            oldRule: aturanLama(s.basis),
             paid: s.paidAt !== null,
           }))
         : null;
@@ -202,18 +171,18 @@ export async function getCommissionRecap(
         storeId: p.storeId,
         salesMonth: p.salesMonth,
         payoutMonth: yearMonth,
-        closed: p.stored.some((s) => s.paidAt !== null),
+        // Toko putus × bulan yang dicek sudah tertutup: hanya bulan yang dicek yang masuk rekap.
+        closed: true,
         stored,
         computed,
         appliedBySalesman: applied.get(p.key) ?? new Map<string, number>(),
-        heldSalesmen: heldOf("PUTUS", (stored ?? []).some((s) => s.oldRule), stored ?? [], computed, false),
       };
     }),
   ];
   const payoutLines = payoutLinesOf(inputs);
   const totals = payoutTotalsBySpg(
     payoutLines,
-    correctionsInMonth.map((c) => ({ salesmanId: c.spgUserId, amount: c.jumlah })),
+    correctionsInMonth.map((c) => ({ salesmanId: c.spgUserId, amount: Math.round((c.jumlah - c.gaji) * 100) / 100 })),
   );
 
   // The payout each correction rode on: its row's report (store × sales month).

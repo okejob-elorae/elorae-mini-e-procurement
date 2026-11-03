@@ -148,9 +148,11 @@ export function bacaTutupHari(nilai: string | null | undefined): AturanTutupHari
  *   menerimanya (atau catatan tanpa toko), harga jual Elorae. Pilihan lain:
  *   harga jual Elorae (`Item.sellingPrice`), HPP (`InventoryValue.avgCost`),
  *   atau harga eceran di toko.
- * - `maksPotongPersen`: potongan beban paling banyak sekian persen dari
- *   gaji/komisi SATU pembayaran (bawaan 50%); sisanya dicicil di pembayaran
- *   berikutnya — gaji tidak pernah habis karena satu kejadian.
+ * - `maksPotongPersen`: potongan beban SALESMAN (pemegang `SALES`) paling banyak
+ *   sekian persen dari komisi SATU pembayaran (bawaan 50%; `tandaiSalesDipotong`);
+ *   sisanya dicicil. SEJAK keputusan pemilik 2026-11-02 (P11a, B26) angka ini
+ *   TIDAK berlaku untuk pembayaran SPG: beban barang hilang SPG dipotong penuh saat
+ *   gaji & komisinya dibayar, dari komisi dulu lalu gaji pokok (P5).
  * - `dariOpname`: opname toko konsinyasi yang KURANG otomatis membuka catatan
  *   barang hilang untuk diputuskan kantor (bawaan nyala).
  *

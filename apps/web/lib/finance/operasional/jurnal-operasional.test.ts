@@ -45,7 +45,7 @@ import { hitungJurnalTertunda } from "@/lib/finance/jurnal-tertunda";
 import { kaitReturBerubah } from "@/lib/finance/lapangan/kait";
 import { SUMBER_LAPANGAN } from "@/lib/finance/lapangan/aturan";
 import { sumberSapuanTerdaftar } from "@/lib/finance/sapuan/semua";
-import { batalkanPembayaranToko, bayarKomisi, bukaKunci, catatPembayaranToko, kirimTitipan, kunciAngka } from "@/lib/konsinyasi/writer";
+import { bayarKomisi, bukaKunci, kirimTitipan, kunciAngka } from "@/lib/konsinyasi/writer";
 import { catatHitunganGudang } from "@/lib/receivables/return-writer";
 import { konsiReportKey, putusReportKey } from "@/lib/spg-commission/payout";
 import { putuskanGudangRusak } from "@/lib/spg/gudang-rusak-writer";
@@ -57,17 +57,18 @@ import {
   postJurnalBayarBiayaPerjalanan,
   postJurnalBayarGajiKonsi,
   postJurnalBayarKomisiSpg,
+  postJurnalBayarTambahanSpg,
   postJurnalBiayaPerjalanan,
   postJurnalGudangRusak,
   postJurnalKirimKonsi,
   postJurnalPesananKonsi,
   postJurnalPindahKonsi,
   postJurnalPotongSales,
+  postJurnalPotongSalesRetur,
   postJurnalReturLapanganKonsi,
   postJurnalReturPemasok,
   postJurnalStokManual,
   selaraskanJurnalBarangHilang,
-  selaraskanJurnalBayarTokoKonsi,
   selaraskanJurnalKomisiKonsi,
   selaraskanJurnalKomisiSpg,
   selaraskanJurnalReturKonsi,
@@ -87,11 +88,14 @@ import { rekonsiliasiPersediaan } from "./rekonsiliasi-persediaan-queries";
 import {
   cariBayarGajiKonsiTanpaJurnal,
   cariBayarKomisiSpgTanpaJurnal,
+  cariBayarTambahanSpgTanpaJurnal,
   cariKirimKonsiTanpaJurnal,
   cariKomisiKonsiTanpaJurnal,
   cariKomisiSpgTanpaJurnal,
   cariPesananKonsiTanpaJurnal,
+  cariBarangHilangTertinggal,
   cariPindahKonsiTanpaJurnal,
+  cariPindahKonsiTertinggal,
   cariReturLapanganKonsiTanpaJurnal,
   cariStokManualTanpaJurnal,
   PENCARI_OPERASIONAL,
@@ -194,7 +198,10 @@ beforeEach(async () => {
   h.mulai = wib("2004-01-01");
   h.ppn = NON_PKP;
   urut += 1;
-  tokoId = (await prisma.store.create({ data: { code: `${tag}-K${urut}`, name: `${tag} Konsi ${urut}`, address: "uji", termsType: "KONSI", isActive: true } })).id;
+  // Toko konsi wajib punya salesman pemegang (P47): tanpa itu `kunciAngka` menolak TOKO_TANPA_PEMEGANG.
+  tokoId = (
+    await prisma.store.create({ data: { code: `${tag}-K${urut}`, name: `${tag} Konsi ${urut}`, address: "uji", termsType: "KONSI", isActive: true, salesmanId: adminId } })
+  ).id;
   tokoPutusId = (await prisma.store.create({ data: { code: `${tag}-P${urut}`, name: `${tag} Putus ${urut}`, address: "uji", termsType: "PUTUS", isActive: true } })).id;
   spgId = (
     await prisma.user.create({ data: { email: `${tag.toLowerCase()}-spg${urut}@uji.local`, name: `${tag} SPG ${urut}`, passwordHash: "x", assignedStoreId: tokoId } })
@@ -222,7 +229,6 @@ afterEach(async () => {
   const kiriman = tokoId ? await prisma.consignmentShipment.findMany({ where: { storeId: seededId(tokoId) }, select: { id: true } }) : [];
   const nri = tokoIds.length ? await prisma.warehouseReturn.findMany({ where: { storeId: { in: seededIds(tokoIds) } }, select: { id: true } }) : [];
   const komisi = siklusIds.length ? await prisma.consignmentCommission.findMany({ where: { cycleId: { in: seededIds(siklusIds) } }, select: { id: true } }) : [];
-  const bayar = siklusIds.length ? await prisma.consignmentPayment.findMany({ where: { cycleId: { in: seededIds(siklusIds) } }, select: { id: true } }) : [];
   const gerakRusak = barangIds.length ? await prisma.damagedStockMovement.findMany({ where: { itemId: { in: seededIds(barangIds) } }, select: { id: true } }) : [];
   const komisiSpg = tokoIds.length ? await prisma.spgCommission.findMany({ where: { storeId: { in: seededIds(tokoIds) } }, select: { id: true } }) : [];
   const koreksi = spgId ? await prisma.spgCommissionCorrection.findMany({ where: { spgUserId: seededId(spgId) }, select: { id: true } }) : [];
@@ -231,6 +237,10 @@ afterEach(async () => {
   const adj = barangIds.length ? await prisma.stockAdjustment.findMany({ where: { itemId: { in: seededIds(barangIds) } }, select: { id: true } }) : [];
   const potong = await prisma.stockLossDeduction.findMany({ where: { refId: { startsWith: `${tag}:` }, refType: "KomisiSalesman" }, select: { id: true } });
   const transfer = tokoIds.length ? await prisma.konsiTransfer.findMany({ where: { storeId: { in: seededIds(tokoIds) } }, select: { id: true } }) : [];
+  // Tagihan siklus yang lahir saat dikunci (`kunciAngka`); menunjuk siklusnya (Restrict).
+  const tagihanSiklus = siklusIds.length ? await prisma.receivable.findMany({ where: { consignmentCycleId: { in: seededIds(siklusIds) } }, select: { id: true } }) : [];
+  const bebanSpg = spgId ? await prisma.spgCharge.findMany({ where: { spgUserId: seededId(spgId) }, select: { id: true } }) : [];
+  const utangSpg = spgId ? await prisma.spgDebt.findMany({ where: { spgUserId: seededId(spgId) }, select: { id: true } }) : [];
   const pesanan = tokoIds.length ? await prisma.fieldSalesOrder.findMany({ where: { storeId: { in: seededIds(tokoIds) } }, select: { id: true } }) : [];
   const returLapangan = tokoIds.length ? await prisma.fieldReturn.findMany({ where: { storeId: { in: seededIds(tokoIds) } }, select: { id: true } }) : [];
   const entitas = [
@@ -242,7 +252,6 @@ afterEach(async () => {
     ...returLapangan.map((r) => r.id),
     ...nri.map((n) => n.id),
     ...komisi.map((k) => k.id),
-    ...bayar.map((b) => b.id),
     ...gerakRusak.map((g) => g.id),
     ...komisiSpg.map((k) => k.id),
     ...retur.map((r) => r.id),
@@ -270,7 +279,6 @@ afterEach(async () => {
   }
   if (gerakRusak.length) await prisma.damagedStockMovement.deleteMany({ where: { id: { in: seededIds(gerakRusak.map((g) => g.id)) } } });
   if (siklusIds.length) {
-    await prisma.consignmentPayment.deleteMany({ where: { cycleId: { in: seededIds(siklusIds) } } });
     await prisma.consignmentCommission.deleteMany({ where: { cycleId: { in: seededIds(siklusIds) } } });
     await prisma.consignmentSold.deleteMany({ where: { cycleId: { in: seededIds(siklusIds) } } });
     await prisma.consignmentReportItem.deleteMany({ where: { report: { cycleId: { in: seededIds(siklusIds) } } } });
@@ -280,6 +288,7 @@ afterEach(async () => {
     await prisma.consignmentShipmentItem.deleteMany({ where: { shipmentId: { in: seededIds(kiriman.map((k) => k.id)) } } });
     await prisma.consignmentShipment.deleteMany({ where: { id: { in: seededIds(kiriman.map((k) => k.id)) } } });
   }
+  if (tagihanSiklus.length) await prisma.receivable.deleteMany({ where: { id: { in: seededIds(tagihanSiklus.map((r) => r.id)) } } });
   if (siklusIds.length) await prisma.consignmentCycle.deleteMany({ where: { id: { in: seededIds(siklusIds) } } });
   // Anak sebelum induk: baris transfer → transfer → baris pesanan → pesanan; baris retur lapangan → returnya.
   if (transfer.length) {
@@ -297,6 +306,16 @@ afterEach(async () => {
   if (nri.length) await prisma.warehouseReturn.deleteMany({ where: { id: { in: seededIds(nri.map((n) => n.id)) } } });
   if (tokoIds.length) await prisma.storeStockMovement.deleteMany({ where: { storeId: { in: seededIds(tokoIds) } } });
   if (koreksi.length) await prisma.spgCommissionCorrection.deleteMany({ where: { id: { in: seededIds(koreksi.map((k) => k.id)) } } });
+  // Beban, utang, dan pembayaran tambahan SPG milik tes ini: potongan sebelum bebannya (Restrict).
+  if (bebanSpg.length) {
+    await prisma.spgChargeDeduction.deleteMany({ where: { chargeId: { in: seededIds(bebanSpg.map((b) => b.id)) } } });
+    await prisma.spgCharge.deleteMany({ where: { id: { in: seededIds(bebanSpg.map((b) => b.id)) } } });
+  }
+  if (utangSpg.length) {
+    await prisma.spgDebtSettlement.deleteMany({ where: { debtId: { in: seededIds(utangSpg.map((u) => u.id)) } } });
+    await prisma.spgDebt.deleteMany({ where: { id: { in: seededIds(utangSpg.map((u) => u.id)) } } });
+  }
+  if (spgId) await prisma.spgExtraPayout.deleteMany({ where: { spgUserId: seededId(spgId) } });
   if (komisiSpg.length) await prisma.spgCommission.deleteMany({ where: { id: { in: seededIds(komisiSpg.map((k) => k.id)) } } });
   if (retur.length) await prisma.vendorReturn.deleteMany({ where: { id: { in: seededIds(retur.map((r) => r.id)) } } });
   if (klaim.length) await prisma.expenseClaim.deleteMany({ where: { id: { in: seededIds(klaim.map((k) => k.id)) } } });
@@ -453,15 +472,6 @@ describe("konsinyasi: kiriman, siklus, pembayaran toko, gaji SPG", () => {
     // Kasir tetap 3 potong, tapi komisi konsi dibatasi angka resmi yang dikunci (2): 2 × Rp 2.000.
     expect(await saldoPeran(SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId)).toEqual({ SPG_COMMISSION_EXPENSE: 1_004_000, COMMISSION_PAYABLE: -1_004_000 });
     expect(await jumlahGenerasi(SUMBER_OPERASIONAL.SIKLUS_KONSI, siklusId)).toBe(3);
-
-    // Pembayaran toko: piutang konsinyasi berkurang; dibatalkan → dibalik.
-    const bayar = await catatPembayaranToko({ cycleId: siklusId, jumlah: 150_000, tanggal: wib("2004-10-05"), cara: "transfer", olehUserId: adminId });
-    if (!bayar.ok) throw new Error(`bayar gagal: ${bayar.alasan}`);
-    await selaraskanJurnalBayarTokoKonsi(bayar.id, adminId);
-    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_TOKO_KONSI, bayar.id)).toEqual({ BANK: 150_000, AR_CONSIGNMENT: -150_000 });
-    expect(await batalkanPembayaranToko({ paymentId: bayar.id, alasan: "uji", olehUserId: adminId })).toMatchObject({ ok: true });
-    await selaraskanJurnalBayarTokoKonsi(bayar.id, adminId);
-    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_TOKO_KONSI, bayar.id)).toEqual({});
 
     // Gaji dibayar: hutang komisi lunas dari bank.
     const [k] = await prisma.consignmentCommission.findMany({ where: { cycleId: siklusId }, select: { id: true } });
@@ -634,6 +644,30 @@ describe("konsinyasi: pindah barang per pengiriman (KonsiTransfer)", () => {
 
     await postJurnalPindahKonsi(a.id, adminId);
     expect(await cariPindahKonsiTanpaJurnal(opsi)).toEqual([]);
+  });
+
+  it("pencari tertinggal (R18): transfer berjurnal yang barangnya kembali sesudahnya ditemukan, lalu hilang sesudah diselaraskan", async () => {
+    const p = await pesananKonsi();
+    const a = await transfer(p, [{ qty: 10, unitCost: 40_000 }], wib("2004-09-03"));
+    expect(await postJurnalPindahKonsi(a.id, adminId)).toMatchObject({ ok: true, created: true });
+    const opsi = { sejak: wib("2004-09-01"), sampai: new Date(Date.now() + 3_600_000), batas: 500, ids: [a.id] };
+    // Belum berubah sesudah dijurnal: tidak ada yang tertinggal.
+    expect(await cariPindahKonsiTertinggal(opsi)).toEqual([]);
+
+    // Barang kembali di pintu toko SESUDAH dijurnal, dan kait pasca-commitnya mati.
+    await new Promise((r) => setTimeout(r, 15));
+    await prisma.konsiTransferLine.updateMany({ where: { transferId: seededId(a.id) }, data: { returnedQty: 4 } });
+    await prisma.konsiTransfer.update({ where: { id: seededId(a.id) }, data: { adjustedAt: new Date() } });
+    const temu = await cariPindahKonsiTertinggal(opsi);
+    expect(temu.map((d) => d.id)).toEqual([a.id]);
+    expect(temu[0].label).toContain(a.docNo);
+    // Pencari sapuan sumber ini membawa keduanya: generasi pertama dan yang tertinggal, sekali saja.
+    expect((await PENCARI_OPERASIONAL[PINDAH](opsi)).map((d) => d.id)).toEqual([a.id]);
+    expect(await cariPindahKonsiTertinggal({ ...opsi, ids: [] })).toEqual([]);
+
+    expect(await postJurnalPindahKonsi(a.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(PINDAH, a.id)).toEqual({ INVENTORY_CONSIGNMENT: 240_000, INVENTORY_FG: -240_000 });
+    expect(await cariPindahKonsiTertinggal(opsi)).toEqual([]);
   });
 
   it("gerbang tanggal mulai buku besar: sebelum tanggal mulai tidak dijurnal; tanpa tanggal mulai tidak ada yang dijurnal", async () => {
@@ -1004,6 +1038,47 @@ describe("barang hilang di toko konsinyasi", () => {
     expect(await saldoPeran(SUMBER_OPERASIONAL.BARANG_HILANG, buat.id)).toEqual({});
     expect(await jumlahGenerasi(SUMBER_OPERASIONAL.BARANG_HILANG, buat.id)).toBe(2);
   });
+
+  it("pencari tertinggal (R18/R20): klaim ekspedisi yang dicek sah sesudah dijurnal ditemukan; potong ongkir tidak", async () => {
+    const kiriman = await kirim(4);
+    await postJurnalKirimKonsi(kiriman, adminId);
+    const buat = await buatBarangHilang({
+      storeId: tokoId,
+      baris: [{ itemId: barangId, variantSku: "", qty: 1 }],
+      catatan: "uji klaim",
+      idempotencyKey: `${tag}-hilang-klaim-${urut}`,
+      userId: adminId,
+    });
+    if (!buat.ok) throw new Error(`catat hilang gagal: ${buat.kode}`);
+    lossIds.push(buat.id);
+    const loss = await prisma.stockLoss.findUniqueOrThrow({ where: { id: buat.id }, select: { totalAmount: true } });
+    expect(
+      await putuskanBarangHilang({ lossId: buat.id, bagian: [{ bearer: "ELORAE", bearerUserId: null, amount: Number(loss.totalAmount) }], olehUserId: adminId }),
+    ).toMatchObject({ ok: true });
+    await selaraskanJurnalBarangHilang(buat.id, adminId);
+    const opsi = { sejak: wib("2004-09-01"), sampai: new Date(Date.now() + 3_600_000), batas: 500, ids: [buat.id] };
+    expect(await cariBarangHilangTertinggal(opsi)).toEqual([]);
+
+    /*
+     * Bentuk yang ditulis `periksaKlaimEkspedisi` (SAH) — ditulis langsung: kait `kaitBarangHilang`
+     * sesudah commit dianggap mati. Potong ongkir dulu: sasarannya tidak berubah, jadi tidak tampil.
+     */
+    await new Promise((r) => setTimeout(r, 15));
+    const bagian = await prisma.stockLossShare.findFirstOrThrow({ where: { lossId: seededId(buat.id) }, select: { id: true } });
+    await prisma.stockLossShare.update({
+      where: { id: seededId(bagian.id) },
+      data: { bearer: "EKSPEDISI", amount: 20_000, claimStatus: "DIBAYAR", claimPaidMethod: "potong_ongkir", claimDecidedAt: new Date() },
+    });
+    expect(await cariBarangHilangTertinggal(opsi)).toEqual([]);
+    await prisma.stockLossShare.update({ where: { id: seededId(bagian.id) }, data: { claimPaidMethod: "transfer", claimDecidedAt: new Date() } });
+    const temu = await cariBarangHilangTertinggal(opsi);
+    expect(temu.map((d) => d.id)).toEqual([buat.id]);
+    expect((await PENCARI_OPERASIONAL[SUMBER_OPERASIONAL.BARANG_HILANG](opsi)).map((d) => d.id)).toEqual([buat.id]);
+
+    await selaraskanJurnalBarangHilang(buat.id, adminId);
+    expect(await saldoPeran(SUMBER_OPERASIONAL.BARANG_HILANG, buat.id)).toMatchObject({ BANK: 20_000, LOSS_RECOVERY: -20_000 });
+    expect(await cariBarangHilangTertinggal(opsi)).toEqual([]);
+  });
 });
 
 describe("komisi SPG toko putus dan potongan beban sales", () => {
@@ -1037,6 +1112,27 @@ describe("komisi SPG toko putus dan potongan beban sales", () => {
     });
     expect(await postJurnalPotongSales(d.id, adminId)).toMatchObject({ ok: true, created: true });
     expect(await saldoPeran(SUMBER_OPERASIONAL.POTONG_SALES, d.id)).toEqual({ SALES_COMMISSION_EXPENSE: 40_000, LOSS_RECOVERY: -40_000 });
+  });
+
+  it("potongan beban selisih retur dari komisi sales berjurnal sendiri; pengembaliannya (negatif) membalik", async () => {
+    const potong = await prisma.returnChargeDeduction.create({
+      data: { chargeId: `${tag}-beban`, amount: 30_000, refType: "KomisiSalesman", refId: `${tag}:2004-03:r${urut}`, createdById: adminId },
+    });
+    const kembali = await prisma.returnChargeDeduction.create({
+      data: { chargeId: `${tag}-beban`, amount: -10_000, refType: "KomisiSalesman", refId: `kembali:${tag}:2004-03:r${urut}`, createdById: adminId },
+    });
+    try {
+      expect(await postJurnalPotongSalesRetur(potong.id, adminId)).toMatchObject({ ok: true, created: true });
+      expect(await saldoPeran(SUMBER_OPERASIONAL.POTONG_SALES_RETUR, potong.id)).toEqual({ SALES_COMMISSION_EXPENSE: 30_000, LOSS_RECOVERY: -30_000 });
+      expect(await postJurnalPotongSalesRetur(kembali.id, adminId)).toMatchObject({ ok: true, created: true });
+      expect(await saldoPeran(SUMBER_OPERASIONAL.POTONG_SALES_RETUR, kembali.id)).toEqual({ SALES_COMMISSION_EXPENSE: -10_000, LOSS_RECOVERY: 10_000 });
+      /* Sekali per baris potongan. */
+      expect(await postJurnalPotongSalesRetur(potong.id, adminId)).toMatchObject({ ok: true, created: false });
+    } finally {
+      await prisma.journalLine.deleteMany({ where: { journal: { sourceType: SUMBER_OPERASIONAL.POTONG_SALES_RETUR, sourceId: { in: seededIds([potong.id, kembali.id]) } } } });
+      await prisma.journal.deleteMany({ where: { sourceType: SUMBER_OPERASIONAL.POTONG_SALES_RETUR, sourceId: { in: seededIds([potong.id, kembali.id]) } } });
+      await prisma.returnChargeDeduction.deleteMany({ where: { id: { in: seededIds([potong.id, kembali.id]) } } });
+    }
   });
 });
 
@@ -1291,6 +1387,217 @@ describe("koreksi komisi SPG pada pembayaran", () => {
     expect(await jumlahGenerasi(SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId)).toBe(2);
     expect(await cariKomisiKonsiTanpaJurnal({ ...sekitarSekarang(), ids: [siklusId] })).toEqual([]);
     expect(await jumlahGenerasi(SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, k.id)).toBe(0);
+  });
+});
+
+/**
+ * Pengurang dan penambah yang ditulis transaksi pembayaran SPG (`terapkanPembayaran`), ditanam
+ * langsung dalam bentuk penulisnya — penulisnya sendiri dites di `lib/spg/beban-spg-writer*`,
+ * `lib/spg/utang-writer*` dan `lib/spg/komisi-bayar*`; di sini hanya jurnalnya.
+ */
+const REF_BAYAR_TAMBAHAN_UJI = "SpgExtraPayout";
+
+async function tanamBeban(storeId: string, jumlah: number, opsi: { kembaliPada?: [string, string]; status?: string } = {}) {
+  return prisma.spgCharge.create({
+    data: {
+      spgUserId: spgId,
+      storeId,
+      sourceKind: storeId === tokoId ? "KONSI" : "PUTUS",
+      source: "RETUR_PEMBELI",
+      sourceId: `${tag}-ret-${urut}-${Math.random().toString(36).slice(2, 8)}`,
+      sourceDocNo: `${tag}-NRT-${urut}`,
+      spgSaleId: `${tag}-nota-${urut}`,
+      reportedAt: new Date(),
+      computedAmount: jumlah,
+      amount: jumlah,
+      settledAmount: jumlah,
+      status: opsi.status ?? "LUNAS",
+      ...(opsi.kembaliPada
+        ? {
+            goodsDecision: "KEMBALI_STOK",
+            goodsDecidedAt: new Date(),
+            goodsDecidedById: adminId,
+            paybackAmount: jumlah,
+            paybackPaidAt: new Date(),
+            paybackPaidRefType: opsi.kembaliPada[0],
+            paybackPaidRefId: opsi.kembaliPada[1],
+            paybackPayoutMonth: "2004-04",
+          }
+        : {}),
+      note: "uji",
+      createdById: adminId,
+    },
+    select: { id: true },
+  });
+}
+
+const potongBeban = (chargeId: string, jumlah: number, paidRefType: string, paidRefId: string) =>
+  prisma.spgChargeDeduction.create({
+    data: { chargeId, amount: jumlah, fromCommission: jumlah, fromSalary: 0, paidRefType, paidRefId, payoutMonth: "2004-04", createdById: adminId },
+  });
+
+async function tanamUtang(d: { kind: string; storeId: string | null; jumlah: number; dibuatOleh?: [string, string]; settled?: number }) {
+  return prisma.spgDebt.create({
+    data: {
+      spgUserId: spgId,
+      kind: d.kind,
+      sourceKey: `${tag}-utang-${urut}-${Math.random().toString(36).slice(2, 8)}`,
+      sourceStoreId: d.storeId,
+      amount: d.jumlah,
+      settledAmount: d.settled ?? d.jumlah,
+      status: (d.settled ?? d.jumlah) >= d.jumlah ? "LUNAS" : "TERBUKA",
+      createdRefType: d.dibuatOleh?.[0] ?? "Uji",
+      createdRefId: d.dibuatOleh?.[1] ?? `${tag}-${urut}-${Math.random().toString(36).slice(2, 8)}`,
+      note: "uji",
+      createdById: adminId,
+    },
+    select: { id: true },
+  });
+}
+
+const potongUtang = (debtId: string, jumlah: number, refType: string, refId: string, kind: "POTONG" | "IMBANG" = "POTONG") =>
+  prisma.spgDebtSettlement.create({ data: { debtId, amount: jumlah, kind, refType, refId, createdById: adminId } });
+
+/** Baris satu peran di jurnal sebuah sumber (debit +), per toko × kanal. */
+async function barisPeran(sourceType: string, id: string, role: string) {
+  const baris = await prisma.journalLine.findMany({
+    where: { journal: { sourceType, sourceId: id }, chartAccountId: seededId(h.akun.get(role)) },
+    select: { debit: true, credit: true, channel: true, storeId: true },
+  });
+  return baris.map((l) => ({ nilai: Number(l.debit) - Number(l.credit), channel: l.channel, storeId: l.storeId })).sort((x, y) => y.nilai - x.nilai);
+}
+
+describe("pengurang pada pembayaran SPG (beban retur, utang, pengembalian beban)", () => {
+  it("toko putus: beban dan utang yang dipotong jadi pemulihan, uang beban yang dikembalikan dibalik; bank = yang dibayarkan, hutang komisi tanpa sisa", async () => {
+    const a = await prisma.spgCommission.create({
+      data: { userId: spgId, storeId: tokoPutusId, period: "2004-03", unitsSold: 10, commission: 300_000, basis: "PER_SPG", lockedById: adminId },
+    });
+    const akrual = idKomisiSpg(tokoPutusId, "2004-03");
+    expect(await selaraskanJurnalKomisiSpg(tokoPutusId, "2004-03", adminId)).toMatchObject({ ok: true, created: true });
+    await prisma.spgCommission.update({ where: { id: a.id }, data: { paidAt: wib("2004-04-05"), paidById: adminId } });
+
+    // Beban retur 30.000 dipotong; utang barang hilang 20.000 (asalnya toko konsi) dipotong; uang beban 12.500 dikembalikan.
+    const beban = await tanamBeban(tokoPutusId, 30_000);
+    await potongBeban(beban.id, 30_000, REF_KOMISI_SPG_PUTUS, a.id);
+    const utang = await tanamUtang({ kind: "BARANG_HILANG", storeId: tokoId, jumlah: 20_000 });
+    await potongUtang(utang.id, 20_000, REF_KOMISI_SPG_PUTUS, a.id);
+    await tanamBeban(tokoPutusId, 12_500, { kembaliPada: [REF_KOMISI_SPG_PUTUS, a.id] });
+
+    expect(await postJurnalBayarKomisiSpg(a.id, adminId)).toMatchObject({ ok: true, created: true });
+    // 300.000 − 30.000 − 20.000 + 12.500 = 262.500 yang keluar dari bank.
+    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id)).toEqual({ COMMISSION_PAYABLE: 300_000, LOSS_RECOVERY: -37_500, BANK: -262_500 });
+    expect(await barisPeran(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id, "LOSS_RECOVERY")).toEqual([
+      { nilai: -17_500, channel: "PUTUS", storeId: tokoPutusId },
+      { nilai: -20_000, channel: "KONSINYASI", storeId: tokoId },
+    ]);
+    const hutang =
+      ((await saldoPeran(SUMBER_OPERASIONAL.KOMISI_SPG, akrual)).COMMISSION_PAYABLE ?? 0) +
+      ((await saldoPeran(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id)).COMMISSION_PAYABLE ?? 0);
+    expect(hutang).toBe(0);
+    const jurnal = await prisma.journal.findFirst({ where: { sourceType: SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, sourceId: a.id }, select: { description: true } });
+    expect(jurnal?.description).toMatch(/ − beban retur$/);
+    // Sekali posting.
+    expect(await postJurnalBayarKomisiSpg(a.id, adminId)).toMatchObject({ ok: true, created: false });
+  });
+
+  it("toko konsinyasi: beban retur yang dipotong dari gaji ikut jurnal pembayaran gaji, di kanal konsinyasi", async () => {
+    siklusId = (await prisma.consignmentCycle.create({ data: { noKonsi: `${tag}/K${urut}`, storeId: tokoId, periodYear: 2004, periodMonth: 9 } })).id;
+    const k = await prisma.consignmentCommission.create({
+      data: { cycleId: siklusId, spgUserId: spgId, baseSalary: 400_000, commission: 100_000, total: 500_000, paidAt: wib("2004-10-10"), paidById: adminId },
+    });
+    const beban = await tanamBeban(tokoId, 40_000);
+    await potongBeban(beban.id, 40_000, REF_KOMISI_KONSI, k.id);
+
+    expect(await postJurnalBayarGajiKonsi(k.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, k.id)).toEqual({ COMMISSION_PAYABLE: 500_000, LOSS_RECOVERY: -40_000, BANK: -460_000 });
+    expect(await barisPeran(SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, k.id, "LOSS_RECOVERY")).toEqual([{ nilai: -40_000, channel: "KONSINYASI", storeId: tokoId }]);
+  });
+
+  it("pembayaran terakhir yang sisanya menjadi utang SPG: hanya bagian yang dipotong dari bayaran yang dijurnal, bank nol", async () => {
+    // Beban retur 90.000; bayaran 50.000 habis memotongnya; sisa 40.000 dipindah ke utang (`tutupKeUtangSpg`).
+    const a = await prisma.spgCommission.create({
+      data: { userId: spgId, storeId: tokoPutusId, period: "2004-05", unitsSold: 5, commission: 50_000, basis: "PER_SPG", lockedById: adminId },
+    });
+    const akrual = idKomisiSpg(tokoPutusId, "2004-05");
+    expect(await selaraskanJurnalKomisiSpg(tokoPutusId, "2004-05", adminId)).toMatchObject({ ok: true, created: true });
+    await prisma.spgCommission.update({ where: { id: a.id }, data: { paidAt: wib("2004-06-05"), paidById: adminId } });
+    const beban = await tanamBeban(tokoPutusId, 90_000, { status: "DIUTANGKAN" });
+    await potongBeban(beban.id, 50_000, REF_KOMISI_SPG_PUTUS, a.id);
+    const sisa = await tanamUtang({ kind: "RETUR_PEMBELI", storeId: tokoPutusId, jumlah: 40_000, settled: 0, dibuatOleh: [REF_KOMISI_SPG_PUTUS, a.id] });
+    await potongBeban(beban.id, 40_000, "SpgDebt", sisa.id);
+
+    expect(await postJurnalBayarKomisiSpg(a.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id)).toEqual({ COMMISSION_PAYABLE: 50_000, LOSS_RECOVERY: -50_000 });
+    // Hutang komisi tanpa sisa; sisa 40.000 baru dipulihkan saat uangnya diterima (penerimaan utang SPG).
+    expect(((await saldoPeran(SUMBER_OPERASIONAL.KOMISI_SPG, akrual)).COMMISSION_PAYABLE ?? 0) + 50_000).toBe(0);
+  });
+
+  it("pembayaran tambahan SPG yang berhenti: bank = amount (sudah bersih dari imbangan), hutang komisi nol; yang seluruhnya diimbangkan tetap dicari sapuan", async () => {
+    const utang = await tanamUtang({ kind: "BARANG_HILANG", storeId: tokoPutusId, jumlah: 15_000 });
+    const p = await prisma.spgExtraPayout.create({
+      data: { spgUserId: spgId, amount: 10_000, offsetAmount: 15_000, method: "transfer", paidOn: "2026-11-04", idempotencyKey: `${tag}-tambah-${urut}`, createdById: adminId },
+    });
+    const koreksiTambahan = (paidRefId: string, jumlah: number) =>
+      prisma.spgCommissionCorrection.create({
+        data: {
+          spgUserId: spgId,
+          sourceKind: "PUTUS",
+          sourceKey: putusReportKey(tokoPutusId, "2004-02"),
+          sourceStoreId: tokoPutusId,
+          sourceSalesMonth: "2004-02",
+          amount: jumlah,
+          difference: jumlah,
+          figure: 0,
+          paidBefore: 0,
+          appliedBefore: 0,
+          paidRefType: REF_BAYAR_TAMBAHAN_UJI,
+          paidRefId,
+          payoutMonth: "2026-11",
+          note: "Koreksi plus uji",
+          appliedById: adminId,
+          appliedAt: new Date(),
+        },
+      });
+    await koreksiTambahan(p.id, 25_000);
+    await potongUtang(utang.id, 15_000, REF_BAYAR_TAMBAHAN_UJI, p.id, "IMBANG");
+
+    expect(await postJurnalBayarTambahanSpg(p.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_TAMBAHAN_SPG, p.id)).toEqual({ SPG_COMMISSION_EXPENSE: 25_000, LOSS_RECOVERY: -15_000, BANK: -10_000 });
+
+    // Seluruh koreksi plus mengimbangi utang (amount 0): tetap berjurnal, dan sapuan menemukannya.
+    const utang2 = await tanamUtang({ kind: "BARANG_HILANG", storeId: tokoPutusId, jumlah: 8_000 });
+    const p2 = await prisma.spgExtraPayout.create({
+      data: { spgUserId: spgId, amount: 0, offsetAmount: 8_000, method: null, paidOn: "2026-11-04", idempotencyKey: `${tag}-tambah2-${urut}`, createdById: adminId },
+    });
+    await koreksiTambahan(p2.id, 8_000);
+    await potongUtang(utang2.id, 8_000, REF_BAYAR_TAMBAHAN_UJI, p2.id, "IMBANG");
+    const opsi = { sejak: mulaiTes, sampai: new Date(Date.now() + 60_000), batas: 500, ids: [p2.id] };
+    expect((await cariBayarTambahanSpgTanpaJurnal(opsi)).map((x) => x.id)).toEqual([p2.id]);
+    expect(await postJurnalBayarTambahanSpg(p2.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_TAMBAHAN_SPG, p2.id)).toEqual({ SPG_COMMISSION_EXPENSE: 8_000, LOSS_RECOVERY: -8_000 });
+    expect(await cariBayarTambahanSpgTanpaJurnal(opsi)).toEqual([]);
+  });
+
+  it("sapuan pembayaran toko putus: baris yang hanya bergaji pokok dicari; baris neto nol yang membawa pengembalian beban dicari", async () => {
+    const gaji = await prisma.spgCommission.create({
+      data: { userId: spgId, storeId: tokoPutusId, period: "2004-07", unitsSold: 0, commission: 0, baseSalary: 900_000, basis: "PER_SPG", lockedById: adminId, paidAt: wib("2004-08-05"), paidById: adminId },
+    });
+    const opsi = { sejak: wib("2004-08-01"), sampai: wib("2004-08-31"), batas: 500, ids: [gaji.id] };
+    expect((await cariBayarKomisiSpgTanpaJurnal(opsi)).map((x) => x.id)).toEqual([gaji.id]);
+    expect((await cariKomisiSpgTanpaJurnal({ sejak: wib("2004-07-01"), sampai: wib("2004-07-31"), batas: 500, ids: [idKomisiSpg(tokoPutusId, "2004-07")] })).map((x) => x.id)).toEqual([
+      idKomisiSpg(tokoPutusId, "2004-07"),
+    ]);
+
+    const nol = await prisma.spgCommission.create({
+      data: { userId: spgId, storeId: tokoPutusId, period: "2004-06", unitsSold: 0, commission: 0, basis: "PER_SPG", lockedById: adminId, paidAt: wib("2004-08-06"), paidById: adminId },
+    });
+    const opsiNol = { ...opsi, ids: [nol.id] };
+    expect(await cariBayarKomisiSpgTanpaJurnal(opsiNol)).toEqual([]);
+    await tanamBeban(tokoPutusId, 12_500, { kembaliPada: [REF_KOMISI_SPG_PUTUS, nol.id] });
+    expect((await cariBayarKomisiSpgTanpaJurnal(opsiNol)).map((x) => x.id)).toEqual([nol.id]);
+    expect(await postJurnalBayarKomisiSpg(nol.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, nol.id)).toEqual({ LOSS_RECOVERY: 12_500, BANK: -12_500 });
+    expect(await cariBayarKomisiSpgTanpaJurnal(opsiNol)).toEqual([]);
   });
 });
 

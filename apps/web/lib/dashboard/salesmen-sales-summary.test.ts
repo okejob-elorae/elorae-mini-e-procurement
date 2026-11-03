@@ -35,6 +35,14 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     });
     salesmanAId = salesmanA.id;
     salesmanBId = salesmanB.id;
+
+    /* Awaiting delivery reads the ORDER LINES (`nilaiBelumDinota`), so every order carries one. */
+    const uom = await prisma.uOM.create({ data: { code: `${tag}-UOM`, nameId: "test", nameEn: "test" } });
+    uomId = uom.id;
+    const item = await prisma.item.create({
+      data: { sku: `${tag}-ITEM`, nameId: "test", nameEn: "test", type: "FINISHED_GOOD", isActive: true, uomId },
+    });
+    itemId = item.id;
   });
 
   afterEach(async () => {
@@ -57,7 +65,9 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     status: "PENDING_APPROVAL" | "APPROVED" | "REJECTED",
     orderType: "PUTUS" | "KONSI",
     total: number,
-    deliveryStatus: "PENDING" | "PARTIAL" | "DELIVERED" | "CLOSED" = "PENDING"
+    deliveryStatus: "PENDING" | "PARTIAL" | "DELIVERED" | "CLOSED" = "PENDING",
+    /** One line of `qty` pieces worth `total`; `dikirim` pieces of it already on a nota. */
+    baris: { qty: number; dikirim: number } = { qty: 1, dikirim: deliveryStatus === "DELIVERED" ? 1 : 0 },
   ) {
     const order = await prisma.fieldSalesOrder.create({
       data: {
@@ -69,6 +79,19 @@ d("getSalesmenSalesSummary (test bed only)", () => {
         subtotal: total,
         total,
         deliveryStatus,
+        lines: {
+          create: [
+            {
+              itemId,
+              variantSku: "",
+              productName: "test",
+              qty: baris.qty,
+              unitPrice: total / baris.qty,
+              lineTotal: total,
+              deliveredQty: baris.dikirim,
+            },
+          ],
+        },
       },
     });
     fsoIds.push(order.id);
@@ -87,6 +110,25 @@ d("getSalesmenSalesSummary (test bed only)", () => {
         dueDate: new Date(),
         subtotal: total,
         total,
+      },
+    });
+  }
+
+  /* Nota "tidak jadi dikirim": barisnya tetap ada, nilainya 0, `voidedAt` terisi (seperti `batalkanNotaPengirimanInTx`). */
+  async function makeVoidedDelivery(seq: number, orderId: string, deliveredById: string) {
+    return prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `${tag}-DLV-${seq}`,
+        orderId,
+        deliveredAt: new Date(),
+        deliveredById,
+        invoiceDate: new Date(),
+        dueDate: new Date(),
+        subtotal: 0,
+        total: 0,
+        voidedAt: new Date(),
+        voidedById: deliveredById,
+        voidReason: "Tidak jadi dikirim",
       },
     });
   }
@@ -183,6 +225,21 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     expect(summary.totals.realisedRincian.pesanan).toBeGreaterThanOrEqual(1);
   });
 
+  it("nota yang tidak jadi dikirim tidak dihitung sebagai pengiriman maupun pesanan terealisasi", async () => {
+    /* Satu nota hidup 300 dan satu nota batal pada pesanan yang sama. */
+    const sebagian = await makeOrder(21, salesmanAId, "APPROVED", "PUTUS", 800, "PARTIAL");
+    await makeDelivery(10, sebagian.id, salesmanAId, 300);
+    await makeVoidedDelivery(11, sebagian.id, salesmanAId);
+    /* Pesanan yang satu-satunya notanya dibatalkan: barangnya kembali terbuka, belum ada yang terealisasi. */
+    const batalSemua = await makeOrder(22, salesmanAId, "APPROVED", "PUTUS", 500, "PENDING");
+    await makeVoidedDelivery(12, batalSemua.id, salesmanAId);
+
+    const summary = await getSalesmenSalesSummary();
+    const rowA = summary.rows.find((r) => r.salesmanId === salesmanAId);
+    expect(rowA!.realised).toEqual({ count: 1, amount: 300 });
+    expect(rowA!.realisedRincian).toEqual({ pengiriman: 1, van: 0, pesanan: 1 });
+  });
+
   it("pesanan putus yang sudah disetujui tetapi belum dikirim punya embernya sendiri — tidak hilang dari kedua angka", async () => {
     // Sama dengan daftar `?kirim=PENDING`: DISETUJUI, PUTUS, belum satu pun pengiriman.
     await makeOrder(9, salesmanAId, "APPROVED", "PUTUS", 900);
@@ -211,7 +268,8 @@ d("getSalesmenSalesSummary (test bed only)", () => {
   });
 
   it("awaitingDelivery: a partly delivered order counts the residual while realised counts the delivery", async () => {
-    const order = await makeOrder(10, salesmanBId, "APPROVED", "PUTUS", 800, "PARTIAL");
+    /* 8 pieces at 100: 3 shipped on a 300 nota, 5 still open = 500. */
+    const order = await makeOrder(10, salesmanBId, "APPROVED", "PUTUS", 800, "PARTIAL", { qty: 8, dikirim: 3 });
     await makeDelivery(4, order.id, salesmanBId, 300);
 
     const summary = await getSalesmenSalesSummary();
@@ -220,20 +278,13 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     expect(rowB!.realised).toEqual({ count: 1, amount: 300 });
   });
 
-  it("awaitingDelivery: subtracts a delivery's exact goods value, not its whole-rupiah total", async () => {
+  it("awaitingDelivery: values the open line quantity exactly, not the nota's whole-rupiah total", async () => {
     /**
      * A 2-unit line at 999.70 (a store-discounted price) with a 100 line discount: order total
-     * 1899.40. Shipping 1 unit takes the pro-rated 50, so that delivery's exact goods value is
-     * 949.70 while the writer charges `total` 950. What is still awaiting delivery is the other
-     * 949.70 — subtracting the rounded total would report 949.40. A non-closing delivery's
-     * discount share is always whole rupiah, so the sen here come from the unit price.
+     * 1899.40. Shipping 1 unit takes the pro-rated 50, so the open unit is worth 949.70 while the
+     * writer charges that delivery's `total` 950 — subtracting the rounded total would report
+     * 949.40. The sen here come from the unit price.
      */
-    const uom = await prisma.uOM.create({ data: { code: `${tag}-UOM`, nameId: "test", nameEn: "test" } });
-    uomId = uom.id;
-    const item = await prisma.item.create({
-      data: { sku: `${tag}-ITEM`, nameId: "test", nameEn: "test", type: "FINISHED_GOOD", isActive: true, uomId, sellingPrice: 999.7 },
-    });
-    itemId = item.id;
     const order = await prisma.fieldSalesOrder.create({
       data: {
         orderNo: `${tag}-19`,
@@ -275,7 +326,8 @@ d("getSalesmenSalesSummary (test bed only)", () => {
   });
 
   it("awaitingDelivery: floors the residual per order, so an over-delivered order lends nothing to a sibling", async () => {
-    const over = await makeOrder(11, salesmanAId, "APPROVED", "PUTUS", 100, "PARTIAL");
+    /* More pieces on notas than ordered: the open quantity floors at zero, it never goes negative. */
+    const over = await makeOrder(11, salesmanAId, "APPROVED", "PUTUS", 100, "PARTIAL", { qty: 1, dikirim: 2 });
     await makeDelivery(5, over.id, salesmanAId, 150);
     await makeOrder(12, salesmanAId, "APPROVED", "PUTUS", 400);
 
@@ -298,6 +350,32 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     expect(rowA!.awaitingDelivery).toEqual({ count: 0, amount: 0 });
     expect(rowA!.outstanding).toEqual({ count: 1, amount: 500 });
     expect(rowA!.realised).toEqual({ count: 2, amount: 900 });
+  });
+
+  it("awaitingDelivery: reads the open line quantity (qty − delivered − cancelled), never the delivery rows", async () => {
+    /*
+     * 10 pieces at 100: 4 on notas and 2 cancelled leave 4 open = 400. The delivery row's own total
+     * (here 999) does not enter the figure — a nota voided or corrected after the fact moves the
+     * order lines, and those are what this bucket reads, exactly as the credit limit does.
+     */
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `${tag}-20`,
+        storeId,
+        salesmanId: salesmanBId,
+        status: "APPROVED",
+        orderType: "PUTUS",
+        subtotal: 1000,
+        total: 1000,
+        deliveryStatus: "PARTIAL",
+        lines: { create: [{ itemId, variantSku: "", productName: "test", qty: 10, unitPrice: 100, lineTotal: 1000, deliveredQty: 4, cancelledQty: 2 }] },
+      },
+    });
+    fsoIds.push(order.id);
+    await makeDelivery(9, order.id, salesmanBId, 999);
+
+    const summary = await getSalesmenSalesSummary();
+    expect(summary.rows.find((r) => r.salesmanId === salesmanBId)!.awaitingDelivery).toEqual({ count: 1, amount: 400 });
   });
 
   it("totals include the awaitingDelivery bucket", async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -19,15 +19,28 @@ import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { formatDateOnly } from "@/lib/date-only";
 import { createVendorBillAction, getBillableSources } from "@/app/actions/vendor-billing";
-import type { BillablePoItem, BillableWoStep } from "@/lib/vendor-billing/billable";
+import type { BillableGrnItem, BillableWoStep } from "@/lib/vendor-billing/billable";
 
 type Draft = { on: boolean; qty: string; price: string };
-type Sources = { poItems: BillablePoItem[]; woSteps: BillableWoStep[] };
+type Sources = { grnItems: BillableGrnItem[]; woSteps: BillableWoStep[] };
 
 const lineTotal = (d: Draft | undefined) => (d?.on ? Math.round(Number(d.qty) * Number(d.price) * 100) / 100 || 0 : 0);
+/** Draft key of a GRN row: one per GRN and item key (decision 2026-10-29: invoices name receipts). */
+const grnKey = (i: Pick<BillableGrnItem, "grnId" | "itemId" | "variantSku">) => `GRN:${i.grnId}:${i.itemId}:${i.variantSku ?? ""}`;
 
-export function NewVendorBillClient({ userId }: { userId: string }) {
+export function NewVendorBillClient({
+  userId,
+  pemasokAwal,
+  sumberDiminta,
+}: {
+  userId: string;
+  /** `?pemasok=` — preselects the supplier. */
+  pemasokAwal?: string | null;
+  /** `?permintaan=` of that supplier: the receipts the request named (`kunciDokumenHutang`), ticked at their remaining qty. */
+  sumberDiminta?: string[];
+}) {
   const t = useTranslations("vendorBills");
+  const tGrn = useTranslations("vendorBills.grn");
   const router = useRouter();
   const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const [supplierId, setSupplierId] = useState("");
@@ -47,7 +60,7 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
       .catch(() => toast.error(t("loadFailed")));
   }, [t]);
 
-  const pickSupplier = async (id: string) => {
+  const pickSupplier = async (id: string, centang: ReadonlySet<string> = new Set()) => {
     setSupplierId(id);
     setSources(null);
     setDrafts({});
@@ -58,8 +71,11 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
       setSources(s);
       setDrafts(
         Object.fromEntries([
-          ...s.poItems.map((i) => [`PO_ITEM:${i.poItemId}`, { on: false, qty: String(i.remainingQty), price: String(i.price) }]),
-          ...s.woSteps.map((st) => [`WO_STEP:${st.woStepId}`, { on: false, qty: String(st.remainingQty), price: String(st.servicePrice) }]),
+          ...s.grnItems.map((i) => [
+            grnKey(i),
+            { on: i.terhalang == null && centang.has(`GRN|${i.grnId}`), qty: String(i.remainingQty), price: String(i.recordedPrice) },
+          ]),
+          ...s.woSteps.map((st) => [`WO_STEP:${st.woStepId}`, { on: centang.has(`WO_STEP|${st.woStepId}`), qty: String(st.remainingQty), price: String(st.servicePrice) }]),
         ])
       );
     } catch {
@@ -68,6 +84,15 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
       setLoadingSources(false);
     }
   };
+
+  const awalDimuat = useRef(false);
+  useEffect(() => {
+    if (awalDimuat.current || !pemasokAwal) return;
+    awalDimuat.current = true;
+    void pickSupplier(pemasokAwal, new Set(sumberDiminta ?? []));
+    // Only on first render: the URL picks the supplier once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const setDraft = (key: string, patch: Partial<Draft>) => setDrafts((d) => ({ ...d, [key]: { ...d[key], ...patch } }));
 
@@ -86,9 +111,13 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
           billDate,
           dueDate: dueDate || undefined,
           notes: notes || undefined,
-          lines: chosen.map(([key, d]) => {
-            const [type, sourceId] = key.split(":") as ["PO_ITEM" | "WO_STEP", string];
-            return { type, sourceId, qty: Number(d.qty), price: Number(d.price) };
+          lines: chosen.flatMap(([key, d]) => {
+            const qty = Number(d.qty);
+            const price = Number(d.price);
+            const g = sources?.grnItems.find((i) => grnKey(i) === key);
+            if (g) return [{ type: "GRN_ITEM" as const, grnId: g.grnId, itemId: g.itemId, variantSku: g.variantSku, qty, price }];
+            if (key.startsWith("WO_STEP:")) return [{ type: "WO_STEP" as const, sourceId: key.slice("WO_STEP:".length), qty, price }];
+            return [];
           }),
         },
         userId
@@ -98,6 +127,7 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
         return;
       }
       toast.success(t("created", { docNumber: res.docNumber }));
+      if (res.koreksi > 0) toast.warning(t("selisih.dibuat", { count: res.koreksi }));
       router.push(`/backoffice/vendor-bills/${res.id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("actionFailed"));
@@ -167,18 +197,18 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
         <>
           <Card>
             <CardHeader>
-              <CardTitle>{t("poSourcesTitle")}</CardTitle>
-              <CardDescription>{t("poSourcesSubtitle")}</CardDescription>
+              <CardTitle>{tGrn("judul")}</CardTitle>
+              <CardDescription>{tGrn("subjudul")}</CardDescription>
             </CardHeader>
             <CardContent>
-              {sources.poItems.length === 0 ? (
-                <p className="py-6 text-center text-muted-foreground">{t("noPoSources")}</p>
+              {sources.grnItems.length === 0 ? (
+                <p className="py-6 text-center text-muted-foreground">{tGrn("kosong")}</p>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-10" />
-                      <TableHead>PO</TableHead>
+                      <TableHead>{tGrn("kolomPenerimaan")}</TableHead>
                       <TableHead>{t("colItem")}</TableHead>
                       <TableHead className="text-right">{t("colReceived")}</TableHead>
                       <TableHead className="text-right">{t("colBilled")}</TableHead>
@@ -188,36 +218,44 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sources.poItems.map((i) => {
-                      const key = `PO_ITEM:${i.poItemId}`;
+                    {sources.grnItems.map((i) => {
+                      const key = grnKey(i);
                       const d = drafts[key];
+                      const terhalang = i.terhalang != null;
                       return (
                         <TableRow key={key}>
-                          <TableCell>
+                          <TableCell className="align-top">
                             <Checkbox
-                              aria-label={`${i.poDocNumber} ${i.itemName}`}
+                              aria-label={`${i.grnDocNumber} ${i.itemName}`}
                               checked={d?.on ?? false}
+                              disabled={terhalang}
                               onCheckedChange={(on) => setDraft(key, { on: on === true })}
                             />
                           </TableCell>
-                          <TableCell>
-                            <Link className="hover:underline" href={`/backoffice/purchase-orders/${i.poId}`}>
-                              {i.poDocNumber}
+                          <TableCell className="align-top whitespace-normal">
+                            <Link className="hover:underline" href={`/backoffice/inventory/grn/${i.grnId}`}>
+                              {i.grnDocNumber}
                             </Link>
+                            <div className="text-xs text-muted-foreground">
+                              {i.grnDate} · {i.poDocNumber ?? tGrn("tanpaPo")}
+                            </div>
                             {i.poPaid && <div className="text-xs text-muted-foreground">{t("poPaidNotBillable")}</div>}
+                            {terhalang && <div className="text-xs text-amber-700 dark:text-amber-400">{tGrn(`terhalang.${i.terhalang}`)}</div>}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="align-top whitespace-normal">
                             <div>{i.itemName}</div>
                             <div className="text-xs text-muted-foreground">
                               {i.sku}
                               {i.variantSku ? ` · ${i.variantSku}` : ""}
+                              {i.ppnMode !== "TANPA" ? ` · ${tGrn(`ppnMode.${i.ppnMode}`)}` : ""}
                             </div>
                           </TableCell>
-                          <TableCell className="text-right">
-                            {i.receivedQty.toLocaleString()} {i.uomCode}
+                          <TableCell className="align-top text-right">
+                            {i.receivedQty.toLocaleString("id-ID")} {i.uomCode}
+                            {i.returnedQty > 0 && <div className="text-xs text-muted-foreground">{tGrn("diretur", { qty: i.returnedQty.toLocaleString("id-ID") })}</div>}
                           </TableCell>
-                          <TableCell className="text-right">{i.billedQty.toLocaleString()}</TableCell>
-                          <TableCell>
+                          <TableCell className="align-top text-right">{i.billedQty.toLocaleString("id-ID")}</TableCell>
+                          <TableCell className="align-top">
                             <Input
                               type="number"
                               min={0}
@@ -228,7 +266,7 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
                               onChange={(e) => setDraft(key, { qty: e.target.value })}
                             />
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="align-top">
                             <Input
                               type="number"
                               min={0}
@@ -237,13 +275,18 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
                               value={d?.price ?? ""}
                               onChange={(e) => setDraft(key, { price: e.target.value })}
                             />
-                            {variance(key, i.price) && (
-                              <Badge variant="secondary" className="mt-1">
-                                {t("variance", { ref: formatIDR(i.price) })}
-                              </Badge>
+                            <p className="mt-1 text-xs text-muted-foreground">{tGrn("hargaPenerimaan", { harga: formatIDR(i.recordedPrice) })}</p>
+                            {i.ppnMode === "PPN_MASUKAN" && <p className="text-xs text-muted-foreground">{tGrn("sebelumPpn")}</p>}
+                            {variance(key, i.recordedPrice) && (
+                              <>
+                                <Badge variant="secondary" className="mt-1">
+                                  {t("variance", { ref: formatIDR(i.recordedPrice) })}
+                                </Badge>
+                                <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{t("selisih.akanMenunggu")}</p>
+                              </>
                             )}
                           </TableCell>
-                          <TableCell className="text-right">{d?.on ? formatIDR(lineTotal(d)) : "-"}</TableCell>
+                          <TableCell className="align-top text-right">{d?.on ? formatIDR(lineTotal(d)) : "-"}</TableCell>
                         </TableRow>
                       );
                     })}
@@ -294,7 +337,14 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
                               {s.woDocNumber}
                             </Link>
                           </TableCell>
-                          <TableCell>{label}</TableCell>
+                          <TableCell className="whitespace-normal">
+                            {label}
+                            {s.penerimaan.length > 0 && (
+                              <div className="text-xs text-muted-foreground">
+                                {s.penerimaan.map((r) => `${r.nomor} (${r.tanggal}, ${r.qty.toLocaleString("id-ID")} pcs)`).join(" · ")}
+                              </div>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">{s.qty.toLocaleString()}</TableCell>
                           <TableCell className="text-right">{s.billedQty.toLocaleString()}</TableCell>
                           <TableCell>
@@ -318,9 +368,12 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
                               onChange={(e) => setDraft(key, { price: e.target.value })}
                             />
                             {variance(key, s.servicePrice) && (
-                              <Badge variant="secondary" className="mt-1">
-                                {t("variance", { ref: formatIDR(s.servicePrice) })}
-                              </Badge>
+                              <>
+                                <Badge variant="secondary" className="mt-1">
+                                  {t("variance", { ref: formatIDR(s.servicePrice) })}
+                                </Badge>
+                                <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{t("selisih.akanMenunggu")}</p>
+                              </>
                             )}
                           </TableCell>
                           <TableCell className="text-right">{d?.on ? formatIDR(lineTotal(d)) : "-"}</TableCell>
@@ -335,7 +388,7 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
 
           <div className="flex flex-wrap items-center justify-end gap-4">
             <p className="text-lg font-semibold">
-              {t("colTotal")}: {formatIDR(total)}
+              {t("totalDicatat")}: {formatIDR(total)}
             </p>
             <Button onClick={save} disabled={!canSave}>
               {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

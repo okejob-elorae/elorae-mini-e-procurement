@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, ArrowRightLeft, Camera, EyeOff, MessageSquareWarning, Printer, Unlink } from 'lucide-react';
+import { ArrowLeft, ArrowRightLeft, Camera, EyeOff, Link2, MessageSquareWarning, PackageSearch, Printer, Scale, Unlink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -38,12 +38,15 @@ import {
 import { cn } from '@/lib/utils';
 import {
   batalkanReturAction,
+  jadikanSusulanAction,
   pindahkanReturAction,
   lepasPasanganAction,
+  lepasSusulanAction,
   putuskanBebanAction,
   tandaiBebanLunasAction,
 } from '@/app/actions/store-returns';
 import type { RincianRetur } from '@/lib/receivables/return-queries';
+import type { CekSelisih } from '@/lib/receivables/rules';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RiwayatDokumen } from '@/components/receivables/RiwayatDokumen';
@@ -65,6 +68,38 @@ export type RincianBarangRetur = {
   adaBukuToko: boolean;
   klaim: { itemId: string | null; variantSku: string; itemName: string; qty: number; amount: number; condition: Kondisi }[];
   fisik: { itemId: string | null; variantSku: string; itemName: string; qtyClaim: number; qty: number; amount: number; condition: Kondisi }[];
+};
+
+/**
+ * Tindak lanjut selisih nota ini, dibaca halaman: hasil cek salesman pemegang toko,
+ * hitungan barang susulan, dan keadaan bebannya. `null` kalau notanya tidak berselisih —
+ * atau penonton ini akan menghitung susulannya (hitungan buta).
+ */
+export type TindakLanjutSelisih = {
+  chargeId: string;
+  status: 'TERBUKA' | 'DITETAPKAN' | 'LUNAS';
+  bearer: (typeof BEBAN)[number] | null;
+  cek: CekSelisih;
+  cekCatatan: string | null;
+  cekOleh: string | null;
+  /** ISO. */
+  cekPada: string | null;
+  pemegangSekarang: string | null;
+  /** Pemegang toko pada tanggal nota retur — saran orang yang menanggung (P85); kantor yang memilih. */
+  pemegangSaatRetur: { id: string; nama: string } | null;
+  spgToko: string[];
+  /** Toko konsinyasi tidak bisa menanggung selisih: tidak ada nota asal yang menahannya. */
+  tokoKonsi: boolean;
+  kurang: { itemName: string; variantSku: string | null; qtyKurang: number }[];
+  susulan: { id: string; noNri: string; tanggal: string; nilai: number; oleh: string | null }[];
+  /** Selisihnya masih bisa menerima barang susulan (belum ada yang dibayar penanggungnya). */
+  bisaSusulan: boolean;
+  sudahDipotong: number;
+  penanggungNama: string | null;
+  /** Beban TOKO: yang tidak dikreditkan ke toko (`tertahan`) dan yang masih harus ditagih (`tampil`). */
+  tokoDiNota: { tertahan: number; tampil: number } | null;
+  /** Penerimaan gudang tanpa nota yang bisa dijadikan barang susulan nota ini. */
+  calonYatim: { id: string; noNri: string; tanggal: string; nilai: number }[];
 };
 
 type BarisBanding = {
@@ -124,13 +159,21 @@ export function RincianReturClient({
   riwayat = [],
   rincianBarang = null,
   klaimTersembunyi = false,
+  selisihTersembunyi = false,
+  bolehMenghitung = false,
+  tindakLanjut = null,
 }: {
   data: RincianRetur;
-  /** Penonton akan menghitung nota ini: klaimnya sudah dibuang di server. */
+  /** Penonton akan menghitung nota ini (atau barang susulannya): klaimnya sudah dibuang di server. */
   klaimTersembunyi?: boolean;
+  /** Penonton akan menghitung barang susulan nota ini: selisih dan barang yang kurang dibuang di server. */
+  selisihTersembunyi?: boolean;
+  /** `inventory_opname:count` — tautan ke layar hitung gudang. */
+  bolehMenghitung?: boolean;
+  tindakLanjut?: TindakLanjutSelisih | null;
   kandidat: { id: string; name: string }[];
   bolehMengelola: boolean;
-  /** Menetapkan siapa menanggung selisih — `receivables:decide_bearer`, bukan `receivables:manage`. */
+  /** Menetapkan siapa menanggung selisih retur — `store_returns:decide_shortfall`, bukan `receivables:manage`. */
   bolehPutuskanBeban?: boolean;
   /** Toko aktif untuk "Pindahkan ke toko lain" — hanya dimuat untuk yang boleh mengelola. */
   tokoTujuan?: { id: string; name: string }[];
@@ -152,7 +195,7 @@ export function RincianReturClient({
   /* Beban ke sales harus melekat pada ORANG. Dimulai dari yang mencatat
      notanya — biasanya benar — tapi bisa diganti: yang mencatat tidak selalu
      yang keliru. */
-  const [penanggungId, setPenanggungId] = useState<string>(data.baris.salesmanId ?? '');
+  const [penanggungId, setPenanggungId] = useState<string>('');
   const [batalTerbuka, setBatalTerbuka] = useState(false);
   const [alasanBatal, setAlasanBatal] = useState('');
   const [pindahTerbuka, setPindahTerbuka] = useState(false);
@@ -162,12 +205,18 @@ export function RincianReturClient({
   // memintanya, dan pemindahan baru jalan sesudah orangnya mencentang setuju.
   const [siklusTerkunci, setSiklusTerkunci] = useState<string[] | null>(null);
   const [setujuSiklus, setSetujuSiklus] = useState(false);
+  const [susulanTerbuka, setSusulanTerbuka] = useState(false);
+  const [yatimId, setYatimId] = useState('');
 
   const b = data.baris;
-  // Beban TOKO yang ditagih 0 (toko belum memotong melebihi barang yang sampai):
-  // tidak ada faktur, dan tidak ada yang bisa ditandai "sudah diganti".
-  const tanpaTagihanToko =
-    data.beban?.penanggung === 'TOKO' && !data.beban.faktur && data.beban.tagihTokoTercatat === 0;
+  /* Orang penanggung saran: pemegang toko pada tanggal nota retur (P85) — kalau ia
+     ada di daftar calon. Kantor tetap yang memilih. */
+  const saranId = tindakLanjut?.pemegangSaatRetur?.id ?? null;
+  const saranPenanggung = saranId && kandidat.some((u) => u.id === saranId) ? saranId : (data.baris.salesmanId ?? '');
+  /* Barang tidak ketemu → sales tetap bawaan penanggungnya (P22, P84): tombolnya
+     didahulukan dan ditonjolkan. Toko, gudang, dan perusahaan tetap bisa dipilih. */
+  const bawaanSales = tindakLanjut?.cek === 'TIDAK_DITEMUKAN';
+  const urutanBeban: readonly (typeof BEBAN)[number][] = bawaanSales ? ['SALES', 'TOKO', 'GUDANG', 'PERUSAHAAN'] : BEBAN;
 
   /*
    * Barang disandingkan menurut namanya, bukan menurut urutan barisnya. Gudang
@@ -188,11 +237,13 @@ export function RincianReturClient({
         nilaiFisik: null,
       });
     }
+    // Dijumlahkan, bukan ditimpa: sisi gudang memuat hitungan asli DAN barang
+    // susulannya, jadi satu barang bisa muncul di lebih dari satu baris.
     for (const i of data.barangFisik) {
       const ada = peta.get(i.itemName);
       if (ada) {
-        ada.qtyFisik = i.qty;
-        ada.nilaiFisik = i.amount;
+        ada.qtyFisik = (ada.qtyFisik ?? 0) + i.qty;
+        ada.nilaiFisik = (ada.nilaiFisik ?? 0) + i.amount;
       } else {
         peta.set(i.itemName, {
           nama: i.itemName,
@@ -573,24 +624,32 @@ export function RincianReturClient({
                     counted: rupiah(b.nilaiFisik ?? 0),
                   })}
                 </p>
+                {bolehPutuskanBeban && bawaanSales && (
+                  <p className="text-xs text-muted-foreground">{t('assignSalesDefault')}</p>
+                )}
                 {bolehPutuskanBeban && (
                   <div className="flex flex-wrap gap-2">
-                    {BEBAN.map((k) => (
+                    {urutanBeban.map((k) => (
                       <Button
                         key={k}
-                        variant="outline"
+                        variant={bawaanSales && k === 'SALES' ? 'default' : 'outline'}
                         size="sm"
-                        disabled={pending}
+                        // Toko konsinyasi tidak punya nota asal untuk menahan selisihnya.
+                        disabled={pending || (k === 'TOKO' && tindakLanjut?.tokoKonsi === true)}
+                        title={k === 'TOKO' && tindakLanjut?.tokoKonsi ? t('assignTokoKonsi') : undefined}
                         onClick={() => {
                           setBebanTerbuka(k);
                           setAlasan('');
-                          setPenanggungId(data.baris.salesmanId ?? '');
+                          setPenanggungId(saranPenanggung);
                         }}
                       >
                         {t(`assign${k}` as never)}
                       </Button>
                     ))}
                   </div>
+                )}
+                {bolehPutuskanBeban && tindakLanjut?.tokoKonsi && (
+                  <p className="text-xs text-muted-foreground">{t('assignTokoKonsi')}</p>
                 )}
                 <p className="text-xs text-muted-foreground">{t('chargeCompanyHint')}</p>
               </>
@@ -611,42 +670,196 @@ export function RincianReturClient({
                 {data.beban.catatan && (
                   <p className="rounded-lg bg-muted/50 p-3 text-sm">{data.beban.catatan}</p>
                 )}
-                {data.beban.faktur && (
+                {/* Barang susulannya menutup seluruh selisih: keputusan dan potongannya tetap terbaca. */}
+                {!(data.beban.amount > 0) && <p className="text-sm text-muted-foreground">{t('bebanPulih')}</p>}
+                {/* Ditanggung toko: selisihnya tetap terbuka di nota asal (keputusan 1,
+                    2026-10-29) dan dibayar lewat BKM berikutnya — tidak ditandai lunas. */}
+                {data.beban.penanggung === 'TOKO' && tindakLanjut?.tokoDiNota && (
                   <p className="text-sm">
-                    {t('chargeInvoice', {
-                      no: data.beban.faktur.invoiceNo,
-                      sisa: rupiah(data.beban.faktur.outstanding),
+                    {tindakLanjut.tokoDiNota.tertahan <= 0
+                      ? t('bebanTokoBelumDipotong')
+                      : tindakLanjut.tokoDiNota.tampil > 0
+                        ? t('bebanTokoTerbuka', { value: rupiah(tindakLanjut.tokoDiNota.tampil) })
+                        : t('bebanTokoDibayar')}
+                  </p>
+                )}
+                {/* Ditanggung sales: dipotong dari komisinya di Laporan → Komisi salesman. */}
+                {data.beban.penanggung === 'SALES' && (
+                  <p className="text-sm">
+                    {t('bebanSalesKomisi', {
+                      name: tindakLanjut?.penanggungNama ?? '—',
+                      cut: rupiah(tindakLanjut?.sudahDipotong ?? 0),
                     })}
                   </p>
                 )}
-                {data.beban.penanggung === 'TOKO' && data.beban.tagihTokoTercatat !== null && !data.beban.faktur && (
-                  <p className="text-sm">{t('chargeTokoBilled', { value: rupiah(data.beban.tagihTokoTercatat) })}</p>
-                )}
-                {/* Beban toko lunas lewat BKM atas fakturnya — tidak ditandai lunas di sini. */}
-                {data.beban.status === 'DITETAPKAN' && bolehMengelola && !data.beban.faktur && (
-                  <div className="space-y-2">
+                {data.beban.status === 'DITETAPKAN' &&
+                  bolehMengelola &&
+                  (data.beban.penanggung === 'GUDANG' || data.beban.penanggung === 'PERUSAHAAN') && (
+                    <div className="space-y-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pending || !(data.beban.amount > 0)}
+                        onClick={() =>
+                          data.beban &&
+                          jalankan(
+                            () => tandaiBebanLunasAction(data.beban!.id),
+                            t('okChargeSettled'),
+                            () => {},
+                          )
+                        }
+                      >
+                        {t('markSettled')}
+                      </Button>
+                      <p className="text-xs text-muted-foreground">{t('markSettledHint')}</p>
+                    </div>
+                  )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Hitungan barang susulan buta: penghitungnya tidak melihat selisih atau barang yang kurang. */}
+      {selisihTersembunyi && (
+        <Card>
+          <CardContent className="flex items-start gap-2 py-4 text-sm">
+            <EyeOff className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="space-y-2">
+              <span className="block font-medium">{t('tindakLanjut.butaJudul')}</span>
+              <span className="block text-muted-foreground">{t('tindakLanjut.butaIsi')}</span>
+              {bolehMenghitung && (
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/gudang-retur">
+                    <Scale className="mr-1.5 h-3.5 w-3.5" />
+                    {t('tindakLanjut.hitungSusulan')}
+                  </Link>
+                </Button>
+              )}
+            </span>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Tindak lanjut selisih: salesman pemegang toko menanyakan ke toko dan SPG (P22),
+          barang yang ketemu dikirim balik dan dihitung gudang sebagai susulan (P22a). */}
+      {tindakLanjut && !klaimTersembunyi && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+              <PackageSearch className="h-4 w-4" aria-hidden />
+              {t('tindakLanjut.judul')}
+              <StatusPill
+                tone={tindakLanjut.cek === 'TIDAK_DITEMUKAN' ? 'attention' : tindakLanjut.cek === 'DITEMUKAN' ? 'progress' : 'waiting'}
+              >
+                {t(`tindakLanjut.cek${tindakLanjut.cek}` as never)}
+              </StatusPill>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            <dl className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <dt className="text-xs text-muted-foreground">{t('tindakLanjut.pemegangSekarang')}</dt>
+                <dd>{tindakLanjut.pemegangSekarang ?? t('tindakLanjut.tanpaPemegang')}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">{t('tindakLanjut.pemegangSaatRetur')}</dt>
+                <dd>{tindakLanjut.pemegangSaatRetur?.nama ?? '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">{t('tindakLanjut.spgToko')}</dt>
+                <dd>{tindakLanjut.spgToko.length > 0 ? tindakLanjut.spgToko.join(', ') : '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">{t('tindakLanjut.laporan')}</dt>
+                <dd>
+                  {tindakLanjut.cekPada
+                    ? t('tindakLanjut.dilaporkan', { name: tindakLanjut.cekOleh ?? '—', date: tanggal(tindakLanjut.cekPada) })
+                    : t('tindakLanjut.belumDilaporkan')}
+                </dd>
+              </div>
+            </dl>
+            {tindakLanjut.cekCatatan && (
+              <p className="rounded-lg bg-muted/50 p-3">{tindakLanjut.cekCatatan}</p>
+            )}
+            {tindakLanjut.kurang.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">{t('tindakLanjut.barangKurang')}</p>
+                <ul className="space-y-1">
+                  {tindakLanjut.kurang.map((x, i) => (
+                    <li key={`${x.itemName}-${x.variantSku ?? ''}-${i}`} className="flex justify-between gap-3">
+                      <span className="min-w-0">
+                        {x.itemName}
+                        {x.variantSku && <span className="ml-1 font-mono text-xs text-muted-foreground">{x.variantSku}</span>}
+                      </span>
+                      <span className="shrink-0 tabular-nums">{t('tindakLanjut.pcs', { qty: x.qtyKurang })}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">{t('tindakLanjut.susulanJudul')}</p>
+              {tindakLanjut.susulan.length === 0 ? (
+                <p className="text-muted-foreground">{t('tindakLanjut.susulanKosong')}</p>
+              ) : (
+                <ul className="space-y-2">
+                  {tindakLanjut.susulan.map((x) => (
+                    <li key={x.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2">
+                      <span className="min-w-0">
+                        <span className="block font-medium">{x.noNri}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {tanggal(x.tanggal)} · {x.oleh ?? '—'} · {rupiah(x.nilai)}
+                        </span>
+                      </span>
+                      {/* Lepas susulan hanya selama selisihnya belum diputuskan (penulis menolaknya sesudahnya). */}
+                      {bolehMengelola && tindakLanjut.status === 'TERBUKA' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={pending}
+                          onClick={() => jalankan(() => lepasSusulanAction(x.id), t('tindakLanjut.okDilepas'), () => {})}
+                        >
+                          <Unlink className="mr-1.5 h-3.5 w-3.5" />
+                          {t('tindakLanjut.lepasSusulan')}
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {tindakLanjut.bisaSusulan ? (
+                <div className="flex flex-wrap gap-2">
+                  {bolehMenghitung && (
+                    <Button size="sm" variant="outline" asChild>
+                      <Link href="/gudang-retur">
+                        <Scale className="mr-1.5 h-3.5 w-3.5" />
+                        {t('tindakLanjut.hitungSusulan')}
+                      </Link>
+                    </Button>
+                  )}
+                  {bolehMengelola && (
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={pending || tanpaTagihanToko}
-                      onClick={() =>
-                        data.beban &&
-                        jalankan(
-                          () => tandaiBebanLunasAction(data.beban!.id),
-                          t('okChargeSettled'),
-                          () => {},
-                        )
-                      }
+                      disabled={pending || tindakLanjut.calonYatim.length === 0}
+                      title={tindakLanjut.calonYatim.length === 0 ? t('tindakLanjut.tanpaCalonYatim') : undefined}
+                      onClick={() => {
+                        setYatimId('');
+                        setSusulanTerbuka(true);
+                      }}
                     >
-                      {t('markSettled')}
+                      <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                      {t('tindakLanjut.jadikanSusulan')}
                     </Button>
-                    <p className="text-xs text-muted-foreground">
-                      {tanpaTagihanToko ? t('markSettledNothingBilled') : t('markSettledHint')}
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
+                  )}
+                </div>
+              ) : (
+                (tindakLanjut.status === 'LUNAS' || tindakLanjut.sudahDipotong > 0) && (
+                  <p className="text-xs text-muted-foreground">{t('tindakLanjut.susulanDitutup')}</p>
+                )
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -704,18 +917,7 @@ export function RincianReturClient({
                 })}
             </DialogDescription>
           </DialogHeader>
-          {bebanTerbuka === 'TOKO' && (
-            <p className="text-sm text-muted-foreground">
-              {t('assignTokoInvoiceHint', { doc: data.baris.nomor, value: rupiah(data.beban?.amount ?? 0) })}
-            </p>
-          )}
-          {bebanTerbuka === 'TOKO' && data.beban?.perkiraanTagihToko != null && (
-            <p className="text-sm font-medium">
-              {data.beban.perkiraanTagihToko > 0
-                ? t('assignTokoEstimate', { value: rupiah(data.beban.perkiraanTagihToko) })
-                : t('assignTokoNothing')}
-            </p>
-          )}
+          {bebanTerbuka === 'TOKO' && <p className="text-sm text-muted-foreground">{t('bebanToko')}</p>}
           {bebanTerbuka === 'SALES' && (
             <div className="space-y-2">
               <Label htmlFor="beban-orang">{t('bearerPerson')}</Label>
@@ -732,6 +934,11 @@ export function RincianReturClient({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">{t('bearerPersonHint')}</p>
+              {tindakLanjut?.pemegangSaatRetur && (
+                <p className="text-xs text-muted-foreground">
+                  {t('bearerPersonSuggestion', { name: tindakLanjut.pemegangSaatRetur.nama })}
+                </p>
+              )}
             </div>
           )}
 
@@ -771,6 +978,41 @@ export function RincianReturClient({
               }
             >
               {t('saveAssign')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={susulanTerbuka} onOpenChange={(o) => !pending && setSusulanTerbuka(o)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('tindakLanjut.jadikanJudul', { doc: b.nomor })}</DialogTitle>
+            <DialogDescription>{t('tindakLanjut.jadikanIsi')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="susulan-yatim">{t('tindakLanjut.jadikanPilih')}</Label>
+            <Select value={yatimId} onValueChange={setYatimId}>
+              <SelectTrigger id="susulan-yatim">
+                <SelectValue placeholder={t('tindakLanjut.jadikanPlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {(tindakLanjut?.calonYatim ?? []).map((n) => (
+                  <SelectItem key={n.id} value={n.id}>
+                    {n.noNri} · {tanggal(n.tanggal)} · {rupiah(n.nilai)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button
+              disabled={pending || yatimId === ''}
+              onClick={() =>
+                jalankan(() => jadikanSusulanAction(yatimId, b.id), t('tindakLanjut.okDijadikan'), () => setSusulanTerbuka(false))
+              }
+            >
+              <Link2 className="mr-1.5 h-4 w-4" />
+              {t('tindakLanjut.jadikanSimpan')}
             </Button>
           </DialogFooter>
         </DialogContent>

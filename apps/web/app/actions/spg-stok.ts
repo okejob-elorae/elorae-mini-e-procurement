@@ -84,6 +84,10 @@ const terimaSchema = z.object({
       z.object({
         lineId: z.string().min(1),
         qtyReceived: z.number().int().min(0).max(100_000),
+        // Ditolak di depan pintu dan dibawa pulang kurir (P40) — hanya kiriman
+        // gudang lewat pengiriman; penulis menolak selebihnya. Sisanya (dikirim −
+        // tiba − ditolak) tercatat hilang di jalan.
+        qtyRefused: z.number().int().min(0).max(100_000).optional(),
         // Barang rusak saat tiba (≤ diterima) — penulis memeriksa batasnya,
         // keterangan wajibnya, dan bahwa fotonya foto kita (`/api/foto/<id>`).
         qtyDamaged: z.number().int().min(0).max(100_000).optional(),
@@ -96,6 +100,12 @@ const terimaSchema = z.object({
   ...kolomAntrean,
 });
 
+/**
+ * SPG menerima kiriman di tokonya (`terimaKiriman` mencatatnya sebagai penerimaan
+ * SPG). Penolakan penulis — termasuk kiriman yang "tidak jadi dikirim"
+ * (`KIRIMAN_DIBATALKAN`) dan yang masih dikemas di gudang (`BELUM_BERANGKAT`) —
+ * diteruskan apa adanya ke layar.
+ */
 export async function terimaKirimanAction(input: unknown): Promise<HasilSpgStok<{ receiptId: string }>> {
   const parsed = terimaSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "VALIDATION" };
@@ -120,6 +130,8 @@ export async function terimaKirimanAction(input: unknown): Promise<HasilSpgStok<
     revalidatePath("/backoffice/spg-transfers");
   }
   if (parsed.data.diterima.some((d) => (d.qtyDamaged ?? 0) > 0)) revalidatePath("/backoffice/spg-kiriman-rusak");
+  // Barang yang ditolak di pintu kembali ke Gudang Utama dan nota putusnya dikoreksi.
+  if (parsed.data.diterima.some((d) => (d.qtyRefused ?? 0) > 0)) revalidatePath("/backoffice/deliveries");
   return { ok: true, receiptId: hasil.receiptId };
 }
 

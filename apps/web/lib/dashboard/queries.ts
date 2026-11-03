@@ -1,5 +1,5 @@
 import { prisma, Prisma, sqlId } from '@elorae/db';
-import { deliveredGoodsValue, undeliveredResidual } from "@/lib/field-sales/delivery/undelivered-residual";
+import { nilaiBelumDinota } from "@/lib/field-sales/delivery/undelivered-residual";
 import { nilaiBersihSpg, nilaiSpgElorae, rentangTren, saluranMarketplace, susunTren, type BarisSaluran, type TitikTren } from './tren';
 import { awalMingguIniWib, batasHariIniWib } from './hari-wib';
 import { overduePOWhere } from '@/lib/purchase-orders/overdue';
@@ -378,10 +378,15 @@ type RealisedDeliveryRow = {
 /**
  * All-time per-salesman sales in four buckets. KONSI is excluded from every bucket; REJECTED
  * (incl. cancelled) never counts.
- * - realised = sum of FieldSalesDelivery.total on PUTUS orders + all VanSale.total.
+ * - realised = sum of FieldSalesDelivery.total on PUTUS orders + all VanSale.total. A voided nota
+ *   ("tidak jadi dikirim", or every piece refused at the door) keeps its row at total 0 with
+ *   `voidedAt` set; it is left out entirely, so it adds neither a delivery nor an order to the count.
  * - awaitingDelivery = APPROVED PUTUS orders whose deliveryStatus is PENDING or PARTIAL, valued at
- *   the undelivered residual (see undeliveredResidual), measured against each delivery's exact
- *   goods value (deliveredGoodsValue), not its whole-rupiah total, with the count being orders.
+ *   what is still on NO nota (`nilaiBelumDinota`): each line's open quantity
+ *   (qty − deliveredQty − cancelledQty) at its net value, floored at zero per order, with the count
+ *   being orders. It reads the order lines, never the delivery rows, so a voided nota (its pieces
+ *   reopen on the order), a refusal at the door (reopens) and a loss in transit (does not) leave no
+ *   phantom residual — the same valuation the credit limit uses (`computeStoreCreditExposure`).
  * - outstanding = PENDING_APPROVAL PUTUS FieldSalesOrder.total, i.e. awaiting approval.
  * - menungguKirim = APPROVED PUTUS orders with no delivery yet (`deliveryStatus` PENDING),
  *   at the order total — exactly the rows of `/backoffice/field-sales-orders?kirim=PENDING`.
@@ -389,7 +394,7 @@ type RealisedDeliveryRow = {
  * Realised counts DELIVERIES, not approved orders. Approval stopped moving stock once delivery
  * became its own document, and nothing recomputes FieldSalesOrder.total when only part of an order
  * ships or a remainder is closed — so an approved order's total permanently overstates what the
- * store actually received. That is why awaitingDelivery uses the residual, not the order total.
+ * store actually received. That is why awaitingDelivery uses the open line value, not the order total.
  * A fully delivered or closed order sits in no awaiting bucket; what shipped is in realised.
  */
 export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
@@ -402,6 +407,7 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
       FROM ${sqlId('FieldSalesDelivery')} d
       JOIN ${sqlId('FieldSalesOrder')} o ON o.${sqlId('id')} = d.${sqlId('orderId')}
       WHERE o.${sqlId('orderType')} = 'PUTUS'
+        AND d.${sqlId('voidedAt')} IS NULL
       GROUP BY o.${sqlId('salesmanId')}
     `),
     prisma.vanSale.groupBy({
@@ -420,7 +426,8 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
       select: {
         salesmanId: true,
         total: true,
-        deliveries: { select: { subtotal: true, discountAmount: true, lines: { select: { discountAmount: true } } } },
+        orderDiscountAmount: true,
+        lines: { select: { qty: true, deliveredQty: true, cancelledQty: true, lineTotal: true, discountAmount: true } },
       },
     }),
     // Saringan yang SAMA dengan `listFieldSalesOrders({ kirim: 'PENDING' })`.
@@ -478,16 +485,17 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
   for (const o of awaitingDeliveryPutus) {
     const rec = ensure(o.salesmanId);
     rec.awaitingDelivery.count += 1;
-    rec.awaitingDelivery.amount += undeliveredResidual(
-      Number(o.total),
-      o.deliveries.map((d) =>
-        deliveredGoodsValue({
-          subtotal: Number(d.subtotal),
-          discountAmount: Number(d.discountAmount),
-          lineDiscounts: d.lines.map((l) => Number(l.discountAmount)),
-        }),
-      ),
-    );
+    rec.awaitingDelivery.amount += nilaiBelumDinota({
+      total: Number(o.total),
+      orderDiscountAmount: Number(o.orderDiscountAmount),
+      lines: o.lines.map((l) => ({
+        qty: l.qty,
+        deliveredQty: l.deliveredQty,
+        cancelledQty: l.cancelledQty,
+        lineTotal: Number(l.lineTotal),
+        discountAmount: Number(l.discountAmount),
+      })),
+    });
   }
   for (const r of approvedUndelivered) {
     const rec = ensure(r.salesmanId);

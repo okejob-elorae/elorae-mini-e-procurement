@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@elorae/db";
 import { createFieldSalesOrder } from "./writer";
 import { createDeliveryShipment } from "@/lib/delivery/shipment-writer";
+import { catatNotaUji } from "./delivery/uji-nota";
 
 /*
  * Opt-in edge-case driver for the order processing card. Runs only with OPE_E2E=1 against the
@@ -20,7 +21,6 @@ vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi
 
 import { approveFieldSalesOrderAction, rejectFieldSalesOrderAction } from "@/app/actions/field-sales-orders";
 import {
-  recordDeliveryAction,
   closeRemainderAction,
   updateDeliveryDatesAction,
   recordNotaTagihanPrinted,
@@ -121,6 +121,17 @@ async function onHand(itemId: string) {
 
 const INV = "2026-09-30";
 const DUE = "2026-10-30";
+
+/**
+ * A putus nota is issued only when its delivery shipment is CREATED (owner putus answer
+ * 2026-11-02); "Catat pengiriman" was removed (P44/P44a), so this driver issues notas through the
+ * real writer. The nota is dated the WIB day of creation; the due date is 30 days on, so it never
+ * falls before it.
+ */
+async function terbitkanNota(orderId: string, lines: Array<{ orderLineId: string; qty: number }>, idempotencyKey: string = randomUUID()) {
+  const jatuhTempo = new Date(Date.now() + 30 * 86_400_000);
+  return createDeliveryShipment({ orderId, method: "EXPEDITION", lines, packedById: adminId, idempotencyKey, dueDate: jatuhTempo });
+}
 
 d("order processing — end to end (opt-in)", () => {
   it("setup", async () => {
@@ -259,38 +270,17 @@ d("order processing — end to end (opt-in)", () => {
     await approveFieldSalesOrderAction(o.orderId);
     const [la, lb] = await linesOf(o.orderId);
 
-    // B-08 wrong states
+    // B-08, B-03..B-06: the refusals of the removed "Catat pengiriman" inputs (invoice date, key,
+    // quantities typed into a nota) now belong to `createShipmentAction`; this driver no longer
+    // reaches them (P44a).
+    note("B-03..B-08", "nota input refusals moved to createShipmentAction with the removal of Catat pengiriman (P44a)");
     const pending = await order(P, [{ itemId: B, qty: 1 }]);
-    const r8a = await recordDeliveryAction({ orderId: pending.orderId, lines: [{ orderLineId: (await linesOf(pending.orderId))[0].id, qty: 1 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: randomUUID() });
     await rejectFieldSalesOrderAction(pending.orderId, "OPE");
-    const r8b = await recordDeliveryAction({ orderId: pending.orderId, lines: [{ orderLineId: (await linesOf(pending.orderId))[0].id, qty: 1 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: randomUUID() });
-    check("B-08 putus", !r8a.ok && r8a.reason === "INVALID_STATE" && !r8b.ok && r8b.reason === "INVALID_STATE", `pending ${r8a.ok ? "ok" : r8a.reason}, rejected ${r8b.ok ? "ok" : r8b.reason}`);
 
-    // B-03 / B-04 quantities
-    const r3a = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty: 6 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: randomUUID() });
-    const r3b = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty: 3 }, { orderLineId: la.id, qty: 3 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: randomUUID() });
-    check("B-03", !r3a.ok && r3a.reason === "OVER_DELIVER" && !r3b.ok && r3b.reason === "OVER_DELIVER", "6 of 5 / 3+3 of 5 → OVER_DELIVER");
-    const q = [0, -1, 1.5];
-    const r4 = await Promise.all(q.map((qty) => recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty }], invoiceDate: INV, dueDate: DUE, idempotencyKey: randomUUID() })));
-    check("B-04", r4.every((r) => !r.ok && r.reason === "INVALID_REQUEST"), `0 / −1 / 1.5 → ${r4.map((r) => (r.ok ? "ok" : r.reason)).join(" / ")}`);
-
-    // B-05 dates, B-06 keys
-    const r5a = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty: 1 }], invoiceDate: DUE, dueDate: INV, idempotencyKey: randomUUID() });
-    const r5b = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty: 1 }], invoiceDate: "2026-02-30", dueDate: DUE, idempotencyKey: randomUUID() });
-    const r5c = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty: 1 }], invoiceDate: 20260930 as unknown as string, dueDate: DUE, idempotencyKey: randomUUID() });
-    check(
-      "B-05",
-      !r5a.ok && r5a.reason === "INVALID_DATES" && !r5b.ok && r5b.reason === "INVALID_REQUEST" && !r5c.ok && r5c.reason === "INVALID_REQUEST",
-      `inverted ${r5a.ok ? "ok" : r5a.reason}, 2026-02-30 ${r5b.ok ? "ok" : r5b.reason}, number ${r5c.ok ? "ok" : r5c.reason}`,
-    );
-    const r6a = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty: 1 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: "" });
-    const r6b = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty: 1 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: "k".repeat(65) });
-    check("B-06", !r6a.ok && r6a.reason === "INVALID_REQUEST" && !r6b.ok && r6b.reason === "INVALID_REQUEST", "blank / 65-char key → INVALID_REQUEST");
-
-    // B-01 partial delivery
+    // B-01 partial delivery, issued at shipment creation
     const stockBefore = await onHand(A);
     const key1 = randomUUID();
-    const r1 = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty: 2 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: key1 });
+    const r1 = await attempt(() => terbitkanNota(o.orderId, [{ orderLineId: la.id, qty: 2 }], key1));
     const deliveries1 = await prisma.fieldSalesDelivery.findMany({ where: { orderId: o.orderId } });
     const d1 = deliveries1[0];
     const tax1 = d1 ? await prisma.taxInvoice.count({ where: { deliveryId: d1.id } }) : 0;
@@ -300,20 +290,18 @@ d("order processing — end to end (opt-in)", () => {
     ids.delivery1 = d1?.id ?? "";
     check(
       "B-01",
-      r1.ok && deliveries1.length === 1 && oRow1.deliveryStatus === "PARTIAL" && tax1 === 1 && ar1.length === 1 &&
-        Number(ar1[0].originalAmount) === 200000 && stockAfter.onHand === stockBefore.onHand - 2 &&
-        d1.dueDate.toISOString() === "2026-10-29T17:00:00.000Z",
-      `${d1?.docNo}: PARTIAL, 1 faktur, 1 receivable ${Number(ar1[0]?.originalAmount)}, on-hand ${stockBefore.onHand}→${stockAfter.onHand}, due ${d1?.dueDate.toISOString()}`,
+      r1.error === undefined && deliveries1.length === 1 && oRow1.deliveryStatus === "PARTIAL" && tax1 === 1 && ar1.length === 1 &&
+        Number(ar1[0].originalAmount) === 200000 && stockAfter.onHand === stockBefore.onHand - 2,
+      `${d1?.docNo}: PARTIAL, 1 faktur, 1 receivable ${Number(ar1[0]?.originalAmount)}, on-hand ${stockBefore.onHand}→${stockAfter.onHand}${r1.error ? `, threw ${errText(r1.error)}` : ""}`,
     );
 
-    // B-07 replay
-    const r7a = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty: 2 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: key1 });
-    const r7b = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty: 3 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: key1 });
+    // B-07 replay: the same shipment key hands back the same shipment and writes nothing
+    const r7 = await attempt(() => terbitkanNota(o.orderId, [{ orderLineId: la.id, qty: 2 }], key1));
     const count7 = await prisma.fieldSalesDelivery.count({ where: { orderId: o.orderId } });
     check(
       "B-07",
-      r7a.ok && !r7b.ok && r7b.reason === "REPLAY_MISMATCH" && r7b.replay?.docNo === d1.docNo && count7 === 1 && (await onHand(A)).onHand === stockAfter.onHand,
-      `same payload → same doc; changed qty → ${r7b.ok ? "ok" : r7b.reason} carrying ${r7b.ok ? "-" : r7b.replay?.docNo}; deliveries ${count7}`,
+      r7.error === undefined && r7.value?.ulang === true && count7 === 1 && (await onHand(A)).onHand === stockAfter.onHand,
+      `same key → ulang ${String(r7.value?.ulang)}; deliveries ${count7}`,
     );
 
     // B-16 correct dates happy path, B-14 refusals, B-15 long reason
@@ -350,9 +338,9 @@ d("order processing — end to end (opt-in)", () => {
     await approveFieldSalesOrderAction(os.orderId);
     await prisma.inventoryValue.updateMany({ where: { itemId: S }, data: { qtyOnHand: 1 } });
     const [ls] = await linesOf(os.orderId);
-    const r9 = await recordDeliveryAction({ orderId: os.orderId, lines: [{ orderLineId: ls.id, qty: 3 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: randomUUID() });
+    const r9 = await attempt(() => terbitkanNota(os.orderId, [{ orderLineId: ls.id, qty: 3 }]));
     const d9 = await prisma.fieldSalesDelivery.count({ where: { orderId: os.orderId } });
-    check("B-09", !r9.ok && r9.reason === "INSUFFICIENT_STOCK" && r9.shortLines?.[0]?.orderLineId === ls.id && d9 === 0, `${r9.ok ? "ok" : r9.reason} ${JSON.stringify(r9.ok ? null : r9.shortLines)}; deliveries ${d9}`);
+    check("B-09", r9.error !== undefined && d9 === 0, `${r9.error ? errText(r9.error) : "no refusal"}; deliveries ${d9}`);
     await prisma.inventoryValue.updateMany({ where: { itemId: S }, data: { qtyOnHand: 3 } });
     ids.order_B09 = os.orderId;
 
@@ -361,34 +349,50 @@ d("order processing — end to end (opt-in)", () => {
     const r11b = await closeRemainderAction(pending.orderId, "reason");
     check("B-11 blank/not approved", !r11a.ok && r11a.reason === "INVALID_REQUEST" && !r11b.ok && r11b.reason === "INVALID_STATE", `blank → ${r11a.ok ? "ok" : r11a.reason}, rejected order → ${r11b.ok ? "ok" : r11b.reason}`);
 
-    // B-02 second delivery of line A remainder only, then B-10 close line B remainder
-    const r2 = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty: 3 }, { orderLineId: lb.id, qty: 1 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: randomUUID() });
+    // B-02 second delivery of line A remainder only
+    const r2 = await attempt(() => terbitkanNota(o.orderId, [{ orderLineId: la.id, qty: 3 }, { orderLineId: lb.id, qty: 1 }]));
     const deliveries2 = await prisma.fieldSalesDelivery.findMany({ where: { orderId: o.orderId }, orderBy: { createdAt: "asc" } });
-    check("B-02 second partial", r2.ok && deliveries2.length === 2 && deliveries2[0].docNo !== deliveries2[1].docNo, `docs ${deliveries2.map((x) => x.docNo).join(", ")}`);
+    check("B-02 second partial", r2.error === undefined && deliveries2.length === 2 && deliveries2[0].docNo !== deliveries2[1].docNo, `docs ${deliveries2.map((x) => x.docNo).join(", ")}`);
+    const sum = deliveries2.reduce((s, x) => s + Number(x.total), 0);
+    check("B-02 totals", sum === 5 * 100000 + 1 * 50000, `delivery totals ${sum} = delivered value`);
+
+    /*
+     * B-10 / B-13 / B-11: closing the remainder. Order `o` cannot be closed here — each of its notas
+     * was issued with a shipment that is still PACKED, and the close refuses while any shipment is
+     * in flight or its nota is not yet received at the store (B-12 pins that refusal). So the close
+     * runs on its own order whose notas come from `catatNotaUji`, which writes no shipment; the
+     * delivery AFTER the close still goes through the real shipment writer.
+     */
+    const oc = await order(P, [{ itemId: A, qty: 5 }, { itemId: B, qty: 4 }]);
+    ids.order_B10 = oc.orderId;
+    await approveFieldSalesOrderAction(oc.orderId);
+    const [lca, lcb] = await linesOf(oc.orderId);
+    const tanggalNota = new Date();
+    const jatuhTempoNota = new Date(Date.now() + 30 * 86_400_000);
+    await catatNotaUji({ orderId: oc.orderId, deliveredById: adminId, lines: [{ orderLineId: lca.id, qty: 5 }, { orderLineId: lcb.id, qty: 1 }], invoiceDate: tanggalNota, dueDate: jatuhTempoNota });
     const bBefore = await onHand(B);
-    const r10 = await closeRemainderAction(o.orderId, "OPE store no longer wants it");
-    const oRow10 = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: o.orderId } });
-    const lb10 = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: lb.id } });
+    const r10 = await closeRemainderAction(oc.orderId, "OPE store no longer wants it");
+    const oRow10 = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: oc.orderId } });
+    const lb10 = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: lcb.id } });
     const bAfter = await onHand(B);
     check(
       "B-10",
       r10.ok && lb10.cancelledQty === 3 && oRow10.closeReason === "OPE store no longer wants it" && bAfter.reserved === bBefore.reserved - 3 && bAfter.onHand === bBefore.onHand,
-      `cancelled 3 on line B, reserved ${bBefore.reserved}→${bAfter.reserved}, deliveryStatus ${oRow10.deliveryStatus}`,
+      `${r10.ok ? "ok" : r10.reason}: cancelled ${lb10.cancelledQty} on line B, reserved ${bBefore.reserved}→${bAfter.reserved}, deliveryStatus ${oRow10.deliveryStatus}`,
     );
-    const sum = deliveries2.reduce((s, x) => s + Number(x.total), 0);
-    check("B-02 totals", sum === 5 * 100000 + 1 * 50000, `delivery totals ${sum} = delivered value`);
 
-    // B-13 deliver after close; B-11 nothing outstanding
-    const r13 = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: lb.id, qty: 1 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: randomUUID() });
-    const r11c = await closeRemainderAction(o.orderId, "again");
-    check("B-13", !r13.ok && r13.reason === "OVER_DELIVER", `${r13.ok ? "ok" : r13.reason}`);
+    // B-13 deliver after close (real shipment writer); B-11 nothing outstanding
+    const r13 = await attempt(() => terbitkanNota(oc.orderId, [{ orderLineId: lcb.id, qty: 1 }]));
+    const shipments13 = await prisma.deliveryShipment.count({ where: { orderId: oc.orderId } });
+    const r11c = await closeRemainderAction(oc.orderId, "again");
+    check("B-13", r13.error !== undefined && shipments13 === 0, `${r13.error ? errText(r13.error) : "no refusal"}; shipments ${shipments13}`);
     check("B-11 nothing outstanding", !r11c.ok && r11c.reason === "INVALID_STATE", `${r11c.ok ? "ok" : r11c.reason}`);
 
     // B-12 shipment in flight
     const of = await order(P, [{ itemId: B, qty: 4 }]);
     await approveFieldSalesOrderAction(of.orderId);
     const [lf] = await linesOf(of.orderId);
-    await createDeliveryShipment({ orderId: of.orderId, method: "EXPEDITION", lines: [{ orderLineId: lf.id, qty: 2 }], packedById: adminId });
+    await terbitkanNota(of.orderId, [{ orderLineId: lf.id, qty: 2 }]);
     const r12 = await closeRemainderAction(of.orderId, "close while packed");
     const lf12 = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: lf.id } });
     check("B-12", !r12.ok && r12.reason === "SHIPMENT_IN_FLIGHT" && lf12.cancelledQty === 0, `${r12.ok ? "ok" : r12.reason}, cancelled ${lf12.cancelledQty}`);
@@ -484,8 +488,8 @@ d("order processing — end to end (opt-in)", () => {
     const r5 = await approveFieldSalesOrderAction(ok.orderId, undefined, [{ itemId: K2, variantSku: "", qty: 1 }]);
     check("D-05", !r5.ok && r5.reason === "INVALID_TRANSITION", `${r5.ok ? "ok" : r5.reason}`);
 
-    const r8 = await recordDeliveryAction({ orderId: ok.orderId, lines: [{ orderLineId: lines[0].id, qty: 1 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: randomUUID() });
-    check("B-08 konsi", !r8.ok && r8.reason === "INVALID_STATE", `${r8.ok ? "ok" : r8.reason}`);
+    // B-08 konsi: a konsi order never gets a nota — it ships as a transfer (no FieldSalesDelivery).
+    note("B-08 konsi", "Catat pengiriman removed (P44a); a konsi shipment writes a KonsiTransfer, never a nota");
 
     const short = await order(K, [{ itemId: K2, qty: 999 }]);
     const k2Before = await onHand(K2);

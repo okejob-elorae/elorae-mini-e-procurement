@@ -101,6 +101,8 @@ export default async function PengaturanSalesmanPage() {
     // Toko PUTUS aktif yang tidak (sepenuhnya) ikut bawaan: punya batas sendiri,
     // atau dicentang "Tanpa batas kredit" — supaya pemilik tahu batas bawaan
     // tidak berlaku untuk semua toko. Arti kolom kosong: `batasKreditBerlaku`.
+    // Bawaan hanya untuk toko PUTUS: toko konsinyasi berbatas kosong tidak
+    // dibatasi (P21), jadi sengaja tidak dihitung di sini.
     prisma.store.count({
       where: {
         isActive: true,

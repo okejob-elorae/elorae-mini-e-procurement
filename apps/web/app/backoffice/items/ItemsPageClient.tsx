@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { alamatDaftarBarang, type StatusBarang } from './saring-barang';
+import { SALURAN_JUAL, type SaluranJual } from "@/lib/items/saluran-jual";
 import { angkaStok, kunciGalatHapusBarang, labelJenisBarang } from './tampilan-barang';
 import {
   Table,
@@ -151,6 +152,8 @@ type ItemsPageClientProps = {
   typeFilter: ItemType | 'raw' | '';
   kategoriFilter: string;
   statusFilter: StatusBarang;
+  /** "Dijual di" (P3), barang jadi saja; "" = semua. */
+  saluranFilter: SaluranJual | "";
   kategori: Array<{ id: string; name: string; code: string | null }>;
   page: number;
   pageSize: number;
@@ -168,6 +171,7 @@ export function ItemsPageClient({
   typeFilter,
   kategoriFilter,
   statusFilter,
+  saluranFilter,
   kategori,
   page,
   pageSize,
@@ -219,6 +223,7 @@ export function ItemsPageClient({
       type?: ItemType | 'raw' | '';
       kategori?: string;
       status?: StatusBarang;
+      saluran?: SaluranJual | "";
       view?: ItemsListView;
     }) => {
       const alamat = alamatDaftarBarang(pathname, {
@@ -226,12 +231,13 @@ export function ItemsPageClient({
         search: updates.search ?? initialSearch,
         kategori: updates.kategori !== undefined ? updates.kategori : kategoriFilter,
         status: updates.status !== undefined ? updates.status : statusFilter,
+        saluran: updates.saluran !== undefined ? updates.saluran : saluranFilter,
         page: updates.page ?? page,
       });
       const nextView = updates.view ?? view;
       router.push(nextView === 'product' ? `${alamat}${alamat.includes('?') ? '&' : '?'}view=product` : alamat);
     },
-    [initialSearch, kategoriFilter, page, pathname, router, statusFilter, typeFilter, view]
+    [initialSearch, kategoriFilter, page, pathname, router, saluranFilter, statusFilter, typeFilter, view]
   );
 
   const handleTabChange = (value: string) => {
@@ -383,6 +389,22 @@ export function ItemsPageClient({
             <SelectItem value="nonaktif">{tDaftar('statusInactive', { count: counts.total - counts.active })}</SelectItem>
           </SelectContent>
         </Select>
+        <Select
+          value={saluranFilter || SEMUA}
+          onValueChange={(v) => pushParams({ saluran: v === SEMUA ? '' : (v as SaluranJual), page: 1 })}
+        >
+          <SelectTrigger className="w-full sm:w-48" aria-label={tItems('filterSaluran')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={SEMUA}>{tItems('saluran.semua')}</SelectItem>
+            {SALURAN_JUAL.map((s) => (
+              <SelectItem key={s} value={s}>
+                {tItems(`saluran.${s}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <div
           role="group"
           aria-label={tItems('viewToggleLabel')}
@@ -413,13 +435,15 @@ export function ItemsPageClient({
 
       {view === 'variant' ? (
         <ItemVariantsTable
-          key={`${page}|${initialSearch}|${typeFilter}|${kategoriFilter}|${statusFilter}`}
+          key={`${page}|${initialSearch}|${typeFilter}|${kategoriFilter}|${statusFilter}|${saluranFilter}`}
           groups={variantGroups}
           totalCount={totalCount}
           page={page}
           pageSize={pageSize}
           images={primaryImages}
-          hasFilter={initialSearch.trim() !== '' || typeFilter !== '' || kategoriFilter !== '' || statusFilter !== ''}
+          hasFilter={
+            initialSearch.trim() !== '' || typeFilter !== '' || kategoriFilter !== '' || statusFilter !== '' || saluranFilter !== ''
+          }
           typeLabels={itemTypeLabels}
           typeColors={itemTypeColors}
           onPageChange={(p) => pushParams({ page: p })}

@@ -1,5 +1,6 @@
 import type { Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { STATUS_PENGIRIMAN_BERANGKAT } from "@/lib/spg/kiriman";
 import { periksaFotoKembar } from "@/lib/foto/kembar";
 import {
   bolehMengoreksiBuktiTerima,
@@ -79,8 +80,21 @@ const PILIH_KIRIMAN = {
   receivedByName: true,
   receivedAt: true,
   podPhotoUrl: true,
+  voidedAt: true,
   order: { select: { salesmanId: true } },
+  shipment: { select: { status: true } },
 } as const;
+
+/**
+ * Bukti terima Max tetap ada pada nota pengiriman (keputusan 12), tetapi hanya setelah barangnya
+ * BERANGKAT (nota terbit saat pengiriman dibuat), dan tidak pernah pada nota yang dibatalkan. Bukti
+ * ini tetap bukti saja — penanda "toko sudah menerima" adalah tanda terima toko (`StoreReceipt`).
+ */
+function tolakKeadaanNota(k: { voidedAt: Date | null; shipment: { status: string } | null }): KodeBuktiTerima | null {
+  if (k.voidedAt) return "NOTA_DIBATALKAN";
+  if (k.shipment && !(STATUS_PENGIRIMAN_BERANGKAT as readonly string[]).includes(k.shipment.status)) return "BELUM_BERANGKAT";
+  return null;
+}
 
 const tolak = (kode: KodeBuktiTerima): HasilBuktiTerima => ({ ok: false, kode });
 
@@ -148,6 +162,8 @@ export async function catatBuktiTerima(
     if (!k) return tolak("TIDAK_DITEMUKAN");
     const sumber = sumberPencatat({ izin: pelaku.izin, userId: pelaku.userId, salesmanId: k.order.salesmanId });
     if (!sumber) return tolak("TANPA_AKSES");
+    const keadaanCatat = tolakKeadaanNota(k);
+    if (keadaanCatat) return tolak(keadaanCatat);
 
     if (await sudahDenganKunci(tx, k.id, AKSI_BUKTI_TERIMA.CATAT, v.idempotencyKey)) return ok(k, true);
     if (k.receivedAt) return samaIsinya(isiDari(k), v) ? ok(k, true) : tolak("SUDAH_DITERIMA");
@@ -211,6 +227,8 @@ export async function koreksiBuktiTerima(
     const k = await tx.fieldSalesDelivery.findUnique({ where: { id: deliveryId }, select: PILIH_KIRIMAN });
     if (!k) return tolak("TIDAK_DITEMUKAN");
     if (!bolehMengoreksiBuktiTerima(pelaku.izin)) return tolak("TANPA_AKSES");
+    const keadaanKoreksi = tolakKeadaanNota(k);
+    if (keadaanKoreksi) return tolak(keadaanKoreksi);
 
     if (await sudahDenganKunci(tx, k.id, AKSI_BUKTI_TERIMA.KOREKSI, v.idempotencyKey)) return ok(k, true);
     if (!k.receivedAt) return tolak("BELUM_DITERIMA");

@@ -21,7 +21,10 @@ const keAngka = (s: string): number | null => (s === "" ? null : Number(s));
 /**
  * Batas kredit toko: bagaimana pesanan PUTUS diperlakukan saat toko menunggak
  * atau melewati batas. Batas di sini adalah BAWAAN — batas per toko di master
- * toko menimpanya. Toko konsinyasi tidak pernah dinilai (tidak punya piutang).
+ * toko menimpanya. Sisa tagihan yang dinilai = faktur belum lunas + pesanan
+ * putus yang sudah disetujui tetapi belum masuk nota (Q10). Bawaan ini hanya
+ * untuk toko PUTUS; toko konsinyasi yang batasnya kosong tidak dibatasi (P21),
+ * dan yang berbatas sendiri dinilai saat transfernya disetujui.
  */
 export function KreditTokoCard({
   bolehUbah,

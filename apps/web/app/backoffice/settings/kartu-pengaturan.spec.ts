@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import id from "@/lib/i18n/messages/id.json";
 import en from "@/lib/i18n/messages/en.json";
-import { KELOMPOK_PENGATURAN, kunciIsiKartu, kunciJudulKartu } from "./kartu-pengaturan";
+import { getRequiredPermission, PERMISSIONS } from "@/lib/rbac";
+import { IZIN_KARTU_PENGATURAN, KELOMPOK_PENGATURAN, kunciIsiKartu, kunciJudulKartu } from "./kartu-pengaturan";
 
 const ambil = (pesan: unknown, kunci: string): unknown =>
   `settings.${kunci}`.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), pesan);
@@ -39,5 +40,16 @@ describe("kartu pusat pengaturan", () => {
     const isi = String(ambil(id, kunciIsiKartu(kartu("packRatio"))));
     expect(isi).toContain("Rencana kirim");
     expect(isi.toLowerCase()).not.toContain("smart request");
+  });
+
+  it("kartu Piutang hanya tampil bagi pemegang receivables:manage, izin yang diminta rutenya", () => {
+    expect(IZIN_KARTU_PENGATURAN["/backoffice/settings/piutang"]).toEqual([PERMISSIONS.RECEIVABLES_MANAGE]);
+  });
+
+  it("setiap kartu yang disaring memuat izin yang diminta rutenya", () => {
+    for (const [href, izin] of Object.entries(IZIN_KARTU_PENGATURAN)) {
+      const wajib = getRequiredPermission(href);
+      if (wajib !== null) expect(izin, href).toContain(wajib);
+    }
   });
 });

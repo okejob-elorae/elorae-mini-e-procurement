@@ -235,7 +235,7 @@ d("batal & ganti pesanan sendiri — penulis (test bed only)", () => {
       mockKredit.mockResolvedValue({
         aturan: { mode: "BLOKIR", batasNilai: 100000, batasFaktur: null, hariToleransi: 0 },
         batas: { creditLimit: null, maxOpenInvoices: null },
-        keadaan: { sisa: 0, fakturTerbuka: 0, lewatJanji: 0, fakturLewatJanji: 0 },
+        keadaan: { sisa: 0, belumDinota: 0, fakturTerbuka: 0, lewatJanji: 0, fakturLewatJanji: 0 },
         baris: [],
       });
       const err = await pesanPutus(6, { replacesOrderId: lama.orderId }).catch((e: unknown) => e);

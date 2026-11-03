@@ -7,6 +7,7 @@ import {
   computeDueDate,
   allocateDeliveryDiscounts,
   shortLineClampQty,
+  alokasiNotaDikoreksi,
 } from "./plan";
 
 describe("outstandingQty", () => {
@@ -304,5 +305,53 @@ describe("shortLineClampQty", () => {
   it("floors fractions and never goes negative", () => {
     expect(shortLineClampQty(5, 2.9)).toBe(2);
     expect(shortLineClampQty(5, -1)).toBe(0);
+  });
+});
+
+describe("alokasiNotaDikoreksi", () => {
+  it("a non-closing correction takes the rounded pro-rata share of the billed quantity", () => {
+    const r = alokasiNotaDikoreksi({
+      orderSubtotal: 200_000,
+      orderDiscount: 20_000,
+      orderDiscountAllocatedElsewhere: 0,
+      adaHilang: false,
+      lines: [
+        { orderLineId: "a", orderedQty: 10, cancelledQty: 0, deliveredQtyAfter: 7, lineDiscount: 1_000, lineDiscountAllocatedElsewhere: 0, unitPrice: 10_000, billedQty: 7 },
+        { orderLineId: "b", orderedQty: 5, cancelledQty: 0, deliveredQtyAfter: 0, lineDiscount: 0, lineDiscountAllocatedElsewhere: 0, unitPrice: 20_000, billedQty: 0 },
+      ],
+    });
+    expect(r.subtotal).toBe(70_000);
+    expect(r.lineDiscounts).toEqual([{ orderLineId: "a", discountAmount: 700 }]);
+    expect(r.orderDiscountAmount).toBe(7_000);
+    expect(r.total).toBe(62_300);
+  });
+
+  it("closing without a loss absorbs every remaining discount", () => {
+    const r = alokasiNotaDikoreksi({
+      orderSubtotal: 100_000,
+      orderDiscount: 10_000,
+      orderDiscountAllocatedElsewhere: 6_000,
+      adaHilang: false,
+      lines: [
+        { orderLineId: "a", orderedQty: 10, cancelledQty: 0, deliveredQtyAfter: 10, lineDiscount: 0, lineDiscountAllocatedElsewhere: 0, unitPrice: 10_000, billedQty: 4 },
+      ],
+    });
+    expect(r.orderDiscountAmount).toBe(4_000);
+    expect(r.total).toBe(36_000);
+  });
+
+  it("a nota with a loss in transit is never the closing one", () => {
+    const r = alokasiNotaDikoreksi({
+      orderSubtotal: 100_000,
+      orderDiscount: 10_000,
+      orderDiscountAllocatedElsewhere: 6_000,
+      adaHilang: true,
+      lines: [
+        { orderLineId: "a", orderedQty: 10, cancelledQty: 0, deliveredQtyAfter: 10, lineDiscount: 0, lineDiscountAllocatedElsewhere: 0, unitPrice: 10_000, billedQty: 3 },
+      ],
+    });
+    // Pro-rata share of 3 of 10 pieces = 3.000, not the 4.000 remainder.
+    expect(r.orderDiscountAmount).toBe(3_000);
+    expect(r.total).toBe(27_000);
   });
 });

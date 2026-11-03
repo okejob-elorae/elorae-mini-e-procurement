@@ -1,8 +1,13 @@
 import { prisma } from '@elorae/db';
-import { bebanDitagihKeToko, giliranRetur, langkahRetur, STATUS_KLAIM_HIDUP, type LangkahRetur } from './rules';
-import { AWALAN_PENANDA_BEBAN, idBebanDariCatatan } from './penanda-beban';
-import { bacaSisaPiutang } from './writer';
-import { JEJAK } from './jejak';
+import { REF_KOMISI_SALESMAN } from "@/lib/spg/hilang";
+import {
+  awalanKembaliRetur,
+  awalanPotongRetur,
+  ringkasPotonganRetur,
+  type PotonganReturSales,
+} from "@/app/backoffice/laporan/komisi-salesman/potongan-retur";
+import { nilaiFisikNota } from "./deductions";
+import { giliranRetur, langkahRetur, type CekSelisih, type LangkahRetur } from './rules';
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -37,12 +42,21 @@ export type BarisKerjaRetur = {
   nilaiFisik: number | null;
   selisih: number;
   langkah: LangkahRetur;
-  giliran: 'gudang' | 'keuangan' | 'tidak_ada';
+  /**
+   * Giliran siapa, sesudah hasil cek sales pemegang toko ikut dibaca
+   * (`giliranRetur`): selisih yang masih ditanyakan ke toko dan SPG-nya giliran
+   * `sales`, barang yang dilaporkan ditemukan dan belum dihitung giliran `gudang`.
+   */
+  giliran: ReturnType<typeof giliranRetur>;
   bebanId: string | null;
   bebanStatus: StatusBeban | null;
   penanggung: Penanggung | null;
   jumlahPotongan: number;
   nilaiDipotong: number;
+  /** Hasil cek sales pemegang toko atas selisihnya; `null` = nota tanpa beban selisih. */
+  cekSelisih: CekSelisih | null;
+  /** Hitungan barang susulan nota ini yang sudah final (P22a). */
+  jumlahSusulan: number;
 };
 
 const PILIH_NRT = {
@@ -55,14 +69,28 @@ const PILIH_NRT = {
   claimedAmount: true,
   photoUrl: true,
   status: true,
-  store: { select: { name: true } },
+  store: { select: { name: true, salesmanId: true } },
   salesman: { select: { name: true } },
   warehouseReturn: { select: { noNri: true, physicalAmount: true, status: true } },
-  charges: { select: { id: true, status: true, bearer: true, amount: true } },
+  // Barang susulan yang sudah dihitung gudang ikut menjadi nilai fisik nota (P22a).
+  followUps: { where: { status: "FINAL" }, select: { physicalAmount: true, createdAt: true } },
+  charges: {
+    orderBy: { createdAt: "asc" },
+    select: { id: true, status: true, bearer: true, amount: true, checkStatus: true, checkedAt: true },
+  },
   deductions: { select: { amount: true } },
 } as const;
 
-function dariNrt(r: {
+/**
+ * Satu nota toko sebagai baris daftar kerja. Diekspor untuk diuji; pemanggil
+ * lain memakai `daftarKerjaRetur`/`rincianRetur`.
+ *
+ * Nilai fisiknya `nilaiFisikNota` — hitungan asli DITAMBAH barang susulan yang
+ * sudah final — sama dengan yang dibaca penahan Aturan 2 dan penulis selisihnya.
+ * Kalau di sini hanya hitungan asli, nota yang selisihnya sudah ditutup barang
+ * susulan tetap tampil "menunggu keputusan" tanpa beban yang bisa diputuskan.
+ */
+export function dariNrt(r: {
   id: string;
   noNrt: string;
   storeId: string;
@@ -71,11 +99,19 @@ function dariNrt(r: {
   claimedAmount: unknown;
   photoUrl: string | null;
   status: string;
-  store: { name: string };
+  store: { name: string; salesmanId: string | null };
   salesmanId: string | null;
   salesman: { name: string | null } | null;
   warehouseReturn: { noNri: string; physicalAmount: unknown; status: string } | null;
-  charges: { id: string; status: string; bearer: string | null; amount: unknown }[];
+  followUps: { physicalAmount: unknown; createdAt: Date }[];
+  charges: {
+    id: string;
+    status: string;
+    bearer: string | null;
+    amount: unknown;
+    checkStatus: string;
+    checkedAt: Date | null;
+  }[];
   deductions: { amount: unknown }[];
 }): BarisKerjaRetur {
   const nri = r.warehouseReturn;
@@ -83,9 +119,22 @@ function dariNrt(r: {
   // potongan. Angka yang masih bisa berubah tidak melepas apa pun.
   const final = nri !== null && nri.status === 'FINAL';
   const nilaiKlaim = angka(r.claimedAmount);
-  const nilaiFisik = final ? angka(nri.physicalAmount) : null;
+  const nilaiFisik = final ? nilaiFisikNota({ warehouseReturn: nri, followUps: r.followUps }) : null;
   const beban = r.charges[0] ?? null;
   const bebanDiputuskan = r.charges.some((c) => c.status !== 'TERBUKA');
+  const dilapor = beban?.checkedAt ?? null;
+  // Toko tanpa pemegang: tidak ada yang bisa menanyakan ke toko — giliran kantor.
+  const cek =
+    beban && beban.status === "TERBUKA" && r.store.salesmanId
+      ? {
+          status: beban.checkStatus as CekSelisih,
+          // Kapan susulan DICATAT, bukan tanggal terimanya: `receivedAt` disimpan pukul
+          // 00.00 WIB, jadi susulan yang dihitung siang sesudah laporan pagi tampak "sebelum".
+          adaSusulanSesudahLapor: dilapor !== null && r.followUps.some((f) => f.createdAt > dilapor),
+          // P88 belum menetapkan batas hari lapor sales — tidak ada batas yang lewat.
+          batasLewat: false,
+        }
+      : null;
 
   const langkah = langkahRetur({
     dibatalkan: r.status === 'BATAL',
@@ -112,12 +161,14 @@ function dariNrt(r: {
     nilaiFisik,
     selisih: nilaiFisik === null ? 0 : Math.max(0, nilaiKlaim - nilaiFisik),
     langkah,
-    giliran: giliranRetur(langkah),
+    giliran: giliranRetur(langkah, cek),
     bebanId: beban?.id ?? null,
     bebanStatus: (beban?.status as StatusBeban) ?? null,
     penanggung: (beban?.bearer as Penanggung) ?? null,
     jumlahPotongan: r.deductions.length,
     nilaiDipotong: r.deductions.reduce((s, d) => s + angka(d.amount), 0),
+    cekSelisih: beban ? (beban.checkStatus as CekSelisih) : null,
+    jumlahSusulan: r.followUps.length,
   };
 }
 
@@ -152,7 +203,14 @@ export async function daftarKerjaRetur(
     lingkup?.tanpaYatim || lingkup?.storeReturnIds
       ? Promise.resolve([])
       : prisma.warehouseReturn.findMany({
-      where: { storeReturnId: null, ...(lingkup?.storeId ? { storeId: lingkup.storeId } : {}) },
+      // Hitungan barang susulan juga tanpa `storeReturnId`, tapi ia bukan yatim — ia milik
+      // nota yang selisihnya ia kurangi (`followUpOfStoreReturnId`), dan penulisnya menolak
+      // menjodohkan atau memindahkannya.
+      where: {
+        storeReturnId: null,
+        followUpOfStoreReturnId: null,
+        ...(lingkup?.storeId ? { storeId: lingkup.storeId } : {}),
+      },
       orderBy: [{ receivedAt: 'desc' }],
       select: {
         id: true,
@@ -190,6 +248,8 @@ export async function daftarKerjaRetur(
       penanggung: null,
       jumlahPotongan: 0,
       nilaiDipotong: 0,
+      cekSelisih: null,
+      jumlahSusulan: 0,
     })),
   ];
 
@@ -251,6 +311,7 @@ export type RincianRetur = {
   note: string | null;
   photoUrl: string | null;
   barangKlaim: { itemName: string; qty: number; price: number; amount: number }[];
+  /** Baris hitungan asli DITAMBAH baris barang susulan yang sudah final. */
   barangFisik: {
     itemName: string;
     qtyClaim: number;
@@ -274,87 +335,9 @@ export type RincianRetur = {
     catatan: string | null;
     diputuskanOleh: string | null;
     diputuskanPada: string | null;
-    /** Faktur yang lahir dari beban yang ditanggung TOKO; `null` kalau tidak ada. */
-    faktur: FakturBebanRingkas | null;
-    /**
-     * Yang ditagihkan ke toko kalau selisihnya ditetapkan ke TOKO sekarang
-     * (`bebanDitagihKeToko`: yang sudah dipotong toko di BKM hidup melebihi
-     * barang yang sampai). Hanya untuk beban TERBUKA; `null` selain itu.
-     */
-    perkiraanTagihToko: number | null;
-    /**
-     * Beban TOKO yang sudah ditetapkan: yang ditagihkan ke toko saat itu
-     * (`tagihanBebanTokoTercatat`). `0` = tidak ada yang ditagih — "Tandai sudah
-     * diganti" tidak berarti apa-apa. `null` = bukan TOKO, atau beban lama.
-     */
-    tagihTokoTercatat: number | null;
   } | null;
   potongan: { docNo: string; amount: number; status: string }[];
 };
-
-export type FakturBebanRingkas = { id: string; invoiceNo: string; outstanding: number };
-
-/**
- * Faktur beban toko per id beban.
- *
- * Tautannya penanda di catatan faktur (skema tidak punya kolomnya), jadi semua
- * faktur beban dibaca sekali lalu dicocokkan di JS — jumlahnya kecil, dan satu
- * kueri lebih murah dari satu `contains` per beban.
- *
- * Sisanya DIHITUNG ULANG dari klaim yang menyentuhnya (`bacaSisaPiutang`), bukan
- * dibaca dari kolom `outstanding` — kolom itu cache, bukan kebenaran.
- */
-export async function fakturBebanToko(chargeIds: string[]): Promise<Record<string, FakturBebanRingkas>> {
-  if (chargeIds.length === 0) return {};
-  const dicari = new Set(chargeIds);
-  const rows = await prisma.receivable.findMany({
-    where: { source: 'MANUAL', note: { contains: AWALAN_PENANDA_BEBAN } },
-    select: { id: true, invoiceNo: true, note: true },
-  });
-  const cocok = rows.flatMap((r) => {
-    const id = idBebanDariCatatan(r.note);
-    return id && dicari.has(id) ? [{ chargeId: id, r }] : [];
-  });
-  const sisa = await Promise.all(cocok.map(({ r }) => bacaSisaPiutang(prisma, r.id)));
-  const hasil: Record<string, FakturBebanRingkas> = {};
-  cocok.forEach(({ chargeId, r }, i) => {
-    hasil[chargeId] = { id: r.id, invoiceNo: r.invoiceNo, outstanding: sisa[i] ?? 0 };
-  });
-  return hasil;
-}
-
-/**
- * Yang ditagihkan ke toko saat beban terakhir kali ditetapkan/dialihkan ke TOKO,
- * per id beban — dari metadata jejak keputusannya (`ditagihKeToko`). Beban toko
- * lama (diputuskan sebelum ada faktur beban) tidak punya angka ini, jadi tidak
- * masuk peta. `0` = toko belum memotong melebihi barang yang sampai: tidak ada
- * faktur dan tidak ada yang bisa "diganti".
- */
-export async function tagihanBebanTokoTercatat(chargeIds: string[]): Promise<Record<string, number>> {
-  if (chargeIds.length === 0) return {};
-  const jejak = await prisma.auditLog.findMany({
-    where: {
-      entityType: 'ReturnCharge',
-      entityId: { in: [...new Set(chargeIds)] },
-      action: { in: [JEJAK.BEBAN_DIPUTUSKAN, JEJAK.BEBAN_DIALIHKAN] },
-    },
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    select: { entityId: true, changes: true, metadata: true },
-  });
-  const hasil: Record<string, number> = {};
-  const sudah = new Set<string>();
-  for (const j of jejak) {
-    if (!j.entityId || sudah.has(j.entityId)) continue;
-    sudah.add(j.entityId);
-    // Hanya keputusan TERAKHIR yang berlaku, dan hanya bila ke TOKO.
-    const sesudah = (j.changes as { after?: { bearer?: unknown } } | null)?.after;
-    if (sesudah?.bearer !== 'TOKO') continue;
-    const m = j.metadata as Record<string, unknown> | null;
-    const ditagih = m && typeof m === 'object' ? m.ditagihKeToko : undefined;
-    if (typeof ditagih === 'number' && Number.isFinite(ditagih)) hasil[j.entityId] = ditagih;
-  }
-  return hasil;
-}
 
 /** Satu nota retur toko, kedua sisinya, siap dibandingkan per barang. */
 export async function rincianRetur(storeReturnId: string): Promise<RincianRetur | null> {
@@ -385,7 +368,28 @@ export async function rincianRetur(storeReturnId: string): Promise<RincianRetur 
           },
         },
       },
+      // Barang susulan ikut di sisi gudang: nilai fisik nota adalah hitungan asli
+      // DITAMBAH susulannya (`nilaiFisikNota`), jadi barisnya juga.
+      followUps: {
+        where: { status: "FINAL" },
+        orderBy: { createdAt: "asc" },
+        select: {
+          physicalAmount: true,
+          createdAt: true,
+          items: {
+            select: {
+              itemName: true,
+              qtyClaim: true,
+              qty: true,
+              price: true,
+              amount: true,
+              condition: true,
+            },
+          },
+        },
+      },
       charges: {
+        orderBy: { createdAt: "asc" },
         select: {
           id: true,
           amount: true,
@@ -393,6 +397,8 @@ export async function rincianRetur(storeReturnId: string): Promise<RincianRetur 
           bearer: true,
           note: true,
           decidedAt: true,
+          checkStatus: true,
+          checkedAt: true,
           decidedBy: { select: { name: true } },
         },
       },
@@ -408,23 +414,6 @@ export async function rincianRetur(storeReturnId: string): Promise<RincianRetur 
 
   const nri = r.warehouseReturn;
   const beban = r.charges[0] ?? null;
-  const faktur = beban?.bearer === 'TOKO' ? ((await fakturBebanToko([beban.id]))[beban.id] ?? null) : null;
-  const tagihTokoTercatat =
-    beban?.bearer === 'TOKO' && beban.status !== 'TERBUKA'
-      ? ((await tagihanBebanTokoTercatat([beban.id]))[beban.id] ?? null)
-      : null;
-  // Pratinjau keputusan ke TOKO, dengan aturan yang sama dengan penulisnya.
-  const hidup = STATUS_KLAIM_HIDUP as readonly string[];
-  const perkiraanTagihToko =
-    beban?.status === 'TERBUKA' && nri?.status === 'FINAL'
-      ? bebanDitagihKeToko({
-          nilaiKlaim: angka(r.claimedAmount),
-          nilaiFisik: angka(nri.physicalAmount),
-          sudahDipotong: r.deductions
-            .filter((d) => hidup.includes(d.paymentClaim.status))
-            .reduce((s, d) => s + angka(d.amount), 0),
-        })
-      : null;
 
   return {
     baris: dariNrt({
@@ -441,7 +430,7 @@ export async function rincianRetur(storeReturnId: string): Promise<RincianRetur 
       price: angka(i.price),
       amount: angka(i.amount),
     })),
-    barangFisik: (nri?.items ?? []).map((i) => ({
+    barangFisik: [...(nri?.items ?? []), ...r.followUps.flatMap((f) => f.items)].map((i) => ({
       itemName: i.itemName,
       qtyClaim: i.qtyClaim,
       qty: i.qty,
@@ -467,9 +456,6 @@ export async function rincianRetur(storeReturnId: string): Promise<RincianRetur 
           catatan: beban.note,
           diputuskanOleh: beban.decidedBy?.name ?? null,
           diputuskanPada: beban.decidedAt?.toISOString() ?? null,
-          faktur,
-          perkiraanTagihToko,
-          tagihTokoTercatat,
         }
       : null,
     potongan: r.deductions.map((d) => ({
@@ -560,6 +546,59 @@ export async function kandidatPenanggung(): Promise<{ id: string; name: string }
   // Nama boleh kosong di `User`; surel dipakai sebagai gantinya supaya tidak
   // ada baris pilihan yang tampil tanpa label sama sekali.
   return rows.map((u) => ({ id: u.id, name: u.name ?? u.email }));
+}
+
+export type { PotonganReturSales };
+
+/**
+ * Kolom "Selisih retur" di Laporan → Komisi salesman (layar dan Excel): potongan
+ * beban selisih retur per salesman untuk satu bulan WIB (`YYYY-MM`). SATU-SATUNYA
+ * pembacanya — halaman laporan dan ekspor Excel-nya mengimpor dari sini, jangan
+ * ada salinan kedua di folder laporan.
+ *
+ * Aturannya (`ringkasPotonganRetur` dan awalan `refId`-nya) tinggal di
+ * `potongan-retur.ts` milik laporan, yang aman diimpor komponen klien; berkas ini
+ * hanya mengambil barisnya:
+ * - beban = beban SALES milik orang itu yang sudah diputuskan (DITETAPKAN atau
+ *   LUNAS) — himpunan yang sama dengan yang dibaca penulisnya
+ *   (`tandaiBebanReturDipotong` di potong-beban-retur.ts). Kalau sisanya dihitung
+ *   lain, tombol "Tandai dipotong" menawarkan angka yang ditolak penulisnya
+ *   (`MELEBIHI_SISA`);
+ * - potongan "bulan ini" dikenali dari `refId` yang ditulis penulisnya
+ *   (`<sales>:<bulan>:<kunci>`, pengembalian `kembali:<sales>:<bulan>:<kunci>`) —
+ *   kunci yang sama yang dipakai penulisnya untuk idempotensi. Beban yang sudah
+ *   dipotong tidak bisa lagi berganti penanggung (`SUDAH_DIPOTONG`) dan statusnya
+ *   tetap DITETAPKAN/LUNAS, jadi setiap baris potongan selalu jatuh pada beban
+ *   di himpunan di atas.
+ */
+export async function potonganReturSalesBulan(
+  salesmanIds: string[],
+  bulan: string,
+): Promise<Record<string, PotonganReturSales>> {
+  const ids = [...new Set(salesmanIds)];
+  if (ids.length === 0) return {};
+  const [beban, potongan] = await Promise.all([
+    prisma.returnCharge.findMany({
+      where: { bearer: "SALES", bearerUserId: { in: ids }, status: { in: ["DITETAPKAN", "LUNAS"] } },
+      select: { bearerUserId: true, amount: true, settledAmount: true },
+    }),
+    prisma.returnChargeDeduction.findMany({
+      where: {
+        refType: REF_KOMISI_SALESMAN,
+        OR: ids.flatMap((id) => [
+          { refId: { startsWith: awalanPotongRetur(id, bulan) } },
+          { refId: { startsWith: awalanKembaliRetur(id, bulan) } },
+        ]),
+      },
+      select: { refId: true, amount: true },
+    }),
+  ]);
+  return ringkasPotonganRetur({
+    salesmanIds: ids,
+    bulan,
+    beban: beban.map((b) => ({ bearerUserId: b.bearerUserId, amount: angka(b.amount), settledAmount: angka(b.settledAmount) })),
+    potongan: potongan.map((p) => ({ refId: p.refId, amount: angka(p.amount) })),
+  });
 }
 
 /**

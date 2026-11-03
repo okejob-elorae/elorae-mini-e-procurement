@@ -204,6 +204,14 @@ d("GRN terima-lebih: persetujuan pemilik (test bed only)", () => {
     const semuaGrn = (
       await prisma.gRN.findMany({ where: { supplierId: seededId(supplierId) }, select: { id: true } })
     ).map((g) => g.id);
+    // GRN tanpa PO menulis lonceng `GRN_NO_PO_PENDING` (P51a); metadata dicocokkan di JS.
+    const milik = new Set(semuaGrn);
+    const lonceng = (
+      await prisma.adminNotification.findMany({ where: { category: "GRN_NO_PO_PENDING" }, select: { id: true, metadata: true } })
+    )
+      .filter((n) => milik.has(String((n.metadata as { grnId?: unknown } | null)?.grnId ?? "")))
+      .map((n) => n.id);
+    await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(lonceng) } } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fabricRoll.deleteMany({ where: { grnId: { in: seededIds(semuaGrn) } } });
     await prisma.gRN.deleteMany({ where: { id: { in: seededIds(semuaGrn) } } });
@@ -372,6 +380,9 @@ d("GRN terima-lebih: persetujuan pemilik (test bed only)", () => {
       if (!hasil.success) throw new Error(`GRN ditolak: ${hasil.code}`);
       grnIds.push(hasil.grn.id);
       expect(hasil.grn.receivedBy).toBe(gudangId);
+      // Tanpa PO: menunggu konfirmasi admin (P51a), stoknya belum bergerak.
+      expect(hasil.grn.menungguKonfirmasi).toBe(true);
+      expect(await stok()).toBe(STOK_AWAL);
     });
 
     it("id penerima kiriman yang bukan pengguna sesi ditolak; tidak ada GRN tercatat", async () => {

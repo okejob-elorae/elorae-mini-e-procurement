@@ -27,6 +27,7 @@ import {
   kabarkanPengirimanBerangkat,
   kabarkanPengirimanDiserahkan,
   susunKabarBerangkat,
+  susunKabarDibatalkan,
   susunKabarDiserahkan,
 } from "./kabar-pengiriman";
 
@@ -290,5 +291,16 @@ d("kabar pengiriman ke SPG (basis data)", () => {
     expect(await kabarkanPengirimanDiserahkan({ shipmentId: `${tag}-tidak-ada`, pelakuId: pengantarId })).toEqual({ penerima: 0 });
     expect(await kabarkanPengirimanBerangkat({ shipmentId: `${tag}-tidak-ada`, pelakuId: pengantarId })).toEqual({ penerima: 0 });
     expect(kabar.kirim).toEqual([]);
+  });
+});
+
+describe("kabar pengiriman dibatalkan (Q24)", () => {
+  it("names the pieces and the shipment, carries no rupiah, and fits 191 characters", () => {
+    const k = susunKabarDibatalkan({ docNo: "DLV/2026/11/0001", pcs: 12 });
+    expect(k.judul).toBe("Pengiriman dibatalkan");
+    expect(k.isi).toContain("12 pcs");
+    expect(k.isi).toContain("DLV/2026/11/0001");
+    expect(k.isi).not.toMatch(/Rp/);
+    expect(Array.from(k.isi).length).toBeLessThanOrEqual(191);
   });
 });

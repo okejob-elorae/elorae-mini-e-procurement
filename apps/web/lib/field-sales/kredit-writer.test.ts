@@ -34,7 +34,7 @@ const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
-const bersih: KeadaanTagihan = { sisa: 0, fakturTerbuka: 0, lewatJanji: 0, fakturLewatJanji: 0 };
+const bersih: KeadaanTagihan = { sisa: 0, belumDinota: 0, fakturTerbuka: 0, lewatJanji: 0, fakturLewatJanji: 0 };
 const kredit = (
   aturan: Partial<AturanKredit>,
   keadaan: KeadaanTagihan | null,
@@ -56,6 +56,9 @@ d("createFieldSalesOrder — kredit toko (test bed only)", () => {
   let salesmanId = "";
   let visitId = "";
   let orderIds: string[] = [];
+  let receivableIds: string[] = [];
+  /* Describe-scoped and never reset: `sku` is too, so a leaked row can never collide with a later case's unique number. */
+  let seq = 0;
 
   beforeEach(async () => {
     uomId = "";
@@ -64,6 +67,7 @@ d("createFieldSalesOrder — kredit toko (test bed only)", () => {
     salesmanId = "";
     visitId = "";
     orderIds = [];
+    receivableIds = [];
     mockMuat.mockReset();
     mockAturan.mockReset();
     mockAturan.mockReturnValue(ATURAN_KREDIT_BAWAAN);
@@ -98,6 +102,7 @@ d("createFieldSalesOrder — kredit toko (test bed only)", () => {
     // Jejak override batas kredit tidak punya foreign key ke pesanannya.
     await prisma.auditLog.deleteMany({ where: { entityType: "FieldSalesOrder", entityId: { in: seededIds(semua) } } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.receivable.deleteMany({ where: { id: { in: seededIds(receivableIds) } } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: seededIds(semua) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: seededIds(semua) } } });
     await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
@@ -125,7 +130,9 @@ d("createFieldSalesOrder — kredit toko (test bed only)", () => {
     await setel(kredit({ mode: "BLOKIR" }, bersih, 100_000));
     const err = await buat().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(KreditDiblokirError);
-    expect((err as KreditDiblokirError).alasan).toEqual([{ kode: "MELEBIHI_BATAS_NILAI", sisaSesudah: 210_000, batas: 100_000 }]);
+    expect((err as KreditDiblokirError).alasan).toEqual([
+      { kode: "MELEBIHI_BATAS_NILAI", sisaSesudah: 210_000, batas: 100_000, sisaFaktur: 0, belumDinota: 0, pesanan: 210_000 },
+    ]);
     expect(await prisma.fieldSalesOrder.count({ where: { storeId: seededId(storeId) } })).toBe(0);
     expect(await prisma.stockReservation.count({ where: { itemId: seededId(itemId) } })).toBe(0);
     const inv = await prisma.inventoryValue.findFirst({ where: { itemId: seededId(itemId) } });
@@ -133,7 +140,7 @@ d("createFieldSalesOrder — kredit toko (test bed only)", () => {
   });
 
   it("TAHAN mencatat pesanan dengan kredit ditahan, dan persetujuan butuh centang", async () => {
-    await setel(kredit({ mode: "TAHAN" }, { sisa: 1_000_000, fakturTerbuka: 2, lewatJanji: 400_000, fakturLewatJanji: 1 }));
+    await setel(kredit({ mode: "TAHAN" }, { sisa: 1_000_000, belumDinota: 0, fakturTerbuka: 2, lewatJanji: 400_000, fakturLewatJanji: 1 }));
     const res = await buat();
     orderIds.push(res.orderId);
     expect(res.kreditDitahan).toBe(true);
@@ -257,7 +264,7 @@ d("createFieldSalesOrder — kredit toko (test bed only)", () => {
   });
 
   it("bawaan Pengaturan kosong: batas toko kosong tetap tidak dibatasi (keadaan pabrik)", async () => {
-    await setel(kredit({ mode: "BLOKIR" }, { sisa: 99_000_000, fakturTerbuka: 40, lewatJanji: 0, fakturLewatJanji: 0 }, null));
+    await setel(kredit({ mode: "BLOKIR" }, { sisa: 99_000_000, belumDinota: 0, fakturTerbuka: 40, lewatJanji: 0, fakturLewatJanji: 0 }, null));
     const res = await buat();
     orderIds.push(res.orderId);
     expect(res.creditHold).toBe(false);
@@ -270,7 +277,7 @@ d("createFieldSalesOrder — kredit toko (test bed only)", () => {
 
   it("Tanpa batas kredit: lolos batas nilai dan batas faktur di kedua lapis, tapi lewat janji tetap ditahan", async () => {
     const ketat = { mode: "TAHAN" as const, batasNilai: 1, batasFaktur: 0 };
-    await setel(kredit(ketat, { sisa: 5_000_000, fakturTerbuka: 3, lewatJanji: 0, fakturLewatJanji: 0 }, 1, true));
+    await setel(kredit(ketat, { sisa: 5_000_000, belumDinota: 0, fakturTerbuka: 3, lewatJanji: 0, fakturLewatJanji: 0 }, 1, true));
     const aman = await buat();
     orderIds.push(aman.orderId);
     expect(aman).toMatchObject({ creditHold: false, kreditDitahan: false });
@@ -281,7 +288,7 @@ d("createFieldSalesOrder — kredit toko (test bed only)", () => {
     await approveFieldSalesOrder({ orderId: aman.orderId, approvedById: salesmanId });
     expect((await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: aman.orderId } })).status).toBe("APPROVED");
 
-    await setel(kredit(ketat, { sisa: 5_000_000, fakturTerbuka: 3, lewatJanji: 400_000, fakturLewatJanji: 1 }, 1, true));
+    await setel(kredit(ketat, { sisa: 5_000_000, belumDinota: 0, fakturTerbuka: 3, lewatJanji: 400_000, fakturLewatJanji: 1 }, 1, true));
     const menunggak = await buat();
     orderIds.push(menunggak.orderId);
     expect(menunggak).toMatchObject({ creditHold: false, kreditDitahan: true });
@@ -297,5 +304,233 @@ d("createFieldSalesOrder — kredit toko (test bed only)", () => {
     const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } });
     expect(order.kreditDitahan).toBe(false);
     expect(order.kreditCatatan).toBeNull();
+  });
+
+  /** A manual invoice with both column families, as `tulisPiutangManual` writes it. */
+  const fakturManual = async (nilai: number) => {
+    seq += 1;
+    const r = await prisma.receivable.create({
+      data: {
+        storeId,
+        invoiceNo: `TEST-FSK-INV-${sku}-${seq}`,
+        source: "MANUAL",
+        invoiceDate: new Date(),
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        amount: nilai,
+        outstanding: nilai,
+        originalAmount: nilai,
+        outstandingAmount: nilai,
+        status: "OUTSTANDING",
+      },
+    });
+    receivableIds.push(r.id);
+  };
+
+  /** An approved putus order of 16 × 250.000 with nothing on a nota yet. */
+  const pesananDisetujui = async () => {
+    seq += 1;
+    const o = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `TEST-FSK-AP-${sku}-${seq}`,
+        storeId,
+        salesmanId,
+        status: "APPROVED",
+        orderType: "PUTUS",
+        deliveryStatus: "PENDING",
+        subtotal: 4_000_000,
+        total: 4_000_000,
+        lines: { create: [{ itemId, variantSku: "", productName: "T", qty: 16, unitPrice: 250_000, lineTotal: 4_000_000 }] },
+      },
+    });
+    orderIds.push(o.id);
+  };
+
+  /** 8 × 250.000 = 2.000.000 net (the client price is deliberately wrong; the server prices it). */
+  const buatDuaJuta = (idempotencyKey?: string) =>
+    createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ itemId, variantSku: "", productName: "T", qty: 8, unitPrice: 1 }], idempotencyKey });
+
+  const ALASAN_21_JT = {
+    kode: "MELEBIHI_BATAS_NILAI",
+    sisaSesudah: 21_000_000,
+    batas: 20_000_000,
+    sisaFaktur: 15_000_000,
+    belumDinota: 4_000_000,
+    pesanan: 2_000_000,
+  };
+
+  /*
+   * Q10 (2026-11-02): an approved order not yet on a nota counts in BOTH credit checks. The
+   * credit read is mocked with a CLEAN keadaan on purpose: when a limit resolves, the writer must
+   * take sisa/belumDinota/fakturTerbuka from its own in-transaction `computeStoreCreditExposure`,
+   * so the 15 jt invoice and the 4 jt approved order only reach the verdict through that read.
+   */
+  describe("Rp 21 jt di kedua lapis — faktur 15 jt + disetujui belum dinota 4 jt + pesanan 2 jt", () => {
+    beforeEach(async () => {
+      await prisma.item.update({ where: { id: itemId }, data: { sellingPrice: 250_000 } });
+      await fakturManual(15_000_000);
+      await pesananDisetujui();
+    });
+
+    it("BLOKIR menolak dengan rinciannya, tanpa meninggalkan pesanan atau reservasi", async () => {
+      await setel(kredit({ mode: "BLOKIR" }, bersih, 20_000_000));
+      const err = await buatDuaJuta().catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(KreditDiblokirError);
+      expect((err as KreditDiblokirError).alasan).toEqual([ALASAN_21_JT]);
+      // Only the seeded approved order remains.
+      expect(await prisma.fieldSalesOrder.count({ where: { storeId: seededId(storeId) } })).toBe(1);
+      expect(await prisma.stockReservation.count({ where: { itemId: seededId(itemId) } })).toBe(0);
+    });
+
+    it("TAHAN menahan pesanan dan membekukan eksposur 19 jt dari batas 20 jt", async () => {
+      await setel(kredit({ mode: "TAHAN" }, bersih, 20_000_000));
+      const res = await buatDuaJuta();
+      orderIds.push(res.orderId);
+      expect(res).toMatchObject({ kreditDitahan: true, creditHold: true });
+      const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } });
+      expect(order.creditHoldAtCreate).toBe(true);
+      expect(Number(order.creditExposureAtCreate)).toBe(19_000_000);
+      expect(Number(order.creditLimitAtCreate)).toBe(20_000_000);
+
+      // TAHAN needs the checkbox; past the limit it ALSO needs an override reason.
+      const err = await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId, kreditDiperiksa: true }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(CreditLimitExceededError);
+      expect((err as CreditLimitExceededError).exposure).toEqual({ receivableOutstanding: 15_000_000, undeliveredOrderResidual: 4_000_000, total: 19_000_000 });
+      expect((err as CreditLimitExceededError).orderTotal).toBe(2_000_000);
+
+      await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId, kreditDiperiksa: true, creditOverrideReason: "Toko janji bayar" });
+      expect((await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } })).status).toBe("APPROVED");
+    });
+
+    it("PERINGATAN: catatan tersimpan memuat rinciannya, dan persetujuan tanpa alasan ditolak dengan eksposur yang sama", async () => {
+      await setel(kredit({ mode: "PERINGATAN" }, bersih, 20_000_000));
+      const res = await buatDuaJuta();
+      orderIds.push(res.orderId);
+      expect(res).toMatchObject({ kreditDitahan: false, creditHold: true });
+      const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } });
+      expect(order.creditHoldAtCreate).toBe(true);
+      expect(order.kreditCatatan?.replace(/ /g, " ")).toBe(
+        "Saat dibuat: sisa Rp 21.000.000 (faktur Rp 15.000.000 + disetujui belum dinota Rp 4.000.000 + pesanan ini Rp 2.000.000), dari batas Rp 20.000.000",
+      );
+
+      const err = await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(CreditLimitExceededError);
+      expect((err as CreditLimitExceededError).exposure).toEqual({ receivableOutstanding: 15_000_000, undeliveredOrderResidual: 4_000_000, total: 19_000_000 });
+      expect((err as CreditLimitExceededError).orderTotal).toBe(2_000_000);
+      expect((err as CreditLimitExceededError).sumber).toBe("TOKO");
+      expect((await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } })).status).toBe("PENDING_APPROVAL");
+
+      await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId, creditOverrideReason: "Toko langganan lama" });
+      expect((await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } })).status).toBe("APPROVED");
+      const jejak = await prisma.auditLog.findFirstOrThrow({
+        where: { entityType: "FieldSalesOrder", entityId: seededId(res.orderId), action: "CREDIT_LIMIT_OVERRIDE" },
+        select: { metadata: true },
+      });
+      const meta = jejak.metadata as { exposure: Record<string, unknown>; creditLimit: number; orderTotal: number };
+      expect(meta.exposure).toEqual({ receivableOutstanding: 15_000_000, undeliveredOrderResidual: 4_000_000, total: 19_000_000 });
+      expect(meta.exposure).not.toHaveProperty("openReceivableIds");
+      expect(meta).toMatchObject({ creditLimit: 20_000_000, orderTotal: 2_000_000 });
+    });
+
+    it("batas kosong ikut bawaan Pengaturan 20 jt: angka dan keputusan yang sama, sumber BAWAAN", async () => {
+      await setel(kredit({ mode: "PERINGATAN", batasNilai: 20_000_000 }, bersih, null));
+      const res = await buatDuaJuta();
+      orderIds.push(res.orderId);
+      const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } });
+      expect(order.creditHoldAtCreate).toBe(true);
+      expect(Number(order.creditExposureAtCreate)).toBe(19_000_000);
+      expect(order.kreditCatatan?.replace(/ /g, " ")).toContain("disetujui belum dinota Rp 4.000.000");
+
+      const err = await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(CreditLimitExceededError);
+      expect((err as CreditLimitExceededError).sumber).toBe("BAWAAN");
+      expect((err as CreditLimitExceededError).exposure.total).toBe(19_000_000);
+    });
+
+    it("batas 21 jt: sama dengan batas bukan lewat — aman di kedua lapis", async () => {
+      await setel(kredit({ mode: "BLOKIR" }, bersih, 21_000_000));
+      const res = await buatDuaJuta();
+      orderIds.push(res.orderId);
+      expect(res).toMatchObject({ kreditDitahan: false, creditHold: false });
+      const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } });
+      expect(order.kreditCatatan).toBeNull();
+      await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId });
+      expect((await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } })).status).toBe("APPROVED");
+    });
+
+    it("tanpa batas yang berlaku: hanya janji bayar yang dinilai, dari bacaan sebelum transaksi", async () => {
+      await setel(kredit({ mode: "PERINGATAN" }, { ...bersih, sisa: 15_000_000, fakturTerbuka: 1, lewatJanji: 500_000, fakturLewatJanji: 1 }, null));
+      const res = await buatDuaJuta();
+      orderIds.push(res.orderId);
+      const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } });
+      expect(order.creditHoldAtCreate).toBe(false);
+      expect(order.creditExposureAtCreate).toBeNull();
+      expect(order.kreditCatatan?.replace(/ /g, " ")).toBe("Saat dibuat: tagihan lewat janji Rp 500.000 (1 faktur)");
+    });
+  });
+
+  /*
+   * P21 (2026-11-02, "Tidak"): a konsi store with an empty limit is not limited at all — the
+   * Settings default is for putus stores only. A konsi store's own figure still gates its transfer,
+   * on exposure alone (the konsi order adds 0).
+   */
+  describe("P21 — batas toko konsinyasi", () => {
+    beforeEach(async () => {
+      await prisma.store.update({ where: { id: storeId }, data: { termsType: "KONSI" } });
+      await fakturManual(21_000_000);
+      mockMuat.mockResolvedValue(null);
+      mockAturan.mockReturnValue({ ...ATURAN_KREDIT_BAWAAN, batasNilai: 20_000_000 });
+    });
+
+    it("batas kosong tidak ikut bawaan 20 jt: transfer disetujui tanpa alasan walau tagihannya 21 jt", async () => {
+      const res = await buat();
+      orderIds.push(res.orderId);
+      await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId });
+      expect((await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } })).status).toBe("APPROVED");
+    });
+
+    it("batas milik toko 20 jt menggerbangkan transfernya atas eksposur saja", async () => {
+      await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 20_000_000 } });
+      const res = await buat();
+      orderIds.push(res.orderId);
+      const err = await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(CreditLimitExceededError);
+      expect((err as CreditLimitExceededError).sumber).toBe("TOKO");
+      expect((err as CreditLimitExceededError).orderTotal).toBe(0);
+      expect((err as CreditLimitExceededError).exposure.total).toBe(21_000_000);
+    });
+
+    it("dicentang Tanpa batas kredit: disetujui", async () => {
+      await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 20_000_000, noCreditLimit: true } });
+      const res = await buat();
+      orderIds.push(res.orderId);
+      await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId });
+      expect((await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } })).status).toBe("APPROVED");
+    });
+  });
+
+  it("dua persetujuan serentak di satu toko: tepat satu lolos, yang lain melihat pesanan yang sudah disetujui", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { sellingPrice: 250_000 } });
+    await fakturManual(15_000_000);
+    await setel(kredit({ mode: "PERINGATAN" }, bersih, 18_000_000));
+    const a = await buatDuaJuta();
+    const b = await buatDuaJuta();
+    orderIds.push(a.orderId, b.orderId);
+    // Each alone is within the limit: 15 jt + 2 jt = 17 jt ≤ 18 jt.
+    expect(a.creditHold).toBe(false);
+    expect(b.creditHold).toBe(false);
+
+    const tunda = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const hasil = await Promise.allSettled([
+      approveFieldSalesOrder({ orderId: a.orderId, approvedById: salesmanId }),
+      tunda(10).then(() => approveFieldSalesOrder({ orderId: b.orderId, approvedById: salesmanId })),
+    ]);
+    const lolos = hasil.filter((h) => h.status === "fulfilled");
+    const ditolak = hasil.filter((h): h is PromiseRejectedResult => h.status === "rejected");
+    expect(lolos).toHaveLength(1);
+    expect(ditolak).toHaveLength(1);
+    expect(ditolak[0].reason).toBeInstanceOf(CreditLimitExceededError);
+    expect((ditolak[0].reason as CreditLimitExceededError).exposure.total).toBe(17_000_000);
+    const status = await prisma.fieldSalesOrder.findMany({ where: { id: { in: seededIds([a.orderId, b.orderId]) } }, select: { status: true } });
+    expect(status.map((s) => s.status).sort()).toEqual(["APPROVED", "PENDING_APPROVAL"]);
   });
 });

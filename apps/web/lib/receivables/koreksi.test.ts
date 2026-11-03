@@ -165,16 +165,20 @@ async function buatNrt(opsi: { storeId?: string; noNrt?: string; salesmanId?: st
   return n;
 }
 
-async function buatNri(opsi: { storeId?: string | null; storeReturnId?: string | null } = {}) {
+async function buatNri(
+  opsi: { storeId?: string | null; storeReturnId?: string | null; susulanDari?: string | null; receivedAt?: Date } = {},
+) {
   urut += 1;
   const n = await prisma.warehouseReturn.create({
     data: {
       noNri: `${tag}-NRI-${urut}`,
       storeId: opsi.storeId === undefined ? tokoAId : opsi.storeId,
       storeReturnId: opsi.storeReturnId ?? null,
+      // Hitungan susulan: barang selisih yang datang belakangan, menempel ke nota yang disusulnya.
+      followUpOfStoreReturnId: opsi.susulanDari ?? null,
       // Penghitung bukan pelapor nota (`buatNrt` memakai `salesId`): aturan dua tangan.
       warehouseUserId: lainId,
-      receivedAt: new Date("2026-10-01T00:00:00+07:00"),
+      receivedAt: opsi.receivedAt ?? new Date("2026-10-01T00:00:00+07:00"),
       physicalAmount: 250_000,
       claimedAmount: opsi.storeReturnId ? 300_000 : 0,
       status: "FINAL",
@@ -467,6 +471,47 @@ describe("pindahkanNriKeToko — hitungan gudang yatim di toko yang salah", () =
     expect(
       await pindahkanNriKeToko({ warehouseReturnId: nri.id, tokoTujuanId: tokoBId, alasan: "x", olehUserId: lainId }),
     ).toEqual({ ok: false, alasan: "SUDAH_BERPASANGAN" });
+  });
+
+  it("menolak hitungan SUSULAN juga — ia pindah bersama nota yang disusulnya", async () => {
+    const n = await buatNrt();
+    await buatNri({ storeReturnId: n.id });
+    const susulan = await buatNri({ susulanDari: n.id });
+    expect(
+      await pindahkanNriKeToko({ warehouseReturnId: susulan.id, tokoTujuanId: tokoBId, alasan: "x", olehUserId: lainId }),
+    ).toEqual({ ok: false, alasan: "SUDAH_BERPASANGAN" });
+    expect((await prisma.warehouseReturn.findUniqueOrThrow({ where: { id: susulan.id } })).storeId).toBe(tokoAId);
+  });
+});
+
+describe("pindahkanReturKeToko — hitungan susulan ikut notanya", () => {
+  it("nota, hitungan asli, dan setiap susulannya pindah bersama; jejak menyebut susulannya", async () => {
+    const n = await buatNrt();
+    const asli = await buatNri({ storeReturnId: n.id });
+    const susulan = await buatNri({ susulanDari: n.id });
+
+    const hasil = await pindahkanReturKeToko({ storeReturnId: n.id, tokoTujuanId: tokoBId, alasan: "salah toko", olehUserId: lainId });
+    expect(hasil.ok).toBe(true);
+    for (const id of [asli.id, susulan.id]) {
+      expect((await prisma.warehouseReturn.findUniqueOrThrow({ where: { id } })).storeId).toBe(tokoBId);
+    }
+    const jejak = (await jejakUntuk(n.id)).find((j) => j.action === JEJAK.RETUR_DIPINDAH_TOKO);
+    expect(jejak?.metadata).toMatchObject({ susulan: [susulan.noNri] });
+  });
+
+  it("susulan yang diterima di bulan siklus terkunci meminta konfirmasi, walau hitungan aslinya di bulan lain", async () => {
+    // Siklus terkunci Oktober 2026 (`buatSiklusTerkunci`); hitungan asli September, susulan Oktober.
+    const siklus = await buatSiklusTerkunci(tokoAId);
+    const n = await buatNrt();
+    await buatNri({ storeReturnId: n.id, receivedAt: new Date("2026-09-15T00:00:00+07:00") });
+    await buatNri({ susulanDari: n.id });
+
+    expect(await pindahkanReturKeToko({ storeReturnId: n.id, tokoTujuanId: tokoBId, alasan: "x", olehUserId: lainId })).toEqual({
+      ok: false,
+      alasan: "SIKLUS_TERKUNCI",
+      noKonsi: [siklus.noKonsi],
+    });
+    expect((await prisma.storeReturn.findUniqueOrThrow({ where: { id: n.id } })).storeId).toBe(tokoAId);
   });
 });
 

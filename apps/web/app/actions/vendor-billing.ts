@@ -12,6 +12,8 @@ import { createVendorBill, voidVendorBill, VendorBillError } from "@/lib/vendor-
 import { listVendorBills, listBillLinesForPo, listBillLinesForWo } from "@/lib/vendor-billing/queries";
 import { createVendorPayment, voidVendorPayment } from "@/lib/vendor-billing/payment-writer";
 import { listVendorPayments } from "@/lib/vendor-billing/payment-queries";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { tandaiPermintaanTerpenuhi } from "@/lib/vendor-billing/permintaan-invoice-writer";
 
 type Result<T> = ({ ok: true } & T) | { ok: false; error: string; code?: string };
 
@@ -59,8 +61,23 @@ const createSchema = z.object({
   billDate: z.string().min(1),
   dueDate: z.string().optional(),
   notes: z.string().optional(),
-  lines: z.array(z.object({ type: z.enum(["PO_ITEM", "WO_STEP"]), sourceId: idSchema, qty: z.number(), price: z.number() })),
+  // An invoice line names the receipt it bills: a GRN and its item key, or a WO step (decision
+  // 2026-10-29). PO_ITEM is never written again.
+  lines: z.array(
+    z.discriminatedUnion("type", [
+      z.object({ type: z.literal("GRN_ITEM"), grnId: idSchema, itemId: idSchema, variantSku: z.string().nullish(), qty: z.number(), price: z.number() }),
+      z.object({ type: z.literal("WO_STEP"), sourceId: idSchema, qty: z.number(), price: z.number() }),
+    ])
+  ),
 });
+
+function revalidateTagihan(id?: string) {
+  revalidatePath("/backoffice/vendor-bills");
+  revalidatePath("/backoffice/vendor-bills/belum-ditagih");
+  revalidatePath("/backoffice/vendor-bills/selisih-harga");
+  revalidatePath("/backoffice/supplier-payments/baru");
+  if (id) revalidatePath(`/backoffice/vendor-bills/${id}`);
+}
 
 export async function createVendorBillAction(input: z.input<typeof createSchema>, userId: string) {
   const s = await session(PERMISSIONS.VENDOR_BILLS_MANAGE, userId);
@@ -80,17 +97,21 @@ export async function createVendorBillAction(input: z.input<typeof createSchema>
       s.user.id
     )
   );
-  if (res.ok) {
-    await logAudit({
-      userId: s.user.id,
-      action: "CREATE",
-      entityType: "VendorBill",
-      entityId: res.id,
-      changes: { after: { docNumber: res.docNumber, supplierId: data.supplierId, vendorInvoiceNo: data.vendorInvoiceNo } },
-    });
-    revalidatePath("/backoffice/vendor-bills");
-  }
-  return res;
+  if (!res.ok) return res;
+  // The price-difference bell was written inside the bill's transaction; delivered after commit.
+  if (res.notifikasi) void fanOutAdminNotification(res.notifikasi);
+  await logAudit({
+    userId: s.user.id,
+    action: "CREATE",
+    entityType: "VendorBill",
+    entityId: res.id,
+    changes: { after: { docNumber: res.docNumber, supplierId: data.supplierId, vendorInvoiceNo: data.vendorInvoiceNo } },
+  });
+  // Recording the invoice closes the requests it answers (best-effort: status is derived anyway).
+  const sumber = data.lines.map((l) => (l.type === "GRN_ITEM" ? { jenis: "GRN" as const, id: l.grnId } : { jenis: "WO_STEP" as const, id: l.sourceId }));
+  await tandaiPermintaanTerpenuhi({ sumber, billId: res.id }).catch((e) => console.error("[createVendorBillAction] tandaiPermintaanTerpenuhi", e));
+  revalidateTagihan(res.id);
+  return { ok: true as const, id: res.id, docNumber: res.docNumber, koreksi: res.koreksi };
 }
 
 export async function voidVendorBillAction(billId: string, reason: string, userId: string) {
@@ -99,8 +120,7 @@ export async function voidVendorBillAction(billId: string, reason: string, userI
   const res = await guard(() => voidVendorBill(id, reason, s.user.id));
   if (res.ok) {
     await logAudit({ userId: s.user.id, action: "UPDATE", entityType: "VendorBill", entityId: id, changes: { after: { status: "VOID", reason } } });
-    revalidatePath("/backoffice/vendor-bills");
-    revalidatePath(`/backoffice/vendor-bills/${id}`);
+    revalidateTagihan(id);
   }
   return res;
 }

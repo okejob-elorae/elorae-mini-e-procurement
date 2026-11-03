@@ -56,7 +56,8 @@ type PricedDeliveryLineRow = {
  * less the line's own discount and its share of the delivery's header discount, which is the
  * order discount plus, on a closing delivery, any line-discount residue it absorbed) rather than the
  * gross `lineTotal` or `unitPrice`. A null lineTotal is a line that cannot price anything and is
- * skipped rather than credited at zero.
+ * skipped rather than credited at zero. A line billing nothing (`qty` 0 — a voided nota, or one
+ * corrected to nothing received) is not a candidate at all.
  */
 export async function listPriceCandidates(
   client: PrismaClientOrTx,
@@ -66,6 +67,8 @@ export async function listPriceCandidates(
     where: {
       itemId: input.itemId,
       variantSku: input.variantSku,
+      /* A voided nota, or a line corrected to nothing billed, never prices a retur. */
+      qty: { gt: 0 },
       delivery: { order: { storeId: input.storeId } },
     },
     select: {
@@ -100,6 +103,7 @@ export async function listPriceCandidatesForKeys(
   const rows = await client.fieldSalesDeliveryLine.findMany({
     where: {
       itemId: { in: Array.from(new Set(keys.map((k) => k.itemId))) },
+      qty: { gt: 0 },
       delivery: { order: { storeId: { in: Array.from(new Set(keys.map((k) => k.storeId))) } } },
     },
     select: {

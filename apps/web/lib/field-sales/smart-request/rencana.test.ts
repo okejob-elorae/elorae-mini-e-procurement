@@ -6,7 +6,7 @@ import {
   type KandidatRencana,
   type KriteriaRencana,
 } from "./rencana";
-import { susunDraf } from "./rencana-draf";
+import { susunDraf, type ArtikelDraf, type BarisDrafKonsi } from "./rencana-draf";
 import { bacaKriteriaTersimpan, SUMBER_BAWAAN } from "./kriteria";
 
 const rasio = [
@@ -314,13 +314,38 @@ describe("susunDraf", () => {
     totalNilai: 50_000,
   };
 
-  it("a consignment draft carries no price, total or rupiah anywhere in its JSON", () => {
+  it("a consignment draft carries the retail unit price per line for the salesman phone (P18), and no total or budget", () => {
     const draf = susunDraf({ hasil, info, namaKategori: new Map([["k1", "Kaos"]]), konsi: true });
+    expect(draf.artikel[0].baris[0]).toEqual({
+      variantSku: "a-S",
+      label: "Hitam · S",
+      namaProduk: "Kaos A — Hitam · S",
+      qty: 2,
+      tersedia: 9,
+      hargaSatuan: 25_000,
+    });
     const json = JSON.stringify(draf);
-    expect(json).not.toMatch(/harga|price|total|nilai|anggaran|budget|rupiah/i);
-    expect(json).not.toContain("Rp");
-    expect(json).not.toContain("25000");
-    expect(draf.artikel[0].baris[0]).toEqual({ variantSku: "a-S", label: "Hitam · S", namaProduk: "Kaos A — Hitam · S", qty: 2, tersedia: 9 });
+    expect(json).not.toMatch(/total|nilai|anggaran|budget/i);
+  });
+
+  it("a consignment line with no computable retail price carries null, never 0", () => {
+    const tanpaHarga = new Map([["a", { ...info.get("a")!, harga: null }]]);
+    const draf = susunDraf({ hasil, info: tanpaHarga, namaKategori: new Map([["k1", "Kaos"]]), konsi: true });
+    expect(draf.artikel[0].baris[0].hargaSatuan).toBeNull();
+  });
+
+  it("the price never changes what is planned: articles and lines are identical with and without it", () => {
+    const tanpaHarga = new Map([["a", { ...info.get("a")!, harga: null }]]);
+    const tanpa = (d: ReturnType<typeof susunDraf>) => ({
+      ...d,
+      artikel: (d.artikel as ArtikelDraf<BarisDrafKonsi>[]).map((a) => ({
+        ...a,
+        baris: a.baris.map((b) => ({ variantSku: b.variantSku, label: b.label, namaProduk: b.namaProduk, qty: b.qty, tersedia: b.tersedia })),
+      })),
+    });
+    const dengan = susunDraf({ hasil, info, namaKategori: new Map([["k1", "Kaos"]]), konsi: true });
+    const kosong = susunDraf({ hasil, info: tanpaHarga, namaKategori: new Map([["k1", "Kaos"]]), konsi: true });
+    expect(tanpa(dengan)).toEqual(tanpa(kosong));
   });
 
   it("a putus draft carries the server unit price on every line", () => {

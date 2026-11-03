@@ -31,6 +31,12 @@ describe("jubelioCreateEligibility", () => {
     });
   });
 
+  it("hides the button for a Toko offline saja item (owner answer P3a)", async () => {
+    vi.mocked(prisma.item.findUnique).mockResolvedValueOnce({ ...fg, salesChannel: "OFFLINE" } as never);
+    expect(await jubelioCreateEligibility("i1")).toBe("offline_channel");
+    expect(prisma.jubelioProductMapping.count).not.toHaveBeenCalled();
+  });
+
   it("refuses a missing item, a non-ERP or non-FG item, a mapped item, a requested item and a queued push", async () => {
     vi.mocked(prisma.item.findUnique).mockResolvedValueOnce(null as never);
     expect(await jubelioCreateEligibility("i1")).toBe("not_found");

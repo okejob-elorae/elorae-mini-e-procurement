@@ -38,6 +38,8 @@ export const JEJAK_GUDANG_RUSAK = {
 export const ENTITAS_GERAK_RUSAK = "DamagedStockMovement";
 /** `DamagedStockMovement.refType` gerakan masuk: satu baris hitungan gudang (NRI). */
 export const REF_BARIS_NRI = "WarehouseReturnItem";
+/** Baris retur lapangan toko KONSINYASI yang DITOLAK saat disetujui (Q25/P23) — `refId` = `FieldReturnLine.id`. */
+export const REF_BARIS_RETUR_LAPANGAN = "FieldReturnLine";
 /** `DamagedStockMovement.refType` gerakan PERBAIKI: penyesuaian stok jual yang dibuatnya. */
 export const REF_PENYESUAIAN = "StockAdjustment";
 

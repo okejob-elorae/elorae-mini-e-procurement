@@ -5,6 +5,7 @@ import { bacaBulan, daftarBulanTerakhir } from "@/lib/salesman/komisi";
 import { laporanKomisiBulan } from "@/lib/salesman/komisi-queries";
 import { bolehMengelola } from "@/lib/receivables/izin";
 import { potonganHilangSalesBulan } from "@/lib/spg/hilang-queries";
+import { potonganReturSalesBulan } from "./potongan-retur-queries";
 import { KomisiSalesmanClient } from "./KomisiSalesmanClient";
 
 export const dynamic = "force-dynamic";
@@ -38,10 +39,18 @@ export default async function LaporanKomisiSalesmanPage({
   const { skema, baris } = await laporanKomisiBulan(bulan);
   // Beban barang hilang bagian SALES: sisa, yang sudah ditandai dipotong bulan
   // ini, dan saran potongan (batas persen di Pengaturan → SPG × komisi).
-  const potongan = await potonganHilangSalesBulan(
-    baris.map((b) => ({ salesmanId: b.salesmanId, komisi: b.hasil.komisi })),
-    bulan,
-  );
+  // Selisih retur yang dibebankan ke sales (P22): sisa yang belum dipotong, yang dipotong bulan
+  // ini, dan potongan yang melebihi besarnya sekarang karena barangnya ketemu (P87).
+  const [potongan, potonganRetur] = await Promise.all([
+    potonganHilangSalesBulan(
+      baris.map((b) => ({ salesmanId: b.salesmanId, komisi: b.hasil.komisi })),
+      bulan,
+    ),
+    potonganReturSalesBulan(
+      baris.map((b) => b.salesmanId),
+      bulan,
+    ),
+  ]);
 
   return (
     <KomisiSalesmanClient
@@ -68,6 +77,7 @@ export default async function LaporanKomisiSalesmanPage({
         komisi: b.hasil.komisi,
       }))}
       potonganHilang={potongan.per}
+      potonganRetur={potonganRetur}
       maksPotongPersen={potongan.maksPotongPersen}
       bolehPotong={bolehMengelola(session.user.permissions)}
     />

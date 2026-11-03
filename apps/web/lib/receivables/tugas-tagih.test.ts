@@ -199,3 +199,47 @@ describe("petugasBawaan", () => {
     expect(petugasBawaan({ pemegangId: "admin", penjualIds: [], petugasLapangan: lapangan })).toBe("");
   });
 });
+
+describe("periksaTugasBaru — tagihan konsinyasi hanya ke pemegang toko (P31)", () => {
+  const dasar = {
+    storeId: "t1",
+    receivableIds: ["r1"],
+    faktur: [{ id: "r1", storeId: "t1", sisa: 400, konsi: true }],
+    sedangDitugaskan: new Set<string>(),
+    petugasLapangan: true,
+    tenggat: null,
+    hariIni: HARI_INI,
+  };
+
+  it("menolak tagihan konsi yang ditugaskan ke orang selain pemegang", () => {
+    expect(periksaTugasBaru({ ...dasar, assigneeId: "lain", pemegangToko: "pemegang" })).toEqual({
+      ok: false,
+      alasan: "KONSI_HANYA_PEMEGANG",
+    });
+  });
+
+  it("menolak tagihan konsi di toko tanpa pemegang", () => {
+    expect(periksaTugasBaru({ ...dasar, assigneeId: "siapa", pemegangToko: null })).toEqual({
+      ok: false,
+      alasan: "KONSI_HANYA_PEMEGANG",
+    });
+  });
+
+  it("menerima tagihan konsi yang ditugaskan ke pemegangnya", () => {
+    expect(periksaTugasBaru({ ...dasar, assigneeId: "pemegang", pemegangToko: "pemegang" })).toEqual({
+      ok: true,
+      receivableIds: ["r1"],
+    });
+  });
+
+  it("faktur putus tetap boleh ditugaskan ke siapa pun orang lapangan", () => {
+    const faktur = [{ id: "r1", storeId: "t1", sisa: 400, konsi: false }];
+    expect(periksaTugasBaru({ ...dasar, faktur, assigneeId: "lain", pemegangToko: "pemegang" }).ok).toBe(true);
+  });
+
+  it("orang bukan lapangan ditolak lebih dulu", () => {
+    expect(
+      periksaTugasBaru({ ...dasar, petugasLapangan: false, assigneeId: "lain", pemegangToko: "pemegang" }),
+    ).toEqual({ ok: false, alasan: "BUKAN_PETUGAS_LAPANGAN" });
+  });
+});

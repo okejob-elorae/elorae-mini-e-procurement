@@ -169,6 +169,7 @@ export async function buatKontrabon(input: {
             id: true,
             storeId: true,
             salesmanId: true,
+            isConsignment: true,
             store: { select: { salesmanId: true } },
             collectionLinks: {
               select: { collectionNote: { select: { status: true } } },
@@ -184,9 +185,12 @@ export async function buatKontrabon(input: {
           penagih &&
           piutang.some(
             (p) =>
+              // Tagihan konsinyasi: hanya pemegang toko sekarang (P31) — tanpa
+              // pemegang tidak ada penagih lapangan sama sekali.
               penagihPiutang({
                 penanggungJawabId: p.store?.salesmanId ?? null,
-                penjualId: p.salesmanId ?? '',
+                penjualId: p.salesmanId ?? null,
+                konsi: p.isConsignment,
               }) !== penagih,
           )
         ) {

@@ -97,6 +97,8 @@ const IKON: Record<string, LucideIcon> = {
   KIRIMAN_DISERAHKAN: PackageCheck,
   KIRIMAN_DITERIMA_SELISIH: PackageX,
   KIRIMAN_RUSAK_DIPUTUSKAN: PackageX,
+  KIRIMAN_DIBATALKAN: PackageX,
+  RETUR_SELISIH_CEK: PackageSearch,
   PERMINTAAN_SPG_MASUK: Inbox,
   REKOMENDASI_MASUK: Lightbulb,
   REKOMENDASI_DIJAWAB: Lightbulb,

@@ -48,7 +48,8 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "spgRetur.pembeli.penjelasan" },
       "Dibuka dari nota penjualan. Jumlah yang dilaporkan tidak bisa melebihi yang terjual di nota itu dikurangi yang sudah kembali dan yang masih menunggu kantor, dan alasan pembeli wajib diisi. Laporan dikirim ke kantor dan baru berlaku setelah disetujui (keputusan pemilik 2026-11-02): barang layak jual masuk lagi ke stok rak toko, sedangkan barang rusak dicatat tetapi tidak kembali ke rak — kirim balik ke gudang lewat nota retur dari layar Terima kiriman setelah disetujui.",
-      "Target, komisi, dan laporan memakai penjualan bersih sesudah retur yang disetujui. Tanpa sinyal, laporan disimpan di HP, terkirim sendiri, lalu menunggu persetujuan kantor. Status setiap laporan Anda ada di layar laporan retur pembeli (Lainnya, kelompok Di konter).",
+      "Foto barangnya wajib. Sisihkan barangnya — jangan dipajang, dijual, atau ikut dihitung opname — dan jangan kembalikan uang pembeli sebelum kantor menyetujui. Bila kasir sudah terlanjur mengembalikan uangnya, jawab Sudah dan lampirkan foto struk pengembaliannya; bila laporan itu kemudian ditolak, uangnya menjadi beban Anda (dipotong dari komisi, lalu gaji).",
+      "Retur yang disetujui mengurangi komisi bulan nota ASLINYA; penjualan bersih dan laporan konsinyasi berkurang di bulan laporannya. Tanpa sinyal, laporan dan fotonya disimpan di HP, terkirim sendiri, lalu menunggu persetujuan kantor. Status setiap laporan Anda ada di layar laporan retur pembeli (Lainnya, kelompok Di konter).",
     ],
   },
   {
@@ -57,7 +58,8 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "spgRetur.pembeliSaya.judul" },
     isi: [
       "Laporan barang yang dikembalikan pembeli yang Anda kirim, dengan statusnya: Menunggu persetujuan kantor, Disetujui, Ditolak (beserta alasan kantor), atau Ditarik.",
-      "Selama menunggu, stok rak, penjualan bersih, dan komisi belum berubah, dan potong yang sudah dilaporkan tidak bisa dilaporkan lagi dari nota yang sama. Laporan yang masih menunggu bisa Anda tarik sendiri dengan alasan bila salah catat — laporannya tidak dihapus, kantor tetap melihatnya sebagai ditarik — lalu barangnya bisa dilaporkan ulang dari nota.",
+      "Selama menunggu, stok rak, penjualan bersih, dan komisi belum berubah, dan potong yang sudah dilaporkan tidak bisa dilaporkan lagi dari nota yang sama. Laporan yang masih menunggu dan belum tercatat uangnya dikembalikan bisa Anda tarik sendiri dengan alasan bila salah catat — laporannya tidak dihapus, kantor tetap melihatnya sebagai ditarik — lalu barangnya bisa dilaporkan ulang dari nota.",
+      "Setelah disetujui, kembalikan uang pembeli lewat kasir lalu tekan Uang sudah dikembalikan dengan foto struknya (bisa tanpa sinyal). Pengembalian uang hanya bisa dicatat selama laporan menunggu atau sesudah disetujui, tidak pernah sesudah ditolak. Ditolak tanpa uang dikembalikan: jangan kembalikan uangnya, dan serahkan lagi barangnya ke pembeli. Ditolak sesudah uang dikembalikan: barangnya tetap disisihkan sampai beban Anda lunas dan kantor memutuskan barangnya (uang Anda dikembalikan di pembayaran berikutnya dan barangnya masuk stok, atau barangnya menjadi milik Anda).",
       "Laporan yang dicatat tanpa sinyal baru muncul di sini setelah terkirim; sebelum itu ada di Lainnya → Belum terkirim.",
     ],
   },
@@ -197,6 +199,7 @@ export const ENTRI: EntriBantuan[] = [
       "Untuk antaran konsinyasi, Dikirim adalah yang dibawa antaran ini, bukan jumlah pesanannya. Kartu di atas formulir menyebut nomor pesanan dan pengirimannya, siapa yang membawa, dan sisa pesanan yang masih di pengiriman lain atau belum dikirim gudang.",
       "Kurang di perjalanan: barangnya sudah dikirim gudang di antaran ini tetapi tidak sampai di toko. Yang dicek adalah pengantarnya, atau ekspedisi dengan nomor resinya, dan foto serah terima pengiriman itu bila ada. Kekurangannya dicatat ke kantor dengan keterangan itu, dan sales pemesannya dikabari.",
       "Belum dikirim gudang: sisa pesanan yang belum masuk pengiriman mana pun — barangnya masih di gudang. Itu bukan kekurangan dan tidak pernah tercatat sebagai barang hilang; jangan dihitung kurang di antaran ini, dan tanyakan ke gudang kalau ditunggu.",
+      "Kiriman bisa diterima begitu barangnya berangkat. Per baris ada Tiba, Rusak, dan Ditolak, dibawa pulang kurir; yang tidak diterima dan tidak ditolak menjadi barang hilang yang ditindaklanjuti kantor. Di toko putus, barang rusak dikembalikan ke gudang lewat Retur dan notanya tidak diubah. Tidak ada orang lain yang menerima untuk Anda — barangnya menunggu tanpa dibuka sampai Anda kembali.",
       "Barang rusak dicatat lewat Ada yang rusak? dengan keterangan dan foto; barang itu dihitung diterima tetapi tidak masuk stok toko sampai gudang memutuskan. Bila toko sudah opname sesudah kiriman berangkat, barang yang sudah ikut terhitung di opname itu diisi 0 supaya tidak terhitung dua kali.",
       "Setelah disimpan, penerimaan tidak bisa diubah. Butuh check-in; tanpa sinyal, penerimaan disimpan di HP dan terkirim sendiri.",
     ],
@@ -515,6 +518,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Jadwal kerja yang disusun kantor untuk 14 hari mulai hari ini: shift Anda dan shift rekan SPG setoko. Dari sini Anda mengajukan tukar shift, menjawab ajuan rekan, dan membatalkan ajuan sendiri.",
       "Tukar shift berjalan dua tahap: rekan menjawab lebih dulu, lalu kantor menyetujui. Yang ditukar adalah shift kedua orang pada hari yang dipilih, juga hari rekan yang Anda gantikan bila diisi; hari yang belum dijadwalkan menjadi libur.",
+      "Jadwal bulanan: isi dan ajukan jadwal bulan depan di bagian Jadwal bulanan — setiap hari mulai hari ini wajib diisi, kerja atau libur. Jadwal ini dasar gaji pokok Anda. Perubahan sesudah disetujui kantor perlu disetujui lagi.",
     ],
     kartu: [
       {
@@ -550,7 +554,7 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: { kunci: "pwa.spgGaji.lossOpenTitle" },
-        isi: "Beban barang hilang yang ditetapkan kantor kepada Anda dan belum lunas. Beban ini dipotong dari gaji atau komisi resmi saat kantor mengunci atau menetapkannya, paling banyak sebagian dari setiap pembayaran menurut aturan kantor; sisanya dipotong pada pembayaran berikutnya. Rinciannya di menu Lainnya → Beban saya.",
+        isi: "Beban barang hilang dan beban retur pembeli yang ditolak yang ditetapkan kantor kepada Anda dan belum lunas. Beban ini dipotong penuh saat pembayaran — dari komisi dulu, lalu dari gaji pokok; yang belum tertutup dipotong pada pembayaran berikutnya. Rinciannya di menu Lainnya → Beban saya.",
       },
       {
         judul: { kunci: "pwa.spgGaji.officialTitle" },
@@ -558,7 +562,15 @@ export const ENTRI: EntriBantuan[] = [
           "Gaji dan komisi yang sudah dicatat kantor per bulan pembayaran, masing-masing dengan bulan penjualannya: gaji & komisi konsinyasi dari bulan yang dikunci, atau komisi toko putus yang ditetapkan kantor. Bila ada potongan beban barang hilang, barisnya menyebut potongan; lencananya menunjukkan sudah dibayar atau belum.",
           "Pembayaran memakai komisi dari penjualan Anda sendiri pada saat dibayar (keputusan pemilik 2026-11-02, tanpa bagi rata). Bila angka yang dulu dicatat berbeda, angka lama ditulis sebagai \"sebelumnya\". Diterima = yang Anda terima sesudah potongan beban barang hilang dan koreksi; Akan diterima = yang akan Anda terima bila belum dibayar.",
           "Koreksi (+ atau −) untuk bulan yang sudah dibayar — misalnya dulu dibayar dibagi rata, atau ada pengembalian yang disetujui sesudah dibayar — ditambahkan sekali ke pembayaran resmi Anda berikutnya dan tidak pernah membuat pembayaran di bawah Rp 0; sisanya dibawa ke pembayaran sesudahnya. Koreksi yang belum punya pembayaran tampil di bagian Koreksi menunggu pembayaran berikutnya.",
-          "Bulan toko putus lama yang belum dicek kantor menampilkan angka yang akan dibayar sesudah dicek. Pembayaran yang menunggu keputusan kantor, atau siklus yang kuncinya dibuka lagi, belum menampilkan jumlah sampai angkanya pasti.",
+          "Bulan toko putus lama yang belum dicek kantor menampilkan angka yang akan dibayar sesudah dicek. Pembayaran yang ditahan menyebut sebabnya tanpa rupiah sampai angkanya pasti.",
+        ],
+      },
+      {
+        judul: "Cara gaji pokok dihitung",
+        isi: [
+          "Gaji pokok sebulan dibagi hari kerja terjadwal: misalnya 3.500.000 ÷ 26 hari = 134.615 per hari. Setiap hari terjadwal tanpa check-in di toko Anda dipotong satu tarif harian; izin, sakit, dan cuti yang disetujui tidak dipotong. Hari libur jadwal yang Anda masuki dibayar tambahan satu tarif harian.",
+          "Bila Anda mulai atau berhenti di tengah bulan: gaji ÷ hari kerja sebulan penuh menurut hari kerja SPG standar, dikali hari terjadwal Anda.",
+          "Gaji DAN komisi sebuah bulan ditahan selama gaji pokok Anda belum diatur kantor, jadwal bulanan belum disetujui, atau catatan check-in toko untuk hari tanpa jadwal belum dimasukkan dan diperiksa.",
         ],
       },
     ],

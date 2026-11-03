@@ -180,7 +180,23 @@ export function KlaimBaruClient({
    */
   const tokoPkp = bahan.toko.find((t) => t.id === storeId)?.pkp ?? false;
   const jenis = bahan.jenisPotongan;
-  const terkunci = (j: { hanyaPkp: boolean }) => j.hanyaPkp && !tokoPkp;
+  /*
+   * Tagihan konsinyasi tidak dipotong retur: barang titipan yang kembali memang
+   * tidak pernah ditagih. Jenis potongan dari retur dikunci kalau tokonya
+   * konsinyasi atau ada tagihan konsinyasi yang dipilih — penulis BKM
+   * menolaknya juga (`RETUR_TOKO_KONSI`).
+   */
+  const tokoKonsi = bahan.toko.find((t) => t.id === storeId)?.konsi ?? false;
+  const adaKonsi = tokoKonsi || piutang.some((p) => p.konsi && dipilih[p.id] !== undefined);
+  const terkunciPkp = (j: { hanyaPkp: boolean }) => j.hanyaPkp && !tokoPkp;
+  const terkunciKonsi = (j: { cara: string }) => adaKonsi && j.cara === 'DARI_RETUR';
+  const terkunci = (j: { hanyaPkp: boolean; cara: string }) => terkunciPkp(j) || terkunciKonsi(j);
+  // Baris potongan yang sudah memakai jenis yang kini terkunci (misalnya tagihan
+  // konsinyasi dicentang sesudah jenisnya dipilih): kirim tetap mati, disebut kenapa.
+  const potonganTerkunci = potongan.some((p) => {
+    const j = jenis.find((x) => x.id === p.deductionTypeId);
+    return j ? terkunciKonsi(j) : false;
+  });
 
   const nilaiFaktur = useMemo(
     () => Object.values(dipilih).reduce((s, n) => s + (n || 0), 0),
@@ -325,6 +341,7 @@ export function KlaimBaruClient({
     diterima >= 0 &&
     fotoTransfer !== null &&
     (!pakaiGiro || cekGiro.ok) &&
+    !potonganTerkunci &&
     potongan.every((p) => p.nama.trim() && p.nilai > 0);
 
   /*
@@ -342,7 +359,9 @@ export function KlaimBaruClient({
         ? { teks: t('needGiro'), ke: 'giro-no' }
         : Object.keys(dipilih).length === 0 || nilaiFaktur <= 0
           ? { teks: t('needInvoice'), ke: 'bkm-faktur' }
-          : !potongan.every((p) => p.nama.trim() && p.nilai > 0)
+          : potonganTerkunci
+            ? { teks: t('konsiNoReturnNeed'), ke: 'bkm-potongan' }
+            : !potongan.every((p) => p.nama.trim() && p.nilai > 0)
             ? { teks: t('needDeduction'), ke: 'bkm-potongan' }
             : fotoTransfer === null
               ? { teks: t('needPhoto', { label: t(`photo_${cara}` as never) }), ke: 'bkm-foto-wajib' }
@@ -531,7 +550,12 @@ export function KlaimBaruClient({
                   >
                     <Checkbox checked={aktif} onCheckedChange={() => pilihFaktur(p)} />
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium">{p.invoiceNo}</span>
+                      <span className="block text-sm font-medium">
+                        {p.invoiceNo}
+                        {p.konsi && (
+                          <span className="ml-1.5 text-xs font-normal text-muted-foreground">{t('konsiTag')}</span>
+                        )}
+                      </span>
                       <span className="block text-xs text-muted-foreground">
                         {t('dueOn', { date: tanggal(p.dueDate) })} · {t('outstanding', { value: rupiah(p.outstanding) })}
                       </span>
@@ -632,11 +656,15 @@ export function KlaimBaruClient({
                             {jenis.map((j) => (
                               <SelectItem key={j.id} value={j.id} disabled={terkunci(j)}>
                                 {j.nama}
-                                {terkunci(j) && (
+                                {terkunciKonsi(j) ? (
+                                  <span className="ml-1.5 text-xs text-muted-foreground">
+                                    {t('konsiNoReturn')}
+                                  </span>
+                                ) : terkunciPkp(j) ? (
                                   <span className="ml-1.5 text-xs text-muted-foreground">
                                     {t('pkpOnly')}
                                   </span>
-                                )}
+                                ) : null}
                               </SelectItem>
                             ))}
                             <SelectItem value="lainnya">{t('deductionOther')}</SelectItem>

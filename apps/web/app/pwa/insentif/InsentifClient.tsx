@@ -8,14 +8,14 @@ import { Button } from "@/components/ui/button";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { formatPersen, namaBulan, type PeranTagih } from "@/lib/salesman/komisi";
-import { komisiBisaNaikOlehKonsi, type InsentifHp } from "@/lib/salesman/penjualan-hp";
+import type { InsentifHp } from "@/lib/salesman/penjualan-hp";
 import { cn } from "@/lib/utils";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 /**
  * Payload halaman: `InsentifHp` (`lib/salesman/penjualan-hp.ts`) — perkiraan
- * atas putus + van, konsinyasi hanya pcs — ditambah pilihan bulan.
+ * atas omzet resmi putus + konsi + van (P56) — ditambah pilihan bulan.
  */
 export type DataInsentif = InsentifHp & {
   bulan: { kunci: string; href: string }[];
@@ -36,9 +36,10 @@ const NADA_PERAN: Record<PeranTagih, string> = {
  * kalimat itu tampil di kartu utama, bukan tersembunyi di catatan kaki —
  * salesman yang mengira angka ini pasti akan merasa dipotong saat gajian.
  *
- * Aturan mutlak: rupiah konsinyasi tidak pernah sampai ke HP. Omzet, capaian,
- * tarif, dan komisi di sini dihitung atas putus + van; konsinyasi hanya pcs.
- * Bila bulan itu ada konsinyasi, layar mengatakan angka final bisa lebih tinggi.
+ * Omzet, capaian, tarif, dan komisi di sini dihitung atas omzet yang sama
+ * dengan laporan komisi kantor: putus + konsi + van (pemilik P56, 2026-11-02 —
+ * HP salesman menampilkan konsinyasi lengkap). Konsinyasi tampil sebagai rupiah,
+ * dengan pcs lakunya di bawahnya.
  */
 export function InsentifClient({ data }: { data: DataInsentif }) {
   const t = useTranslations("pwa.insentif");
@@ -49,11 +50,7 @@ export function InsentifClient({ data }: { data: DataInsentif }) {
   const bulanPanjang = namaBulan(tBulan, data.bulanDipilih, "panjang");
   const lebarCapaian = data.capaianPersen === null ? 0 : Math.min(100, data.capaianPersen);
   const angka = new Intl.NumberFormat(locale === "en" ? "en-US" : "id-ID", { maximumFractionDigits: 0 });
-  const adaKonsi = data.omzet.pcsKonsi > 0;
-  // "Final bisa lebih tinggi" hanya bila konsi memang menyentuh komisinya (dasar PENJUALAN, atau tingkat di atas).
-  const komisiBisaNaik = komisiBisaNaikOlehKonsi({ pcsKonsi: data.omzet.pcsKonsi, dasar: data.dasar, tingkatBerikut: data.tingkatBerikut });
-  // Dasar PENJUALAN di HP = omzet putus + van; labelnya harus mengatakannya.
-  const kunciRumus = data.dasar === "PENJUALAN" ? "formulaPENJUALANPutusVan" : "formulaTERTAGIH";
+  const kunciRumus = data.dasar === "PENJUALAN" ? "formulaPENJUALAN" : "formulaTERTAGIH";
 
   return (
     <div className="space-y-4 p-4">
@@ -113,7 +110,6 @@ export function InsentifClient({ data }: { data: DataInsentif }) {
             {data.tarifDipakai > data.tarifDasar ? (
               <p className="mt-0.5 text-xs opacity-80">{t("tierApplied", { base: persen(data.tarifDasar) })}</p>
             ) : null}
-            {komisiBisaNaik ? <p className="mt-0.5 text-xs opacity-80">{t("konsiBelumDihitung")}</p> : null}
             <p className="mt-3 inline-flex rounded-full px-2.5 py-1 text-xs font-medium" style={{ background: "color-mix(in oklab, var(--primary-foreground) 16%, transparent)" }}>
               {t("estimateNote")}
             </p>
@@ -144,7 +140,7 @@ export function InsentifClient({ data }: { data: DataInsentif }) {
         {data.target !== null && data.capaianPersen !== null ? (
           <>
             <p className="mt-1 text-lg font-semibold tabular-nums">
-              {t("targetOfPutusVan", { omzet: formatIDR(data.omzet.total), target: formatIDR(data.target) })}
+              {t("targetOf", { omzet: formatIDR(data.omzet.total), target: formatIDR(data.target) })}
             </p>
             <div
               className="mt-2 h-2.5 overflow-hidden rounded-full bg-muted"
@@ -159,21 +155,8 @@ export function InsentifClient({ data }: { data: DataInsentif }) {
             <p className="mt-1.5 text-xs font-medium tabular-nums">{t("achieved", { pct: persen(data.capaianPersen) })}</p>
           </>
         ) : (
-          <p className="mt-1 text-sm text-muted-foreground">{t("noTargetPutusVan", { omzet: formatIDR(data.omzet.total) })}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t("noTarget", { omzet: formatIDR(data.omzet.total) })}</p>
         )}
-        {adaKonsi ? (
-          // Kalimatnya hanya menyebut yang memang bisa naik karena konsi di kantor.
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            {t(
-              data.target === null
-                ? "konsiNotePcs"
-                : data.aktif && komisiBisaNaik
-                  ? "konsiNote"
-                  : "konsiNoteCapaian",
-              { n: angka.format(data.omzet.pcsKonsi) },
-            )}
-          </p>
-        ) : null}
 
         {data.aktif && data.tingkat.length > 0 ? (
           <div className="mt-3 border-t pt-3">
@@ -260,18 +243,19 @@ export function InsentifClient({ data }: { data: DataInsentif }) {
       ) : (
         <section className="beranda-kartu">
           <h2 className="beranda-judul">{t("salesTitle")}</h2>
-          {/* Rupiah putus dan van; konsinyasi hanya pcs — rupiahnya tidak pernah sampai ke HP. */}
-          <dl className="mt-3 grid grid-cols-3 gap-2">
-            {(["putus", "van"] as const).map((k) => (
-              <div key={k} className="min-w-0">
-                <dt className="text-xs text-muted-foreground">{tDinamis(`channel_${k}`)}</dt>
-                <dd className="truncate text-sm font-semibold tabular-nums">{formatIDR(data.omzet[k])}</dd>
+          {/* Satu baris per kanal: rupiah di HP tidak pernah dipotong, jadi tidak dijejalkan tiga kolom. */}
+          <dl className="mt-3 divide-y">
+            {(["putus", "konsi", "van"] as const).map((k) => (
+              <div key={k} className="flex items-start justify-between gap-3 py-2">
+                <dt className="text-sm text-muted-foreground">
+                  {tDinamis(`channel_${k}`)}
+                  {k === "konsi" && data.omzet.pcsKonsi > 0 ? (
+                    <span className="block text-xs">{t("konsiPcs", { n: angka.format(data.omzet.pcsKonsi) })}</span>
+                  ) : null}
+                </dt>
+                <dd className="text-right text-sm font-semibold tabular-nums">{formatIDR(data.omzet[k])}</dd>
               </div>
             ))}
-            <div className="min-w-0">
-              <dt className="text-xs text-muted-foreground">{t("channel_konsi")}</dt>
-              <dd className="truncate text-sm font-semibold tabular-nums">{t("konsiPcs", { n: angka.format(data.omzet.pcsKonsi) })}</dd>
-            </div>
           </dl>
         </section>
       )}

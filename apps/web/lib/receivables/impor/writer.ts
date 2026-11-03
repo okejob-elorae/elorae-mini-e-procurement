@@ -3,6 +3,8 @@ import { runSerializable } from '@/lib/db/tx-retry';
 import { catatJejak, JEJAK } from '../jejak';
 import type { BarisImpor } from './baris';
 import { bacaTanggalMulaiTagihan, tagihanSesudahMulaiBuku } from '../gerbang-tanggal-mulai';
+import { muatBulanSiklusPertama } from "@/lib/konsinyasi/siklus-pertama";
+import { fakturKonsiLewatSiklusPertama } from "@/lib/konsinyasi/siklus-pertama-aturan";
 
 /**
  * Penyimpan hasil impor faktur.
@@ -25,7 +27,8 @@ function statusImpor(nilai: number, sisa: number): 'OUTSTANDING' | 'PARTIAL' | '
 export type AlasanLewat =
   | 'BARIS_BERMASALAH'
   | 'TOKO_TIDAK_DITEMUKAN'
-  | 'TOKO_KONSI'
+  /** Utang toko konsinyasi bertanggal pada/sesudah bulan siklus pertama di sistem (P59) — bulan itu ditagih siklus. */
+  | "KONSI_SESUDAH_SIKLUS_PERTAMA"
   | 'SUDAH_ADA'
   | 'LUNAS'
   /** Bertanggal pada/sesudah tanggal mulai buku besar — tagihan barang sejak itu hanya lewat nota tagihan. */
@@ -50,16 +53,19 @@ type Konteks = {
   tokoPerNama: Map<string, { id: string; konsi: boolean }>;
   fakturAda: Set<string>;
   tanggalMulai: string | null;
+  /** Bulan siklus konsinyasi pertama di sistem ("YYYY-MM"), atau null kalau belum diatur. */
+  siklusPertama: string | null;
 };
 
 async function muatKonteks(noFaktur: string[]): Promise<Konteks> {
-  const [toko, ada, tanggalMulai] = await Promise.all([
+  const [toko, ada, tanggalMulai, pertama] = await Promise.all([
     prisma.store.findMany({ select: { id: true, code: true, name: true, termsType: true } }),
     prisma.receivable.findMany({
       where: { invoiceNo: { in: noFaktur } },
       select: { invoiceNo: true },
     }),
     bacaTanggalMulaiTagihan(prisma),
+    muatBulanSiklusPertama(prisma),
   ]);
 
   const tokoPerKode = new Map<string, { id: string; konsi: boolean }>();
@@ -75,6 +81,7 @@ async function muatKonteks(noFaktur: string[]): Promise<Konteks> {
     tokoPerNama,
     fakturAda: new Set(ada.map((r) => r.invoiceNo)),
     tanggalMulai,
+    siklusPertama: pertama.diatur ? pertama.bulan : null,
   };
 }
 
@@ -93,18 +100,15 @@ function cariToko(b: BarisImpor, k: Konteks) {
   return undefined;
 }
 
-function nilaiBaris(b: BarisImpor, k: Konteks): { ok: true; storeId: string } | { ok: false; alasan: AlasanLewat } {
+function nilaiBaris(
+  b: BarisImpor,
+  k: Konteks,
+): { ok: true; storeId: string; konsi: boolean } | { ok: false; alasan: AlasanLewat } {
   if (b.masalah.length > 0) return { ok: false, alasan: 'BARIS_BERMASALAH' };
   if (k.fakturAda.has(b.noFaktur)) return { ok: false, alasan: 'SUDAH_ADA' };
 
   const toko = cariToko(b, k);
   if (!toko) return { ok: false, alasan: 'TOKO_TIDAK_DITEMUKAN' };
-  /*
-   * Toko konsinyasi ditolak. Barang di sana masih milik kita sampai terjual,
-   * jadi tidak ada piutang yang bisa lahir dari toko itu — sebuah berkas yang
-   * memuatnya hampir pasti mencampur pengiriman titipan dengan penjualan.
-   */
-  if (toko.konsi) return { ok: false, alasan: 'TOKO_KONSI' };
 
   // Sisa nol berarti fakturnya memang sudah lunas; ia tidak perlu dibuat
   // sebagai piutang hidup, dan membuatnya akan menagih uang yang sudah masuk.
@@ -117,7 +121,20 @@ function nilaiBaris(b: BarisImpor, k: Konteks): { ok: true; storeId: string } | 
   const tanggal = b.tglFaktur ?? b.jatuhTempo;
   if (tanggal && tagihanSesudahMulaiBuku(tanggal, k.tanggalMulai)) return { ok: false, alasan: 'SESUDAH_TANGGAL_MULAI' };
 
-  return { ok: true, storeId: toko.id };
+  /*
+   * Toko konsinyasi DITERIMA (P32: utang toko konsi di kertas boleh masuk lewat
+   * impor), ditandai `isConsignment`. Yang bertanggal pada/sesudah bulan siklus
+   * pertama di sistem dilewati (P59): bulan itu dan sesudahnya ditagih siklus,
+   * jadi menerimanya di sini menagih bulan yang sama dua kali. Di sini dibaca
+   * sekali untuk pratinjau; `simpanImpor` membacanya LAGI di dalam transaksi
+   * serializable (`konsiTertolakDiTransaksi`), karena pengaturan yang disimpan
+   * di antara keduanya tidak boleh lolos.
+   */
+  if (toko.konsi && tanggal && fakturKonsiLewatSiklusPertama(tanggal, k.siklusPertama)) {
+    return { ok: false, alasan: "KONSI_SESUDAH_SIKLUS_PERTAMA" };
+  }
+
+  return { ok: true, storeId: toko.id, konsi: toko.konsi };
 }
 
 /** Ringkasan sebelum menyimpan: berapa yang akan masuk, dan apa yang tidak. */
@@ -150,7 +167,7 @@ export async function simpanImpor(
 ): Promise<HasilImpor> {
   const k = await muatKonteks(baris.map((b) => b.noFaktur).filter(Boolean));
 
-  const siap: { b: BarisImpor; storeId: string }[] = [];
+  const siap: { b: BarisImpor; storeId: string; konsi: boolean }[] = [];
   const dilewati: HasilImpor['dilewati'] = [];
   // Nomor faktur kembar DI DALAM berkas yang sama juga ditolak — kalau tidak,
   // baris kedua lolos pemeriksaan "sudah ada" dan menciptakan duplikat.
@@ -167,14 +184,30 @@ export async function simpanImpor(
       continue;
     }
     terlihat.add(b.noFaktur);
-    siap.push({ b, storeId: hasil.storeId });
+    siap.push({ b, storeId: hasil.storeId, konsi: hasil.konsi });
   }
 
   if (siap.length === 0) return { masuk: 0, dilewati, ids: [] };
 
-  const ids = await runSerializable(async (tx) => {
+  const tersimpan = await runSerializable(async (tx) => {
+    /*
+     * Gerbang P59 dibaca ulang DI DALAM transaksi. `aturBulanSiklusPertama` yang
+     * tersimpan sesudah `muatKonteks` di atas belum melihat faktur impor ini
+     * (pemeriksaan ADA_TAGIHAN_KONSI_LAMA_SESUDAHNYA-nya), jadi tanpa bacaan
+     * ini faktur konsi bertanggal sejak bulan itu lolos dan bulan itu tertagih
+     * dua kali: lewat impor dan lewat siklusnya. Sama dengan `tulisPiutangManual`.
+     * Dikumpulkan per percobaan — `runSerializable` bisa mengulang callback ini.
+     */
+    const pertama = siap.some((s) => s.konsi) ? await muatBulanSiklusPertama(tx) : null;
+    const bulanPertama = pertama?.diatur ? pertama.bulan : null;
     const dibuat: string[] = [];
-    for (const { b, storeId } of siap) {
+    const lewatDiTransaksi: HasilImpor["dilewati"] = [];
+    for (const { b, storeId, konsi } of siap) {
+      const tanggal = b.tglFaktur ?? b.jatuhTempo;
+      if (konsi && tanggal && fakturKonsiLewatSiklusPertama(tanggal, bulanPertama)) {
+        lewatDiTransaksi.push({ baris: b.baris, noFaktur: b.noFaktur, alasan: "KONSI_SESUDAH_SIKLUS_PERTAMA" });
+        continue;
+      }
       const baru = await tx.receivable.create({
         data: {
           invoiceNo: b.noFaktur,
@@ -200,6 +233,7 @@ export async function simpanImpor(
           outstandingAmount: D(b.sisa!),
           status: statusImpor(b.nilai!, b.sisa!),
           source: 'IMPORT',
+          isConsignment: konsi,
         },
         select: { id: true },
       });
@@ -216,20 +250,27 @@ export async function simpanImpor(
      * Impor belum bisa dibatalkan lewat layar, jadi daftar id yang dibuat
      * disimpan di sini — itulah yang dibutuhkan untuk membatalkannya nanti,
      * dan tanpa itu satu-satunya jalan adalah menebak dari waktu pembuatan.
+     * Impor yang seluruh barisnya tertolak di sini tidak mencatat apa pun —
+     * sama dengan impor yang tidak punya baris siap sama sekali.
      */
-    await catatJejak(tx, {
-      userId: opts.olehUserId,
-      action: JEJAK.FAKTUR_IMPOR,
-      entityType: 'Receivable',
-      entityId: dibuat[0] ?? 'batch',
-      changes: { after: { masuk: dibuat.length, dilewati: dilewati.length } },
-      metadata: {
-        receivableIds: dibuat,
-        alasanDilewati: dilewati.map((d) => ({ baris: d.baris, alasan: d.alasan })),
-      },
-    });
-    return dibuat;
+    if (dibuat.length > 0) {
+      const semuaLewat = [...dilewati, ...lewatDiTransaksi];
+      await catatJejak(tx, {
+        userId: opts.olehUserId,
+        action: JEJAK.FAKTUR_IMPOR,
+        entityType: "Receivable",
+        entityId: dibuat[0],
+        changes: { after: { masuk: dibuat.length, dilewati: semuaLewat.length } },
+        metadata: {
+          receivableIds: dibuat,
+          alasanDilewati: semuaLewat.map((d) => ({ baris: d.baris, alasan: d.alasan })),
+        },
+      });
+    }
+    return { dibuat, lewatDiTransaksi };
   });
 
-  return { masuk: siap.length, dilewati, ids };
+  dilewati.push(...tersimpan.lewatDiTransaksi);
+  dilewati.sort((a, b) => a.baris - b.baris);
+  return { masuk: tersimpan.dibuat.length, dilewati, ids: tersimpan.dibuat };
 }

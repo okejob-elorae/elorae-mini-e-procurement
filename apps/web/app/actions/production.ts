@@ -295,7 +295,8 @@ const woSchema = z
     rollBreakdown: z.array(rollBreakdownItemSchema).optional(),
     skuBreakdown: skuBreakdownSchema.optional(),
     steps: z.array(woStepSchema).optional(),
-    hppMarginPercent: z.number().min(0).max(100).optional(),
+    // Markup per WO dihapus (P4a): harga rekomendasi hanya dari pengaturan barang. Kolom
+    // `WorkOrder.hppMarginPercent` tetap ada di skema tanpa dibaca, sampai dibuang kemudian.
     hppAdditionalCost: z.number().min(0).optional(),
   })
   .refine(
@@ -375,7 +376,6 @@ export async function createWorkOrder(
         targetDate: data.targetDate,
         poId: data.poId ?? null,
         notes: data.notes,
-        hppMarginPercent: data.hppMarginPercent ?? null,
         hppAdditionalCost: data.hppAdditionalCost ?? null,
         createdById: userId,
         consumptionPlan: JSON.stringify(
@@ -602,9 +602,13 @@ export async function updateWorkOrder(woId: string, data: WOFormData, _userId?: 
   return { ok: true, id: woId, docNumber };
 }
 
+/**
+ * Biaya tambahan HPP per WO. Markup per WO sudah dihapus (P4a: satu harga rekomendasi, dari
+ * pengaturan barang), jadi hanya `hppAdditionalCost` yang ditulis dan masuk jejak.
+ */
 export async function updateWOHppAdjustments(
   woId: string,
-  data: { hppMarginPercent?: number; hppAdditionalCost?: number }
+  data: { hppAdditionalCost?: number }
 ) {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
@@ -613,24 +617,21 @@ export async function updateWOHppAdjustments(
   }
   const existing = await prisma.workOrder.findUnique({
     where: { id: woId },
-    select: { hppMarginPercent: true, hppAdditionalCost: true },
+    select: { hppAdditionalCost: true },
   });
   if (!existing) throw new Error('Work order not found');
 
   const updated = await prisma.workOrder.update({
     where: { id: woId },
     data: {
-      hppMarginPercent: data.hppMarginPercent ?? null,
       hppAdditionalCost: data.hppAdditionalCost ?? null,
     },
   });
 
   const before = {
-    hppMarginPercent: existing.hppMarginPercent != null ? Number(existing.hppMarginPercent) : null,
     hppAdditionalCost: existing.hppAdditionalCost != null ? Number(existing.hppAdditionalCost) : null,
   };
   const after = {
-    hppMarginPercent: updated.hppMarginPercent != null ? Number(updated.hppMarginPercent) : null,
     hppAdditionalCost: updated.hppAdditionalCost != null ? Number(updated.hppAdditionalCost) : null,
   };
   await logAudit({

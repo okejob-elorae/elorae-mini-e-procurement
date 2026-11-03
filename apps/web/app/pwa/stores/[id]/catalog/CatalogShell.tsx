@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cartCount, cartTotal, buildOrderLines, type CartLine } from "@/lib/field-sales/cart";
 import { ringkasNama, susunIsiUlang } from "@/lib/salesman/ulang";
 import { hargaSah } from "@/lib/field-sales/harga-wajib";
+import { perkiraanNilaiKonsi } from "@/lib/field-sales/perkiraan-konsi";
 import { enqueueOrder, newLocalId } from "@/lib/pwa/offline/queue";
 import { flushPendingOrders } from "@/lib/pwa/offline/sync";
 import { PERISTIWA_ANTREAN } from "@/lib/pwa/offline/hitung";
@@ -65,7 +66,12 @@ type CatalogItem = {
   variants: Array<{ variantSku: string; variantLabel: string; available: number; diRak?: number }>;
 };
 
-type Payload = { items: CatalogItem[] };
+/**
+ * `hargaKonsiTampil`: server mengirim harga retail toko konsinyasi (P18, HP
+ * salesman). SPG, portal toko, dan katalog lama di cache HP tidak membawanya —
+ * harganya tetap tersembunyi (arah yang aman).
+ */
+type Payload = { items: CatalogItem[]; hargaKonsiTampil?: boolean };
 
 /** Bahan penilaian kredit toko PUTUS, dibaca server saat halaman dibuka. */
 export type KreditKatalog = {
@@ -219,6 +225,9 @@ export function CatalogShell({
   }, [indenTerbuka]);
   // Pre-order: barangnya datang bersama halaman — langsung siap, tanpa kilasan "Memuat katalog…".
   const [items, setItems] = useState<CatalogItem[]>(() => (inden?.mode === "PESAN" ? terapkanMinimum(inden.items) : []));
+  const [hargaKonsiTampil, setHargaKonsiTampil] = useState(false);
+  /** Harga tampil di katalog: toko putus selalu; toko konsinyasi bila server mengirim harga retailnya (P18). */
+  const tampilHarga = !isKonsi || hargaKonsiTampil;
   const [state, setState] = useState<LoadState>(inden ? "ready" : "loading");
   const [q, setQ] = useState(cariAwal ?? "");
   const [cat, setCat] = useState<string | null>(null);
@@ -318,6 +327,25 @@ export function CatalogShell({
   }
 
   const cartLines = useMemo(() => Array.from(cart.values()), [cart]);
+  /*
+   * Toko konsinyasi (P18): perkiraan nilai retail keranjang dari harga yang
+   * dikirim server. Baris keranjang konsi TETAP berharga 0 — nilainya dihitung
+   * kantor saat menyetujui; ini hanya tampilan.
+   */
+  const hargaKonsiPerBarang = useMemo(() => {
+    const m = new Map<string, number | null>();
+    if (!isKonsi || !hargaKonsiTampil) return m;
+    for (const it of items) m.set(it.itemId, hargaSah(it.price) ? it.price : null);
+    return m;
+  }, [isKonsi, hargaKonsiTampil, items]);
+  const hargaKonsi = (itemId: string): number | null => hargaKonsiPerBarang.get(itemId) ?? null;
+  const perkiraanKonsi = useMemo(
+    () =>
+      isKonsi && hargaKonsiTampil
+        ? perkiraanNilaiKonsi(cartLines.map((l) => ({ qty: l.qty, harga: hargaKonsiPerBarang.get(l.itemId) ?? null })))
+        : null,
+    [isKonsi, hargaKonsiTampil, cartLines, hargaKonsiPerBarang],
+  );
 
   // Minimum pesan per BARANG: varian satu barang dijumlah bersama, persis aturan server.
   const qtyPerBarang = useMemo(() => {
@@ -681,6 +709,7 @@ export function CatalogShell({
         // penulis melepasnya sebelum pengganti dicadangkan.
         const katalog = gantiUbah ? tambahCadanganLama(data.items, gantiUbah.cadangan) : data.items;
         setItems(terapkanMinimum(katalog));
+        setHargaKonsiTampil(data.hargaKonsiTampil === true);
         setState("ready");
         if (isiAwal?.length && bisaPesan && !sudahDiisi.current) {
           sudahDiisi.current = true;
@@ -1037,9 +1066,10 @@ export function CatalogShell({
                         </p>
                       )}
                     </div>
-                    {!isKonsi && (
+                    {tampilHarga && (
                       <div className="shrink-0 text-right">
-                        {/* Tanpa label harga: di toko putus labelnya selalu "Harga" — tidak menambah apa-apa. */}
+                        {/* Tanpa label harga: di toko putus labelnya selalu "Harga" — tidak menambah apa-apa.
+                            Toko konsinyasi: harga retail toko (P18). */}
                         {hargaSah(it.price) ? (
                           <p className="text-sm font-semibold tabular-nums">{rupiah(it.price)}</p>
                         ) : it.available > 0 ? (
@@ -1181,11 +1211,16 @@ export function CatalogShell({
                           <p className="truncate text-xs text-muted-foreground">{line.variantLabel}</p>
                         )}
                         <p className="truncate text-xs text-muted-foreground">{line.sku}</p>
-                        {!isKonsi && (
+                        {!isKonsi ? (
                           <p className="text-xs text-muted-foreground tabular-nums">
                             {t("perPcs", { price: rupiah(line.unitPrice) })}
                           </p>
-                        )}
+                        ) : hargaKonsi(line.itemId) !== null ? (
+                          <p className="text-xs text-muted-foreground tabular-nums">
+                            {t("perPcs", { price: rupiah(hargaKonsi(line.itemId) ?? 0) })} ·{" "}
+                            {t("konsiPerkiraan", { value: rupiah(line.qty * (hargaKonsi(line.itemId) ?? 0)) })}
+                          </p>
+                        ) : null}
                         {kurangMinimum && (
                           <p className="text-xs text-destructive">
                             {tKredit("kurangMinimum", { min: minBarang, jumlah: qtyBarang })}
@@ -1296,6 +1331,21 @@ export function CatalogShell({
                 />
               </div>
 
+              {isKonsi && perkiraanKonsi && (
+                <div className="flex flex-col gap-1 border-t pt-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium">{t("total")}</span>
+                    <span className="text-base font-semibold tabular-nums">
+                      {t("konsiPerkiraan", { value: rupiah(perkiraanKonsi.nilai) })}
+                    </span>
+                  </div>
+                  <p className="text-xs leading-snug text-muted-foreground">{t("konsiNilaiCatatan")}</p>
+                  {!perkiraanKonsi.lengkap && (
+                    <p className="text-xs leading-snug text-muted-foreground">{t("konsiPerkiraanSebagian")}</p>
+                  )}
+                </div>
+              )}
+
               {!isKonsi && (
                 <div className="flex flex-col gap-1 border-t pt-3">
                   {preview && preview.orderDiscount > 0 && (
@@ -1363,7 +1413,13 @@ export function CatalogShell({
           <div className="flex min-w-0 items-center justify-between gap-3">
             <p className="truncate text-sm font-medium">
               {isKonsi ? (
-                `${t("cartItems", { count: cartCount(cartLines) })} · ${t("cartSkus", { count: cartLines.length })}`
+                [
+                  t("cartItems", { count: cartCount(cartLines) }),
+                  t("cartSkus", { count: cartLines.length }),
+                  perkiraanKonsi ? t("konsiPerkiraan", { value: rupiah(perkiraanKonsi.nilai) }) : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
               ) : (
                 <>
                   {t("cartItems", { count: cartCount(cartLines) })} · <span className="tabular-nums">{rupiah(cartTotal(cartLines))}</span>
@@ -1381,6 +1437,7 @@ export function CatalogShell({
       <VariantSheet
         item={sheetItem}
         isKonsi={isKonsi}
+        hargaKonsiTampil={hargaKonsiTampil}
         inden={indenPesan !== null}
         hasActiveVisit={bisaPesan}
         cart={cart}

@@ -13,6 +13,7 @@ import type { KeadaanPiutang } from '@/lib/receivables/rules';
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
+import { susunKalimatTertahan } from "../kalimat-tertahan";
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso?: string) =>
   iso
@@ -137,6 +138,14 @@ export function FakturTokoClient({
               <div className="flex items-start justify-between gap-3">
                 <span className="min-w-0">
                   <span className="block font-semibold">{b.invoiceNo}</span>
+                  {/* Tagihan siklus konsinyasi: tandanya dan nomor nota admin penjualan (P18, P31). */}
+                  {b.konsi && (
+                    <span className="block text-xs text-muted-foreground">
+                      {[t('konsiTag'), b.nomorNotaKonsi ? t('notaKonsi', { no: b.nomorNotaKonsi }) : null]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  )}
                   <span className="block text-xs text-muted-foreground">
                     {t('due', { date: tanggal(b.dueDate) })}
                   </span>
@@ -151,12 +160,14 @@ export function FakturTokoClient({
                 </span>
               </div>
               <p className={cn('rounded-lg px-3 py-2 text-sm leading-relaxed', NADA[b.keadaan])}>
-                {td(`why_${b.keadaan}`, {
-                  value: rupiah(b.alasan.nilaiTertahan ?? 0),
-                  doc: b.alasan.noKlaim ?? b.alasan.noKontrabon ?? '—',
-                  date: tanggal(b.alasan.janjiBayar),
-                  days: b.alasan.hariTerlambat ?? 0,
-                })}
+                {b.keadaan === 'tertahan'
+                  ? susunKalimatTertahan(b.alasan, td, rupiah)
+                  : td(`why_${b.keadaan}`, {
+                      value: rupiah(b.alasan.nilaiTertahan ?? 0),
+                      doc: b.alasan.noKlaim ?? b.alasan.noKontrabon ?? '—',
+                      date: tanggal(b.alasan.janjiBayar),
+                      days: b.alasan.hariTerlambat ?? 0,
+                    })}
               </p>
             </CardContent>
           </Card>

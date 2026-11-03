@@ -228,6 +228,31 @@ d("recordSpgSale (test bed only)", () => {
     expect(count).toBe(1);
   });
 
+  it("dates each line's stored category at the moment it is read: an online note at its own time", async () => {
+    const sekarang = new Date();
+    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(1)], sekarang });
+    if (!res.ok) throw new Error(res.code);
+    const sale = await prisma.spgSale.findUniqueOrThrow({
+      where: { id: seededId(res.spgSaleId) },
+      select: { createdAt: true, lines: { select: { categoryId: true, categoryAt: true, categoryFilledLater: true } } },
+    });
+    expect(sale.createdAt).toEqual(sekarang);
+    expect(sale.lines).toEqual([{ categoryId: null, categoryAt: sekarang, categoryFilledLater: false }]);
+  });
+
+  it("an offline note keeps its sale time on the note and dates the category when it reaches the server, where it is read", async () => {
+    const sekarang = new Date();
+    const waktuJual = new Date(sekarang.getTime() - 2 * 3_600_000);
+    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(1)], luring: true, waktuJual, sekarang, idempotencyKey: `${tag}-luring-kategori` });
+    if (!res.ok) throw new Error(res.code);
+    const sale = await prisma.spgSale.findUniqueOrThrow({
+      where: { id: seededId(res.spgSaleId) },
+      select: { createdAt: true, lines: { select: { categoryId: true, categoryAt: true, categoryFilledLater: true } } },
+    });
+    expect(sale.createdAt).toEqual(waktuJual);
+    expect(sale.lines).toEqual([{ categoryId: null, categoryAt: sekarang, categoryFilledLater: false }]);
+  });
+
   it("EMPTY when no positive-qty lines", async () => {
     const res = await recordSpgSale({ salesmanId, storeId, lines: [line(0)] });
     expect(res).toEqual({ ok: false, code: "EMPTY" });

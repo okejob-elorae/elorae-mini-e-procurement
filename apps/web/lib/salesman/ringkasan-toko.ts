@@ -1,5 +1,7 @@
 import { prisma } from "@elorae/db";
 import { keadaanPesanan, nilaiTampil, type KeadaanPesanan } from "@/lib/field-sales/pwa-queries";
+import { perkiraanPesananKonsi } from "@/lib/field-sales/perkiraan-konsi-queries";
+import type { PerkiraanKonsi } from "@/lib/field-sales/perkiraan-konsi";
 import type { BarisPiutang } from "@/lib/receivables/queries";
 import type { KeadaanPiutang } from "@/lib/receivables/rules";
 import type { KeadaanTagihan } from "./kredit";
@@ -24,7 +26,7 @@ export type FakturRingkas = {
   /** Tanggal yang ditunggu: janji bayar kontrabon bila ada, selain itu jatuh tempo (ISO). */
   tanggal: string;
   jenisTanggal: "janji" | "jatuhTempo";
-  /** Lewat janji SESUDAH toleransi — aturan yang sama dengan `ringkasKeadaanTagihan`. */
+  /** Lewat janji SESUDAH toleransi — aturan yang sama dengan `ringkasLewatJanji`. */
   lewat: boolean;
 };
 
@@ -73,7 +75,14 @@ export function gabungFavorit(
 
 export type RingkasanToko = {
   jenisToko: "PUTUS" | "KONSI";
-  /** null untuk toko konsinyasi — mereka tidak punya piutang. */
+  /**
+   * Tagihan toko: `sisa` = faktur terbuka, `belumDinota` = pesanan putus yang
+   * sudah disetujui tetapi belum masuk nota — keduanya dari
+   * `computeStoreCreditExposure`. Tagihan konsinyasi ikut (keputusan
+   * 2026-10-29). `null` bila toko punya tagihan konsinyasi terbuka dan penonton
+   * BUKAN pemegang toko sekarang (P31): nominal tagihan konsi hanya untuk
+   * pemegangnya — lihat `tagihanHanyaPemegang`.
+   */
   tagihan:
     | (KeadaanTagihan & {
         faktur: FakturRingkas[];
@@ -86,6 +95,8 @@ export type RingkasanToko = {
         bolehLihat: boolean;
       })
     | null;
+  /** Tagihan disembunyikan karena ada tagihan konsinyasi dan penonton bukan pemegang toko (P31). */
+  tagihanHanyaPemegang: boolean;
   favorit: Array<{ itemId: string; sku: string; nama: string; pcs: number }>;
   pesananTerakhir: {
     id: string;
@@ -94,8 +105,13 @@ export type RingkasanToko = {
     orderType: "PUTUS" | "KONSI";
     status: "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
     keadaan: KeadaanPesanan;
-    /** null untuk konsi — nilai konsinyasi tidak pernah tampil di HP. */
+    /**
+     * Nilai pesanan (`nilaiTampil`): KONSI yang sudah disetujui menampilkan
+     * nilainya di HP salesman (P18); KONSI yang menunggu null — lihat `perkiraan`.
+     */
     total: number | null;
+    /** KONSI menunggu persetujuan: perkiraan nilai retailnya (`perkiraanPesananKonsi`). */
+    perkiraan: PerkiraanKonsi | null;
     /** Hanya pesanan sendiri yang punya halaman detail di HP. */
     milikSaya: boolean;
   } | null;
@@ -124,7 +140,7 @@ export async function ringkasanToko(
    * `getStoreSentItems`.
    */
   const [tagihan, putus, konsi, pesanan, kunjungan] = await Promise.all([
-    toko.termsType === "KONSI" ? Promise.resolve(null) : tagihanToko(storeId, toko.salesmanId, penontonId),
+    tagihanToko(storeId, toko.salesmanId, penontonId),
     prisma.fieldSalesDeliveryLine.groupBy({
       by: ["itemId"],
       where: { delivery: { deliveredAt: { gte: sejak }, order: { storeId } } },
@@ -170,10 +186,15 @@ export async function ringkasanToko(
     ? await prisma.item.findMany({ where: { id: { in: teratas.map((f) => f.itemId) } }, select: { id: true, sku: true, nameId: true } })
     : [];
   const barangById = new Map(barang.map((b) => [b.id, b]));
+  const perkiraan =
+    pesanan && pesanan.orderType === "KONSI" && pesanan.status === "PENDING_APPROVAL"
+      ? ((await perkiraanPesananKonsi([pesanan.id])).get(pesanan.id) ?? null)
+      : null;
 
   return {
     jenisToko: toko.termsType,
-    tagihan,
+    tagihan: tagihan.tampil,
+    tagihanHanyaPemegang: tagihan.hanyaPemegang,
     favorit: teratas.map((f) => ({
       itemId: f.itemId,
       sku: barangById.get(f.itemId)?.sku ?? "—",
@@ -189,6 +210,7 @@ export async function ringkasanToko(
           status: pesanan.status,
           keadaan: keadaanPesanan(pesanan),
           total: nilaiTampil(pesanan, Number(pesanan.total)),
+          perkiraan,
           milikSaya: penontonId !== null && pesanan.salesmanId === penontonId,
         }
       : null,
@@ -206,9 +228,16 @@ async function tagihanToko(
   storeId: string,
   pemegangId: string | null,
   penontonId: string | null,
-): Promise<NonNullable<RingkasanToko["tagihan"]>> {
+): Promise<{ tampil: RingkasanToko["tagihan"]; hanyaPemegang: boolean }> {
   const aturan = await bacaAturanKreditDb();
   const { keadaan, baris } = await keadaanTagihanToko(storeId, aturan.hariToleransi);
+  // P31 ("pemegang toko"): nominal tagihan konsinyasi hanya untuk pemegang toko
+  // sekarang. Kalau satu saja tagihan terbuka toko ini konsinyasi, seluruh kartu
+  // tagihan disembunyikan dari orang lain — menyaring sebagian akan membuat
+  // jumlahnya tidak cocok dengan angka kredit toko.
+  if (baris.some((b) => b.konsi && b.outstanding > 0) && (pemegangId === null || pemegangId !== penontonId)) {
+    return { tampil: null, hanyaPemegang: true };
+  }
   const { faktur, lebih } = pilihFakturRingkas(baris, aturan.hariToleransi);
 
   /*
@@ -223,5 +252,5 @@ async function tagihanToko(
         ? pemegangId === penontonId
         : (await prisma.receivable.count({ where: { id: { in: baris.map((b) => b.id) }, salesmanId: penontonId } })) > 0;
   }
-  return { ...keadaan, faktur, lebih, bolehLihat };
+  return { tampil: { ...keadaan, faktur, lebih, bolehLihat }, hanyaPemegang: false };
 }

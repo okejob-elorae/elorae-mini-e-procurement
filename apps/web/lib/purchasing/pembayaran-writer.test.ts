@@ -51,7 +51,7 @@ vi.mock("@/lib/production/hutang-jasa-queries", async () => {
           dibayar,
           sisa: 1_110_000 - dibayar,
           langkah: [
-            { stepId: jasa.stepId, woId: "wo-uji", woDocNumber: "WO/UJI", urutan: 1, namaLangkah: "Jahit", supplierId: jasa.supplierId, hargaPerPcs: 11_100, hargaTermasukPpn: true, qtyTerhutang: 100, hutang: 1_110_000, dasarPotong: 1_000_000, ppn: 110_000, dibayar, sisa: 1_110_000 - dibayar },
+            { stepId: jasa.stepId, woId: "wo-uji", woDocNumber: "WO/UJI", urutan: 1, namaLangkah: "Jahit", supplierId: jasa.supplierId, hargaPerPcs: 11_100, hargaTermasukPpn: true, qtyTerhutang: 100, hutang: 1_110_000, hutangTanpaKoreksi: 1_110_000, dasarPotong: 1_000_000, ppn: 110_000, dibayar, sisa: 1_110_000 - dibayar },
           ],
         },
       ];
@@ -274,6 +274,46 @@ d("pembayaran pemasok sebagian (basis data uji)", () => {
     expect(await w.catatPembayaranPemasok({ ...dasar, alokasi: [{ jenis: "GRN", id: G.g2, jumlah: 600_000 }] })).toEqual({ ok: false, kode: "MELEBIHI_SISA", baris: 1 });
     expect(await w.catatPembayaranPemasok({ ...dasar, alokasi: [{ jenis: "GRN", id: "tidak-ada", jumlah: 1 }] })).toEqual({ ok: false, kode: "DOKUMEN_TIDAK_DITEMUKAN", baris: 1 });
     expect(await w.catatPembayaranPemasok({ ...dasar, rekeningId: A.PERSEDIAAN, uangMuka: 5 })).toEqual({ ok: false, kode: "REKENING_TIDAK_SAH" });
+  });
+
+  it("menolak membayar penerimaan yang selisih harga invoicenya masih menunggu keputusan (P50)", async () => {
+    const dasar = { pemasokId, tanggal: "2008-09-02", cara: "TRANSFER", rekeningId: A.BANK, olehUserId: userId, hariIni: HARI_INI };
+    const bill = await prisma.vendorBill.create({
+      data: { docNumber: `VB-BYR-${token}-K`, supplierId: pemasokId, vendorInvoiceNo: `INV-K-${token}`, billDate: tgl("2008-08-30"), total: 1, createdById: userId },
+      select: { id: true },
+    });
+    tagihanIds.push(bill.id);
+    const k = await prisma.supplierPayableCorrection.create({
+      data: {
+        billId: bill.id,
+        billLineId: `baris-${token}-K`,
+        supplierId: pemasokId,
+        sourceType: "GRN",
+        sourceId: G.g2,
+        qty: 1,
+        recordedPrice: 1,
+        invoicePrice: 2,
+        amount: 1,
+        dppAmount: 1,
+        ppnInputAmount: 0,
+        inventoryAmount: 1,
+        breakdown: [],
+        createdById: userId,
+      },
+      select: { id: true },
+    });
+    const sebelum = await prisma.supplierPayment.count({ where: { supplierId: pemasokId } });
+    try {
+      // Seluruh penerimaan itu menunggu; nomor baris yang menyebutnya dilaporkan, penerimaan lain tidak ikut tertahan.
+      expect(await w.catatPembayaranPemasok({ ...dasar, alokasi: [{ jenis: "WO_STEP", id: jasa.stepId, jumlah: 1 }, { jenis: "GRN", id: G.g2, jumlah: 1 }] })).toEqual({
+        ok: false,
+        kode: "KOREKSI_MENUNGGU",
+        baris: 2,
+      });
+      expect(await prisma.supplierPayment.count({ where: { supplierId: pemasokId } })).toBe(sebelum);
+    } finally {
+      await prisma.supplierPayableCorrection.deleteMany({ where: { id: seededId(k.id) } });
+    }
   });
 
   it("uang muka diterapkan ke GRN; pelunasan sisa menandai PO CLOSED lunas otomatis; tombol lama menolak; batal membuka tandanya", async () => {

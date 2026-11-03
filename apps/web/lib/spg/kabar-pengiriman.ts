@@ -1,11 +1,11 @@
 import { prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
-import { teksPembawa } from "./antaran";
+import { rangkaiDalamBatas, teksPembawa } from "./antaran";
 import type { JenisKiriman } from "./kiriman";
 
 /**
- * Dua kabar ke SPG toko untuk SATU pengiriman (`DeliveryShipment`), toko putus
- * maupun konsinyasi (keputusan pemilik 2026-11-01):
+ * Tiga kabar ke SPG toko untuk SATU pengiriman (`DeliveryShipment`), toko putus
+ * maupun konsinyasi (keputusan pemilik 2026-11-01; kabar ketiga Q24):
  *
  * 1. BERANGKAT — saat "Kirim" di menu Pengiriman / Ubah Pelacakan memindahkan
  *    pengiriman ke Dalam Perjalanan (BUKAN "Kirim" di jendela "Buat Pengiriman
@@ -14,8 +14,12 @@ import type { JenisKiriman } from "./kiriman";
  *    PENGIRIMANNYA — nota pengiriman putus belum ada saat barang berangkat.
  * 2. DISERAHKAN — saat pengiriman selesai di toko: "Barang sudah diserahkan ·
  *    N pcs · silakan hitung dan terima", N = yang benar-benar diserahkan di
- *    pengiriman ITU (konsinyasi juga per antaran). Pengiriman 0 pcs memberi
- *    tahu bahwa tidak ada barang yang diserahkan.
+ *    pengiriman ITU (`DeliveryShipmentLine.deliveredQty`, konsinyasi juga per
+ *    antaran). Pengiriman 0 pcs memberi tahu bahwa tidak ada barang yang
+ *    diserahkan.
+ * 3. DIBATALKAN — pengiriman yang sudah berangkat lalu "tidak jadi dikirim":
+ *    "Pengiriman dibatalkan · N pcs · tidak ada yang perlu Anda terima".
+ *    Pengiriman yang dibatalkan sebelum berangkat tidak pernah dikabarkan.
  *
  * Jalur satu langkah (pengiriman putus dicatat kantor, titipan konsinyasi)
  * tetap satu kabar — `kabarkanKirimanBerangkat` di `pesanan-menuju-toko.ts`.
@@ -31,6 +35,7 @@ import type { JenisKiriman } from "./kiriman";
 /** Penanda "sudah dikabarkan" di `AuditLog`, satu per pengiriman per kabar. */
 export const JEJAK_PENGIRIMAN_BERANGKAT = "STORE_SHIPMENT_DEPARTED_NOTIFIED";
 export const JEJAK_PENGIRIMAN_DISERAHKAN = "STORE_SHIPMENT_HANDED_OVER_NOTIFIED";
+export const JEJAK_PENGIRIMAN_DIBATALKAN = "STORE_SHIPMENT_CANCELLED_NOTIFIED";
 const ENTITAS = "DeliveryShipment";
 
 export type HasilKabarPengiriman = { penerima: number };
@@ -57,7 +62,7 @@ async function tandaiSekali(action: string, shipmentId: string, pelakuId: string
 
 async function kirimKeSemua(
   spg: { id: string }[],
-  kabar: { jenis: "KIRIMAN_BERANGKAT" | "KIRIMAN_DISERAHKAN"; judul: string; isi: string; data: Record<string, string> },
+  kabar: { jenis: "KIRIMAN_BERANGKAT" | "KIRIMAN_DISERAHKAN" | "KIRIMAN_DIBATALKAN"; judul: string; isi: string; data: Record<string, string> },
 ) {
   // Dimuat di sini: halaman yang hanya membaca tidak perlu ikut memuat Firebase Admin.
   const { JENIS_KABAR, kabariPengguna } = await import("@/lib/notifications/kabar-pengguna");
@@ -165,7 +170,7 @@ export async function kabarkanPengirimanDiserahkan(input: {
         deliveryId: true,
         order: { select: { storeId: true, orderType: true } },
         lines: { select: { deliveredQty: true } },
-        konsiTransfer: { select: { id: true, lines: { select: { qty: true } } } },
+        konsiTransfer: { select: { id: true } },
       },
     });
     if (!s) return KOSONG;
@@ -173,31 +178,24 @@ export async function kabarkanPengirimanDiserahkan(input: {
     const selesai = s.status === "DELIVERED" || s.status === "PARTIALLY_DELIVERED";
 
     // Dokumen yang akan diterima SPG, dan jumlah yang benar-benar diserahkan di pengiriman ini.
+    // Yang diserahkan = yang dicatat ekspedisi/kurir di baris pengiriman ini; dokumennya
+    // (nota / surat jalan) sudah ada sejak pengiriman dibuat dan bisa lebih besar.
     let sumber: { sourceType: JenisKiriman; sourceId: string } | null = null;
-    let pcs = 0;
+    const pcs = s.lines.reduce((n, l) => n + Math.max(0, l.deliveredQty ?? 0), 0);
     if (s.order.orderType === "KONSI") {
-      if (s.konsiTransfer) {
-        sumber = { sourceType: "KONSI_TRANSFER", sourceId: s.konsiTransfer.id };
-        pcs = s.konsiTransfer.lines.reduce((n, l) => n + Math.max(0, Math.round(Number(l.qty))), 0);
-      }
+      if (s.konsiTransfer) sumber = { sourceType: "KONSI_TRANSFER", sourceId: s.konsiTransfer.id };
     } else {
       const deliveryId = sah(input.deliveryId) ? input.deliveryId : s.deliveryId;
       if (deliveryId) {
         const d = await prisma.fieldSalesDelivery.findFirst({
           where: { id: deliveryId, order: { storeId } },
-          select: { id: true, lines: { select: { qty: true } } },
+          select: { id: true },
         });
-        if (d) {
-          sumber = { sourceType: "PUTUS_DELIVERY", sourceId: d.id };
-          pcs = d.lines.reduce((n, l) => n + Math.max(0, l.qty), 0);
-        }
+        if (d) sumber = { sourceType: "PUTUS_DELIVERY", sourceId: d.id };
       }
     }
-    if (!sumber) {
-      // Tanpa dokumen: hanya pengiriman yang benar-benar selesai tanpa satu potong pun diserahkan.
-      if (!selesai || s.lines.some((l) => (l.deliveredQty ?? 0) > 0)) return KOSONG;
-      pcs = 0;
-    } else {
+    if (!selesai) return KOSONG;
+    if (sumber) {
       // Kiriman yang sudah dihitung SPG tidak dikabarkan lagi.
       const sudah = await prisma.storeReceipt.findUnique({
         where: { sourceType_sourceId: { sourceType: sumber.sourceType, sourceId: sumber.sourceId } },
@@ -220,6 +218,51 @@ export async function kabarkanPengirimanDiserahkan(input: {
     return { penerima: spg.length };
   } catch (err) {
     console.error("[kabar] pengiriman diserahkan gagal", shipmentId, err);
+    return KOSONG;
+  }
+}
+
+/** Murni: isi kabar dibatalkan (Q24). Tanpa rupiah; muat dalam 191 huruf. */
+export function susunKabarDibatalkan(p: { docNo: string; pcs: number }): { judul: string; isi: string } {
+  return {
+    judul: "Pengiriman dibatalkan",
+    isi: rangkaiDalamBatas(
+      [
+        `${p.pcs} pcs · pengiriman ${p.docNo} tidak jadi dikirim.`,
+        "Barang kembali ke gudang — tidak ada yang perlu Anda terima.",
+      ],
+      191,
+    ),
+  };
+}
+
+/**
+ * Kabar 3: pengiriman yang SUDAH BERANGKAT "tidak jadi dikirim" (Q24). Hanya
+ * untuk pengiriman berstatus CANCELLED yang punya `shippedAt`; sekali per
+ * pengiriman lewat penanda `STORE_SHIPMENT_CANCELLED_NOTIFIED`; toko tanpa SPG
+ * tidak dikabari. Tidak pernah melempar.
+ */
+export async function kabarkanPengirimanDibatalkan(input: { shipmentId: string; pelakuId: string }): Promise<HasilKabarPengiriman> {
+  const { shipmentId, pelakuId } = input;
+  if (!sah(shipmentId) || !sah(pelakuId)) return KOSONG;
+  try {
+    const s = await prisma.deliveryShipment.findUnique({
+      where: { id: shipmentId },
+      select: { docNo: true, status: true, shippedAt: true, order: { select: { storeId: true } }, lines: { select: { plannedQty: true } } },
+    });
+    if (!s || s.status !== "CANCELLED" || !s.shippedAt) return KOSONG;
+    const pcs = s.lines.reduce((n, l) => n + Math.max(0, l.plannedQty), 0);
+    const storeId = s.order.storeId;
+    const spg = await spgToko(storeId, pelakuId);
+    if (spg.length === 0) return KOSONG;
+    if (!(await tandaiSekali(JEJAK_PENGIRIMAN_DIBATALKAN, shipmentId, pelakuId, { storeId, docNo: s.docNo, pcs, penerima: spg.length }))) {
+      return KOSONG;
+    }
+    const isi = susunKabarDibatalkan({ docNo: s.docNo, pcs });
+    await kirimKeSemua(spg, { jenis: "KIRIMAN_DIBATALKAN", ...isi, data: { storeId, shipmentId } });
+    return { penerima: spg.length };
+  } catch (err) {
+    console.error("[kabar] pengiriman dibatalkan gagal", shipmentId, err);
     return KOSONG;
   }
 }

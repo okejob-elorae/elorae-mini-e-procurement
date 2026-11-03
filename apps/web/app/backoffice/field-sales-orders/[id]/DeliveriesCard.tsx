@@ -56,6 +56,7 @@ import type {
 } from "@/lib/field-sales/queries";
 import {
   closeRemainderAction,
+  periksaCetakNotaAction,
   recordNotaTagihanPrinted,
   updateDeliveryDatesAction,
 } from "@/app/actions/field-sales-deliveries";
@@ -72,12 +73,7 @@ import {
   cetakDenganGambar,
   type SasaranKantor,
 } from "./BuktiTerimaKantor";
-import {
-  DeliveryFormDialog,
-  deliveryErrorKey,
-  parseDateOnlyInput,
-  type DeliverableLine,
-} from "./DeliveryFormDialog";
+import { deliveryErrorKey, parseDateOnlyInput, type DeliverableLine } from "./nota-dialog";
 import { CreateShipmentDialog } from "./CreateShipmentDialog";
 import { DELIVERY_BADGE_CLASS, DELIVERY_BADGE_VARIANT } from "../delivery-status-badge";
 import { TanggalInput } from "@/components/ui/tanggal-input";
@@ -110,6 +106,8 @@ type Props = {
   indenBelumRilis?: boolean;
   /** Piutang tiap nota (per `deliveryId`), sisa dihitung ulang; kosong = tidak boleh/ tidak termuat. */
   piutangKiriman?: Record<string, PiutangKiriman>;
+  /** Batal/dikoreksi per nota (per `deliveryId`); nota yang tidak ada di sini terbaca hidup. */
+  keadaanNota?: Record<string, KeadaanNotaTampil>;
   bolehBukaPiutang?: boolean;
   bolehBukaFakturPajak?: boolean;
 };
@@ -135,6 +133,24 @@ function totalQty(delivery: FieldSalesDeliverySummary): number {
   return delivery.lines.reduce((sum, line) => sum + line.qty, 0);
 }
 
+/**
+ * A nota cancelled ("tidak jadi dikirim", or every piece refused at the door) or corrected to what
+ * the store received (retur langsung / hilang di perjalanan), read by the page itself (R22) and
+ * keyed by delivery id. Pieces: `dikirim` = what left the warehouse on the nota, `ditagih` = what
+ * is billed now (`dikirim − kembali − hilang`).
+ */
+export type KeadaanNotaTampil = {
+  voidedAt: string | null;
+  voidReason: string | null;
+  correctedAt: string | null;
+  dikirim: number;
+  kembali: number;
+  hilang: number;
+  ditagih: number;
+};
+
+const NOTA_HIDUP: KeadaanNotaTampil = { voidedAt: null, voidReason: null, correctedAt: null, dikirim: 0, kembali: 0, hilang: 0, ditagih: 0 };
+
 export function DeliveriesCard({
   orderId,
   orderNo,
@@ -152,9 +168,11 @@ export function DeliveriesCard({
   canRecordReceipt = canDeliver,
   indenBelumRilis = false,
   piutangKiriman = {},
+  keadaanNota: keadaanPerNota = {},
   bolehBukaPiutang = false,
   bolehBukaFakturPajak = false,
 }: Props) {
+  const keadaanNota = (delivery: FieldSalesDeliverySummary): KeadaanNotaTampil => keadaanPerNota[delivery.id] ?? NOTA_HIDUP;
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
   const tFakturStatus = useTranslations("fakturPajakStatus");
@@ -166,7 +184,6 @@ export function DeliveriesCard({
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [formOpen, setFormOpen] = useState(false);
   const [createShipmentOpen, setCreateShipmentOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeReason, setCloseReason] = useState("");
@@ -189,8 +206,12 @@ export function DeliveriesCard({
   if (status !== "APPROVED" && deliveries.length === 0) return null;
 
   const hasOutstanding = lines.some((line) => line.outstanding > 0);
-  // Tanpa sisa, kedua tombol tidak punya arti — lencana Terkirim/Ditutup sudah mengatakannya.
-  const showActions = canDeliver && status === "APPROVED" && hasOutstanding;
+  /*
+   * Tanpa sisa, kedua tombol tidak punya arti — lencana Terkirim/Ditutup sudah mengatakannya. Nota
+   * hanya terbit saat pengiriman DIBUAT (P44/P44a: "Catat pengiriman" dihapus), jadi tombol buat
+   * pengiriman mengikuti izin kirim, tutup sisa mengikuti izin catat pengiriman.
+   */
+  const showActions = (canDeliver || canShipShipment) && status === "APPROVED" && hasOutstanding;
   const statusKey = `delivery.status.${deliveryStatus}`;
 
   /**
@@ -210,7 +231,26 @@ export function DeliveriesCard({
     return lines.find((line) => line.id === orderLineId)?.variantLabel ?? null;
   }
 
+  /** R22: a nota voided after this page rendered is refused by the server before either print opens. */
+  async function bolehCetak(delivery: FieldSalesDeliverySummary): Promise<boolean> {
+    try {
+      const r = await periksaCetakNotaAction(delivery.id);
+      if (r.ok) return true;
+      toast.error(t(deliveryErrorKey(r.reason)));
+      if (r.reason === "INVALID_STATE") router.refresh();
+    } catch {
+      toast.error(t("errGeneric"));
+    }
+    return false;
+  }
+
   function handlePrintGudang(delivery: FieldSalesDeliverySummary): void {
+    startTransition(async () => {
+      if (await bolehCetak(delivery)) cetakNotaGudang(delivery);
+    });
+  }
+
+  function cetakNotaGudang(delivery: FieldSalesDeliverySummary): void {
     logPrintQuietly("FieldSalesDeliveryNotaGudang", delivery.id);
     const html = buildNotaGudangPrintHtml({
       docNo: delivery.docNo,
@@ -296,16 +336,21 @@ export function DeliveriesCard({
   }
 
   /**
-   * The preview opens first and the bookkeeping (`recordNotaTagihanPrinted`: audit, stamp,
-   * finance notification) runs after, so the operator never waits on its round trips for the
-   * print. Routed through `startTransition` so the confirm button stays disabled on `isPending`
-   * and a second click can't fire a second print iframe or a second audit row. A failed half
-   * surfaces as a warning toast; it never blocks or undoes the print.
+   * One cheap check first (R22: a nota voided after this page rendered never prints), then the
+   * preview opens and the bookkeeping (`recordNotaTagihanPrinted`: audit, stamp, finance
+   * notification) runs after, so the operator never waits on its round trips for the print.
+   * Routed through `startTransition` so the confirm button stays disabled on `isPending` and a
+   * second click can't fire a second print iframe or a second audit row. A failed half surfaces as
+   * a warning toast; it never blocks or undoes the print.
    */
   function callPrintTagihan(): void {
     const delivery = deliveries.find((d) => d.id === tagihanTargetId);
     if (!delivery) return;
     startTransition(async () => {
+      if (!(await bolehCetak(delivery))) {
+        setTagihanDialogOpen(false);
+        return;
+      }
       const html = buildNotaTagihanPrintHtml({
         docNo: delivery.docNo,
         orderNo,
@@ -441,34 +486,27 @@ export function DeliveriesCard({
         </CardTitle>
         {showActions && (
           <CardAction className={ACTION_SLOT_CLASS}>
-            <Button
-              className="h-10"
-              disabled={isPending || indenBelumRilis}
-              title={indenBelumRilis ? t("delivery.err.INDEN_BELUM_RILIS") : undefined}
-              onClick={() => setFormOpen(true)}
-            >
-              <Truck className="h-4 w-4" />
-              {t("delivery.create")}
-            </Button>
             {canShipShipment && (
               <Button
-                variant="outline"
                 className="h-10"
-                disabled={isPending || !hasOutstanding}
+                disabled={isPending || !hasOutstanding || indenBelumRilis}
+                title={indenBelumRilis ? t("delivery.err.INDEN_BELUM_RILIS") : undefined}
                 onClick={() => setCreateShipmentOpen(true)}
               >
                 <Truck className="h-4 w-4" />
                 {tShipments("createShipment")}
               </Button>
             )}
-            <Button
-              variant="outline"
-              className="h-10"
-              disabled={isPending}
-              onClick={() => setCloseOpen(true)}
-            >
-              {t("delivery.close")}
-            </Button>
+            {canDeliver && (
+              <Button
+                variant="outline"
+                className="h-10"
+                disabled={isPending}
+                onClick={() => setCloseOpen(true)}
+              >
+                {t("delivery.close")}
+              </Button>
+            )}
           </CardAction>
         )}
       </CardHeader>
@@ -499,6 +537,28 @@ export function DeliveriesCard({
                 <TableRow key={delivery.id}>
                   <TableCell className="min-w-[10rem] whitespace-normal">
                     <div className="font-mono whitespace-nowrap">{delivery.docNo}</div>
+                    {keadaanNota(delivery).voidedAt ? (
+                      <div className="mt-1 space-y-0.5">
+                        <Badge variant="destructive">{tShipments("nota.batal")}</Badge>
+                        {keadaanNota(delivery).voidReason && (
+                          <p className="text-xs text-muted-foreground">{keadaanNota(delivery).voidReason}</p>
+                        )}
+                      </div>
+                    ) : keadaanNota(delivery).correctedAt ? (
+                      <Badge variant="secondary" className="mt-1">
+                        {tShipments("nota.dikoreksi")}
+                      </Badge>
+                    ) : null}
+                    {(keadaanNota(delivery).kembali > 0 || keadaanNota(delivery).hilang > 0) && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {tShipments("nota.rincian", {
+                          dikirim: keadaanNota(delivery).dikirim,
+                          kembali: keadaanNota(delivery).kembali,
+                          hilang: keadaanNota(delivery).hilang,
+                          ditagih: keadaanNota(delivery).ditagih,
+                        })}
+                      </p>
+                    )}
                     <PenagihanKiriman
                       delivery={delivery}
                       piutang={piutangKiriman[delivery.id] ?? null}
@@ -542,14 +602,19 @@ export function DeliveriesCard({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handlePrintGudang(delivery)}>
-                          <Printer className="mr-2 h-4 w-4" />
-                          {t("print.notaGudang")}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openTagihanDialog(delivery.id)}>
-                          <Receipt className="mr-2 h-4 w-4" />
-                          {t("print.notaTagihan")}
-                        </DropdownMenuItem>
+                        {/* A cancelled nota is history: it is never printed again (the server refuses it too). */}
+                        {!keadaanNota(delivery).voidedAt && (
+                          <DropdownMenuItem onClick={() => handlePrintGudang(delivery)}>
+                            <Printer className="mr-2 h-4 w-4" />
+                            {t("print.notaGudang")}
+                          </DropdownMenuItem>
+                        )}
+                        {!keadaanNota(delivery).voidedAt && (
+                          <DropdownMenuItem onClick={() => openTagihanDialog(delivery.id)}>
+                            <Receipt className="mr-2 h-4 w-4" />
+                            {t("print.notaTagihan")}
+                          </DropdownMenuItem>
+                        )}
                         {bolehBukaPiutang && piutangKiriman[delivery.id] && (
                           <DropdownMenuItem asChild>
                             <Link href={tautanPiutangFaktur(piutangKiriman[delivery.id].invoiceNo)}>
@@ -566,7 +631,7 @@ export function DeliveriesCard({
                             </Link>
                           </DropdownMenuItem>
                         )}
-                        {canDeliver && (
+                        {canDeliver && !keadaanNota(delivery).voidedAt && (
                           <DropdownMenuItem onClick={() => openEditDialog(delivery)}>
                             <Pencil className="mr-2 h-4 w-4" />
                             {t("delivery.editDates")}
@@ -582,7 +647,7 @@ export function DeliveriesCard({
                             {tBukti("lihat")}
                           </DropdownMenuItem>
                         )}
-                        {canRecordReceipt && (
+                        {canRecordReceipt && !keadaanNota(delivery).voidedAt && (
                           <DropdownMenuItem
                             onClick={() =>
                               setSasaranBukti({ kiriman: delivery, mode: delivery.receivedAt ? "KOREKSI" : "CATAT" })
@@ -605,16 +670,10 @@ export function DeliveriesCard({
       <DialogBuktiTerimaKantor sasaran={sasaranBukti} onTutup={() => setSasaranBukti(null)} />
       <LightboxBuktiTerima kiriman={lihatBukti} onTutup={() => setLihatBukti(null)} />
 
-      <DeliveryFormDialog
-        orderId={orderId}
-        lines={lines}
-        paymentTempo={paymentTempo}
-        open={formOpen}
-        onOpenChange={setFormOpen}
-      />
-
       <CreateShipmentDialog
         orderId={orderId}
+        orderType={orderType}
+        paymentTempo={paymentTempo}
         lines={lines}
         open={createShipmentOpen}
         onOpenChange={setCreateShipmentOpen}

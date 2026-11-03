@@ -13,9 +13,8 @@ export const dynamic = "force-dynamic";
 /**
  * Papan peringkat salesman bulan ini, menurut capaian target.
  *
- * Seluruhnya atas putus + van (`peringkatHp`): rupiah konsinyasi tidak pernah
- * sampai ke HP, dan papan dengan angka resmi (memuat konsi) membukanya lewat
- * capaian sendiri × target. Konsinyasi hanya sebagai pcs milik sendiri.
+ * Seluruhnya atas omzet resmi putus + konsi + van (`peringkatHp`), sama dengan
+ * papan kantor (pemilik P56, 2026-11-02). Pcs konsinyasi hanya milik sendiri.
  * Omzet rekan tidak pernah dikirim ke HP — hanya persen capaiannya. Nama
  * rekan disembunyikan bila pemilik mengaturnya (`salesman.peringkat`); nama
  * sendiri selalu terlihat.

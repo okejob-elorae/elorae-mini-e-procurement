@@ -590,11 +590,14 @@ export async function releaseFieldSalesOrder(
 export type KonsiReserveResult = { reserved: number; skipped: number; shortLines: OversellAlert[] };
 
 /**
- * The konsi approve path (`approveKonsiOrderInTx`): approve only RESERVES. Stock leaves main at
- * delivery-shipment completion through `issueKonsiTransfer`, which draws this reservation down
- * line by line, and a remainder that never ships is released by closing the order's remainder
- * (`releaseFieldSalesOrder`). A RESERVED reservation of this source therefore belongs to the
- * delivery flow — nothing else may cut stock against it or release it.
+ * The konsi approve path (`approveKonsiOrderInTx`): approve only RESERVES. Stock leaves main when
+ * the delivery shipment is CREATED (the surat jalan, owner answer Q1 2026-11-02) through
+ * `issueKonsiTransfer`, which draws this reservation down line by line and puts the goods into
+ * transit to the store's warehouse; the store receipt then lands them on the store's shelf. A
+ * remainder that never ships is released by closing the order's remainder
+ * (`releaseFieldSalesOrder`), and a door refusal or "tidak jadi dikirim" puts drawn pieces back
+ * through `reopenFieldSalesLineStock`. A RESERVED reservation of this source therefore belongs to
+ * the delivery flow — nothing else may cut stock against it or release it.
  *
  * The one other owner of such a reservation is an OLD konsi order approved before the
  * per-shipment flow reached production (`bacaPesananKonsiCadanganLama` in apps/web): it never
@@ -845,4 +848,118 @@ export async function transferKonsiFieldSalesOrder(
     return { transferred, skipped, shortLines };
   };
   return hasTx(client) ? client.$transaction(run) : run(client);
+}
+
+/**
+ * A field-sales line's reservation could not be reopened by the asked quantity: it is not this
+ * source's, it is RELEASED (the remainder was closed), or fewer pieces were ever drawn from it than
+ * the caller wants to put back. Nothing was written — the guard sits in the UPDATE itself.
+ */
+export class ReservationReopenError extends Error {
+  constructor(readonly fieldSalesLineId: string) {
+    super(`Reservation of field-sales line ${fieldSalesLineId} cannot be reopened by that quantity`);
+    this.name = "ReservationReopenError";
+  }
+}
+
+export type ReopenFieldSalesLineInput = {
+  fieldSalesLineId: string;
+  source: "FIELD_SALES" | "FIELD_SALES_KONSI";
+  itemId: string;
+  variantSku: string;
+  qty: number;
+  /** The cost the pieces LEFT at (the consume's avgCost / the transfer line's unitCost). */
+  unitCost: number;
+  refType: StockLedgerRefType;
+  refId: string;
+  refDocNumber: string;
+  createdById: string | null;
+};
+
+export type ReopenFieldSalesLineResult = {
+  inventoryValueId: string;
+  prevQty: number;
+  newQty: number;
+  prevAvgCost: number;
+  newAvgCost: number;
+};
+
+/**
+ * Pieces that left the main warehouse for a field-sales line come BACK — refused at the store's
+ * door ("retur langsung", owner P24) or the whole shipment "tidak jadi dikirim" (Q1). The exact
+ * mirror of the consume that sent them out, inside the caller's transaction:
+ *
+ * 1. the reservation's `consumedQty` goes down by `qty` and its state returns to RESERVED, in ONE
+ *    guarded statement (an over-reopen, a RELEASED reservation or another source's row matches
+ *    nothing and refuses with nothing written);
+ * 2. `qtyOnHand` goes up through `moveMainStock`, pinned to the reservation's row, its average
+ *    blended at the cost the pieces left at (from max(prevQty, 0): a negative balance is not stock
+ *    to average against);
+ * 3. `reservedQty` goes up by the same `qty` on the same row immediately after, because the
+ *    reopened pieces are once again reserved for the order line they came from — the line's
+ *    `deliveredQty` is lowered by the caller, so they are its open remainder again, shipped later
+ *    or released by closing the remainder (`releaseFieldSalesOrder`).
+ *
+ * Both consumes decremented `qtyOnHand` and `reservedQty` together, so reopening both together is
+ * what keeps `available = qtyOnHand − reservedQty` unchanged. The caller writes the audit
+ * StockAdjustment (it owns the source spelling and the document number).
+ */
+export async function reopenFieldSalesLineStock(
+  tx: Prisma.TransactionClient,
+  input: ReopenFieldSalesLineInput,
+): Promise<ReopenFieldSalesLineResult> {
+  if (!Number.isInteger(input.qty) || input.qty <= 0) throw new ReservationReopenError(input.fieldSalesLineId);
+  const sourceLiteral = input.source === "FIELD_SALES_KONSI" ? Prisma.sql`'FIELD_SALES_KONSI'` : Prisma.sql`'FIELD_SALES'`;
+  /* No ledger entry: StockReservation is not an inventory balance table. */
+  const affected = await tx.$executeRaw(Prisma.sql`
+    UPDATE ${sqlId("StockReservation")}
+    SET ${sqlId("consumedQty")} = ${sqlId("consumedQty")} - ${input.qty},
+        ${sqlId("state")} = 'RESERVED',
+        ${sqlId("resolvedAt")} = NULL
+    WHERE ${sqlId("fieldSalesLineId")} = ${input.fieldSalesLineId}
+      AND ${sqlId("source")} = ${sourceLiteral}
+      AND ${sqlId("state")} IN ('RESERVED', 'CONSUMED')
+      AND ${sqlId("consumedQty")} >= ${input.qty}
+  `);
+  if (affected === 0) throw new ReservationReopenError(input.fieldSalesLineId);
+
+  const reservation = await tx.stockReservation.findUniqueOrThrow({
+    where: { fieldSalesLineId: input.fieldSalesLineId },
+    select: { inventoryValueId: true },
+  });
+  const inv = await resolveReservedInventory(tx, {
+    itemId: input.itemId,
+    variantSku: input.variantSku,
+    inventoryValueId: reservation.inventoryValueId,
+  });
+  if (!inv) throw new InventoryValueMissingError(input.itemId, input.variantSku);
+
+  const prevQty = Number(inv.qtyOnHand);
+  const prevAvgCost = Number(inv.avgCost);
+  const newQty = prevQty + input.qty;
+  const blendQty = Math.max(prevQty, 0);
+  const newAvgCost = blendQty + input.qty > 0 ? (blendQty * prevAvgCost + input.qty * input.unitCost) / (blendQty + input.qty) : input.unitCost;
+
+  await moveMainStock(tx, {
+    itemId: input.itemId,
+    variantSku: input.variantSku,
+    qtyDelta: input.qty,
+    unitCost: input.unitCost,
+    avgCost: newAvgCost,
+    totalValue: newQty * newAvgCost,
+    totalCost: input.qty * input.unitCost,
+    balanceValue: newQty * newAvgCost,
+    inventoryValueId: inv.id,
+    refType: input.refType,
+    refId: input.refId,
+    refDocNumber: input.refDocNumber,
+    createdById: input.createdById,
+  });
+  /* Same row, immediately after the qtyOnHand move — see the doc above. Not a stock movement. */
+  await tx.inventoryValue.update({
+    where: { id: inv.id },
+    data: { reservedQty: { increment: input.qty }, lastUpdated: new Date() },
+  });
+
+  return { inventoryValueId: inv.id, prevQty, newQty, prevAvgCost, newAvgCost };
 }

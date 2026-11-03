@@ -246,6 +246,11 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
      * applies to PUTUS, sellThroughMethod only to KONSI — so submit must normalise both itself or
      * the writer's assertValidPriceDiscount / assertValidSellThroughMethod rejects an unrelated edit.
      */
+    // Toko konsi wajib punya sales pemegang (P47) — aturan yang sama dengan penulisnya.
+    if (form.termsType === "KONSI" && !form.salesmanId) {
+      setError(tErr("konsiHolderRequired"));
+      return;
+    }
     const payload: StoreFields = {
       ...form,
       priceDiscountPercent: form.termsType === "KONSI" ? null : form.priceDiscountPercent,
@@ -267,6 +272,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
         else if (result.code === "konsi_discount_not_allowed") setError(tErr("discountNotAllowedForKonsi"));
         else if (result.code === "sell_through_method_requires_konsi") setError(tErr("sellThroughMethodRequiresKonsi"));
         else if (result.code === "invalid_ref") setError(tErr("invalidRef"));
+        else if (result.code === "konsi_holder_required") setError(tErr("konsiHolderRequired"));
         else setError(result.message);
         return;
       }
@@ -375,7 +381,10 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="salesmanId">{t("salesman")}</Label>
+              <Label htmlFor="salesmanId">
+                {t("salesman")}
+                {form.termsType === "KONSI" && <span className="ml-1 text-destructive">*</span>}
+              </Label>
               <Select
                 value={form.salesmanId ?? KOSONG}
                 onValueChange={(v) => update("salesmanId", v === KOSONG ? null : v)}
@@ -393,7 +402,9 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">{t("salesmanHint")}</p>
+              <p className="text-xs text-muted-foreground">
+                {form.termsType === "KONSI" ? t("salesmanRequiredKonsi") : t("salesmanHint")}
+              </p>
             </div>
           </div>
           {/* Kelas toko menentukan seberapa sering sales diingatkan datang. */}

@@ -1,11 +1,12 @@
 import { prisma, Prisma, resolveReservedInventory } from "@elorae/db";
 import { cariTeks } from "@/lib/db/cari-teks";
 import { aggregateInventoryValues } from "@/lib/items/queries";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { matchKey } from "@/lib/items/match-key";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { listAssortmentGaps } from "@/lib/stores/assortment/queries";
 import { outstandingQty } from "./delivery/plan";
-import { deliveredGoodsValue, undeliveredResidual } from "./delivery/undelivered-residual";
+import { nilaiBelumDinota } from "./delivery/undelivered-residual";
 import type { PlanHistory } from "./smart-request/plan";
 import type { TaxInvoiceStatusFilter } from "@/lib/tax-invoices/queries";
 import { lencanaIndenById, type LencanaInden } from "./inden-queries";
@@ -32,10 +33,15 @@ export type FieldSalesDeliveryLineSummary = {
   orderLineId: string;
   productName: string;
   variantSku: string;
+  /** Pieces billed. What left the warehouse on this nota = `qty + returnedQty + lostQty`. */
   qty: number;
   unitPrice: number | null;
   discountAmount: number;
   lineTotal: number | null;
+  /** Refused at the store's door (retur langsung, P24) and back in the main warehouse. */
+  returnedQty: number;
+  /** Lost on the way (hilang di perjalanan); handled as a lost-goods case, not billed. */
+  lostQty: number;
 };
 
 export type FieldSalesDeliverySummary = {
@@ -58,6 +64,14 @@ export type FieldSalesDeliverySummary = {
   receivable: { id: string; invoiceNo: string } | null;
   /** Faktur pajak nota ini (satu per nota); null hanya untuk data rusak. */
   taxInvoice: { status: "PENDING" | "CREATED" | "NOT_REQUIRED"; invoiceNo: string | null } | null;
+  /**
+   * Nota cancelled — the shipment "tidak jadi dikirim" (P25/P41a) or every piece refused at the
+   * door. Its lines are zeroed, so totals stay right; the paper itself must be withdrawn.
+   */
+  voidedAt: Date | null;
+  voidReason: string | null;
+  /** Nota corrected to what the store actually received (retur langsung / hilang, P24). */
+  correctedAt: Date | null;
 };
 
 export type FieldSalesOrderListItem = {
@@ -112,10 +126,13 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   appliedOrderPromoName: string | null;
   deliveries: FieldSalesDeliverySummary[];
   /**
-   * The approve-time transfer of a konsi order approved before stock moved at shipment
-   * completion (`shipmentId: null`) — per-shipment transfers are not surfaced here, and neither is
-   * an old order's arrival confirmation (`oldOrderArrival`), which also has no shipment but is not
-   * an approve-time transfer and has no surat keluar. `null` for every konsi order approved since.
+   * The approve-time transfer of a konsi order approved before stock moved per delivery shipment
+   * (`shipmentId: null`). Per-shipment transfers are not surfaced here: since round 4 each one is
+   * written when its shipment is created (IN_TRANSIT, stock out of the main warehouse) and only
+   * reaches the store's stock at the store receipt (RECEIVED), or goes back on a cancel or door
+   * refusal. Neither is an old order's arrival confirmation (`oldOrderArrival`), which also has no
+   * shipment but is not an approve-time transfer and has no surat keluar. `null` for every konsi
+   * order approved since.
    */
   legacyKonsiTransfer: {
     docNo: string;
@@ -331,13 +348,14 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
           id: true, docNo: true, deliveredAt: true, invoiceDate: true, dueDate: true,
           subtotal: true, discountAmount: true, total: true,
           receivedByName: true, receivedAt: true, podPhotoUrl: true,
+          voidedAt: true, voidReason: true, correctedAt: true,
           deliveredBy: { select: { name: true } },
           receivable: { select: { id: true, invoiceNo: true } },
           taxInvoice: { select: { status: true, invoiceNo: true } },
           lines: {
             select: {
               id: true, orderLineId: true, productName: true, variantSku: true, qty: true,
-              unitPrice: true, discountAmount: true, lineTotal: true,
+              unitPrice: true, discountAmount: true, lineTotal: true, returnedQty: true, lostQty: true,
             },
           },
         },
@@ -460,9 +478,14 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         unitPrice: dl.unitPrice === null ? null : toNum(dl.unitPrice),
         discountAmount: toNum(dl.discountAmount),
         lineTotal: dl.lineTotal === null ? null : toNum(dl.lineTotal),
+        returnedQty: dl.returnedQty,
+        lostQty: dl.lostQty,
       })),
       receivable: d.receivable ? { id: d.receivable.id, invoiceNo: d.receivable.invoiceNo } : null,
       taxInvoice: d.taxInvoice ? { status: d.taxInvoice.status, invoiceNo: d.taxInvoice.invoiceNo } : null,
+      voidedAt: d.voidedAt,
+      voidReason: d.voidReason,
+      correctedAt: d.correctedAt,
     })),
     lines: row.lines.map((l) => {
       const qty = l.qty;
@@ -503,11 +526,14 @@ export type StoreOrderSummaryRow = {
 
 /**
  * `total` is the order's EFFECTIVE value, not the raw `FieldSalesOrder.total`, for an APPROVED
- * putus order: what its deliveries billed (their whole-rupiah `total`s) plus the still-open
- * undelivered remainder, so a remainder-closed order counts only what was delivered. The remainder
- * is measured the way credit exposure measures it (exact delivered goods values through
- * `undeliveredResidual`) and is zero once the order is CLOSED. Konsi and not-yet-approved orders
- * keep the order's own total.
+ * putus order: what its notas bill the store (their whole-rupiah `total`s, as corrected) plus the
+ * value still on NO nota, so a remainder-closed order counts only what was delivered. The
+ * remainder is measured the way credit exposure and the dashboard measure it — the order's own
+ * open LINE quantity through `nilaiBelumDinota` — and is zero once the order is CLOSED. Reading the
+ * lines, never the delivery rows, is what keeps a corrected or voided nota right: pieces lost in
+ * transit lower the nota but keep `deliveredQty` (P24), so they count nowhere; pieces refused at the
+ * door, and every piece of a voided nota (P16/P25), reopen on the order and count as still to
+ * deliver. Konsi and not-yet-approved orders keep the order's own total.
  */
 export async function getStoreOrderSummary(storeId: string): Promise<StoreOrderSummaryRow[]> {
   const rows = await prisma.fieldSalesOrder.findMany({
@@ -527,16 +553,11 @@ export async function getStoreOrderSummary(storeId: string): Promise<StoreOrderS
       orderType: true,
       status: true,
       total: true,
+      orderDiscountAmount: true,
       deliveryStatus: true,
       createdAt: true,
-      deliveries: {
-        select: {
-          total: true,
-          subtotal: true,
-          discountAmount: true,
-          lines: { select: { discountAmount: true } },
-        },
-      },
+      lines: { select: { qty: true, deliveredQty: true, cancelledQty: true, lineTotal: true, discountAmount: true } },
+      deliveries: { select: { total: true } },
     },
   });
   return rows.map(r => {
@@ -544,16 +565,17 @@ export async function getStoreOrderSummary(storeId: string): Promise<StoreOrderS
     const delivered = r.deliveries.reduce((sum, d) => sum + Number(d.total), 0);
     const residual = r.deliveryStatus === "CLOSED"
       ? 0
-      : undeliveredResidual(
-        Number(r.total),
-        r.deliveries.map((d) =>
-          deliveredGoodsValue({
-            subtotal: Number(d.subtotal),
-            discountAmount: Number(d.discountAmount),
-            lineDiscounts: d.lines.map((l) => Number(l.discountAmount)),
-          }),
-        ),
-      );
+      : nilaiBelumDinota({
+        total: Number(r.total),
+        orderDiscountAmount: Number(r.orderDiscountAmount),
+        lines: r.lines.map((l) => ({
+          qty: l.qty,
+          deliveredQty: l.deliveredQty,
+          cancelledQty: l.cancelledQty,
+          lineTotal: Number(l.lineTotal),
+          discountAmount: Number(l.discountAmount),
+        })),
+      });
     return {
       id: r.id,
       orderNo: r.orderNo,
@@ -574,12 +596,16 @@ export type StoreSentItemRow = {
 };
 
 /**
- * Counts what actually reached the store, never what was approved: an approved order can sit
+ * Counts what was SENT to the store, never what was approved: an approved order can sit
  * undelivered, or be partly delivered and have its remainder closed, and neither leaves the
- * warehouse. Putus reads its delivery lines. Konsi has no delivery document — its stock moves
- * through a KonsiTransfer when a delivery shipment completes — so it reads the order lines'
- * `deliveredQty`, which that completion advances. A legacy konsi order the backfill marked
- * delivered carries `deliveredQty = qty`, so it counts in full, as it did before.
+ * warehouse. Sent is not the same as received: goods still on the way count here, because both
+ * documents are written when the shipment is created, not when the store receives it.
+ * - Putus reads its nota lines' billed `qty`: a voided nota ("tidak jadi dikirim") is zeroed, and a
+ *   correction after the door takes off the pieces refused there or lost on the way.
+ * - Konsi has no nota — its stock goes into transit through a KonsiTransfer when the shipment is
+ *   created — so it reads the order lines' `deliveredQty`, which that creation advances and a
+ *   cancel or door refusal takes back. A legacy konsi order the backfill marked delivered carries
+ *   `deliveredQty = qty`, so it counts in full, as it did before.
  */
 export async function getStoreSentItems(storeId: string): Promise<StoreSentItemRow[]> {
   const [deliveredPutus, deliveredKonsi] = await Promise.all([
@@ -721,7 +747,8 @@ export async function listStoreNeverSentSuggestions(storeId: string): Promise<Ko
    */
   const gapKeys = new Set((await listAssortmentGaps(storeId)).map((g) => `${g.itemId}::${g.variantSku}`));
 
-  const where: Prisma.ItemWhereInput = { isActive: true, type: "FINISHED_GOOD" };
+  /* Konsi goes to stores, so a "Marketplace saja" item is never suggested (owner P3a). Stricter than the writers, so no UNKNOWN_ITEM abort. */
+  const where: Prisma.ItemWhereInput = { isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() };
   /* Prisma's notIn with an empty array is untrustworthy to lean on — skip the filter entirely. */
   if (exclude.size > 0) where.id = { notIn: [...exclude] };
 
@@ -874,10 +901,12 @@ export async function listStoreGapSuggestions(
    * Same isActive/type filter `listStoreNeverSentSuggestions` applies — a deactivated or
    * raw-material item dropped from the assortment lines table would otherwise still render here
    * as a stageable gap and abort either caller (the order-scoped approve panel or the admin push)
-   * with UNKNOWN_ITEM, since both writers filter on the same two fields.
+   * with UNKNOWN_ITEM, since both writers filter on the same two fields. The sales-channel filter
+   * (owner P3a: a "Marketplace saja" item is never offered to a store) is stricter than the writers,
+   * so it can only drop a row, never abort one.
    */
   const items = await prisma.item.findMany({
-    where: { id: { in: itemIds }, isActive: true, type: "FINISHED_GOOD" },
+    where: { id: { in: itemIds }, isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() },
     select: {
       id: true,
       sellingPrice: true,

@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getVendorBillDetail } from "@/lib/vendor-billing/queries";
+import { konteksKoreksi, peranKoreksiBelumDipetakan } from "@/lib/vendor-billing/koreksi-utang-konteks";
 import { VendorBillDetailClient } from "./VendorBillDetailClient";
 
 export default async function VendorBillDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -13,13 +14,29 @@ export default async function VendorBillDetailPage({ params }: { params: Promise
   const { id } = await params;
   const bill = await getVendorBillDetail(id);
   if (!bill) notFound();
-  // As `voidVendorBill` refuses: a live old vendor payment, or old CMT this bill booked that Supplier
-  // payments already paid past what voiding it would leave. Paid through Supplier payments alone does not.
+  // As `voidVendorBill` refuses: a live old vendor payment, or reversing what this bill booked (old CMT,
+  // accepted price differences) would leave a receipt paid above its payable. Paid alone does not.
   const canManage = hasPermission(perms, PERMISSIONS.VENDOR_BILLS_MANAGE);
+  const canDecide = hasPermission(perms, PERMISSIONS.VENDOR_BILLS_DECIDE_PRICE);
   const hasLiveVendorPayment = bill.allocations.some((a) => !a.payment.voidedAt);
-  const voidBlockedSteps = bill.status !== "VOID" && !hasLiveVendorPayment && canManage ? bill.voidBlockedSteps : [];
-  const canVoid = bill.status !== "VOID" && !hasLiveVendorPayment && bill.voidBlockedSteps.length === 0 && canManage;
+  const voidBlockedReceipts = bill.status !== "VOID" && !hasLiveVendorPayment && canManage ? bill.voidBlockedReceipts : [];
+  const canVoid = bill.status !== "VOID" && !hasLiveVendorPayment && bill.voidBlockedReceipts.length === 0 && canManage;
   const canPay = (bill.status === "UNPAID" || bill.status === "PARTIAL") && hasPermission(perms, PERMISSIONS.SUPPLIER_PAYMENTS_CREATE);
+  const [konteks, peranBelumDipetakan] = await Promise.all([
+    konteksKoreksi(bill.koreksi),
+    canDecide && bill.koreksi.some((k) => k.status === "MENUNGGU") ? peranKoreksiBelumDipetakan() : Promise.resolve([] as string[]),
+  ]);
 
-  return <VendorBillDetailClient bill={bill} canVoid={canVoid} canPay={canPay} voidBlockedSteps={voidBlockedSteps} userId={session.user.id} />;
+  return (
+    <VendorBillDetailClient
+      bill={bill}
+      canVoid={canVoid}
+      canPay={canPay}
+      canDecide={canDecide}
+      voidBlockedReceipts={voidBlockedReceipts}
+      konteks={Object.fromEntries(konteks)}
+      peranBelumDipetakan={peranBelumDipetakan}
+      userId={session.user.id}
+    />
+  );
 }

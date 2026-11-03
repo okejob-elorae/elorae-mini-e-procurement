@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  KEADAAN_UANG_RETUR,
   STATUS_RETUR_PEMBELI,
   UKURAN_HALAMAN_RETUR_PEMBELI,
   bacaSaringanReturPembeli,
   bacaStatusReturPembeli,
+  keadaanUangRetur,
   returPembeliSudahBerlaku,
   sisaReturPembeli,
+  uangReturTercatat,
 } from "./retur-pembeli-status";
 
 describe("status retur pembeli", () => {
@@ -29,6 +32,34 @@ describe("status retur pembeli", () => {
     // Data lama yang tidak masuk akal (mis. tulisan jendela penerapan) tetap tidak negatif.
     expect(sisaReturPembeli({ qty: 2, returnedQty: 2, menunggu: 1 })).toBe(0);
   });
+
+  it("pieces held by a charged rejection are not reportable again", () => {
+    expect(sisaReturPembeli({ qty: 5, returnedQty: 1, menunggu: 1, ditahan: 2 })).toBe(1);
+    expect(sisaReturPembeli({ qty: 3, returnedQty: 0, menunggu: 0, ditahan: 3 })).toBe(0);
+    expect(sisaReturPembeli({ qty: 3, returnedQty: 0, menunggu: 0, ditahan: 9 })).toBe(0);
+  });
+});
+
+describe("uang retur pembeli", () => {
+  it("money counts as refunded when the SPG recorded it OR the office marked it at rejection (P78)", () => {
+    expect(uangReturTercatat({ refundedAt: null, refundMarkedById: null })).toBe(false);
+    expect(uangReturTercatat({ refundedAt: new Date(), refundMarkedById: null })).toBe(true);
+    expect(uangReturTercatat({ refundedAt: "2026-11-02T03:00:00.000Z", refundMarkedById: null })).toBe(true);
+    expect(uangReturTercatat({ refundedAt: null, refundMarkedById: "kantor" })).toBe(true);
+  });
+
+  it("derives all seven money states from status × refunded", () => {
+    const semua = STATUS_RETUR_PEMBELI.flatMap((status) => [false, true].map((uangTercatat) => keadaanUangRetur({ status, uangTercatat })));
+    expect(new Set(semua)).toEqual(new Set(KEADAAN_UANG_RETUR));
+    expect(keadaanUangRetur({ status: "MENUNGGU", uangTercatat: false })).toBe("MENUNGGU_BELUM");
+    expect(keadaanUangRetur({ status: "MENUNGGU", uangTercatat: true })).toBe("MENUNGGU_SUDAH");
+    expect(keadaanUangRetur({ status: "DISETUJUI", uangTercatat: false })).toBe("SILAKAN_KEMBALIKAN");
+    expect(keadaanUangRetur({ status: "DISETUJUI", uangTercatat: true })).toBe("SUDAH_DIKEMBALIKAN");
+    // P83: ditolak tanpa uang dikembalikan → jangan kembalikan; barangnya kembali ke pembeli.
+    expect(keadaanUangRetur({ status: "DITOLAK", uangTercatat: false })).toBe("JANGAN_KEMBALIKAN");
+    expect(keadaanUangRetur({ status: "DITOLAK", uangTercatat: true })).toBe("DIBEBANKAN");
+    expect(keadaanUangRetur({ status: "DIBATALKAN", uangTercatat: false })).toBe("DITARIK");
+  });
 });
 
 describe("bacaSaringanReturPembeli", () => {
@@ -36,9 +67,10 @@ describe("bacaSaringanReturPembeli", () => {
     expect(bacaSaringanReturPembeli({})).toEqual({ status: "MENUNGGU", storeId: null, cari: "", halaman: 1, ukuran: UKURAN_HALAMAN_RETUR_PEMBELI });
   });
 
-  it("reads a known status, SEMUA, and falls back to MENUNGGU for anything else", () => {
+  it("reads a known status, SEMUA, KEPUTUSAN_BARANG, and falls back to MENUNGGU for anything else", () => {
     expect(bacaSaringanReturPembeli({ status: "DITOLAK" }).status).toBe("DITOLAK");
     expect(bacaSaringanReturPembeli({ status: "semua" }).status).toBe("SEMUA");
+    expect(bacaSaringanReturPembeli({ status: "keputusan_barang" }).status).toBe("KEPUTUSAN_BARANG");
     expect(bacaSaringanReturPembeli({ status: "dibatalkan" }).status).toBe("DIBATALKAN");
     expect(bacaSaringanReturPembeli({ status: "HAPUS" }).status).toBe("MENUNGGU");
   });

@@ -102,9 +102,10 @@ function toDecimalOrNull(v: number | null): Prisma.Decimal | null {
  *   store's floor with no correction path once the store stops being read as KONSI (the stock
  *   card, and the konsi retur decrement, are both gated on termsType === "KONSI");
  * - or it has a konsi order still awaiting approval, or approved with qty neither delivered nor
- *   closed. Konsi stock reaches StoreStock only when a delivery shipment completes, so that qty
- *   is on no store balance yet — but completing it after the switch would land it on a PUTUS
- *   store's StoreStock, where nothing can ever correct it.
+ *   closed. Konsi stock reaches StoreStock only when the store receives its shipment, so that qty
+ *   is on no store balance yet — but delivering it after the switch would land it on a PUTUS
+ *   store's StoreStock, where nothing can ever correct it;
+ * - or a konsi transfer to it is still IN_TRANSIT (shipped, not yet received), for the same reason.
  *
  * The store must return or transfer its stock, and settle those orders, first.
  */
@@ -235,6 +236,24 @@ function assertValidSellThroughMethod(input: Pick<StoreFields, "termsType" | "se
   if (input.sellThroughMethod === null) return;
   if (input.termsType !== "KONSI") {
     throw new SellThroughMethodRequiresKonsiError();
+  }
+}
+
+/**
+ * Thrown by createStore/updateStore when a KONSI store would be saved with no holding salesperson.
+ * Owner P47, 2026-11-02: a konsi store always has a holder, who alone sees and collects its konsi
+ * bills (P31) — a konsi bill with no holder would reach no phone at all.
+ */
+export class KonsiTanpaPemegangError extends Error {
+  constructor() {
+    super("A KONSI store must have a holding salesperson");
+    this.name = "KonsiTanpaPemegangError";
+  }
+}
+
+function assertKonsiPunyaPemegang(input: Pick<StoreFields, "termsType" | "salesmanId">): void {
+  if (input.termsType === "KONSI" && !input.salesmanId) {
+    throw new KonsiTanpaPemegangError();
   }
 }
 
@@ -460,6 +479,7 @@ export async function createStore(rawInput: StoreFields): Promise<StoreListItem>
   assertValidMarkupPercent(input);
   assertValidPriceDiscount(input);
   assertValidSellThroughMethod(input);
+  assertKonsiPunyaPemegang(input);
   const created = await prisma.store.create({
     data: {
       code: input.code,
@@ -498,6 +518,7 @@ export async function updateStore(id: string, rawInput: StoreFields, olehUserId:
   assertValidMarkupPercent(input);
   assertValidPriceDiscount(input);
   assertValidSellThroughMethod(input);
+  assertKonsiPunyaPemegang(input);
 
   return runSerializable(async (tx) => {
     if (input.termsType === "PUTUS") {
@@ -531,6 +552,18 @@ export async function updateStore(id: string, rawInput: StoreFields, olehUserId:
           0,
         );
         if (openKonsiQty > 0) throw new StoreHasConsignmentStockError(id);
+
+        /*
+         * Goods on their way to the store: a konsi shipment's transfer is IN_TRANSIT from the
+         * moment the shipment is created (the order line's deliveredQty already counts it) until
+         * the store receives it, and its units are on no StoreStock row yet. Receiving it after
+         * the switch would land konsi stock on a PUTUS store.
+         */
+        const inTransit = await tx.konsiTransfer.findFirst({
+          where: { storeId: id, status: "IN_TRANSIT" },
+          select: { id: true },
+        });
+        if (inTransit) throw new StoreHasConsignmentStockError(id);
       }
     }
 
@@ -770,10 +803,12 @@ export type BarisKelasToko = {
  * - Toko PUTUS = rupiah seluruh nota pengiriman dalam 180 hari (menurut tanggal
  *   kirim). Yang dihitung barang yang benar-benar diterima toko, bukan yang
  *   dipesan: pesanan yang sisanya ditutup hanya terhitung bagian terkirimnya.
- * - Toko KONSI = jumlah POTONG yang benar-benar dipindah ke toko (`KonsiTransfer`)
- *   dalam 180 hari, menurut tanggal pengirimannya selesai. Persetujuan hanya
- *   memesan stok, jadi pesanan yang belum dikirim atau sisanya ditutup hanya
- *   terhitung bagian yang sampai — sama seperti toko putus. Konsinyasi tidak
+ * - Toko KONSI = jumlah POTONG yang dipindah ke toko (`KonsiTransfer`) dalam
+ *   180 hari, menurut tanggal surat jalannya dibuat (saat itu barang keluar
+ *   Gudang Utama, pemilik Q1). Pemindahan yang tidak jadi dikirim (CANCELLED)
+ *   tidak dihitung, dan potong yang ditolak di pintu lalu dibawa kembali
+ *   (`returnedQty`) dikurangkan. Persetujuan hanya memesan stok, jadi pesanan
+ *   yang belum dikirim atau sisanya ditutup tidak terhitung. Konsinyasi tidak
  *   punya harga beli — barangnya titipan, dibayar sesudah laku — jadi rupiahnya
  *   tidak sebanding dengan toko putus. Karena itu kedua jenis diperingkat
  *   terpisah (`usulanPerJenis`), dan layar menyebut satuannya.
@@ -793,8 +828,8 @@ export async function daftarKelasToko(aturan: AturanKelasToko, hariIni: Date = n
       select: { total: true, order: { select: { storeId: true } } },
     }),
     prisma.konsiTransfer.findMany({
-      where: { createdAt: { gte: sejak } },
-      select: { storeId: true, lines: { select: { qty: true } } },
+      where: { createdAt: { gte: sejak }, status: { not: "CANCELLED" } },
+      select: { storeId: true, lines: { select: { qty: true, returnedQty: true } } },
     }),
   ]);
 
@@ -802,7 +837,7 @@ export async function daftarKelasToko(aturan: AturanKelasToko, hariIni: Date = n
   for (const d of kirim) rupiah.set(d.order.storeId, (rupiah.get(d.order.storeId) ?? 0) + Number(d.total));
   const potong = new Map<string, number>();
   for (const tr of konsi) {
-    const n = tr.lines.reduce((j, l) => j + Number(l.qty), 0);
+    const n = tr.lines.reduce((j, l) => j + Math.max(Number(l.qty) - l.returnedQty, 0), 0);
     potong.set(tr.storeId, (potong.get(tr.storeId) ?? 0) + n);
   }
 

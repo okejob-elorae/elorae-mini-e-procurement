@@ -23,6 +23,9 @@ import { kaitBayarKomisiSpg, kaitKomisiSpg } from "@/lib/finance/operasional/kai
  * yang sama dengan menandai gaji & komisi konsinyasi dibayar — bawaannya hanya
  * admin. Tombol di halaman memakai izin yang sama.
  *
+ * Membayar membayar gaji pokok + komisi satu SPG × bulan kerja (B19): ditolak dengan alasan tahannya
+ * (P60) selama dasar gajinya belum pasti — `hari` menyebut hari yang membuatnya tertahan.
+ *
  * Membayar selalu membayar komisi per SPG saat ini (bukan angka tersimpan yang basi) dan menerapkan
  * koreksi SPG itu yang ikut pembayaran tersebut; `jumlahDiharapkan` = yang dilihat di layar, dan
  * angka yang berubah sejak halaman dibuka ditolak `ANGKA_BERUBAH` tanpa menulis apa pun.
@@ -32,9 +35,10 @@ type Gagal<K extends string> = { ok: false; code: "UNAUTHORIZED" | "FORBIDDEN" |
 
 export type HasilTetapkanKomisiAction = { ok: true; ulang: boolean; ditulis: number; dihapus: number } | Gagal<KodeTolakTetapkan>;
 export type HasilBayarKomisiAction =
-  | { ok: true; dibayar: number; koreksi: number }
-  | (Gagal<KodeTolakBayar> & { jumlah?: number });
-export type HasilCekLaporanAction = { ok: true; bulanBayar: string } | Gagal<KodeTolakCek>;
+  | { ok: true; dibayar: number; koreksi: number; utang: number }
+  | (Gagal<KodeTolakBayar> & { jumlah?: number; hari?: string[] });
+/** `tanpaKategori` = barang yang komisinya menyusul sampai kategorinya diisi (P69) — ditampilkan, bukan ditolak. */
+export type HasilCekLaporanAction = { ok: true; bulanBayar: string; tanpaKategori: { itemId: string; potong: number }[] } | Gagal<KodeTolakCek>;
 export type HasilBatalCekAction = { ok: true; dihapus: number } | Gagal<KodeTolakBatalCek>;
 
 async function penggunaKeuangan(
@@ -63,7 +67,7 @@ export async function tandaiLaporanDicekAction(isi: { storeId: unknown; periode:
   const h = await tandaiLaporanDicek({ storeId: isi.storeId, periode: isi.periode, olehUserId: g.userId });
   if (!h.ok) return h;
   segarkan();
-  return { ok: true, bulanBayar: h.bulanBayar };
+  return { ok: true, bulanBayar: h.bulanBayar, tanpaKategori: h.tanpaKategori };
 }
 
 export async function batalkanTandaDicekAction(isi: { storeId: unknown; periode: unknown; alasan: unknown }): Promise<HasilBatalCekAction> {
@@ -108,5 +112,5 @@ export async function tandaiKomisiSpgDibayarAction(isi: {
   // pembayarannya dengan koreksi yang dibawanya — keduanya di `kaitBayarKomisiSpg`.
   await kaitBayarKomisiSpg(isi.commissionId, g.userId);
   segarkan();
-  return { ok: true, dibayar: h.dibayar, koreksi: h.koreksi };
+  return { ok: true, dibayar: h.dibayar, koreksi: h.koreksi, utang: h.utang };
 }

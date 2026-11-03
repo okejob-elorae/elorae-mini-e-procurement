@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { CalendarRange, ClipboardCheck, Clock, CloudUpload, Mail, MapPin, ShoppingBag, Store, TrendingDown, Truck, Wallet } from "lucide-react";
+import { CalendarRange, ClipboardCheck, Clock, CloudUpload, Mail, MapPin, PackageSearch, ShoppingBag, Store, TrendingDown, Truck, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { greetingKey } from "@/lib/auth/login-message";
 import { hitungBelumTerkirim } from "@/lib/pwa/offline/hitung";
@@ -42,9 +42,9 @@ import { KunjunganBeranda } from "./beranda/KunjunganBeranda";
 type PermState = "prompt" | "granted" | "denied" | "unknown";
 
 export type DataBerandaSalesman = {
-  /** Rupiah putus + van; konsinyasi hanya pcs — rupiah konsi tidak pernah sampai ke HP. */
+  /** Rupiah putus + konsi + van (P56), dengan pcs konsinyasi laku. */
   bulanIni: JumlahHp;
-  /** Capaian target atas putus + van. */
+  /** Capaian target atas omzet resmi putus + konsi + van. */
   kemajuan: Kemajuan | null;
   tren: TitikTrenHp[];
   pesanan: DataPesanan;
@@ -62,6 +62,11 @@ export type DataBerandaSalesman = {
   absen: DataKartuAbsen | null;
   /** Tugas tagih dari kantor yang masih perlu ditagih; `terlambat` = lewat tenggat. */
   tugasTagih: { perluDitagih: number; terlambat: number };
+  /**
+   * Selisih retur di toko yang ia pegang SEKARANG yang masih harus ia tanyakan ke toko dan SPG-nya
+   * (P22) — dari `jumlahSelisihPerluDicek`; daftarnya di layar Retur.
+   */
+  selisihReturPerluDicek: number;
   /** Kantor mengatur target per kategori/barang bulan ini. */
   adaTargetRinci: boolean;
   /** Toko yang dijadwalkan kantor untuk hari ini — paling atas di "Rencana kunjungan". */
@@ -194,6 +199,14 @@ export function HomeShell({
       label: tTugasTagih("berandaBaris"),
       ikon: ClipboardCheck,
       mendesak: data.tugasTagih.terlambat > 0,
+    },
+    {
+      kunci: "selisihRetur",
+      jumlah: data.selisihReturPerluDicek,
+      href: "/pwa/retur",
+      label: tTugas("selisihRetur"),
+      ikon: PackageSearch,
+      mendesak: data.selisihReturPerluDicek > 0,
     },
     // Toko lewat janji bayar TIDAK jadi baris di sini: kartu "Perlu ditagih" di
     // bawah rencana kunjungan menampilkan toko yang sama, lengkap dengan tombol

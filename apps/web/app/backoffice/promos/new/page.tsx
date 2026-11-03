@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { PromoForm } from "../PromoForm";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,8 @@ export default async function NewPromoPage() {
 
   const [items, stores] = await Promise.all([
     prisma.item.findMany({
-      where: { isActive: true, type: "FINISHED_GOOD" },
+      // Promo putus berlaku untuk pesanan offline: barang "Marketplace saja" tidak ditawarkan (P3a).
+      where: { isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() },
       select: { id: true, sku: true, nameId: true },
       orderBy: { nameId: "asc" },
     }),

@@ -70,6 +70,9 @@ export const KODE_ALASAN_LURING = [
   "KETERANGAN_RUSAK_WAJIB",
   "TANPA_BARIS",
   "BARANG_TIDAK_DITEMUKAN",
+  // terima kiriman: pengirimannya tidak jadi dikirim, atau belum berangkat dari gudang
+  "KIRIMAN_DIBATALKAN",
+  "BELUM_BERANGKAT",
   // barang kembali dari pembeli
   "TANPA_AKSES",
   "TANPA_TOKO",
@@ -79,15 +82,36 @@ export const KODE_ALASAN_LURING = [
   "BARIS_TIDAK_DITEMUKAN",
   "MELEBIHI_SISA",
   "KUNCI_WAJIB",
+  "FOTO_BARANG_WAJIB",
+  "FOTO_STRUK_WAJIB",
+  "JAWABAN_UANG_WAJIB",
+  // barang kembali dari pembeli yang mengganti laporan lama
+  "GANTI_BUKAN_MILIK",
+  "GANTI_TIDAK_BISA",
+  "ALASAN_GANTI_WAJIB",
+  // uang retur pembeli dikembalikan — nama umum, lihat KODE_ALASAN_LINTAS_PEKERJAAN
+  "TIDAK_DITEMUKAN",
+  "BUKAN_MILIK",
+  "TIDAK_DISETUJUI",
+  "SUDAH_DICATAT",
 ] as const;
 
 /**
- * Kunci teks alasan untuk kolom `error` antrean. Foto yang ditolak saat
- * diunggah tersimpan sebagai `FOTO_<kode>` (pola `laporan-sync.ts`) dan
- * memakai satu teks; kode yang tidak dikenal memakai teks umum.
+ * Kode dengan nama UMUM: daftar di atas satu untuk SEMUA pekerjaan antrean, dan pekerjaan lain bisa
+ * mengembalikan nama yang sama (`kirimMutasi` mengembalikan `TIDAK_DITEMUKAN`). Teksnya karena itu
+ * tidak boleh menyebut satu jenis pekerjaan — tesnya menjaga teks ini tidak menyebut retur.
+ */
+export const KODE_ALASAN_LINTAS_PEKERJAAN = ["TIDAK_DITEMUKAN", "BUKAN_MILIK", "TIDAK_DISETUJUI", "SUDAH_DICATAT"] as const;
+
+/**
+ * Kunci teks alasan untuk kolom `error` antrean. Kode yang dikenal memakai teksnya sendiri —
+ * termasuk penolakan server yang namanya kebetulan berawalan `FOTO_` (`FOTO_BARANG_WAJIB`,
+ * `FOTO_STRUK_WAJIB`). Foto yang ditolak saat diunggah tersimpan sebagai `FOTO_<kode>` (pola
+ * `laporan-sync.ts`) dan memakai satu teks; kode yang tidak dikenal memakai teks umum.
  */
 export function kunciAlasanLuring(kode: string | undefined): string {
   if (!kode) return "UMUM";
+  if ((KODE_ALASAN_LURING as readonly string[]).includes(kode)) return kode;
   if (kode.startsWith("FOTO_")) return "FOTO";
-  return (KODE_ALASAN_LURING as readonly string[]).includes(kode) ? kode : "UMUM";
+  return "UMUM";
 }

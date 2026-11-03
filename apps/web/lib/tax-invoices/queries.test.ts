@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { listTaxInvoices } from "./queries";
-import { recordFieldSalesDelivery } from "@/lib/field-sales/delivery/writer";
+import { catatNotaUji as recordFieldSalesDelivery } from "@/lib/field-sales/delivery/uji-nota";
 
 /* Stock-mutating (goes through the real delivery writer) — never run against the shared prod DB. */
 const url = process.env.DATABASE_URL ?? "";

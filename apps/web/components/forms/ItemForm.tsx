@@ -81,20 +81,32 @@ import { bacaAngkaIsian, satuanKg } from "@/lib/purchase-orders/rincian-warna";
 import type { HppBarang } from "@/lib/items/hpp-barang";
 import type { HppTerbaru } from "@/lib/items/riwayat-hpp";
 import {
+  aturanHargaSah,
   bacaAngkaOpsional,
+  formatPersenSatuDesimal,
   formatRupiahSen,
-  MARGIN_MAKS,
   rekomendasiHargaJual,
+  type AturanHarga,
+  type DasarAturanHarga,
 } from "@/lib/items/rekomendasi-harga";
+import { centangDariSaluran, saluranDariCentang, type SaluranJual } from "@/lib/items/saluran-jual";
+import type { AlasanTidakBisaDiaktifkan, AlasanTidakBisaDinonaktifkan } from "@/lib/jubelio/harga/aturan";
+import { IsianMarkupMargin, type NilaiMarkupMargin } from "./ItemFormIsianMarkupMargin";
 import { formatRupiah } from "@/lib/format/rupiah";
 import { formatDisplayDate } from "@/lib/date-only";
 
 type ItemFormData = z.infer<typeof itemSchema>;
 /**
- * Target margin dan biaya tambahan barang jadi — bahan rekomendasi harga saja
- * (keputusan pemilik 2026-11-01). null = dikosongkan (ikut bawaan Pengaturan Jubelio).
+ * Aturan rekomendasi (persen + dasar markup/margin) dan bantalan margin barang jadi — bahan
+ * rekomendasi harga saja (keputusan pemilik 2026-11-01, jawaban P4 2026-11-02). null = dikosongkan
+ * (ikut bawaan Pengaturan Jubelio). Plus saluran jual (P3).
  */
-type IsianRekomendasi = { targetMarginPercent?: number | null; additionalCost?: number | null };
+type IsianRekomendasi = {
+  targetMarginPercent?: number | null;
+  priceRuleBasis?: DasarAturanHarga;
+  additionalCost?: number | null;
+  salesChannel?: SaluranJual;
+};
 /** Info produk untuk pembeli (barang jadi): bahan, cara rawat, tabel ukuran (null = ikut bawaan kategori). */
 type InfoProdukIsian = {
   material?: string | null;
@@ -173,7 +185,22 @@ interface ItemFormProps {
     overReceiveThreshold?: number;
     sellingPrice?: number;
     targetMarginPercent?: number;
+    /** Dasar `targetMarginPercent` (P4); persen lama tanpa dasar = markup. */
+    priceRuleBasis?: DasarAturanHarga;
     additionalCost?: number;
+    /** Saluran jual tersimpan (P3); barang jadi baru tidak punya, kedua centangnya kosong. */
+    salesChannel?: SaluranJual;
+    /**
+     * Keadaan Jubelio untuk centang saluran, dihitung server dengan aturan yang sama dengan
+     * penulisnya: sudah di Jubelio, sedang beda harga, dan kenapa tidak bisa dinonaktifkan /
+     * diaktifkan lagi (null = bisa).
+     */
+    saluranInfo?: {
+      terpetakan: boolean;
+      beda: boolean;
+      alasanNonaktif: AlasanTidakBisaDinonaktifkan | null;
+      alasanAktif: AlasanTidakBisaDiaktifkan | null;
+    };
     pantone?: PantoneThemeSelection | null;
     material?: string | null;
     careInstructions?: string | null;
@@ -210,8 +237,13 @@ interface ItemFormProps {
   hpp?: HppBarang | null;
   /** HPP peristiwa biaya terbaru — dasar rekomendasi harga. null = belum ada HPP. */
   hppTerbaru?: HppTerbaru | null;
-  /** Margin dan biaya tambahan bawaan (Pengaturan Jubelio) bila barang tidak punya sendiri. */
-  bawaanRekomendasi?: { margin: number | null; biaya: number | null };
+  /** Aturan (pasangan persen + dasar) dan bantalan margin bawaan (Pengaturan Jubelio). */
+  bawaanRekomendasi?: { aturan: AturanHarga | null; biaya: number | null };
+  /**
+   * Apakah pengguna boleh menyimpan formulir ini (items:create untuk barang baru, items:edit untuk
+   * yang sudah ada, P76) — centang saluran dikunci persis ketika simpan tidak boleh.
+   */
+  bolehSimpan?: boolean;
 }
 
 export function ItemForm({
@@ -220,7 +252,8 @@ export function ItemForm({
   isLoading = false,
   hpp = null,
   hppTerbaru = null,
-  bawaanRekomendasi = { margin: null, biaya: null },
+  bawaanRekomendasi = { aturan: null, biaya: null },
+  bolehSimpan = true,
 }: ItemFormProps) {
   const tValidation = useTranslations('validation');
   const tToasts = useTranslations('toasts');
@@ -341,24 +374,34 @@ export function ItemForm({
   const komisiSpgLama =
     initialData?.commissionPerPcs != null && initialData.commissionPerPcs > 0 ? initialData.commissionPerPcs : null;
   const [pilihanTabel, setPilihanTabel] = useState<PilihanTabelUkuran[]>([]);
-  // Bahan rekomendasi harga (barang jadi). Kosong = ikut bawaan Pengaturan Jubelio.
-  const [marginTeks, setMarginTeks] = useState(
-    initialData?.targetMarginPercent != null ? String(initialData.targetMarginPercent) : "",
-  );
+  // Bahan rekomendasi harga (barang jadi): SATU aturan, diisi sebagai markup ATAU margin (P4).
+  // Kosong = ikut pasangan bawaan Pengaturan Jubelio.
+  const [aturanIsi, setAturanIsi] = useState<NilaiMarkupMargin>({
+    dasar: initialData?.priceRuleBasis ?? "MARKUP",
+    teks: initialData?.targetMarginPercent != null ? String(initialData.targetMarginPercent) : "",
+  });
   const [biayaTeks, setBiayaTeks] = useState(
     initialData?.additionalCost != null ? String(initialData.additionalCost) : "",
   );
+  const aturanBarang = useMemo((): AturanHarga | null => {
+    const persen = bacaAngkaOpsional(aturanIsi.teks);
+    return persen == null ? null : { dasar: aturanIsi.dasar, persen };
+  }, [aturanIsi]);
   const rekomendasi = useMemo(
     () =>
       rekomendasiHargaJual({
         hppTerbaru,
-        marginBarang: bacaAngkaOpsional(marginTeks),
+        aturanBarang,
         biayaBarang: bacaAngkaOpsional(biayaTeks),
-        marginBawaan: bawaanRekomendasi.margin,
+        aturanBawaan: bawaanRekomendasi.aturan,
         biayaBawaan: bawaanRekomendasi.biaya,
       }),
-    [hppTerbaru, marginTeks, biayaTeks, bawaanRekomendasi.margin, bawaanRekomendasi.biaya],
+    [hppTerbaru, aturanBarang, biayaTeks, bawaanRekomendasi.aturan, bawaanRekomendasi.biaya],
   );
+  // Saluran jual (P3): dua centang; barang jadi baru mulai tanpa centang dan wajib memilih.
+  const saluranTersimpan = initialData?.salesChannel ?? null;
+  const [centangSaluran, setCentangSaluran] = useState(() => centangDariSaluran(saluranTersimpan));
+  const saluranDipilih = saluranDariCentang(centangSaluran);
 
   const {
     register,
@@ -759,13 +802,16 @@ export function ItemForm({
       }
     }
 
-    // Target margin & biaya tambahan: bahan rekomendasi harga saja (barang jadi); tidak
-    // pernah mengubah harga jual. Kosong = ikut bawaan Pengaturan Jubelio.
+    // Markup/margin & bantalan margin: bahan rekomendasi harga saja (barang jadi); tidak
+    // pernah mengubah harga jual. Kosong = ikut bawaan Pengaturan Jubelio. Saluran jual wajib.
     let isianRekomendasi: IsianRekomendasi = {};
     if (itemType === ItemType.FINISHED_GOOD) {
-      const margin = bacaAngkaOpsional(marginTeks);
-      if (margin != null && !(margin >= 0 && margin <= MARGIN_MAKS)) {
-        toast.error(tForm('marginTidakSah'));
+      if (!saluranDipilih) {
+        toast.error(tForm('saluranWajib'));
+        return;
+      }
+      if (aturanBarang != null && !aturanHargaSah(aturanBarang)) {
+        toast.error(tForm(aturanBarang.dasar === "MARGIN" ? 'marginTidakSah' : 'markupTidakSah'));
         return;
       }
       const biaya = bacaAngkaOpsional(biayaTeks);
@@ -773,7 +819,12 @@ export function ItemForm({
         toast.error(tForm('biayaTambahanTidakSah'));
         return;
       }
-      isianRekomendasi = { targetMarginPercent: margin, additionalCost: biaya };
+      isianRekomendasi = {
+        targetMarginPercent: aturanBarang?.persen ?? null,
+        priceRuleBasis: aturanIsi.dasar,
+        additionalCost: biaya,
+        salesChannel: saluranDipilih,
+      };
     }
 
     // Info produk hanya untuk barang jadi; jenis lain tidak menyentuh kolomnya.
@@ -1074,6 +1125,13 @@ export function ItemForm({
               pemilik 2026-11-01) — harga baru tersimpan hanya saat Simpan ditekan. */}
           {itemType === ItemType.FINISHED_GOOD && (
             <div className="space-y-4 border-t pt-4">
+              <SaluranJualIsian
+                centang={centangSaluran}
+                onUbah={setCentangSaluran}
+                tersimpan={saluranTersimpan}
+                info={initialData?.saluranInfo ?? null}
+                disabled={!bolehSimpan || isLoading}
+              />
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="sellingPrice">{tForm('sellingPrice')}</Label>
@@ -1108,27 +1166,13 @@ export function ItemForm({
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="targetMarginPercent">
-                    {tForm('targetMargin')} <span className="text-xs text-muted-foreground">({tForm('optional')})</span>
-                  </Label>
-                  <Input
-                    id="targetMarginPercent"
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-                    min="0"
-                    max={MARGIN_MAKS}
-                    autoComplete="off"
-                    value={marginTeks}
-                    onChange={(e) => setMarginTeks(e.target.value)}
-                    placeholder={
-                      bawaanRekomendasi.margin != null
-                        ? tForm('placeholderBawaan', { nilai: `${angkaRingkas(bawaanRekomendasi.margin)}%` })
-                        : ''
-                    }
-                    className="max-w-[12rem] tabular-nums"
+                  <IsianMarkupMargin
+                    idAwalan="aturanHarga"
+                    nilai={aturanIsi}
+                    onUbah={setAturanIsi}
+                    bawaan={bawaanRekomendasi.aturan}
                   />
-                  <p className="text-xs text-muted-foreground">{tForm('targetMarginHint')}</p>
+                  <p className="text-xs text-muted-foreground">{tForm('aturanHint')}</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="additionalCost">
@@ -1665,8 +1709,6 @@ export function ItemForm({
   );
 }
 
-const angkaRingkas = (n: number) => n.toLocaleString("id-ID", { maximumFractionDigits: 2 });
-
 /**
  * HPP terbaru barang jadi — hanya dibaca, di samping harga jual. Angka utamanya
  * HPP SEBENARNYA peristiwa biaya terbaru (keputusan pemilik 2026-11-01: 50.000
@@ -1742,7 +1784,7 @@ function RekomendasiHarga({
       <div className="space-y-0.5 text-xs text-muted-foreground">
         <p className="font-medium text-foreground">{tForm("rekomendasiBelum")}</p>
         {hasil.kurang.includes("HPP") && <p>{tForm("kurangHpp")}</p>}
-        {hasil.kurang.includes("MARGIN") && <p>{tForm("kurangMargin")}</p>}
+        {hasil.kurang.includes("ATURAN") && <p>{tForm("kurangAturan")}</p>}
       </div>
     );
   }
@@ -1765,12 +1807,80 @@ function RekomendasiHarga({
           hpp: formatRupiahSen(hasil.hpp),
           dokumen: hasil.dokumen,
           tanggal: formatDisplayDate(hasil.tanggal, locale),
-          margin: angkaRingkas(hasil.margin),
-          sumberMargin: hasil.marginBawaan ? "BAWAAN" : "BARANG",
+          markup: hasil.markup != null ? formatPersenSatuDesimal(hasil.markup) : "—",
+          margin: formatPersenSatuDesimal(hasil.margin),
+          sumberAturan: hasil.aturanBawaan ? "BAWAAN" : "BARANG",
           biaya: formatRupiahSen(hasil.biaya),
           sumberBiaya: hasil.sumberBiaya,
         })}
       </p>
     </div>
+  );
+}
+
+/**
+ * "Dijual di" (jawaban pemilik P3/P3a/P72, 2026-11-02): dua centang — Marketplace (Jubelio) dan
+ * Toko offline; keduanya = Keduanya. Untuk barang yang sudah di Jubelio, melepas Marketplace
+ * menonaktifkan produknya di Jubelio (tidak dihapus) dan dikunci persis ketika penulisnya akan
+ * menolak (`alasanNonaktif`, dihitung server); memasang lagi mengaktifkannya kembali.
+ */
+function SaluranJualIsian({
+  centang,
+  onUbah,
+  tersimpan,
+  info,
+  disabled,
+}: {
+  centang: { marketplace: boolean; offline: boolean };
+  onUbah: (c: { marketplace: boolean; offline: boolean }) => void;
+  tersimpan: SaluranJual | null;
+  info: { terpetakan: boolean; beda: boolean; alasanNonaktif: AlasanTidakBisaDinonaktifkan | null; alasanAktif: AlasanTidakBisaDiaktifkan | null } | null;
+  disabled: boolean;
+}) {
+  const tForm = useTranslations("itemForm");
+  const terpetakan = info?.terpetakan ?? false;
+  const dariMarketplace = tersimpan != null && tersimpan !== "OFFLINE";
+  // Melepas Marketplace pada produk yang sudah di Jubelio = penonaktifan; dikunci bila tidak bisa dikirim.
+  const kunciLepas = terpetakan && dariMarketplace && centang.marketplace && info?.alasanNonaktif != null;
+  // Memasang lagi Marketplace pada produk Jubelio yang offline = pengaktifan; dikunci bila tidak bisa dikirim.
+  const kunciPasang = terpetakan && tersimpan === "OFFLINE" && !centang.marketplace && info?.alasanAktif != null;
+  const akanNonaktif = terpetakan && dariMarketplace && !centang.marketplace && centang.offline;
+  const akanAktif = terpetakan && tersimpan === "OFFLINE" && centang.marketplace;
+  const kosong = !centang.marketplace && !centang.offline;
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-sm leading-none font-medium">{tForm("saluranJudul")}</legend>
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        <label className="flex min-h-9 items-center gap-2 text-sm">
+          <Checkbox
+            checked={centang.marketplace}
+            onCheckedChange={(v) => onUbah({ ...centang, marketplace: v === true })}
+            disabled={disabled || kunciLepas || kunciPasang}
+          />
+          {tForm("saluranMarketplace")}
+        </label>
+        <label className="flex min-h-9 items-center gap-2 text-sm">
+          <Checkbox
+            checked={centang.offline}
+            onCheckedChange={(v) => onUbah({ ...centang, offline: v === true })}
+            disabled={disabled}
+          />
+          {tForm("saluranOffline")}
+        </label>
+      </div>
+      <p className="text-xs text-muted-foreground">{tForm("saluranHint")}</p>
+      {kosong ? <p className="text-xs text-destructive">{tForm("saluranWajib")}</p> : null}
+      {kunciLepas && info?.alasanNonaktif ? (
+        <p className="text-xs text-muted-foreground">{tForm("saluranTidakBisaNonaktif", { alasan: info.alasanNonaktif })}</p>
+      ) : null}
+      {kunciPasang && info?.alasanAktif ? (
+        <p className="text-xs text-muted-foreground">{tForm("saluranTidakBisaAktif", { alasan: info.alasanAktif })}</p>
+      ) : null}
+      {akanNonaktif ? <p className="text-xs text-muted-foreground">{tForm("saluranNonaktifkan")}</p> : null}
+      {akanAktif ? <p className="text-xs text-muted-foreground">{tForm("saluranAktifkan")}</p> : null}
+      {(akanNonaktif || akanAktif) && info?.beda ? (
+        <p className="text-xs text-destructive">{tForm("saluranBedaTahan")}</p>
+      ) : null}
+    </fieldset>
   );
 }

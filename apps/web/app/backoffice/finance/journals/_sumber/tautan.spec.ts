@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { SEMUA_SUMBER_LAPANGAN, SUMBER_BERGENERASI } from "@/lib/finance/lapangan/aturan";
+import { SEMUA_SUMBER_OPERASIONAL, SUMBER_BERGENERASI_OPERASIONAL } from "@/lib/finance/operasional/aturan";
 import {
   JENIS_SUMBER_JURNAL,
   idDokumenDariSumber,
@@ -142,5 +144,59 @@ describe("pindah barang & retur lapangan konsinyasi (lib/finance/operasional)", 
     expect(tautanDokumenSumber("CONSIGNMENT_TRANSFER", "kt1", { fieldOrderId: "fso1" })).toBe("/backoffice/field-sales-orders/fso1");
     expect(tautanDokumenSumber("CONSIGNMENT_TRANSFER", "kt1")).toBe("/backoffice/field-sales-orders");
     expect(tautanDokumenSumber("CONSIGNMENT_FIELD_RETURN", "fr1")).toBe("/backoffice/field-returns/fr1");
+  });
+});
+
+describe("koreksi utang pemasok (lib/vendor-billing/koreksi-utang-*)", () => {
+  it("bisa disaring dan menunjuk rincian tagihannya; tanpa tagihan → daftar selisih harga", () => {
+    expect(JENIS_SUMBER_JURNAL).toContain("SUPPLIER_PAYABLE_CORRECTION");
+    expect(JENIS_SUMBER_JURNAL).toContain("SUPPLIER_PAYABLE_CORRECTION_REVERSAL");
+    expect(saringanSumber("SUPPLIER_PAYABLE_CORRECTION")).toEqual({ sourceType: "SUPPLIER_PAYABLE_CORRECTION" });
+    expect(idDokumenDariSumber("SUPPLIER_PAYABLE_CORRECTION", "k1")).toBe("k1");
+    expect(tautanDokumenSumber("SUPPLIER_PAYABLE_CORRECTION", "k1", { billId: "vb1" })).toBe("/backoffice/vendor-bills/vb1");
+    expect(tautanDokumenSumber("SUPPLIER_PAYABLE_CORRECTION_REVERSAL", "k1", { billId: "vb1" })).toBe("/backoffice/vendor-bills/vb1");
+    expect(tautanDokumenSumber("SUPPLIER_PAYABLE_CORRECTION", "k1")).toBe("/backoffice/vendor-bills/selisih-harga");
+  });
+});
+
+describe("sumber bergenerasi — generasi #2 dan seterusnya tetap menunjuk dokumennya", () => {
+  it("setiap sumber lapangan dan operasional yang bergenerasi dipotong di `#`", () => {
+    for (const jenis of [...SUMBER_BERGENERASI, ...SUMBER_BERGENERASI_OPERASIONAL]) {
+      expect(idDokumenDariSumber(jenis, "d1")).toBe("d1");
+      expect(idDokumenDariSumber(jenis, "d1#2")).toBe("d1");
+      expect(idDokumenDariSumber(jenis, "d1#3")).toBe("d1");
+    }
+  });
+
+  it("nota tagihan dan pindah barang konsinyasi: koreksi/penolakan di pintu menulis `<id>#2`", () => {
+    expect(idDokumenDariSumber("FIELD_DELIVERY", "dlv1#2")).toBe("dlv1");
+    expect(idDokumenDariSumber("CONSIGNMENT_TRANSFER", "kt1#3")).toBe("kt1");
+    expect(tautanDokumenSumber("FIELD_DELIVERY", "dlv1", { fieldOrderId: "fso1" })).toBe("/backoffice/field-sales-orders/fso1");
+  });
+
+  it("sumber sekali-posting tidak dipotong", () => {
+    expect(idDokumenDariSumber("SPG_EXTRA_PAYOUT", "p1#2")).toBe("p1#2");
+    expect(idDokumenDariSumber("RETURN_SALES_DEDUCTION", "r1")).toBe("r1");
+  });
+});
+
+describe("setiap sumber jurnal lapangan dan operasional bisa disaring dan punya halaman", () => {
+  it("tidak ada sumber yang tertinggal dari saringan", () => {
+    for (const jenis of [...SEMUA_SUMBER_LAPANGAN, ...SEMUA_SUMBER_OPERASIONAL]) {
+      expect(JENIS_SUMBER_JURNAL as readonly string[]).toContain(jenis);
+      expect(tautanDokumenSumber(jenis, "x")).not.toBeNull();
+    }
+  });
+
+  it("utang SPG yang berhenti → kartu Utang SPG di halaman Komisi SPG; selisih retur → laporan komisi salesman", () => {
+    expect(tautanDokumenSumber("SPG_DEBT_PAYMENT", "bayar1")).toBe("/backoffice/komisi-spg#utang");
+    expect(tautanDokumenSumber("SPG_EXTRA_PAYOUT", "tambah1")).toBe("/backoffice/komisi-spg#utang");
+    expect(idDokumenDariSumber("SPG_DEBT_PAYMENT", "bayar1#2")).toBe("bayar1");
+    expect(tautanDokumenSumber("RETURN_SALES_DEDUCTION", "d1")).toBe("/backoffice/laporan/komisi-salesman");
+  });
+
+  it("pembayaran toko konsinyasi lama tidak lagi jadi sumber jurnal", () => {
+    expect(JENIS_SUMBER_JURNAL as readonly string[]).not.toContain("CONSIGNMENT_PAYMENT");
+    expect(tautanDokumenSumber("CONSIGNMENT_PAYMENT", "x")).toBeNull();
   });
 });

@@ -142,6 +142,10 @@ export function ReturTokoClient({
   const [barangKlaim, setBarangKlaim] = useState<BarisBarang[]>([]);
   const [foto, setFoto] = useState<NilaiFoto>(null);
   const [catatan, setCatatan] = useState('');
+  /* Barangnya cocok dengan barang selisih nota lain yang sedang dikirim balik
+     (`ADA_SELISIH_DITEMUKAN`): pencatat menyatakan ini retur lain, lalu menyimpan ulang. */
+  const [bentrokSelisih, setBentrokSelisih] = useState<string | null>(null);
+  const [returLain, setReturLain] = useState(false);
 
   const [hitungBaris, setHitungBaris] = useState<BarisReturTampil | null>(null);
   const [terimaTerbuka, setTerimaTerbuka] = useState(false);
@@ -165,7 +169,7 @@ export function ReturTokoClient({
   const tampil = baris;
 
   const jalankan = (
-    fn: () => Promise<{ ok: boolean; kode?: string }>,
+    fn: () => Promise<{ ok: boolean; kode?: string; noNrt?: string }>,
     pesan: string,
     bersihkan: () => void,
   ) => {
@@ -176,7 +180,8 @@ export function ReturTokoClient({
         bersihkan();
         router.refresh();
       } else {
-        toast.error(t(`err${hasil.kode}` as never));
+        if (hasil.kode === 'ADA_SELISIH_DITEMUKAN') setBentrokSelisih(hasil.noNrt ?? '');
+        toast.error(t(`err${hasil.kode}` as never, { noNrt: hasil.noNrt ?? '' } as never));
       }
     });
   };
@@ -218,7 +223,14 @@ export function ReturTokoClient({
               </Button>
             )}
             {bolehMengelola && (
-              <Button onClick={() => setBuatTerbuka(true)} disabled={toko.length === 0}>
+              <Button
+                onClick={() => {
+                  setBentrokSelisih(null);
+                  setReturLain(false);
+                  setBuatTerbuka(true);
+                }}
+                disabled={toko.length === 0}
+              >
                 <Plus className="mr-1.5 h-4 w-4" />
                 {t('create')}
               </Button>
@@ -397,7 +409,13 @@ export function ReturTokoClient({
                                 {t('turnOf', { who: t(`who_${b.giliran}` as never) })}{' '}
                               </span>
                             )}
-                            {t(`why${b.langkah.charAt(0).toUpperCase()}${b.langkah.slice(1)}` as never)}
+                            {/* Selisih yang masih ditanyakan sales ke toko dan SPG, atau yang barangnya
+                                sedang dikirim balik, punya alasannya sendiri. */}
+                            {b.langkah === 'keputusan' && b.giliran === 'sales'
+                              ? t('whyKeputusanSales')
+                              : b.langkah === 'keputusan' && b.giliran === 'gudang'
+                                ? t('whyKeputusanGudang')
+                                : t(`why${b.langkah.charAt(0).toUpperCase()}${b.langkah.slice(1)}` as never)}
                           </p>
                           {b.penanggung && (
                             <p className="text-xs text-muted-foreground">
@@ -598,6 +616,12 @@ export function ReturTokoClient({
                 rows={2}
               />
             </div>
+            {bentrokSelisih !== null && (
+              <label className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                <Checkbox checked={returLain} onCheckedChange={(v) => setReturLain(v === true)} />
+                <span>{t('returLainKonfirmasi', { noNrt: bentrokSelisih })}</span>
+              </label>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -624,6 +648,7 @@ export function ReturTokoClient({
                       items: barangKlaim,
                       photoUrl: foto?.url ?? null,
                       note: catatan,
+                      returLain,
                     }),
                   t('okCreated'),
                   () => {
@@ -634,6 +659,8 @@ export function ReturTokoClient({
                     setBarangKlaim([]);
                     setFoto(null);
                     setCatatan('');
+                    setBentrokSelisih(null);
+                    setReturLain(false);
                   },
                 )
               }

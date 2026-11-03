@@ -5,6 +5,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getVanStock, listVanLoads, getLoadableInventory } from "@/lib/canvassing/queries";
 import { getVanForReconcile, listVanReconciles } from "@/lib/canvassing/reconcile-queries";
 import { periksaKanvas } from "@/lib/canvassing/kelayakan-kanvas";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { VanDetailClient } from "./VanDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +31,8 @@ export default async function CanvasserVanPage({ params }: { params: Promise<{ c
     getVanStock(canvasserId),
     listVanLoads(canvasserId, LOAD_HISTORY_LIMIT),
     prisma.item.findMany({
-      where: { isActive: true, type: "FINISHED_GOOD" },
+      // Barang "Marketplace saja" tidak pernah dimuat ke van (P3a).
+      where: { isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() },
       select: { id: true, sku: true, nameId: true, variants: true },
       orderBy: { nameId: "asc" },
     }),

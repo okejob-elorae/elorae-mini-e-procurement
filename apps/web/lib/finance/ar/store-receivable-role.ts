@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@elorae/db";
 import { SUMBER_LAPANGAN, SUMBER_NOTA_LAMA } from "@/lib/finance/lapangan/aturan";
+import { SUMBER_OPERASIONAL } from "@/lib/finance/operasional/aturan";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { SELL_THROUGH_JOURNAL_SOURCE_TYPES } from "@/lib/konsi-sell-through/journal";
 import { idBebanDariCatatan } from "@/lib/receivables/penanda-beban";
@@ -16,7 +17,8 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  * Every store invoice journal posted today tags its receivable debit with the role's own name as
  * the line memo: AR_STORE for a putus store (the nota journal `FIELD_DELIVERY`, a MANUAL/IMPORT
  * invoice's `STORE_INVOICE`, an old-pair revenue half completed for a delivery dated on or after
- * the GL cutover) and AR_CONSIGNMENT for a konsi sell-through report. A journal with no such line
+ * the GL cutover) and AR_CONSIGNMENT for a konsi bill (a sell-through report, or a locked
+ * consignment cycle's `CONSIGNMENT_CYCLE` journal). A journal with no such line
  * is the old shape, which debited AR — the marketplace role — and keeps it: the receivable it
  * booked stays on AR until it is settled. So does an old-pair revenue half completed for a delivery
  * dated before the cutover (`lib/finance/ar/delivery-journal.ts`).
@@ -41,17 +43,19 @@ export function debitedReceivableRole(lines: ReadonlyArray<{ memo: string | null
 
 /**
  * The `sourceType`s an invoice journal stands under, per receivable kind, current shape first. A
- * MANUAL/IMPORT invoice's journal is keyed by the receivable itself, first generation only.
+ * MANUAL/IMPORT invoice's journal is keyed by the receivable itself, first generation only; a konsi
+ * cycle bill's by its cycle (`CONSIGNMENT_CYCLE`, first generation keyed by the bare cycle id).
  */
 const INVOICE_JOURNAL_SOURCE_TYPES: Record<ReceivableJournalState["kind"], readonly string[]> = {
   DELIVERY: [SUMBER_LAPANGAN.NOTA, SUMBER_NOTA_LAMA.PENDAPATAN],
   SELL_THROUGH: [SELL_THROUGH_JOURNAL_SOURCE_TYPES.konsi_sell_through_revenue],
   INVOICE: [SUMBER_LAPANGAN.FAKTUR],
+  CONSIGNMENT_CYCLE: [SUMBER_OPERASIONAL.SIKLUS_KONSI],
 };
 
 export type ReceivableJournalState = {
-  kind: "DELIVERY" | "SELL_THROUGH" | "INVOICE";
-  /** What the invoice journal is keyed by: the delivery, the report, or the receivable itself. */
+  kind: "DELIVERY" | "SELL_THROUGH" | "INVOICE" | "CONSIGNMENT_CYCLE";
+  /** What the invoice journal is keyed by: the delivery, the report, the cycle, or the receivable itself. */
   sourceId: string;
   /** The account its invoice journal debited; null while no invoice journal stands. */
   role: StoreReceivableRole | null;
@@ -81,8 +85,8 @@ async function journaledRoles(
 /**
  * Per receivable id: what backs it and the role its invoice journal debited. The source is resolved
  * through `resolveReceivableSource`, never `receivable.delivery`, since a receivable is backed by a
- * putus delivery, a konsi sell-through report, or only its own invoice number. A receivable that
- * resolves to no source (an orphan) is absent from the map.
+ * putus delivery, a konsi sell-through report, a locked konsi cycle, or only its own invoice number.
+ * A receivable that resolves to no source (an orphan) is absent from the map.
  *
  * A receivable with no invoice journal (`role: null`) is either still waiting for its journal or
  * predates the ledger, in which case the opening balance carries it on AR_STORE; deciding which is
@@ -104,6 +108,7 @@ export async function readReceivableJournalStates(client: AnyClient, receivableI
       const source = resolveReceivableSource(row);
       if (source.kind === "DELIVERY") backed.push({ id: row.id, kind: "DELIVERY", sourceId: source.deliveryId });
       else if (source.kind === "SELL_THROUGH") backed.push({ id: row.id, kind: "SELL_THROUGH", sourceId: source.sellThroughId });
+      else if (source.kind === "CONSIGNMENT_CYCLE") backed.push({ id: row.id, kind: "CONSIGNMENT_CYCLE", sourceId: source.cycleId });
       else {
         backed.push({ id: row.id, kind: "INVOICE", sourceId: row.id });
         if (source.origin === "MANUAL" && idBebanDariCatatan(row.note) !== null) returnCharges.add(row.id);
@@ -113,7 +118,7 @@ export async function readReceivableJournalStates(client: AnyClient, receivableI
     }
   }
   const roleOf = new Map<string, StoreReceivableRole>();
-  for (const kind of ["DELIVERY", "SELL_THROUGH", "INVOICE"] as const) {
+  for (const kind of ["DELIVERY", "SELL_THROUGH", "INVOICE", "CONSIGNMENT_CYCLE"] as const) {
     const ids = [...new Set(backed.filter((b) => b.kind === kind).map((b) => b.sourceId))];
     for (const [sourceId, role] of await journaledRoles(client, INVOICE_JOURNAL_SOURCE_TYPES[kind], ids)) {
       roleOf.set(`${kind}:${sourceId}`, role);

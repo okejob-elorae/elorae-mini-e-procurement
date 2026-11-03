@@ -6,6 +6,7 @@ import { computeSettlementTotals, computeVariance, EPSILON } from "./calc";
 import { SettlementError } from "./errors";
 import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "@/lib/finance/ar/receivable-source";
 import { sumPendingClaimsOnReceivable } from "@/lib/finance/ar/pending-claims";
+import { isKonsiBill } from "@/lib/finance/collections/phone-scope";
 
 export type SettlementDeductionInputRow = {
   type: "RETUR_OFFSET" | "PROGRAM" | "ADMIN_FEE";
@@ -246,6 +247,7 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       where: { id: { in: receivableIds } },
       select: {
         id: true, storeId: true, status: true, outstandingAmount: true, collectorId: true,
+        isConsignment: true, sellThroughId: true,
         ...RECEIVABLE_SOURCE_SELECT,
       },
     });
@@ -267,6 +269,14 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       if (receivable.collectorId !== input.salesmanId && resolveReceivableSource(receivable).salesmanId !== input.salesmanId) {
         throw new SettlementError("NOT_ASSIGNED");
       }
+      /*
+       * A konsi bill — a consignment cycle's, a paper konsi debt's, a sell-through report's — is
+       * paid only through a BKM (owner decision 2026-10-29, "satu jalur bayar (BKM + cek)"). The
+       * amplop that feeds this form already hides it (`RECEIVABLES_ON_PHONE`), so only a raw request
+       * reaches here with one; refused after the ownership check, so a salesman with no relationship
+       * to the receivable learns nothing about it beyond `NOT_ASSIGNED`.
+       */
+      if (isKonsiBill(receivable)) throw new SettlementError("KONSI_LEWAT_BKM");
 
       /**
        * Netted against every PENDING claim on the receivable — PENDING settlements'

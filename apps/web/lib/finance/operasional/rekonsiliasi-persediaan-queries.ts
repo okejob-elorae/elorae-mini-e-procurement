@@ -28,7 +28,14 @@ export type RincianSistem = {
   bahanGudang: number;
   bahanDiProduksi: number;
   barangJadi: number;
+  /** Barang konsinyasi di toko (buku toko / titipan yang sudah diterima). */
   konsinyasi: number;
+  /**
+   * Barang konsinyasi DALAM PERJALANAN ke Gudang Toko (R13): antaran yang sudah keluar dari gudang
+   * utama saat pengirimannya dibuat dan dijurnal ke persediaan konsinyasi, tetapi belum diterima
+   * toko — Σ (qty − kembali) × biaya keluarnya. Bagian dari nilai sistem persediaan konsinyasi.
+   */
+  dalamPerjalananKonsinyasi: number;
   /** Barang konsinyasi yang biayanya memakai harga cadangan (dikirim sebelum pemindahan stok tercatat). */
   konsinyasiCadangan: number;
   tokoKonsinyasi: number;
@@ -91,12 +98,19 @@ export async function nilaiSistemPersediaan(sekarang = new Date()): Promise<{ si
     konsiSen += Math.round(qty * b.biaya * 100);
   }
 
+  // Antaran konsinyasi yang belum diterima toko: sudah di persediaan konsinyasi buku besar sejak dibuat.
+  const diJalan = await prisma.konsiTransferLine.findMany({
+    where: { transfer: { status: "IN_TRANSIT" } },
+    select: { qty: true, returnedQty: true, unitCost: true },
+  });
+  const diJalanSen = diJalan.reduce((n, l) => n + Math.round(Math.max(0, angka(l.qty) - l.returnedQty) * angka(l.unitCost) * 100), 0);
+
   const bahanDiProduksi = Math.round(diProduksi.total * 100);
   return {
     sistem: {
       INVENTORY: (bahanSen + bahanDiProduksi) / 100,
       INVENTORY_FG: jadiSen / 100,
-      INVENTORY_CONSIGNMENT: konsiSen / 100,
+      INVENTORY_CONSIGNMENT: (konsiSen + diJalanSen) / 100,
       INVENTORY_DAMAGED: rusak.total,
       INVENTORY_VAN: vanSen / 100,
     },
@@ -105,6 +119,7 @@ export async function nilaiSistemPersediaan(sekarang = new Date()): Promise<{ si
       bahanDiProduksi: bahanDiProduksi / 100,
       barangJadi: jadiSen / 100,
       konsinyasi: konsiSen / 100,
+      dalamPerjalananKonsinyasi: diJalanSen / 100,
       konsinyasiCadangan: cadangan,
       tokoKonsinyasi: toko.length,
       gudangRusak: rusak.total,

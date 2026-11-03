@@ -287,6 +287,20 @@ describe("validasiPersetujuan", () => {
     expect(panjang.ok ? [] : panjang.galat).toEqual(["KODE_TERLALU_PANJANG", "TEMPO_TIDAK_SAH"]);
   });
 
+  it("refuses a consignment store with no holding salesperson (P47)", () => {
+    const kosong = validasiPersetujuan({ ...TOKO, termsType: "KONSI", salesmanId: "" });
+    expect(kosong.ok ? [] : kosong.galat).toEqual(["PEMEGANG_WAJIB_KONSI"]);
+    const spasi = validasiPersetujuan({ ...TOKO, termsType: "KONSI", salesmanId: "   " });
+    expect(spasi.ok ? [] : spasi.galat).toEqual(["PEMEGANG_WAJIB_KONSI"]);
+    const tanpa = validasiPersetujuan({ ...TOKO, termsType: "KONSI", salesmanId: null });
+    expect(tanpa.ok ? [] : tanpa.galat).toEqual(["PEMEGANG_WAJIB_KONSI"]);
+  });
+
+  it("lets a PUTUS store be approved with no holding salesperson", () => {
+    const r = validasiPersetujuan({ ...TOKO, salesmanId: "" });
+    expect(r.ok && r.data.salesmanId).toBe(null);
+  });
+
   it("re-checks the store fields the admin may have corrected", () => {
     const r = validasiPersetujuan({ ...TOKO, name: "", phone: "abc" });
     expect(r.ok ? [] : r.galat).toEqual(["NAMA_WAJIB", "TELEPON_TIDAK_SAH"]);

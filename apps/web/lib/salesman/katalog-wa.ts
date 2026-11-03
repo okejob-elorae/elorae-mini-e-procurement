@@ -16,8 +16,9 @@ export const BATAS_PRODUK_KATALOG = 10;
 
 /**
  * Harga yang boleh tampil di kartu dan pesan. Toko konsinyasi TIDAK PERNAH
- * melihat harga — barang titipan bukan barang yang dijual ke toko — jadi
- * pilihan salesman diabaikan untuk mereka.
+ * melihat harga di teks WhatsApp dari sales (P58, jawaban pemilik 2026-11-02
+ * "setuju") — walau HP salesman sendiri kini menampilkan harga retail konsi
+ * (P18) — jadi pilihan salesman diabaikan untuk mereka.
  */
 export function hargaTampil(jenisToko: "PUTUS" | "KONSI", tampilkanHarga: boolean, harga: number | null): number | null {
   if (jenisToko !== "PUTUS" || !tampilkanHarga) return null;

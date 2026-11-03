@@ -26,13 +26,13 @@ import {
 } from "@/components/ui/table";
 import { ApproveRejectCard, type AppealedLine, type LineRef, type OverCommittedLine } from "./ApproveRejectCard";
 import { barisBanding } from "./baris-banding";
-import { DeliveriesCard } from "./DeliveriesCard";
+import { DeliveriesCard, type KeadaanNotaTampil } from "./DeliveriesCard";
 import { KonsiShipmentsCard } from "./KonsiShipmentsCard";
 import { KonsiPesananLamaCard, type PesananLamaKantor } from "./KonsiPesananLamaCard";
 import { KonsiSuggestionsCard, type StagedAddition } from "./KonsiSuggestionsCard";
 import { KreditPanel } from "./KreditPanel";
 import type { PanelKredit } from "@/lib/field-sales/kredit-panel";
-import type { DeliverableLine } from "./DeliveryFormDialog";
+import type { DeliverableLine } from "./nota-dialog";
 import type { OrderShipmentSummary } from "@/lib/delivery/shipment-queries";
 import type { FakturKreditTampil, PiutangKiriman } from "./tautan-pesanan";
 import { logPrint } from "@/app/actions/audit";
@@ -66,6 +66,8 @@ type Props = {
   fakturKredit?: FakturKreditTampil[] | null;
   /** Piutang tiap nota pengiriman (per `deliveryId`), hanya untuk yang boleh membaca piutang. */
   piutangKiriman?: Record<string, PiutangKiriman>;
+  /** Batal/dikoreksi per nota (R22), dibaca halaman. */
+  keadaanNota?: Record<string, KeadaanNotaTampil>;
   bolehBukaPiutang?: boolean;
   bolehBukaFakturPajak?: boolean;
   /** Kredit ditahan saat dibuat — persetujuan butuh centang "sudah memeriksa tagihan". */
@@ -101,6 +103,7 @@ export function FieldSalesOrderDetailClient({
   fakturKredit = null,
   kreditDitahan,
   piutangKiriman = {},
+  keadaanNota = {},
   bolehBukaPiutang = false,
   bolehBukaFakturPajak = false,
 }: Props) {
@@ -392,6 +395,7 @@ export function FieldSalesOrderDetailClient({
           canRecordReceipt={canDeliver || canApprove}
           indenBelumRilis={!!order.preorder && !order.preorder.dirilis}
           piutangKiriman={piutangKiriman}
+          keadaanNota={keadaanNota}
           bolehBukaPiutang={bolehBukaPiutang}
           bolehBukaFakturPajak={bolehBukaFakturPajak}
         />

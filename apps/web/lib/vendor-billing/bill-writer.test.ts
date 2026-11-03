@@ -17,8 +17,9 @@ d("Vendor bill writer (test bed only)", () => {
   let tag = "";
   const ids = {
     user: "", supplierType: "", supplier: "", other: "", uom: "", fabric: "", fabric2: "", fg: "",
-    po: "", poItem: "", wo: "", step: "", receipt: "", service: "", ap: "",
+    po: "", poItem: "", grn: "", wo: "", step: "", receipt: "", service: "", ap: "",
   };
+  let mulai = new Date();
   const grnIds: string[] = [];
   let mappingSnapshot: MappingSnapshot;
 
@@ -49,6 +50,7 @@ d("Vendor bill writer (test bed only)", () => {
     });
     ids.po = po.id;
     ids.poItem = po.items[0].id;
+    mulai = new Date();
 
     ids.wo = (
       await prisma.workOrder.create({
@@ -90,6 +92,8 @@ d("Vendor bill writer (test bed only)", () => {
     for (const [role, chartAccountId] of [["PRODUCTION_SERVICE_COST", ids.service], ["AP", ids.ap]] as const) {
       await prisma.journalAccountMapping.upsert({ where: { role }, create: { role, chartAccountId }, update: { chartAccountId } });
     }
+    // The PO's 120 received pieces came in on one GRN whose journal booked 5.400.000 of AP (45.000 per piece).
+    ids.grn = await grnWithJournal("A", [{ itemId: ids.fabric, qty: 120 }], 5_400_000);
   });
 
   afterEach(async () => {
@@ -104,9 +108,20 @@ d("Vendor bill writer (test bed only)", () => {
     await restoreMappings(mappingSnapshot);
     const suppliers = [ids.supplier, ids.other].filter(Boolean);
     if (suppliers.length > 0) {
+      const bills = await prisma.vendorBill.findMany({ where: { supplierId: { in: suppliers.map(seededId) } }, select: { id: true } });
+      const billIds = new Set(bills.map((b) => b.id));
+      // The price-difference bells this spec's bills wrote (matched in JS: JSON-path filters are unreliable here).
+      const bells = await prisma.adminNotification.findMany({
+        where: { category: "VENDOR_BILL_PRICE_DIFFERENCE", createdAt: { gte: mulai } },
+        select: { id: true, metadata: true },
+      });
+      const milik = bells.filter((n) => billIds.has(String((n.metadata as { billId?: unknown } | null)?.billId ?? ""))).map((n) => seededId(n.id));
+      if (milik.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: milik } } });
+      await prisma.supplierPayableCorrection.deleteMany({ where: { supplierId: { in: suppliers.map(seededId) } } });
       await prisma.vendorBillLine.deleteMany({ where: { bill: { supplierId: { in: suppliers.map(seededId) } } } });
       await prisma.vendorBill.deleteMany({ where: { supplierId: { in: suppliers.map(seededId) } } });
     }
+    if (ids.user) await prisma.auditLog.deleteMany({ where: { userId: seededId(ids.user) } });
     if (ids.wo) {
       await prisma.fGReceipt.deleteMany({ where: { woId: seededId(ids.wo) } });
       await prisma.workOrderStep.deleteMany({ where: { woId: seededId(ids.wo) } });
@@ -142,7 +157,7 @@ d("Vendor bill writer (test bed only)", () => {
       data: { docNumber: `RCPT0-${tag}`, woId: ids.wo, receiptType: "GENERIC", qtyReceived: 50, qtyAccepted: 50, receivedById: ids.user },
     });
   };
-  /** A GRN of the fixture PO with the lines it brought in and the AP its journal booked (PPN included). */
+  /** A GRN of the fixture PO with the lines it brought in (one unit cost: AP ÷ pieces) and the AP its journal booked. */
   const grnWithJournal = async (no: string, lines: Array<{ itemId: string; qty: number }>, ap: number) => {
     const g = await prisma.gRN.create({
       data: {
@@ -151,7 +166,10 @@ d("Vendor bill writer (test bed only)", () => {
         poId: ids.po,
         receivedBy: ids.user,
         totalAmount: ap,
-        items: lines.map((l) => ({ itemId: l.itemId, variantSku: null, qty: l.qty })),
+        items: lines.map((l) => {
+          const unitCost = Math.round((ap / lines.reduce((t, x) => t + x.qty, 0)) * 100) / 100;
+          return { itemId: l.itemId, variantSku: null, qty: l.qty, unitCost, totalCost: Math.round(l.qty * unitCost * 100) / 100 };
+        }),
       },
       select: { id: true },
     });
@@ -174,23 +192,23 @@ d("Vendor bill writer (test bed only)", () => {
     return g.id;
   };
 
-  it("lists received PO items and WO steps, and drops what is fully billed", async () => {
+  it("lists received GRN items and WO steps, and drops what is fully billed", async () => {
     const before = await listBillableSources(ids.supplier);
-    expect(before.poItems.map((i) => [i.poItemId, i.remainingQty])).toEqual([[ids.poItem, 120]]);
+    expect(before.grnItems.map((i) => [i.grnId, i.remainingQty, i.recordedPrice, i.poItemId])).toEqual([[ids.grn, 120, 45_000, ids.poItem]]);
     expect(before.woSteps.map((s) => [s.woStepId, s.remainingQty])).toEqual([[ids.step, 80]]);
 
     await createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 80, price: 12_000 }] }, ids.user);
     const after = await listBillableSources(ids.supplier);
     expect(after.woSteps).toEqual([]);
-    expect(after.poItems).toHaveLength(1);
+    expect(after.grnItems).toHaveLength(1);
   });
 
-  it("posts no journal for PO lines or for step work a finished-goods receipt booked", async () => {
+  it("posts no journal for GRN lines or for step work a finished-goods receipt booked, and holds the step's price difference", async () => {
     const bill = await createVendorBill(
       {
         ...base(),
         lines: [
-          { type: "PO_ITEM", sourceId: ids.poItem, qty: 120, price: 45_000 },
+          { type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 120, price: 45_000 },
           { type: "WO_STEP", sourceId: ids.step, qty: 80, price: 12_500 },
         ],
       },
@@ -204,18 +222,25 @@ d("Vendor bill writer (test bed only)", () => {
     // The billed price stays beside the step's service price, so the variance is visible.
     expect(saved.lines.find((l) => l.type === "WO_STEP")?.refPrice.toString()).toBe("12000");
     expect(saved.lines.find((l) => l.type === "WO_STEP")?.price.toString()).toBe("12500");
+    expect(saved.lines.find((l) => l.type === "GRN_ITEM")?.refPrice.toString()).toBe("45000");
+    expect(saved.lines.find((l) => l.type === "GRN_ITEM")?.poItemId).toBe(ids.poItem);
 
     expect(await journalOf(bill.id)).toBeNull();
+    // 12.500 against the WO's 12.000 on 80 booked pieces waits for a decision (P27); the GRN line matches.
+    expect(bill.koreksi).toBe(1);
+    const k = await prisma.supplierPayableCorrection.findMany({ where: { billId: bill.id } });
+    expect(k.map((x) => [x.sourceType, x.status, Number(x.qty)])).toEqual([["WO_STEP", "MENUNGGU", 80]]);
+    expect(bill.notifikasi?.category).toBe("VENDOR_BILL_PRICE_DIFFERENCE");
   });
 
-  it("posts no journal for a bill of PO lines only", async () => {
-    const bill = await createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 50, price: 45_000 }] }, ids.user);
+  it("posts no journal for a bill of GRN lines only", async () => {
+    const bill = await createVendorBill({ ...base(), lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 50, price: 45_000 }] }, ids.user);
     expect(await journalOf(bill.id)).toBeNull();
   });
 
   it("refuses over-billing and a foreign supplier's line, and bills a PO already marked paid", async () => {
     await expect(
-      createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 121, price: 45_000 }] }, ids.user)
+      createVendorBill({ ...base(), lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 121, price: 45_000 }] }, ids.user)
     ).rejects.toThrow("melebihi sisa");
     await createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 50, price: 12_000 }] }, ids.user);
     await expect(
@@ -231,43 +256,102 @@ d("Vendor bill writer (test bed only)", () => {
 
     // Paid before its invoice came: the bill only matches the invoice, so it is still billable, flagged.
     await prisma.purchaseOrder.update({ where: { id: ids.po }, data: { paidAt: new Date() } });
-    expect((await listBillableSources(ids.supplier)).poItems.map((i) => [i.poItemId, i.poPaid])).toEqual([[ids.poItem, true]]);
+    expect((await listBillableSources(ids.supplier)).grnItems.map((i) => [i.grnId, i.poPaid])).toEqual([[ids.grn, true]]);
     const paidPo = await createVendorBill(
-      { ...base(), vendorInvoiceNo: `INV3-${tag}`, lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 1, price: 45_000 }] },
+      { ...base(), vendorInvoiceNo: `INV3-${tag}`, lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 1, price: 45_000 }] },
       ids.user
     );
     expect(await journalOf(paidPo.id)).toBeNull();
   });
 
   it("refuses a vendor invoice number already used for this supplier", async () => {
-    await createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 1, price: 45_000 }] }, ids.user);
+    await createVendorBill({ ...base(), lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 1, price: 45_000 }] }, ids.user);
     await expect(
-      createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 1, price: 45_000 }] }, ids.user)
+      createVendorBill({ ...base(), lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 1, price: 45_000 }] }, ids.user)
     ).rejects.toThrow("sudah dipakai");
   });
 
   it("lets a voided bill's invoice number be entered again", async () => {
-    const first = await createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 1, price: 45_000 }] }, ids.user);
+    const first = await createVendorBill({ ...base(), lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 1, price: 45_000 }] }, ids.user);
     await voidVendorBill(first.id, "salah harga", ids.user);
-    const again = await createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 1, price: 44_000 }] }, ids.user);
+    const again = await createVendorBill({ ...base(), lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 1, price: 44_000 }] }, ids.user);
     expect(again.id).not.toBe(first.id);
   });
 
-  it("hides and refuses PO lines while an over-receive awaits the owner", async () => {
-    const grn = await prisma.gRN.create({
-      data: { docNumber: `GRN-${tag}`, supplierId: ids.supplier, poId: ids.po, receivedBy: ids.user, totalAmount: 0, items: [], requiresOwnerApproval: true },
+  it("holds only the GRN whose over-receive awaits the owner, or whose missing PO awaits the admin", async () => {
+    const pending = await prisma.gRN.create({
+      data: {
+        docNumber: `GRN-${tag}-OVER`,
+        supplierId: ids.supplier,
+        poId: ids.po,
+        receivedBy: ids.user,
+        totalAmount: 225_000,
+        items: [{ itemId: ids.fabric, variantSku: null, qty: 5, unitCost: 45_000, totalCost: 225_000 }],
+        requiresOwnerApproval: true,
+      },
     });
-    try {
-      expect((await listBillableSources(ids.supplier)).poItems).toEqual([]);
-      await expect(
-        createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 1, price: 45_000 }] }, ids.user)
-      ).rejects.toThrow("menunggu keputusan owner");
+    grnIds.push(pending.id);
+    const noPo = await prisma.gRN.create({
+      data: {
+        docNumber: `GRN-${tag}-NOPO`,
+        supplierId: ids.supplier,
+        receivedBy: ids.user,
+        totalAmount: 90_000,
+        items: [{ itemId: ids.fabric, variantSku: null, qty: 2, unitCost: 45_000, totalCost: 90_000 }],
+        requiresNoPoConfirmation: true,
+      },
+    });
+    grnIds.push(noPo.id);
+    const rows = (await listBillableSources(ids.supplier)).grnItems;
+    expect(rows.find((i) => i.grnId === pending.id)?.terhalang).toBe("MENUNGGU_PEMILIK");
+    expect(rows.find((i) => i.grnId === noPo.id)?.terhalang).toBe("MENUNGGU_KONFIRMASI");
+    expect(rows.find((i) => i.grnId === noPo.id)?.poDocNumber).toBeNull();
+    await expect(
+      createVendorBill({ ...base(), lines: [{ type: "GRN_ITEM", grnId: pending.id, itemId: ids.fabric, variantSku: null, qty: 1, price: 45_000 }] }, ids.user)
+    ).rejects.toMatchObject({ code: "GRN_MENUNGGU_PEMILIK" });
+    await expect(
+      createVendorBill({ ...base(), lines: [{ type: "GRN_ITEM", grnId: noPo.id, itemId: ids.fabric, variantSku: null, qty: 1, price: 45_000 }] }, ids.user)
+    ).rejects.toMatchObject({ code: "GRN_MENUNGGU_KONFIRMASI" });
+    // A sibling GRN of the same PO stays billable.
+    const ok = await createVendorBill({ ...base(), lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 1, price: 45_000 }] }, ids.user);
+    expect(ok.koreksi).toBe(0);
 
-      await prisma.gRN.update({ where: { id: grn.id }, data: { ownerApprovedAt: new Date() } });
-      expect((await listBillableSources(ids.supplier)).poItems).toHaveLength(1);
-    } finally {
-      await prisma.gRN.deleteMany({ where: { id: seededId(grn.id) } });
-    }
+    // Confirmed by the admin: billable like any receipt.
+    await prisma.gRN.update({ where: { id: noPo.id }, data: { noPoConfirmedAt: new Date() } });
+    const confirmed = await createVendorBill(
+      { ...base(), vendorInvoiceNo: `INVN-${tag}`, lines: [{ type: "GRN_ITEM", grnId: noPo.id, itemId: ids.fabric, variantSku: null, qty: 2, price: 45_000 }] },
+      ids.user
+    );
+    expect(confirmed.id).toBeTruthy();
+  });
+
+  it("refuses the old PO item line shape and a GRN that never received the item", async () => {
+    await expect(
+      createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 1, price: 45_000 }] } as never, ids.user)
+    ).rejects.toThrow();
+    await expect(
+      createVendorBill({ ...base(), lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric2, variantSku: null, qty: 1, price: 45_000 }] }, ids.user)
+    ).rejects.toMatchObject({ code: "GRN_TANPA_BARANG_INI" });
+  });
+
+  it("creates a waiting correction both ways and none at the recorded price (P27, P53)", async () => {
+    const naik = await createVendorBill({ ...base(), lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 10, price: 45_500 }] }, ids.user);
+    const turun = await createVendorBill(
+      { ...base(), vendorInvoiceNo: `INVT-${tag}`, lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 10, price: 44_500 }] },
+      ids.user
+    );
+    const pas = await createVendorBill(
+      { ...base(), vendorInvoiceNo: `INVP-${tag}`, lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 10, price: 45_000 }] },
+      ids.user
+    );
+    const jumlah = async (billId: string) => (await prisma.supplierPayableCorrection.findMany({ where: { billId } })).map((k) => [k.status, Number(k.amount)]);
+    expect(await jumlah(naik.id)).toEqual([["MENUNGGU", 5_000]]);
+    expect(await jumlah(turun.id)).toEqual([["MENUNGGU", -5_000]]);
+    expect(await jumlah(pas.id)).toEqual([]);
+    expect(pas.notifikasi).toBeNull();
+    // A waiting correction never reads PAID, even when the receipt is paid at the recorded price.
+    await voidVendorBill(naik.id, "uji", ids.user);
+    expect(await jumlah(naik.id)).toEqual([["DIBATALKAN", 5_000]]);
   });
 
   it("saves a bill of booked step work while the service cost account is unmapped, since it posts nothing", async () => {
@@ -347,7 +431,7 @@ d("Vendor bill writer (test bed only)", () => {
     expect(rev!.lines.find((l) => l.chartAccountId === ids.ap)?.debit.toString()).toBe("960000");
 
     const paid = await createVendorBill(
-      { ...base(), vendorInvoiceNo: `INV4-${tag}`, lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 10, price: 45_000 }] },
+      { ...base(), vendorInvoiceNo: `INV4-${tag}`, lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 10, price: 45_000 }] },
       ids.user
     );
     const payment = await prisma.vendorPayment.create({
@@ -402,10 +486,10 @@ d("Vendor bill writer (test bed only)", () => {
   it("reads a bill as paid from what Supplier payments paid on its receipts, and still voids a bill that booked nothing", async () => {
     const stepBill = await createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 10, price: 12_000 }] }, ids.user);
     const poBill = await createVendorBill(
-      { ...base(), vendorInvoiceNo: `INV5-${tag}`, lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 10, price: 45_000 }] },
+      { ...base(), vendorInvoiceNo: `INV5-${tag}`, lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 10, price: 45_000 }] },
       ids.user
     );
-    const grn = await grnWithJournal("P", [{ itemId: ids.fabric, qty: 10 }], 450_000);
+    const grn = ids.grn;
     const paid: string[] = [];
     try {
       paid.push(
@@ -416,7 +500,7 @@ d("Vendor bill writer (test bed only)", () => {
           ])
         ).id
       );
-      // 50.000 of the step's 960.000 settles 4,17 of its 80 pieces; the GRN is settled whole.
+      // 50.000 of the step's 960.000 goes to its only invoice line; the GRN's 450.000 covers the 10 invoiced pieces.
       expect(await readBill(stepBill.id)).toEqual(["PARTIAL", 50_000, 0, 50_000]);
       expect(await readBill(poBill.id)).toEqual(["PAID", 450_000, 0, 450_000]);
       // The stored columns still say what Vendor Billing paid: nothing.
@@ -433,11 +517,11 @@ d("Vendor bill writer (test bed only)", () => {
       expect(await listVendorBills({ supplierId: ids.supplier, status: "UNPAID" })).toEqual([]);
 
       // Neither bill booked a payable, so voiding moves none: a wrongly entered invoice is voided and entered again.
-      expect((await getVendorBillDetail(poBill.id))?.voidBlockedSteps).toEqual([]);
+      expect((await getVendorBillDetail(poBill.id))?.voidBlockedReceipts).toEqual([]);
       await voidVendorBill(poBill.id, "nomor invoice salah", ids.user);
       expect(await journalOf(poBill.id, "VENDOR_BILL_REVERSAL")).toBeNull();
       const corrected = await createVendorBill(
-        { ...base(), vendorInvoiceNo: `INV10-${tag}`, lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 10, price: 45_000 }] },
+        { ...base(), vendorInvoiceNo: `INV10-${tag}`, lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 10, price: 45_000 }] },
         ids.user
       );
       expect(await readBill(corrected.id)).toEqual(["PAID", 450_000, 0, 450_000]);
@@ -451,95 +535,36 @@ d("Vendor bill writer (test bed only)", () => {
     }
   });
 
-  it("pays each PO item from its own GRNs only, PPN included, never from another item's receipt", async () => {
-    const itemB = await prisma.pOItem.create({
-      data: { poId: ids.po, itemId: ids.fabric2, qty: 50, price: 60_000, uomId: ids.uom, receivedQty: 50 },
-      select: { id: true },
-    });
-    const billA = await createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 100, price: 45_000 }] }, ids.user);
-    const billB = await createVendorBill(
-      { ...base(), vendorInvoiceNo: `INVB-${tag}`, lines: [{ type: "PO_ITEM", sourceId: itemB.id, qty: 50, price: 60_000 }] },
+  it("pays by value per receipt, oldest INVOICE DATE first, never goods no invoice names (P20, P29)", async () => {
+    // Two invoices on the one GRN: the later-recorded one carries the earlier paper date.
+    const lateRecorded = await createVendorBill(
+      { ...base(), vendorInvoiceNo: `INV-B-${tag}`, billDate: new Date("2026-10-03"), lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 20, price: 45_000 }] },
       ids.user
     );
-    // GRN-1 brought kain A, booked with PPN (4.500.000 + 495.000); GRN-2 brought kain B.
-    const grn1 = await grnWithJournal("1", [{ itemId: ids.fabric, qty: 100 }], 4_995_000);
-    const grn2 = await grnWithJournal("2", [{ itemId: ids.fabric2, qty: 50 }], 3_000_000);
+    const earlyRecorded = await createVendorBill(
+      { ...base(), vendorInvoiceNo: `INV-A-${tag}`, billDate: new Date("2026-10-05"), lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 20, price: 45_000 }] },
+      ids.user
+    );
+    await prisma.vendorBill.update({ where: { id: lateRecorded.id }, data: { createdAt: new Date(Date.now() + 60_000) } });
     const paid: string[] = [];
     try {
-      paid.push((await supplierPayment("A1", [{ targetType: "GRN", targetId: grn2, amount: 3_000_000 }])).id);
-      expect(await readBill(billA.id)).toEqual(["UNPAID", 0, 0, 0]);
-      expect(await readBill(billB.id)).toEqual(["PAID", 3_000_000, 0, 3_000_000]);
-      // GRN-2 holds none of bill A's items, so its payment is not listed there either.
-      expect((await getVendorBillDetail(billA.id))?.supplierPayments).toEqual([]);
-
-      // Paying GRN-1 its DPP only leaves the receipt owing its PPN: bill A is only partly paid.
-      paid.push((await supplierPayment("A2", [{ targetType: "GRN", targetId: grn1, amount: 4_500_000 }])).id);
-      const partly = await readBill(billA.id);
-      expect(partly?.[0]).toBe("PARTIAL");
-      expect(partly?.[3]).toBeCloseTo((4_500_000 * 4_500_000) / 4_995_000, 1);
-
-      paid.push((await supplierPayment("A3", [{ targetType: "GRN", targetId: grn1, amount: 495_000 }])).id);
-      expect(await readBill(billA.id)).toEqual(["PAID", 4_500_000, 0, 4_500_000]);
+      paid.push((await supplierPayment("D", [{ targetType: "GRN", targetId: ids.grn, amount: 1_200_000 }])).id);
+      // 900.000 to the invoice dated 3 Oct, then 300.000 of the one dated 5 Oct; 80 pieces nobody billed take nothing.
+      expect(await readBill(lateRecorded.id)).toEqual(["PAID", 900_000, 0, 900_000]);
+      expect(await readBill(earlyRecorded.id)).toEqual(["PARTIAL", 300_000, 0, 300_000]);
     } finally {
       await dropSupplierPayments(paid);
     }
   });
 
-  it("credits an old vendor payment to the GRN of the item it paid, so Supplier payments settle every bill on the PO", async () => {
-    const itemB = await prisma.pOItem.create({
-      data: { poId: ids.po, itemId: ids.fabric2, qty: 50, price: 60_000, uomId: ids.uom, receivedQty: 50 },
-      select: { id: true },
-    });
-    // GRN-1 (older) brought kain A, GRN-2 brought kain B.
-    const grn1 = await grnWithJournal("1", [{ itemId: ids.fabric, qty: 100 }], 4_500_000);
-    const grn2 = await grnWithJournal("2", [{ itemId: ids.fabric2, qty: 50 }], 3_000_000);
-    const billB = await createVendorBill(
-      { ...base(), vendorInvoiceNo: `INVB2-${tag}`, lines: [{ type: "PO_ITEM", sourceId: itemB.id, qty: 50, price: 60_000 }] },
-      ids.user
-    );
-    // 1.500.000 of bill B (kain B) was paid through Vendor Billing before it closed.
-    const old = await prisma.vendorPayment.create({
-      data: {
-        docNumber: `VPAYB-${tag}`,
-        supplierId: ids.supplier,
-        paidAt: new Date("2026-10-21"),
-        method: "BANK",
-        amount: 1_500_000,
-        createdById: ids.user,
-        allocations: { create: { billId: billB.id, amount: 1_500_000 } },
-      },
-      select: { id: true },
-    });
-    await prisma.vendorBill.update({ where: { id: billB.id }, data: { paidAmount: 1_500_000, status: "PARTIAL" } });
-    const billA = await createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 100, price: 45_000 }] }, ids.user);
-    const sisaGrn = async () => {
-      const h = await bacaHutangPemasok({ supplierIds: [ids.supplier], ruangSaldoAwal: `uji-vb-${tag}` });
-      const dok = h.pemasok[0]?.dokumen ?? [];
-      return [grn1, grn2].map((id) => dok.find((x) => x.jenis === "GRN" && x.id === id)?.sisaSen);
-    };
+  it("never reads PAID while a lower invoice still waits for its decision (P53)", async () => {
+    const bill = await createVendorBill({ ...base(), lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 10, price: 44_000 }] }, ids.user);
     const paid: string[] = [];
     try {
-      // The old payment lands on the GRN that brought kain B, not FIFO on the oldest GRN of the PO.
-      expect(await sisaGrn()).toEqual([450_000_000, 150_000_000]);
-      // Bill B reads it through its stored columns only; bill A never sees it: nothing counted twice.
-      expect(await readBill(billB.id)).toEqual(["PARTIAL", 1_500_000, 1_500_000, 0]);
-      expect(await readBill(billA.id)).toEqual(["UNPAID", 0, 0, 0]);
-
-      // Supplier payments pay exactly what the sub-ledger leaves open, and both bills read paid.
-      paid.push(
-        (
-          await supplierPayment("VB2", [
-            { targetType: "GRN", targetId: grn1, amount: 4_500_000 },
-            { targetType: "GRN", targetId: grn2, amount: 1_500_000 },
-          ])
-        ).id
-      );
-      expect(await readBill(billA.id)).toEqual(["PAID", 4_500_000, 0, 4_500_000]);
-      expect(await readBill(billB.id)).toEqual(["PAID", 3_000_000, 1_500_000, 1_500_000]);
+      paid.push((await supplierPayment("L", [{ targetType: "GRN", targetId: ids.grn, amount: 5_400_000 }])).id);
+      expect((await readBill(bill.id))?.[0]).toBe("PARTIAL");
     } finally {
       await dropSupplierPayments(paid);
-      await prisma.vendorPaymentAllocation.deleteMany({ where: { paymentId: seededId(old.id) } });
-      await prisma.vendorPayment.deleteMany({ where: { id: seededId(old.id) } });
     }
   });
 
@@ -553,12 +578,12 @@ d("Vendor bill writer (test bed only)", () => {
       await expect(voidVendorBill(bill.id, "salah harga", ids.user)).rejects.toMatchObject({ code: VOID_WOULD_OVERPAY });
       expect(await journalOf(bill.id, "VENDOR_BILL_REVERSAL")).toBeNull();
       expect((await prisma.vendorBill.findUniqueOrThrow({ where: { id: bill.id } })).status).not.toBe("VOID");
-      expect((await getVendorBillDetail(bill.id))?.voidBlockedSteps).toEqual([`WO-${tag} step 1 Jahit`]);
+      expect((await getVendorBillDetail(bill.id))?.voidBlockedReceipts).toEqual([`WO-${tag} step 1 Jahit`]);
 
       // 300.000 fits inside the 360.000 the receipt booked, so voiding no longer overpays the step.
       await prisma.supplierPayment.update({ where: { id: seededId(paid[0]) }, data: { status: "CANCELLED" } });
       paid.push((await supplierPayment("V2", [{ targetType: "WO_STEP", targetId: ids.step, amount: 300_000 }])).id);
-      expect((await getVendorBillDetail(bill.id))?.voidBlockedSteps).toEqual([]);
+      expect((await getVendorBillDetail(bill.id))?.voidBlockedReceipts).toEqual([]);
       await voidVendorBill(bill.id, "salah harga", ids.user);
       const rev = await journalOf(bill.id, "VENDOR_BILL_REVERSAL");
       expect(rev!.lines.find((l) => l.chartAccountId === ids.ap)?.debit.toString()).toBe("625000");
@@ -671,7 +696,7 @@ d("Vendor bill writer (test bed only)", () => {
     expect(await ageOf()).toBe("2026-10-15");
   });
 
-  it("pays the oldest saved bill first and never counts what an old vendor payment paid twice", async () => {
+  it("pays the oldest invoice first and never counts what an old vendor payment paid twice", async () => {
     const first = await createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 30, price: 12_000 }] }, ids.user);
     const second = await createVendorBill(
       { ...base(), vendorInvoiceNo: `INV7-${tag}`, lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 20, price: 12_000 }] },
@@ -707,9 +732,8 @@ d("Vendor bill writer (test bed only)", () => {
   });
 
   it("reads a PO paid through the old toggle as paying its bills, until the toggle is reversed", async () => {
-    const bill = await createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 10, price: 45_000 }] }, ids.user);
-    // The toggle paid the payable the PO's receipts booked: here one GRN of those 10 pieces.
-    await grnWithJournal("T", [{ itemId: ids.fabric, qty: 10 }], 450_000);
+    const bill = await createVendorBill({ ...base(), lines: [{ type: "GRN_ITEM", grnId: ids.grn, itemId: ids.fabric, variantSku: null, qty: 10, price: 45_000 }] }, ids.user);
+    // The toggle paid 450.000 of the payable the PO's receipts booked; FIFO puts it on the fixture GRN.
     const toggle = (sourceType: string, debitAccount: string, creditAccount: string) =>
       prisma.journal.create({
         data: {

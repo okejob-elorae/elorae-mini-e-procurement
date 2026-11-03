@@ -65,7 +65,11 @@ export interface PendingCompletion {
   signedByName: string;
   gpsLat: number;
   gpsLng: number;
-  lines: Array<{ shipmentLineId: string; deliveredQty: number }>;
+  /**
+   * `returnedQty` = refused at the door and brought back, `lostQty` = missing from the load.
+   * Both optional: rows queued by an older app carry `deliveredQty` only, read as 0 and 0.
+   */
+  lines: Array<{ shipmentLineId: string; deliveredQty: number; returnedQty?: number; lostQty?: number }>;
   capturedAt: number; // Date.now() at the moment the salesman finished the form
   syncState: "pending" | "syncing" | "failed";
   error?: string;
@@ -85,6 +89,17 @@ export interface FotoTertunda {
 }
 
 type KeadaanAntre = "pending" | "syncing" | "failed";
+
+/**
+ * Foto R2 laporan yang belum tentu sudah naik (pola `FotoTertunda`, tetapi R2 menyimpan KUNCI,
+ * bukan URL — kunci itu terikat ke toko dan laporannya). `blob` = berkas di HP; `key` diisi begitu
+ * terunggah, disimpan kembali ke baris antrean supaya percobaan berikutnya tidak mengunggah ulang.
+ */
+export interface FotoR2Tertunda {
+  nama: string;
+  blob?: Blob;
+  key?: string;
+}
 
 /** Laporan pelunasan (BKM) yang menunggu sinyal. `localId` = kunci kiriman ke server. */
 export interface PendingClaim {
@@ -324,6 +339,8 @@ export interface PendingStoreReceipt extends IkatanKunjungan {
     productName: string;
     qtySent: number;
     qtyReceived: number;
+    /** Pcs yang ditolak di pintu dan dibawa pulang kurir (P24/P40). Kosong = 0. */
+    qtyRefused?: number;
     qtyDamaged?: number;
     damageNote?: string;
     foto?: FotoTertunda | null;
@@ -373,6 +390,38 @@ export interface PendingSpgReturn {
   waktu: number;
   alasan: string;
   baris: Array<{ saleLineId: string; qty: number; condition: "LAYAK" | "RUSAK" | "EXPIRED"; productName: string }>;
+  /**
+   * Jawaban SPG: uang pembeli sudah dikembalikan kasir? (P13a). Tidak ada pada antrean dari
+   * versi aplikasi lama — server menolaknya `JAWABAN_UANG_WAJIB`.
+   */
+  uangSudahDikembalikan?: boolean;
+  /** Foto barang yang dikembalikan (wajib, P14/P77). */
+  fotoBarang?: FotoR2Tertunda;
+  /** Foto struk pengembalian kasir — hanya bila uangnya sudah dikembalikan. */
+  fotoStruk?: FotoR2Tertunda;
+  /** Laporan lama yang diganti laporan ini, beserta alasannya. */
+  gantiReturnId?: string;
+  alasanGanti?: string;
+  capturedAt: number;
+  syncState: KeadaanAntre;
+  error?: string;
+  attempts: number;
+}
+
+/**
+ * "Uang sudah dikembalikan" untuk retur pembeli yang disetujui kantor, dicatat tanpa sinyal
+ * (P13a). `localId` = kunci antrean (sekali per dialog); server mengenali kiriman ulang dari
+ * laporannya sendiri (`returnId` + kunci foto struk yang sama). Foto struk WAJIB.
+ */
+export interface PendingSpgRefund {
+  localId: string;
+  returnId: string;
+  storeId: string;
+  /** Nomor laporan — hanya untuk ditampilkan. */
+  docNo: string;
+  /** Saat uangnya dikembalikan di HP (ms). */
+  waktu: number;
+  foto: FotoR2Tertunda;
   capturedAt: number;
   syncState: KeadaanAntre;
   error?: string;
@@ -456,6 +505,7 @@ export class PwaOfflineDB extends Dexie {
   pendingSpgReturns!: Table<PendingSpgReturn, string>;
   pendingMutasiAjuan!: Table<PendingMutasiAjuan, string>;
   pendingMutasiKirim!: Table<PendingMutasiKirim, string>;
+  pendingSpgRefunds!: Table<PendingSpgRefund, string>;
   constructor() {
     super("elorae-pwa-offline");
     this.version(1).stores({ pendingOrders: "localId, syncState, storeId, capturedAt" });
@@ -540,6 +590,27 @@ export class PwaOfflineDB extends Dexie {
       pendingSpgReturns: "localId, syncState, spgSaleId, capturedAt",
       pendingMutasiAjuan: "localId, syncState, storeId, capturedAt",
       pendingMutasiKirim: "localId, syncState, transferId, ajuanLocalId, capturedAt",
+    });
+    // Versi 9: "uang sudah dikembalikan" retur pembeli tanpa sinyal. Kelima belas tabel lama
+    // disebut ulang apa adanya. Kolom baru di `pendingSpgReturns` (jawaban uang, foto) tidak
+    // diindeks, jadi tidak butuh versi.
+    this.version(9).stores({
+      pendingOrders: "localId, syncState, storeId, capturedAt",
+      pendingPhotos: "localId, syncState, visitId, capturedAt",
+      pendingCompletions: "shipmentId, syncState, capturedAt",
+      pendingClaims: "localId, syncState, capturedAt",
+      pendingReturns: "localId, syncState, capturedAt",
+      pendingPromises: "localId, syncState, capturedAt",
+      pendingBuktiTerima: "localId, syncState, orderId, deliveryId, capturedAt",
+      pendingSpgSales: "localId, syncState, storeId, capturedAt",
+      pendingCheckins: "localId, syncState, storeId, capturedAt",
+      pendingCheckouts: "localId, syncState, capturedAt",
+      pendingStoreReceipts: "localId, syncState, sourceId, capturedAt",
+      pendingStoreOpnames: "localId, syncState, capturedAt",
+      pendingSpgReturns: "localId, syncState, spgSaleId, capturedAt",
+      pendingMutasiAjuan: "localId, syncState, storeId, capturedAt",
+      pendingMutasiKirim: "localId, syncState, transferId, ajuanLocalId, capturedAt",
+      pendingSpgRefunds: "localId, syncState, returnId, capturedAt",
     });
   }
 }

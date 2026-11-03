@@ -10,6 +10,7 @@ import type { KeadaanPiutang } from '@/lib/receivables/rules';
 import { dinamis } from '@/lib/i18n/dinamis';
 import { TugasTagihKantor, type TugasTagihHp } from './TugasTagihKantor';
 import { TombolBantuanHp } from '@/app/pwa/TombolBantuanHp';
+import { susunKalimatTertahan } from './kalimat-tertahan';
 
 /** Nominal disingkat: layar HP tidak muat "Rp 13.300.000" berulang kali. */
 const singkat = (n: number) =>
@@ -104,12 +105,14 @@ export function PiutangLapanganClient({
                   {/* Kalimat alasan. Inilah yang membedakan layar ini dari
                       daftar angka: ia menyebut sebabnya dan apa berikutnya. */}
                   <p className={cn('rounded-lg px-3 py-2 text-sm leading-relaxed', NADA[s.keadaan])}>
-                    {td(`why_${s.keadaan}`, {
-                      value: rupiah(s.alasan.nilaiTertahan ?? 0),
-                      doc: s.alasan.noKlaim ?? s.alasan.noKontrabon ?? '—',
-                      date: tanggal(s.alasan.janjiBayar),
-                      days: s.alasan.hariTerlambat ?? 0,
-                    })}
+                    {s.keadaan === 'tertahan'
+                      ? susunKalimatTertahan(s.alasan, td, rupiah)
+                      : td(`why_${s.keadaan}`, {
+                          value: rupiah(s.alasan.nilaiTertahan ?? 0),
+                          doc: s.alasan.noKlaim ?? s.alasan.noKontrabon ?? '—',
+                          date: tanggal(s.alasan.janjiBayar),
+                          days: s.alasan.hariTerlambat ?? 0,
+                        })}
                   </p>
                 </CardContent>
               </Card>

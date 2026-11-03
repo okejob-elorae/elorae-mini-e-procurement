@@ -138,6 +138,11 @@ export async function muatDasbor(penontonId = '', opsi?: { bolehMenghitung?: boo
      * angkanya harus sama dengan isinya (dan dengan baris "Tertahan retur" di
      * daftar tindakan). Faktur yang masih menunggu BKM lain dihitung di kartu
      * "Menunggu verifikasi".
+     *
+     * Setiap faktur menyumbang bagiannya SENDIRI (`alasan.nilaiTertahan` dari
+     * `pisahTahananRetur`, prorata per faktur), jadi BKM gabungan dihitung sekali.
+     * `jatuhTempo`/`nilaiJatuhTempo` di atas ikut memuat nota yang sebagian
+     * ditahan sebesar bagian bebasnya yang lewat tempo (P46, `ringkasPiutang`).
      */
     tertahanRetur: tertahan.reduce((s, p) => s + (p.alasan.nilaiTertahan ?? 0), 0),
     fakturTertahan: tertahan.length,
@@ -174,6 +179,16 @@ export type BarisBeban = {
   diputuskanOleh: string | null;
   diputuskanPada: string | null;
   dilunasiPada: string | null;
+  /** Yang sudah dipotong dari komisi sales (`ReturnCharge.settledAmount`). */
+  sudahDipotong: number;
+  /** Yang masih harus dipotong. */
+  sisa: number;
+  /** Potongan yang melebihi besarnya sekarang — dikembalikan ke sales (P87). */
+  kelebihan: number;
+  /** Hasil cek sales pemegang toko (P88). */
+  cek: 'DITANYAKAN' | 'DITEMUKAN' | 'TIDAK_DITEMUKAN';
+  /** Seluruh barangnya kembali (susulan): besarnya nol, barisnya tetap. */
+  pulih: boolean;
 };
 
 /** Daftar beban selisih retur, lintas toko. */
@@ -184,6 +199,8 @@ export async function daftarBeban(): Promise<BarisBeban[]> {
       id: true,
       storeReturnId: true,
       amount: true,
+      settledAmount: true,
+      checkStatus: true,
       status: true,
       bearer: true,
       bearerUserId: true,
@@ -197,6 +214,7 @@ export async function daftarBeban(): Promise<BarisBeban[]> {
     },
   });
 
+  const sen = (n: number) => Math.round(n * 100);
   return rows.map((r) => ({
     id: r.id,
     storeReturnId: r.storeReturnId,
@@ -212,6 +230,11 @@ export async function daftarBeban(): Promise<BarisBeban[]> {
     diputuskanOleh: r.decidedBy?.name ?? null,
     diputuskanPada: r.decidedAt?.toISOString() ?? null,
     dilunasiPada: r.settledAt?.toISOString() ?? null,
+    sudahDipotong: angka(r.settledAmount),
+    sisa: Math.max(0, sen(angka(r.amount)) - sen(angka(r.settledAmount))) / 100,
+    kelebihan: Math.max(0, sen(angka(r.settledAmount)) - sen(angka(r.amount))) / 100,
+    cek: r.checkStatus as BarisBeban['cek'],
+    pulih: sen(angka(r.amount)) === 0,
   }));
 }
 

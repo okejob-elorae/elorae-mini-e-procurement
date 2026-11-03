@@ -138,6 +138,7 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "hpp.helpIntro" },
       { kunci: "hpp.helpTableExplanation" },
       "Saringan barang jadi, tanggal perintah kerja dibuat, pemasok, dan status langsung berlaku dan tersimpan di alamat halaman, jadi tautannya bisa dibagikan.",
+      "Kolom rekomendasi menampilkan rekomendasi harga barangnya — dari HPP terbaru barang itu dan markup/margin barangnya — bukan markup per perintah kerja, yang sudah tidak ada.",
     ],
     kartu: [{ judul: { kunci: "hpp.cardTitle" }, isi: { kunci: "hpp.cardDescription" } }],
   },

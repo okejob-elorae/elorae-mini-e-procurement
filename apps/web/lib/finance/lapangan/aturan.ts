@@ -4,7 +4,6 @@ import { KANAL_JURNAL, type KanalJurnal } from "@/lib/finance/journals/kanal";
 import { nilaiPerPeranPersediaan } from "@/lib/finance/journals/peran-persediaan";
 import { memoPeranDpp } from "@/lib/finance/pajak/jurnal-ppn";
 import { pisahPpn, type PengaturanPpn } from "@/lib/finance/pajak/ppn";
-import { idBebanDariCatatan } from "@/lib/receivables/penanda-beban";
 import { bahanPotonganRetur, returTertahan, type PotonganPadaKlaim } from "@/lib/receivables/rules";
 
 /*
@@ -13,9 +12,14 @@ import { bahanPotonganRetur, returTertahan, type PotonganPadaKlaim } from "@/lib
  * di `jurnal.ts`, penyelarasnya di `selaras.ts`, kait pasca-commit di `kait.ts`.
  *
  * LIMA SUMBER (sourceType jurnal):
- * - `FIELD_DELIVERY` — nota tagihan pengiriman putus. Sekali posting, tidak
- *   pernah diselaraskan: piutang toko + pendapatan (DPP) + PPN keluaran, dan
- *   HPP dari biaya yang benar-benar keluar dari kartu stok.
+ * - `FIELD_DELIVERY` — nota tagihan pengiriman putus: piutang toko + pendapatan
+ *   (DPP) + PPN keluaran, dan HPP = qty yang DITAGIH × biaya yang keluar dari
+ *   kartu stok saat surat jalan dibuat. DISELARASKAN: nota yang dikoreksi
+ *   (toko menolak sebagian di pintu, "retur langsung" P24, atau barang hilang di
+ *   jalan) memposting selisihnya sebagai generasi berikutnya, dan nota yang
+ *   dibatalkan ("tidak jadi dikirim", P16/P25) bersasaran kosong, jadi
+ *   generasinya membalik seluruhnya. Nota yang memegang pasangan bentuk lama
+ *   (`SUMBER_NOTA_LAMA`) tidak pernah diberi jurnal ini.
  * - `FIELD_COLLECTION` — pelunasan BKM (dan giro yang cair). DISELARASKAN:
  *   keadaan sekarang (terverifikasi atau tidak, tautan potongan) dibandingkan
  *   dengan jurnal yang sudah ada, selisihnya diposting sebagai generasi baru
@@ -23,11 +27,13 @@ import { bahanPotonganRetur, returTertahan, type PotonganPadaKlaim } from "@/lib
  *   membalik — jurnal tidak pernah dihapus.
  * - `STORE_RETURN` — hitungan gudang retur toko (NRI), juga DISELARASKAN:
  *   barang kembali ke persediaan dan pendapatan dibalik sebesar FISIK yang
- *   diakui (Aturan uang 2), lalu menyesuaikan diri saat potongan toko diakui,
- *   beban selisih diputuskan, atau hitungannya dipindah toko.
+ *   diakui (Aturan uang 2; hitungan asli + hitungan susulan yang final), lalu
+ *   menyesuaikan diri saat potongan toko diakui, beban selisih diputuskan,
+ *   hitungan susulan masuk, atau hitungannya dipindah toko. Hitungan susulan
+ *   sendiri hanya membawa persediaan dan HPP-nya.
  * - `STORE_EXCHANGE` — tukar barang selesai. Sekali posting.
  * - `STORE_INVOICE` — faktur piutang yang diketik manual atau diimpor (bukan
- *   nota pengiriman, bukan faktur beban retur), bertanggal sejak tanggal mulai
+ *   nota pengiriman, bukan tagihan konsinyasi), bertanggal sejak tanggal mulai
  *   buku besar. DISELARASKAN: faktur yang dibatalkan (impor dibatalkan →
  *   barisnya dihapus) atau nilainya berubah dibalik/disesuaikan generasi
  *   berikutnya. Tanpa HPP — tidak ada barang yang keluar di sistem.
@@ -61,7 +67,12 @@ export const SEMUA_SUMBER_LAPANGAN: readonly SumberLapangan[] = [
 ];
 
 /** Sumber yang jurnalnya diselaraskan bergenerasi (`<id>`, `<id>#2`, …). */
-export const SUMBER_BERGENERASI: readonly SumberLapangan[] = [SUMBER_LAPANGAN.BKM, SUMBER_LAPANGAN.RETUR, SUMBER_LAPANGAN.FAKTUR];
+export const SUMBER_BERGENERASI: readonly SumberLapangan[] = [
+  SUMBER_LAPANGAN.NOTA,
+  SUMBER_LAPANGAN.BKM,
+  SUMBER_LAPANGAN.RETUR,
+  SUMBER_LAPANGAN.FAKTUR,
+];
 
 /**
  * Jurnal nota bentuk lama: pendapatan (DR AR / CR SALES_REVENUE) dan HPP
@@ -237,7 +248,8 @@ function barisPersediaan(
  *   DR COGS / CR persediaan (biaya yang keluar dari kartu stok)
  * Pendapatan = total nota sesudah diskon (sudah dipro-rata per pengiriman).
  * Nota bernilai nol atau kurang tidak menjadi piutang (`buatPiutangNota`), jadi
- * juga tidak menyentuh `AR_STORE` di sini.
+ * juga tidak menyentuh `AR_STORE` di sini. Nota yang dibatalkan tidak memanggil
+ * ini sama sekali: sasarannya kosong (`selaraskanJurnalNota`).
  */
 export function barisNota(b: {
   total: number;
@@ -324,8 +336,12 @@ export function peranPotongan(jenis: { postingRole: string | null; pkpOnly: bool
  * Piutang dikredit di akun yang DIDEBIT jurnal fakturnya
  * (`lib/finance/ar/store-receivable-role.ts`): bagian yang melunasi faktur
  * berjurnal bentuk lama (`porsiAr` — Σ dilunasi faktur itu ÷ nilai faktur BKM)
- * dikredit ke AR, sisanya ke AR_STORE. Tanpa itu AR tidak pernah turun dan
- * AR_STORE toko itu minus sebesar yang sama.
+ * dikredit ke AR; bagian yang melunasi tagihan KONSINYASI (`porsiKonsi`,
+ * `Receivable.isConsignment` — tagihan siklus konsinyasi dan utang konsi yang
+ * diketik/diimpor, P32) ke AR_CONSIGNMENT toko itu; sisanya ke AR_STORE. Tanpa
+ * itu akun asalnya tidak pernah turun dan AR_STORE toko itu minus sebesar yang
+ * sama. Potongan penjualan berkanal `kanalPotongan` (KONSINYASI bila SEMUA
+ * yang dilunasi tagihan konsinyasi), bawaannya PUTUS.
  */
 export function barisKlaim(b: {
   terverifikasi: boolean;
@@ -335,6 +351,10 @@ export function barisKlaim(b: {
   potongan: ReadonlyArray<{ nilai: number; retur: boolean; peran: PostingRole }>;
   /** Bagian nilai faktur BKM ini (0–1) yang melunasi piutang berjurnal bentuk lama (debit AR). */
   porsiAr?: number;
+  /** Bagian nilai faktur BKM ini (0–1) yang melunasi tagihan konsinyasi (AR_CONSIGNMENT), di luar `porsiAr`. */
+  porsiKonsi?: number;
+  /** Kanal baris potongan penjualan; bawaan PUTUS. */
+  kanalPotongan?: KanalJurnal;
 }): BarisBertanda[] {
   if (!b.terverifikasi) return [];
   const baris: BarisBertanda[] = [];
@@ -346,11 +366,16 @@ export function barisKlaim(b: {
     const s = keSen(p.nilai);
     if (s === 0) continue;
     const penjualan = p.peran === "SALES_DISCOUNT";
-    baris.push({ role: p.peran, sen: s, ...(penjualan ? { channel: PUTUS, storeId: b.storeId } : {}) });
+    baris.push({ role: p.peran, sen: s, ...(penjualan ? { channel: b.kanalPotongan ?? PUTUS, storeId: b.storeId } : {}) });
     kredit += s;
   }
-  const keAr = Math.round(kredit * Math.min(1, Math.max(0, b.porsiAr ?? 0)));
-  if (kredit - keAr !== 0) baris.push({ role: "AR_STORE", sen: -(kredit - keAr), storeId: b.storeId });
+  const porsi = (v: number | undefined) => Math.min(1, Math.max(0, v ?? 0));
+  const keAr = Math.round(kredit * porsi(b.porsiAr));
+  // Pembulatan dua porsi tidak boleh melebihi kreditnya: sisa sesudah AR yang membatasi.
+  const keKonsi = Math.min(kredit - keAr, Math.round(kredit * porsi(b.porsiKonsi)));
+  const keToko = kredit - keAr - keKonsi;
+  if (keToko !== 0) baris.push({ role: "AR_STORE", sen: -keToko, storeId: b.storeId });
+  if (keKonsi !== 0) baris.push({ role: "AR_CONSIGNMENT", sen: -keKonsi, storeId: b.storeId });
   if (keAr !== 0) baris.push({ role: "AR", sen: -keAr });
   return gabungBaris(baris);
 }
@@ -380,13 +405,16 @@ export function potonganReturDiakui(nilaiPotongan: number, retur: NonNullable<Po
 }
 
 export type NilaiReturBukuBesar = {
-  /** Fisik yang dihitung gudang, tidak melebihi klaim nota (kelebihan bukan kredit siapa pun). */
+  /**
+   * Fisik yang dihitung gudang — hitungan asli ditambah setiap hitungan SUSULAN yang final
+   * (`nilaiFisikNota`) — tidak melebihi klaim nota (kelebihan bukan kredit siapa pun).
+   */
   fisikDiakui: number;
-  /** Yang sudah dipakai toko: potongan diakui di BKM terverifikasi − faktur beban ke toko. */
+  /** Yang sudah dipakai toko: potongan diakui di BKM terverifikasi. */
   dipakai: number;
   /** Kredit piutang toko yang seharusnya berdiri di buku besar untuk retur ini. */
   sasaran: number;
-  /** Bagian di atas fisik yang dilepas tanpa ditagih balik (beban ke sales/gudang/perusahaan). */
+  /** Bagian di atas fisik yang dilepas tanpa ditagih balik (selisih yang dibebankan ke sales). */
   rugi: number;
   /** Selisih buku besar − modul untuk retur ini (≥ 0): kredit retur yang belum dipotong toko. */
   kreditBelumDipakai: number;
@@ -394,21 +422,26 @@ export type NilaiReturBukuBesar = {
 
 /**
  * Nilai jurnal retur. `potonganDiakui` = Σ `potonganReturDiakui` atas nota ini
- * di BKM terverifikasi; `ditagihKeToko` = faktur beban selisih yang ditetapkan
- * ke toko. Contoh NRT 300 rb, fisik 100 rb:
+ * di BKM terverifikasi. Tidak ada lagi faktur beban selisih ke toko (keputusan
+ * pemilik 1, 2026-10-29): selisih yang ditanggung TOKO tetap terbuka di nota
+ * asalnya — potongannya tetap ditahan, jadi tidak pernah "dipakai". Contoh NRT
+ * 300 rb, fisik 100 rb:
  *  - belum dipotong → sasaran 100 rb (kredit belum dipakai 100 rb);
- *  - dipotong 300 rb, beban ke TOKO (faktur 200 rb) → sasaran 100 rb, tanpa rugi;
- *  - dipotong 300 rb, beban ke perusahaan → sasaran 300 rb, rugi 200 rb.
+ *  - dipotong 300 rb, beban ke TOKO (tetap terbuka di nota asal; yang diakui
+ *    hanya fisik 100 rb) → sasaran 100 rb, tanpa rugi;
+ *  - dipotong 300 rb, beban ke SALES (tahanan lepas) → sasaran 300 rb, rugi 200 rb.
+ * Hitungan SUSULAN (barang selisih yang ketemu dan dikirim balik, P22a) tidak
+ * punya nota toko sendiri: dijurnal dengan `nilaiKlaimNota` null (persediaan
+ * saja), dan fisiknya menambah fisik hitungan ASLI notanya.
  */
 export function nilaiReturBukuBesar(b: {
   nilaiFisik: number;
-  /** null = hitungan yatim (belum dijodohkan ke nota toko). */
+  /** null = hitungan yatim (belum dijodohkan ke nota toko) atau hitungan susulan. */
   nilaiKlaimNota: number | null;
   potonganDiakui: number;
-  ditagihKeToko: number;
 }): NilaiReturBukuBesar {
   const fisik = b.nilaiKlaimNota === null ? 0 : Math.max(0, Math.min(keSen(b.nilaiFisik), keSen(b.nilaiKlaimNota)));
-  const dipakai = keSen(b.potonganDiakui) - keSen(b.ditagihKeToko);
+  const dipakai = keSen(b.potonganDiakui);
   const sasaran = Math.max(fisik, dipakai);
   return {
     fisikDiakui: fisik / 100,
@@ -505,14 +538,16 @@ export function barisTukar(b: {
 
 /**
  * Faktur piutang yang dijurnal SENDIRI (`STORE_INVOICE`): diketik manual atau
- * diimpor. Bukan nota pengiriman (jurnal notanya, `FIELD_DELIVERY`), bukan
- * faktur beban selisih retur (sudah dinetto di jurnal retur lewat
- * `ditagihKeToko` — menjurnalnya lagi = piutang dua kali), dan bukan toko
- * konsinyasi (tidak pernah punya piutang; baris kenari `INV/KONSI/TES`).
+ * diimpor. Bukan nota pengiriman (jurnal notanya, `FIELD_DELIVERY`), dan bukan
+ * tagihan konsinyasi — `konsinyasi` = `Receivable.isConsignment`, tanda di
+ * fakturnya sendiri, bukan syarat toko hari ini. Tagihan konsinyasi (siklus
+ * yang dikunci, atau utang konsi kertas yang diketik/diimpor, P32) berdiri di
+ * AR_CONSIGNMENT lewat jurnal siklusnya atau saldo awal akun itu, tidak di
+ * AR_STORE. Faktur putus di toko yang belakangan pindah ke konsinyasi tetap
+ * dijurnal di sini.
  */
-export function fakturDijurnalSendiri(f: { source: string; deliveryId: string | null; note: string | null; konsinyasi: boolean }): boolean {
+export function fakturDijurnalSendiri(f: { source: string; deliveryId: string | null; konsinyasi: boolean }): boolean {
   if (f.source === "DELIVERY" || f.deliveryId) return false;
-  if (idBebanDariCatatan(f.note) !== null) return false;
   return !f.konsinyasi;
 }
 

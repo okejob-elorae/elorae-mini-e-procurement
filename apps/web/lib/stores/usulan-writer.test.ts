@@ -257,13 +257,30 @@ describe("setujuiUsulanToko", () => {
     const hasil = await setujuiUsulanToko({
       proposalId: usulan.id,
       reviewerId: adminId,
-      masukan: { ...SETUJU, ...masukan(), code: `UJI-${token}`, termsType: "KONSI", markupPercent: 27.5 },
+      // Toko konsinyasi wajib punya pemegang (P47).
+      masukan: { ...SETUJU, ...masukan(), code: `UJI-${token}`, termsType: "KONSI", markupPercent: 27.5, salesmanId: pengusulId },
     });
     if (!hasil.ok) throw new Error(hasil.code);
     tokoIds.push(hasil.storeId);
     const toko = await prisma.store.findUniqueOrThrow({ where: { id: hasil.storeId } });
     expect(toko.termsType).toBe("KONSI");
     expect(toko.markupPercent?.toNumber()).toBe(27.5);
+    expect(toko.salesmanId).toBe(pengusulId);
+  });
+
+  it("refuses a consignment store without a holder, without leaving a store behind (P47)", async () => {
+    const usulan = await ajukan();
+    if (!usulan.ok) throw new Error("gagal mengajukan");
+    expect(
+      await setujuiUsulanToko({
+        proposalId: usulan.id,
+        reviewerId: adminId,
+        masukan: { ...SETUJU, ...masukan(), code: `UJI-${token}`, termsType: "KONSI", markupPercent: 27.5, salesmanId: null },
+      }),
+    ).toEqual({ ok: false, code: "PEMEGANG_WAJIB_KONSI" });
+    expect(await prisma.store.count({ where: { code: `UJI-${token}` } })).toBe(0);
+    expect((await prisma.storeProposal.findUniqueOrThrow({ where: { id: usulan.id } })).status).toBe("PENDING");
+    expect(kabar.panggilan).toEqual([]);
   });
 });
 

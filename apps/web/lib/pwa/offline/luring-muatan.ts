@@ -8,6 +8,7 @@ import type {
   PendingCheckout,
   PendingMutasiAjuan,
   PendingMutasiKirim,
+  PendingSpgRefund,
   PendingSpgReturn,
   PendingStoreOpname,
   PendingStoreReceipt,
@@ -20,6 +21,7 @@ export type CheckoutBaru = Baru<PendingCheckout>;
 export type TerimaBaru = Baru<PendingStoreReceipt>;
 export type OpnameBaru = Baru<PendingStoreOpname>;
 export type ReturPembeliBaru = Baru<PendingSpgReturn>;
+export type UangKembaliBaru = Baru<PendingSpgRefund>;
 export type MutasiAjuanBaru = Baru<PendingMutasiAjuan>;
 export type MutasiKirimBaru = Baru<PendingMutasiKirim>;
 
@@ -86,6 +88,10 @@ function ikatan(r: { visitId: string | null; visitClientId: string | null }) {
  * Muatan `terimaKirimanAction` dari antrean. `urlFoto(i)` = URL foto rusak baris
  * ke-i yang sudah terunggah (atau `null`). Baris tanpa barang rusak tidak
  * membawa kolom rusak sama sekali.
+ *
+ * Pcs yang ditolak di pintu (`qtyRefused`) WAJIB ikut: tanpanya server membaca
+ * ditolak = 0, menghitung semuanya sebagai kurang, membuka barang hilang palsu,
+ * dan melewatkan koreksi nota + barang kembali ke Gudang Utama (P24/P40).
  */
 export function muatanTerima(r: TerimaBaru, urlFoto: (i: number) => string | null) {
   return {
@@ -94,6 +100,7 @@ export function muatanTerima(r: TerimaBaru, urlFoto: (i: number) => string | nul
     diterima: r.diterima.map((d, i) => ({
       lineId: d.lineId,
       qtyReceived: d.qtyReceived,
+      ...(d.qtyRefused && d.qtyRefused > 0 ? { qtyRefused: d.qtyRefused } : {}),
       ...(d.qtyDamaged && d.qtyDamaged > 0
         ? { qtyDamaged: d.qtyDamaged, damageNote: (d.damageNote ?? "").trim(), damagePhotoUrl: urlFoto(i) }
         : {}),
@@ -141,15 +148,39 @@ export function muatanOpname(r: OpnameBaru) {
   };
 }
 
-/** Muatan `catatReturPembeliAction` — sama dengan kiriman di konter, kunci yang sama. */
-export function muatanReturPembeli(r: ReturPembeliBaru) {
+/**
+ * Muatan `catatReturPembeliAction` — sama dengan kiriman di konter, kunci yang sama. `foto` = kunci
+ * R2 foto barang dan foto struk yang SUDAH terunggah (penyinkron mengunggahnya dulu). Jawaban uang
+ * ikut apa adanya; antrean dari versi lama tanpa jawaban ditolak server (`JAWABAN_UANG_WAJIB`).
+ */
+export function muatanReturPembeli(
+  r: ReturPembeliBaru,
+  foto: { fotoBarangKey: string | null; fotoStrukKey: string | null },
+) {
   return {
     spgSaleId: r.spgSaleId,
     alasan: r.alasan,
     idempotencyKey: r.localId,
     baris: r.baris.map((b) => ({ saleLineId: b.saleLineId, qty: b.qty, condition: b.condition })),
+    fotoBarangKey: foto.fotoBarangKey,
+    ...(typeof r.uangSudahDikembalikan === "boolean" ? { uangSudahDikembalikan: r.uangSudahDikembalikan } : {}),
+    fotoStrukKey: r.uangSudahDikembalikan ? foto.fotoStrukKey : null,
+    ...(r.gantiReturnId ? { gantiReturnId: r.gantiReturnId, alasanGanti: r.alasanGanti ?? "" } : {}),
     // Dicatat pada jam pembeli mengembalikannya, bukan saat sinyal kembali —
     // opname tanpa sinyal sesudahnya sudah menghitung barang itu di rak.
+    luring: true as const,
+    waktuTangkap: new Date(r.waktu).toISOString(),
+  };
+}
+
+/**
+ * Muatan `catatUangDikembalikanAction` dari antrean: laporan yang sudah disetujui kantor, foto
+ * struk yang sudah terunggah, dan jam uangnya dikembalikan di HP (server menjepitnya).
+ */
+export function muatanUangKembali(r: UangKembaliBaru, fotoStrukKey: string) {
+  return {
+    returnId: r.returnId,
+    fotoStrukKey,
     luring: true as const,
     waktuTangkap: new Date(r.waktu).toISOString(),
   };

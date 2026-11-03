@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { RateRow } from "./RateRow";
+import { GajiPokokSpgCard } from "./GajiPokokSpgCard";
 import { formatYearMonth } from "./format";
 
 export default function SpgCommissionSettingsPage() {
@@ -147,6 +148,8 @@ export default function SpgCommissionSettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      <GajiPokokSpgCard locale={locale} />
     </div>
   );
 }

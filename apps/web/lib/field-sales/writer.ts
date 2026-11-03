@@ -22,7 +22,16 @@ import { sentItemIds } from "./queries";
 import { openKonsiQtyByKey } from "./konsi-open-qty";
 import { isStockableVariantKey } from "@/lib/items/variants";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
-import { bacaAturanKredit, batasKreditBerlaku, KUNCI_ATURAN_KREDIT, nilaiKredit, type AturanKredit, type BatasToko } from "@/lib/salesman/kredit";
+import {
+  bacaAturanKredit,
+  batasKreditBerlaku,
+  keadaanDariEksposur,
+  KUNCI_ATURAN_KREDIT,
+  lewatBatasNilai,
+  nilaiKredit,
+  type AturanKredit,
+  type BatasToko,
+} from "@/lib/salesman/kredit";
 import { betulkanHasilKunjunganDiTx } from "@/lib/salesman/transaksi-kunjungan";
 import { kabariPengguna, type Kabar } from "@/lib/notifications/kabar-pengguna";
 import { muatKreditToko } from "./kredit-toko";
@@ -129,11 +138,13 @@ export async function createFieldSalesOrder(input: {
 }): Promise<{ orderId: string; orderNo: string; oversell: OversellAlert[]; creditHold: boolean; kreditDitahan: boolean }> {
   if (input.lines.length === 0) throw new MinQtyViolationError([]);
   /**
-   * Bahan kredit dibaca SEBELUM transaksi: `keadaanTagihanToko` memakai klien
-   * prisma biasa (bukan `tx`) dan menghitung ulang piutang dari klaim — kerja
-   * baca yang tidak perlu ikut memegang kunci serializable. Penilaiannya tetap
-   * di dalam transaksi, karena butuh total pesanan yang dihitung SERVER. Toko
-   * konsinyasi menghasilkan null dan tidak pernah dinilai.
+   * Bacaan kredit SEBELUM transaksi (`keadaanTagihanToko`, klien prisma biasa) hanya memasok
+   * keadaan janji bayar — piutang yang lewat janji/jatuh tempo, dihitung ulang dari klaim, kerja
+   * baca yang tidak perlu ikut memegang kunci serializable — dan aturan mode. Angka eksposur
+   * (sisa faktur, disetujui belum dinota, faktur terbuka) dibaca SEKALI di dalam transaksi,
+   * hanya kalau ada batas yang berlaku, lalu dipakai KEDUA lapis kredit; penilaiannya di dalam
+   * transaksi karena butuh total pesanan yang dihitung SERVER. Toko konsinyasi menghasilkan
+   * null dan tidak pernah dinilai.
    */
   const kredit = await muatKreditToko(input.storeId);
   let notification: AdminNotification | undefined;
@@ -411,6 +422,12 @@ export async function createFieldSalesOrder(input: {
        * batas kredit" membebaskan batas nilai dan batas faktur. Aturannya dari bacaan kredit
        * sebelum transaksi; kalau bacaan itu tidak ada (toko baru saja menjadi PUTUS),
        * dibaca di sini.
+       *
+       * Satu angka untuk kedua lapis: eksposur dibaca SEKALI di transaksi ini bila ada batas
+       * nilai atau batas faktur yang berlaku, dan lapis mode memakai sisa, belum dinota, dan
+       * faktur terbuka dari bacaan yang sama (`keadaanDariEksposur`) — hanya keadaan janji
+       * bayar yang datang dari bacaan sebelum transaksi. Batas dibandingkan per sen
+       * (`lewatBatasNilai`): sama dengan batas bukan lewat.
        */
       creditHold = false;
       let creditExposureAtCreate: number | null = null;
@@ -422,10 +439,12 @@ export async function createFieldSalesOrder(input: {
         noCreditLimit: store.noCreditLimit,
         termsType: "PUTUS",
       };
-      const creditLimit = batasKreditBerlaku(batasToko, aturanKredit).nilai.nilai;
-      if (creditLimit !== null) {
-        const exposure = await computeStoreCreditExposure(tx, input.storeId);
-        creditHold = exposure.total + netTotal > creditLimit;
+      const batas = batasKreditBerlaku(batasToko, aturanKredit);
+      const creditLimit = batas.nilai.nilai;
+      const perluEksposur = creditLimit !== null || batas.faktur.nilai !== null;
+      const exposure = perluEksposur ? await computeStoreCreditExposure(tx, input.storeId) : null;
+      if (creditLimit !== null && exposure) {
+        creditHold = lewatBatasNilai(exposure.total + netTotal, creditLimit);
         creditExposureAtCreate = exposure.total;
         creditLimitAtCreate = creditLimit;
       }
@@ -433,8 +452,13 @@ export async function createFieldSalesOrder(input: {
       // Kredit dinilai atas total BERSIH (sesudah promo) — angka yang sama dengan
       // yang dilihat salesman di layar tinjau. BLOKIR melempar: seluruh transaksi
       // (nomor dokumen, reservasi stok) ikut batal, tidak ada pesanan yang tersisa.
+      const keadaanSekarang = kredit?.keadaan
+        ? exposure
+          ? keadaanDariEksposur(exposure, kredit.keadaan)
+          : kredit.keadaan
+        : null;
       const putusan = kredit
-        ? putuskanKreditPesanan(kredit.keadaan ? nilaiKredit(kredit.keadaan, aturanKredit, batasToko, netTotal) : null, aturanKredit.mode)
+        ? putuskanKreditPesanan(keadaanSekarang ? nilaiKredit(keadaanSekarang, aturanKredit, batasToko, netTotal) : null, aturanKredit.mode)
         : null;
       if (putusan?.blokir) throw new KreditDiblokirError(putusan.alasan);
       kreditDitahan = putusan?.ditahan ?? false;
@@ -625,7 +649,7 @@ async function bacaAturanKreditTx(tx: Prisma.TransactionClient): Promise<AturanK
  * flag and Max's warn/hold/block layer read — so an empty PUTUS limit follows the Settings →
  * Salesman default, and a store ticked "Tanpa batas kredit" is never gated. A store whose limit
  * resolves to none (ticked, empty with an empty default, or a konsi store with an empty limit —
- * `BAWAAN_BERLAKU_UNTUK_KONSI`) is not gated. Otherwise the store's live
+ * owner P21, 2026-11-02: an empty konsi limit is not gated) is not gated. Otherwise the store's live
  * `computeStoreCreditExposure` plus `orderTotal` is compared against the limit: a PUTUS approve
  * passes its final order total, a KONSI approve passes 0, because consigned goods are not owed
  * until a sell-through report invoices them. Over the limit with no override reason it THROWS
@@ -658,10 +682,16 @@ async function enforceApproveCreditLimit(
   const creditLimit = batas.nilai;
   const sumber = batas.sumber === "BAWAAN" ? "BAWAAN" : "TOKO";
   const exposure = await computeStoreCreditExposure(tx, input.storeId);
-  if (exposure.total + input.orderTotal > creditLimit) {
+  /* The figures only — never the receivable ids — travel in the error and the audit row. */
+  const ringkas = {
+    receivableOutstanding: exposure.receivableOutstanding,
+    undeliveredOrderResidual: exposure.undeliveredOrderResidual,
+    total: exposure.total,
+  };
+  if (lewatBatasNilai(exposure.total + input.orderTotal, creditLimit)) {
     const reason = input.creditOverrideReason?.trim();
     if (!reason) {
-      throw new CreditLimitExceededError(exposure, creditLimit, input.orderTotal, sumber);
+      throw new CreditLimitExceededError(ringkas, creditLimit, input.orderTotal, sumber);
     }
     await tx.auditLog.create({
       data: {
@@ -671,7 +701,7 @@ async function enforceApproveCreditLimit(
         entityId: input.orderId,
         /* `AuditLog.reason` is VARCHAR(191); the full reason is kept on `creditOverrideReason` (`@db.Text`). */
         reason: Array.from(reason).slice(0, AUDIT_REASON_MAX_LENGTH).join(""),
-        metadata: { exposure, creditLimit, orderTotal: input.orderTotal },
+        metadata: { exposure: ringkas, creditLimit, orderTotal: input.orderTotal },
       },
     });
     return {
@@ -1045,10 +1075,12 @@ export async function approveKonsiOrderInTx(
   }
 
   /**
-   * Approve only RESERVES konsi stock. It moves main → the store's virtual warehouse at
-   * delivery-shipment completion (`completeDeliveryShipment`), one `KonsiTransfer` per
-   * completed shipment, so a short or refused delivery never lands at the store. Never
-   * through a FIELD_SALES_CONSUME mover: konsi is a transfer, not a sale. No SalesHistory for konsi.
+   * Approve only RESERVES konsi stock. It leaves main and goes into transit when the delivery
+   * shipment is CREATED (owner Q1: Gudang Utama gives the goods up when the surat jalan is made),
+   * one IN_TRANSIT `KonsiTransfer` per shipment, and reaches the store's virtual warehouse only
+   * when the store RECEIVES it — so goods refused at the door or never delivered never land at
+   * the store. Never through a FIELD_SALES_CONSUME mover: konsi is a transfer, not a sale. No
+   * SalesHistory for konsi.
    */
   await tx.fieldSalesOrder.update({
     where: { id: order.id },

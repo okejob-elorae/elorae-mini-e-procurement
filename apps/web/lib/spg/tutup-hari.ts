@@ -10,12 +10,15 @@
  * Definisi angka (dikunci tes):
  * - nota/potong/nilai kotor/potongan = nota yang DIBUAT pada hari itu (waktu jual,
  *   termasuk nota dari antrean HP yang bertanggal waktu jualnya);
- * - potong & nilai retur = barang yang DIKEMBALIKAN pembeli pada hari itu (dari
- *   nota kapan pun) dan laporan returnya SUDAH DISETUJUI kantor, dinilai dengan
- *   harga BERSIH per potong baris notanya (`lineTotal / qty`) — sama dengan
- *   dasbor (`nilaiBersihSpg`). Retur yang masih menunggu kantor tidak mengurangi
- *   apa pun; jumlah potongnya dibawa terpisah (`potongReturMenunggu`), di luar
- *   laporan yang disimpan;
+ * - potong & nilai retur = barang yang UANGNYA DIKEMBALIKAN kasir pada hari itu
+ *   (`refundedAt`, dari nota kapan pun) dan laporan returnya SUDAH DISETUJUI
+ *   kantor, dinilai dengan harga BERSIH per potong baris notanya
+ *   (`lineTotal / qty`) — sama dengan dasbor (`nilaiBersihSpg`). Uang kembali
+ *   hanya sesudah kantor menyetujui (pemilik P13a), jadi uang itu keluar dari
+ *   kasir pada hari pengembaliannya. Potong yang uangnya dikembalikan hari itu
+ *   tetapi laporannya belum/tidak disetujui tidak mengurangi apa pun; jumlahnya
+ *   dibawa terpisah (`potongUangKembaliBelumBerlaku`) sebagai keterangan, di
+ *   luar laporan yang disimpan;
  * - nilai bersih = Σ total nota hari itu − nilai retur hari itu. Bisa negatif
  *   pada hari tanpa penjualan tapi ada pengembalian — itu memang uang yang
  *   keluar di kasir hari itu, jadi tidak dijepit ke nol.
@@ -168,8 +171,11 @@ export type BahanTutupHari = {
   spg: { id: string; nama: string }[];
   /** Nama penjual lain (SPG yang sudah dipindah toko, dsb.). */
   namaPengguna: Record<string, string>;
-  /** Potong retur pembeli hari itu yang laporannya masih menunggu kantor (belum mengurangi apa pun). */
-  potongReturMenunggu: number;
+  /**
+   * Potong yang uangnya dikembalikan kasir hari itu, tetapi laporan returnya belum (menunggu)
+   * atau tidak (ditolak) disetujui kantor — belum mengurangi apa pun.
+   */
+  potongUangKembaliBelumBerlaku: number;
 };
 
 export type RingkasanTutupHari = AngkaPenjualan & {
@@ -181,10 +187,11 @@ export type RingkasanTutupHari = AngkaPenjualan & {
   dicari: DicariTutup[];
   perSpg: PerSpgTutup[];
   /**
-   * Potong retur pembeli hari itu yang masih menunggu kantor — hanya keterangan
-   * di HP; BUKAN bagian laporan yang disimpan (`nilaiLaporan`) dan tidak masuk teks WA.
+   * Potong yang uangnya dikembalikan kasir hari itu tetapi laporannya belum/tidak disetujui
+   * kantor — hanya keterangan di HP; BUKAN bagian laporan yang disimpan (`nilaiLaporan`) dan
+   * tidak masuk teks WA.
    */
-  potongReturMenunggu: number;
+  potongUangKembaliBelumBerlaku: number;
 };
 
 /**
@@ -241,7 +248,7 @@ export function susunRingkasanTutupHari(b: BahanTutupHari): RingkasanTutupHari {
     kiriman: b.kiriman,
     dicari: b.dicari,
     perSpg,
-    potongReturMenunggu: b.potongReturMenunggu ?? 0,
+    potongUangKembaliBelumBerlaku: b.potongUangKembaliBelumBerlaku ?? 0,
   };
 }
 

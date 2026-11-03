@@ -35,7 +35,7 @@ d("info produk di formulir barang (test bed only)", () => {
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
-  const dasar = () => ({ nameId: "Kaos uji", nameEn: "Test tee", type: "FINISHED_GOOD" as const, uomId });
+  const dasar = () => ({ nameId: "Kaos uji", nameEn: "Test tee", type: "FINISHED_GOOD" as const, uomId, salesChannel: "BOTH" as const });
 
   it("creates with the three fields, keeps them when a later save omits them, clears on blank", async () => {
     const { item } = await createItem({

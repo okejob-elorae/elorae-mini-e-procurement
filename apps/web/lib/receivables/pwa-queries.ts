@@ -1,6 +1,7 @@
 import { prisma } from '@elorae/db';
 import { daftarPiutang, type BarisPiutang } from './queries';
-import type { StatusKlaim } from './rules';
+import type { CekSelisih, StatusKlaim } from './rules';
+import { kurangPerBarang } from "./selisih-retur";
 import { daftarKerjaRetur } from './return-queries';
 
 const angka = (v: unknown): number => Number(v ?? 0);
@@ -29,6 +30,10 @@ export type TokoLapangan = {
 
 /**
  * Ringkasan per toko untuk layar sales.
+ *
+ * Tagihan konsinyasi ikut, DENGAN nilainya (P18 "berikan selengkapnya saja"),
+ * tetapi hanya untuk pemegang toko sekarang (P31) — `daftarPiutang({ penagihId })`
+ * menegakkannya di kueri.
  *
  * Diringkas ke SATU kalimat per toko, bukan daftar faktur. Sales membacanya
  * sambil berdiri di depan toko — yang ia butuhkan adalah apakah boleh menagih
@@ -73,7 +78,7 @@ export async function tokoLapangan(salesmanId: string): Promise<TokoLapangan[]> 
     .sort((a, b) => URUT.indexOf(a.keadaan) - URUT.indexOf(b.keadaan) || b.sisa - a.sisa);
 }
 
-/** Faktur satu toko, untuk layar rincian sales. */
+/** Faktur satu toko, untuk layar rincian sales — tagihan konsinyasi dengan nilainya bagi pemegang toko (P18/P31). */
 export async function fakturToko(
   salesmanId: string,
   storeId: string,
@@ -154,7 +159,8 @@ export type FakturJanji = {
 /**
  * Faktur satu toko yang boleh masuk janji bayar dari lapangan.
  *
- * Yang ia TAGIH saja (aturan penagih, sama dengan layar Tagihan), yang masih
+ * Yang ia TAGIH saja (aturan penagih, sama dengan layar Tagihan — tagihan
+ * konsinyasi hanya bagi pemegang toko, P31), yang masih
  * bersisa, dan yang belum dipegang toko lewat kontrabon berjalan — ketiganya
  * juga ditolak penulisnya; disaring di sini supaya penolakan itu tidak pernah
  * terlihat oleh sales yang berdiri di depan toko.
@@ -192,10 +198,21 @@ export type JanjiToko = {
  * Sales perlu melihat janji yang ia catat sendiri SUDAH sampai ke kantor dan
  * apakah sudah dikonfirmasi — tanpa ini, satu-satunya tanda laporannya terkirim
  * adalah kalimat keadaan faktur yang berubah.
+ *
+ * Kontrabon yang memegang tagihan konsinyasi hanya untuk pemegang toko SEKARANG
+ * (P31, "pemegang toko") — nilainya nominal tagihan konsi. Tanpa `penontonId`
+ * kontrabon itu tidak dibawa sama sekali: arah yang aman bila pemanggilnya
+ * belum menyebut siapa yang melihat.
  */
-export async function janjiBerjalanDiToko(storeId: string): Promise<JanjiToko[]> {
+export async function janjiBerjalanDiToko(storeId: string, penontonId?: string): Promise<JanjiToko[]> {
+  const toko = penontonId ? await prisma.store.findUnique({ where: { id: storeId }, select: { salesmanId: true } }) : null;
+  const bolehKonsi = penontonId !== undefined && toko?.salesmanId === penontonId;
   const rows = await prisma.collectionNote.findMany({
-    where: { storeId, status: 'BERJALAN' },
+    where: {
+      storeId,
+      status: "BERJALAN",
+      ...(bolehKonsi ? {} : { receivableLinks: { none: { receivable: { isConsignment: true } } } }),
+    },
     orderBy: [{ promisedDate: 'asc' }],
     take: BATAS_LAPANGAN,
     select: {
@@ -226,7 +243,11 @@ export type ReturSaya = {
   noNrt: string;
   storeName: string;
   tanggal: string;
-  /** Null untuk toko KONSI: harga dan nilai konsinyasi tidak pernah sampai ke HP. */
+  /**
+   * Nilai nota retur. Untuk toko KONSI hanya bila diminta `nilaiKonsi` (HP
+   * salesman, P57); HP SPG tetap null (P18a — SPG tidak pernah melihat nilai
+   * konsinyasi).
+   */
   nilaiKlaim: number | null;
   langkah: string;
   adaFoto: boolean;
@@ -254,7 +275,7 @@ export type ReturSaya = {
  */
 export async function returSaya(
   salesmanId: string,
-  opsi?: { termasukSpgTokoSaya?: boolean },
+  opsi?: { termasukSpgTokoSaya?: boolean; nilaiKonsi?: boolean },
 ): Promise<ReturSaya[]> {
   const rows = await prisma.storeReturn.findMany({
     where: opsi?.termasukSpgTokoSaya
@@ -288,7 +309,7 @@ export async function returSaya(
         noNrt: k.nomor,
         storeName: k.storeName ?? '—',
         tanggal: k.tanggal,
-        nilaiKlaim: r?.store.termsType === "KONSI" ? null : (k.nilaiKlaim ?? 0),
+        nilaiKlaim: r?.store.termsType === "KONSI" && !opsi?.nilaiKonsi ? null : (k.nilaiKlaim ?? 0),
         langkah: k.langkah,
         adaFoto: k.adaFoto,
         dariSpg: r?.reportedBySpg ?? false,
@@ -307,6 +328,14 @@ export type BebanSaya = {
   status: 'DITETAPKAN' | 'LUNAS';
   catatan: string | null;
   diputuskanPada: string | null;
+  /** Yang sudah dipotong dari komisinya. */
+  sudahDipotong: number;
+  /** Yang masih akan dipotong. */
+  sisa: number;
+  /** Potongan yang melebihi besarnya sekarang — dikembalikan (P87). */
+  kelebihan: number;
+  /** Seluruh barangnya kembali lewat susulan: bebannya nol, barisnya tetap. */
+  pulih: boolean;
 };
 
 /**
@@ -323,6 +352,7 @@ export async function bebanSaya(userId: string): Promise<BebanSaya[]> {
     select: {
       id: true,
       amount: true,
+      settledAmount: true,
       status: true,
       note: true,
       decidedAt: true,
@@ -330,6 +360,7 @@ export async function bebanSaya(userId: string): Promise<BebanSaya[]> {
       storeReturn: { select: { noNrt: true } },
     },
   });
+  const sen = (n: number) => Math.round(n * 100);
   return rows.map((r) => ({
     id: r.id,
     noNrt: r.storeReturn?.noNrt ?? null,
@@ -338,7 +369,120 @@ export async function bebanSaya(userId: string): Promise<BebanSaya[]> {
     status: r.status as BebanSaya['status'],
     catatan: r.note,
     diputuskanPada: r.decidedAt?.toISOString() ?? null,
+    sudahDipotong: angka(r.settledAmount),
+    sisa: Math.max(0, sen(angka(r.amount)) - sen(angka(r.settledAmount))) / 100,
+    kelebihan: Math.max(0, sen(angka(r.settledAmount)) - sen(angka(r.amount))) / 100,
+    pulih: sen(angka(r.amount)) === 0,
   }));
+}
+
+/** Satu selisih retur yang perlu dicari sales pemegang toko (P88). */
+export type SelisihReturSaya = {
+  chargeId: string;
+  storeReturnId: string;
+  noNrt: string;
+  noNri: string | null;
+  storeId: string;
+  storeName: string;
+  /** Tanggal nota retur (ISO). */
+  tanggal: string;
+  /** Nilai selisihnya — juga untuk toko konsinyasi (P18: HP salesman). */
+  nilai: number;
+  /** Barang yang kurang, sesudah hitungan asli dan setiap susulan. */
+  barang: { itemName: string; variantSku: string | null; qtyKurang: number }[];
+  /** SPG toko itu, kalau ada — mungkin mereka yang tahu di mana barangnya. */
+  spg: string[];
+  cek: CekSelisih;
+  cekCatatan: string | null;
+  cekPada: string | null;
+  /** Masih menunggu laporan sales: belum dilapor, atau barang temuannya sudah datang dan masih ada sisa. */
+  perluDicek: boolean;
+};
+
+/**
+ * Selisih retur yang belum diputuskan di toko yang SEKARANG dipegang orang ini
+ * (rotasi toko memindahkan tugasnya). Yang ditandai `perluDicek` dihitung di
+ * beranda (`jumlahSelisihPerluDicek`).
+ */
+export async function selisihReturSaya(userId: string): Promise<SelisihReturSaya[]> {
+  const rows = await prisma.returnCharge.findMany({
+    where: {
+      status: 'TERBUKA',
+      amount: { gt: 0 },
+      storeReturn: { status: { not: 'BATAL' }, store: { salesmanId: userId } },
+    },
+    orderBy: [{ createdAt: 'asc' }],
+    take: BATAS_LAPANGAN,
+    select: {
+      id: true,
+      amount: true,
+      checkStatus: true,
+      checkNote: true,
+      checkedAt: true,
+      storeReturn: {
+        select: {
+          id: true,
+          noNrt: true,
+          claimDate: true,
+          storeId: true,
+          store: { select: { name: true } },
+          items: { select: { itemId: true, variantSku: true, itemName: true, qty: true } },
+          warehouseReturn: {
+            select: { noNri: true, status: true, items: { select: { itemId: true, variantSku: true, itemName: true, qty: true } } },
+          },
+          followUps: {
+            where: { status: 'FINAL' },
+            select: { receivedAt: true, items: { select: { itemId: true, variantSku: true, itemName: true, qty: true } } },
+          },
+        },
+      },
+    },
+  });
+  const tokoIds = [...new Set(rows.flatMap((r) => (r.storeReturn ? [r.storeReturn.storeId] : [])))];
+  const spg = tokoIds.length
+    ? await prisma.user.findMany({ where: { assignedStoreId: { in: tokoIds } }, select: { name: true, email: true, assignedStoreId: true } })
+    : [];
+  const spgPerToko = new Map<string, string[]>();
+  for (const u of spg) {
+    if (!u.assignedStoreId) continue;
+    spgPerToko.set(u.assignedStoreId, [...(spgPerToko.get(u.assignedStoreId) ?? []), u.name ?? u.email]);
+  }
+  return rows.flatMap((r) => {
+    const n = r.storeReturn;
+    if (!n) return [];
+    const hitungan = [
+      ...(n.warehouseReturn?.status === 'FINAL' ? n.warehouseReturn.items : []),
+      ...n.followUps.flatMap((f) => f.items),
+    ];
+    const cek = r.checkStatus as CekSelisih;
+    const susulanSesudahLapor =
+      r.checkedAt !== null && n.followUps.some((f) => f.receivedAt.getTime() > (r.checkedAt as Date).getTime());
+    return [
+      {
+        chargeId: r.id,
+        storeReturnId: n.id,
+        noNrt: n.noNrt,
+        noNri: n.warehouseReturn?.noNri ?? null,
+        storeId: n.storeId,
+        storeName: n.store.name,
+        tanggal: n.claimDate.toISOString(),
+        nilai: angka(r.amount),
+        barang: kurangPerBarang(n.items, hitungan)
+          .filter((k) => k.qtyKurang > 0)
+          .map((k) => ({ itemName: k.itemName, variantSku: k.variantSku, qtyKurang: k.qtyKurang })),
+        spg: spgPerToko.get(n.storeId) ?? [],
+        cek,
+        cekCatatan: r.checkNote,
+        cekPada: r.checkedAt?.toISOString() ?? null,
+        perluDicek: cek === 'DITANYAKAN' || (cek === 'DITEMUKAN' && susulanSesudahLapor),
+      },
+    ];
+  });
+}
+
+/** Berapa selisih retur yang menunggu laporan sales ini — tugas di beranda HP. */
+export async function jumlahSelisihPerluDicek(userId: string): Promise<number> {
+  return (await selisihReturSaya(userId)).filter((s) => s.perluDicek).length;
 }
 
 /** Nota retur yang menunggu dicek gudang — layar anak gudang. */
@@ -404,4 +548,83 @@ export async function menungguGudang(): Promise<MenungguGudang[]> {
       })),
     };
   });
+}
+
+/**
+ * Nota retur yang selisihnya masih hidup — gudang menghitung barang SUSULAN-nya.
+ * Yang dilaporkan sales "ditemukan" (barangnya sedang dikirim balik) tampil
+ * lebih dulu. Bentuknya sama dengan `MenungguGudang`; halaman gudang
+ * mengosongkan klaim dan jumlah kurangnya sebelum sampai ke penghitung
+ * (`untukPenghitungSusulan` — hitungan buta), dan catatan sales tidak pernah
+ * dibawa. `tidakBolehMenghitung`: pelapor nota, pelapor cek, penanggung beban,
+ * dan pemegang toko — dua tangan.
+ */
+export type MenungguSusulan = MenungguGudang & {
+  chargeId: string;
+  dilaporkanDitemukan: boolean;
+  tidakBolehMenghitung: string[];
+};
+
+export async function menungguSusulanGudang(): Promise<MenungguSusulan[]> {
+  const rows = await prisma.returnCharge.findMany({
+    where: {
+      status: { in: ['TERBUKA', 'DITETAPKAN'] },
+      amount: { gt: 0 },
+      storeReturn: { status: { not: 'BATAL' } },
+    },
+    orderBy: [{ createdAt: 'asc' }],
+    select: {
+      id: true,
+      checkStatus: true,
+      checkedById: true,
+      bearerUserId: true,
+      storeReturn: {
+        select: {
+          id: true,
+          noNrt: true,
+          claimDate: true,
+          claimedAmount: true,
+          deliveryMethod: true,
+          photoUrl: true,
+          reportedBySpg: true,
+          salesmanId: true,
+          store: { select: { name: true, salesmanId: true } },
+          items: {
+            orderBy: { itemName: 'asc' },
+            select: { itemId: true, variantSku: true, itemName: true, qty: true, price: true, condition: true },
+          },
+        },
+      },
+    },
+  });
+  const hasil: MenungguSusulan[] = rows.flatMap((r) => {
+    const n = r.storeReturn;
+    if (!n) return [];
+    return [
+      {
+        id: n.id,
+        noNrt: n.noNrt,
+        storeName: n.store.name,
+        tanggal: n.claimDate.toISOString(),
+        nilaiKlaim: angka(n.claimedAmount),
+        caraKirim: n.deliveryMethod,
+        adaFoto: Boolean(n.photoUrl),
+        dariSpg: n.reportedBySpg,
+        baris: n.items.map((i) => ({
+          itemId: i.itemId,
+          variantSku: i.variantSku,
+          itemName: i.itemName,
+          qty: i.qty,
+          price: angka(i.price),
+          condition: i.condition,
+        })),
+        chargeId: r.id,
+        dilaporkanDitemukan: r.checkStatus === 'DITEMUKAN',
+        tidakBolehMenghitung: [n.salesmanId, r.checkedById, r.bearerUserId, n.store.salesmanId].filter(
+          (x): x is string => Boolean(x),
+        ),
+      },
+    ];
+  });
+  return hasil.sort((a, b) => Number(b.dilaporkanDitemukan) - Number(a.dilaporkanDitemukan));
 }

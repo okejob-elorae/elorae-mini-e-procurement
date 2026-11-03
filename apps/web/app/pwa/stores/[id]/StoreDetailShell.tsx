@@ -78,7 +78,10 @@ type OrderRow = {
   orderNo: string;
   orderType: "PUTUS" | "KONSI";
   status: "PENDING_APPROVAL" | "APPROVED";
+  /** KONSI yang belum disetujui: null (lihat `perkiraan`). */
   total: number | null;
+  /** KONSI menunggu persetujuan: perkiraan nilai retail di toko (P18). */
+  perkiraan?: { nilai: number; lengkap: boolean } | null;
   /** Sudah diformat di server. */
   createdLabel: string;
 };
@@ -112,6 +115,8 @@ type Props = {
    * (daftar periksa, panduan, harga pesaing), foto, dan catatan toko tetap.
    */
   spg?: boolean;
+  /** Penonton adalah pemegang toko sekarang — membuka lapor pelunasan toko konsinyasi (P31). */
+  pemegang?: boolean;
 };
 
 const ORDER_STATUS_LABEL: Record<"PENDING_APPROVAL" | "APPROVED", "statusPending" | "statusApproved"> = {
@@ -119,11 +124,12 @@ const ORDER_STATUS_LABEL: Record<"PENDING_APPROVAL" | "APPROVED", "statusPending
   APPROVED: "statusApproved",
 };
 
-export function StoreDetailShell({ store, active, activePhotos, history, pending, orders, saran, ringkasan, bolehJarakJauh, portalToko, preorder, catatanToko, stokDiToko, saranTawar, spg = false }: Props) {
+export function StoreDetailShell({ store, active, activePhotos, history, pending, orders, saran, ringkasan, bolehJarakJauh, portalToko, preorder, catatanToko, stokDiToko, saranTawar, spg = false, pemegang = false }: Props) {
   const t = useTranslations("pwa.checkIn");
   const tBadge = useTranslations("stores.badge");
   const tFso = useTranslations("fieldSalesOrders");
   const tKunjungan = useTranslations("pwa.kunjunganBerjalan");
+  const tPesanan = useTranslations("pwa.pesananSaya");
 
   const activeAtThisStore = active && active.storeId === store.id;
   const activeAtOtherStore = active && active.storeId !== store.id;
@@ -231,7 +237,7 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
               </AlertDescription>
             </Alert>
           )}
-          <AksiKunjungan storeId={store.id} termsType={store.termsType} preorder={preorder} spg={spg} />
+          <AksiKunjungan storeId={store.id} termsType={store.termsType} preorder={preorder} spg={spg} pemegang={pemegang} />
         </section>
       ) : (
         <div className="space-y-2">
@@ -362,9 +368,13 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
                     </Badge>
                     <Badge variant="outline">{tFso(ORDER_STATUS_LABEL[o.status])}</Badge>
                     <span className="text-xs text-muted-foreground">{o.createdLabel}</span>
-                    {o.total !== null && (
+                    {o.total !== null ? (
                       <span className="ml-auto tabular-nums font-medium">{formatRupiah(o.total)}</span>
-                    )}
+                    ) : o.perkiraan ? (
+                      <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                        {tPesanan("perkiraan", { value: formatRupiah(o.perkiraan.nilai) })}
+                      </span>
+                    ) : null}
                   </div>
                 ))}
               </CardContent>

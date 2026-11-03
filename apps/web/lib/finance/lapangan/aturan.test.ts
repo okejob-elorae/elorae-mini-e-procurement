@@ -217,6 +217,58 @@ describe("pelunasan BKM", () => {
     });
   });
 
+  it("bagian yang melunasi tagihan konsinyasi dikredit ke AR_CONSIGNMENT toko itu", () => {
+    const semua = barisKlaim({ terverifikasi: true, cara: "transfer", diterima: 500_000, storeId: "t1", potongan: [], porsiKonsi: 1 });
+    expect(peta(semua)).toEqual({ "BANK||": 500_000, "AR_CONSIGNMENT|t1|": -500_000 });
+    expect(semua.some((b) => b.role === "AR_STORE")).toBe(false);
+  });
+
+  it("satu BKM melunasi faktur bentuk lama, tagihan konsinyasi, dan faktur putus sekaligus: tiga kredit, jumlahnya nol", () => {
+    const b = barisKlaim({
+      terverifikasi: true,
+      cara: "tunai",
+      diterima: 1_000_000,
+      storeId: "t1",
+      potongan: [],
+      porsiAr: 0.2,
+      porsiKonsi: 0.5,
+    });
+    expect(jumlahSen(b)).toBe(0);
+    expect(peta(b)).toEqual({ "CASH||": 1_000_000, "AR||": -200_000, "AR_CONSIGNMENT|t1|": -500_000, "AR_STORE|t1|": -300_000 });
+  });
+
+  it("pembulatan dua porsi tidak pernah mengkredit lebih dari yang diterima", () => {
+    // 0,01 dibagi dua porsi 0,5: AR mengambil 1 sen (bulat ke atas), konsi tinggal 0 sen.
+    const b = barisKlaim({ terverifikasi: true, cara: "transfer", diterima: 0.01, storeId: "t1", potongan: [], porsiAr: 0.5, porsiKonsi: 0.5 });
+    expect(jumlahSen(b)).toBe(0);
+    expect(peta(b)).toEqual({ "BANK||": 0.01, "AR||": -0.01 });
+    // Porsi di luar 0–1 dijepit.
+    const lebih = barisKlaim({ terverifikasi: true, cara: "transfer", diterima: 100, storeId: "t1", potongan: [], porsiAr: 0.7, porsiKonsi: 2 });
+    expect(jumlahSen(lebih)).toBe(0);
+    expect(peta(lebih)).toEqual({ "BANK||": 100, "AR||": -70, "AR_CONSIGNMENT|t1|": -30 });
+  });
+
+  it("potongan penjualan pada BKM yang seluruhnya melunasi tagihan konsinyasi berkanal KONSINYASI; bawaannya PUTUS", () => {
+    const konsi = barisKlaim({
+      terverifikasi: true,
+      cara: "transfer",
+      diterima: 450_000,
+      storeId: "t1",
+      potongan: [{ nilai: 50_000, retur: false, peran: "SALES_DISCOUNT" }],
+      porsiKonsi: 1,
+      kanalPotongan: "KONSINYASI",
+    });
+    expect(peta(konsi)).toEqual({ "BANK||": 450_000, "SALES_DISCOUNT|t1|KONSINYASI": 50_000, "AR_CONSIGNMENT|t1|": -500_000 });
+    const putus = barisKlaim({
+      terverifikasi: true,
+      cara: "transfer",
+      diterima: 450_000,
+      storeId: "t1",
+      potongan: [{ nilai: 50_000, retur: false, peran: "SALES_DISCOUNT" }],
+    });
+    expect(peta(putus)["SALES_DISCOUNT|t1|PUTUS"]).toBe(50_000);
+  });
+
   it("tanggal jurnal: tanggal transfer, tidak sebelum tanggal mulai buku besar dan tidak sesudah verifikasi; giro = saat cair", () => {
     const verif = new Date("2026-09-12T05:00:00Z");
     const transfer = new Date("2026-09-08T17:00:00Z");
@@ -241,33 +293,60 @@ describe("retur toko — nilai yang diakui buku besar", () => {
 
   it("sasaran = maks(fisik yang diakui, yang sudah dipakai toko); fisik yang diakui tidak melebihi klaim nota", () => {
     // Belum dipotong: kredit retur 100 rb belum dipakai.
-    expect(nilaiReturBukuBesar({ nilaiFisik: 100_000, nilaiKlaimNota: 300_000, potonganDiakui: 0, ditagihKeToko: 0 })).toEqual({
+    expect(nilaiReturBukuBesar({ nilaiFisik: 100_000, nilaiKlaimNota: 300_000, potonganDiakui: 0 })).toEqual({
       fisikDiakui: 100_000,
       dipakai: 0,
       sasaran: 100_000,
       rugi: 0,
       kreditBelumDipakai: 100_000,
     });
-    // Ditanggung TOKO sesudah dipotong 300 rb: faktur beban 200 rb → dipakai bersih 100 rb.
-    expect(nilaiReturBukuBesar({ nilaiFisik: 100_000, nilaiKlaimNota: 300_000, potonganDiakui: 300_000, ditagihKeToko: 200_000 })).toMatchObject({
+    // Ditanggung TOKO sesudah dipotong 300 rb: selisihnya tetap terbuka di nota asal (keputusan 1),
+    // potongannya tetap ditahan, jadi yang diakui hanya fisik 100 rb — tanpa rugi, tanpa faktur baru.
+    expect(nilaiReturBukuBesar({ nilaiFisik: 100_000, nilaiKlaimNota: 300_000, potonganDiakui: 100_000 })).toMatchObject({
       sasaran: 100_000,
       rugi: 0,
       kreditBelumDipakai: 0,
     });
-    // Ditanggung perusahaan/sales/gudang: potongan 300 rb dilepas penuh, 200 rb jadi rugi.
-    expect(nilaiReturBukuBesar({ nilaiFisik: 100_000, nilaiKlaimNota: 300_000, potonganDiakui: 300_000, ditagihKeToko: 0 })).toMatchObject({
+    // Ditanggung SALES (barang tidak ketemu di toko, P22): potongan 300 rb dilepas penuh, 200 rb jadi rugi.
+    expect(nilaiReturBukuBesar({ nilaiFisik: 100_000, nilaiKlaimNota: 300_000, potonganDiakui: 300_000 })).toMatchObject({
       sasaran: 300_000,
       rugi: 200_000,
       kreditBelumDipakai: 0,
     });
     // Gudang menerima lebih dari nota: yang diakui sebesar nota.
-    expect(nilaiReturBukuBesar({ nilaiFisik: 400_000, nilaiKlaimNota: 300_000, potonganDiakui: 0, ditagihKeToko: 0 }).fisikDiakui).toBe(300_000);
+    expect(nilaiReturBukuBesar({ nilaiFisik: 400_000, nilaiKlaimNota: 300_000, potonganDiakui: 0 }).fisikDiakui).toBe(300_000);
     // Hitungan yatim (belum ada nota): tidak ada kredit untuk siapa pun.
-    expect(nilaiReturBukuBesar({ nilaiFisik: 400_000, nilaiKlaimNota: null, potonganDiakui: 0, ditagihKeToko: 0 }).sasaran).toBe(0);
+    expect(nilaiReturBukuBesar({ nilaiFisik: 400_000, nilaiKlaimNota: null, potonganDiakui: 0 }).sasaran).toBe(0);
+  });
+
+  it("fisik 150 rb dari klaim 300 rb, selisih dibebankan ke SALES (tahanan lepas): rugi 150 rb", () => {
+    expect(nilaiReturBukuBesar({ nilaiFisik: 150_000, nilaiKlaimNota: 300_000, potonganDiakui: 300_000 })).toEqual({
+      fisikDiakui: 150_000,
+      dipakai: 300_000,
+      sasaran: 300_000,
+      rugi: 150_000,
+      kreditBelumDipakai: 0,
+    });
+  });
+
+  it("hitungan SUSULAN (barang selisih yang ketemu, tanpa nota toko sendiri): persediaan & HPP saja, tidak menyentuh piutang", () => {
+    const nilai = nilaiReturBukuBesar({ nilaiFisik: 50_000, nilaiKlaimNota: null, potonganDiakui: 0 });
+    expect(nilai).toMatchObject({ fisikDiakui: 0, sasaran: 0, rugi: 0, kreditBelumDipakai: 0 });
+    const b = barisRetur({
+      konsinyasi: false,
+      storeId: "t1",
+      tanggal: HARI,
+      pengaturanPpn: NON_PKP,
+      nilai,
+      stokLayak: [{ tipeBarang: "FINISHED_GOOD", nilai: 30_000 }],
+      nilaiRusak: 0,
+    });
+    expect(peta(b)).toEqual({ "INVENTORY_FG||": 30_000, "COGS|t1|PUTUS": -30_000 });
+    expect(b.some((x) => x.role === "AR_STORE" || x.role === "AR" || x.role === "SALES_RETURN" || x.role === "LOSS_EXPENSE")).toBe(false);
   });
 
   it("baris retur: barang layak kembali ke persediaan, rusak ke persediaan rusak, HPP dibalik; pendapatan dibalik sebesar sasaran", () => {
-    const nilai = nilaiReturBukuBesar({ nilaiFisik: 100_000, nilaiKlaimNota: 300_000, potonganDiakui: 300_000, ditagihKeToko: 0 });
+    const nilai = nilaiReturBukuBesar({ nilaiFisik: 100_000, nilaiKlaimNota: 300_000, potonganDiakui: 300_000 });
     const b = barisRetur({
       konsinyasi: false,
       storeId: "t1",
@@ -289,20 +368,20 @@ describe("retur toko — nilai yang diakui buku besar", () => {
   });
 
   it("PKP: PPN keluaran ikut dibalik atas fisik yang diakui, tidak atas rugi", () => {
-    const nilai = nilaiReturBukuBesar({ nilaiFisik: 111_000, nilaiKlaimNota: 111_000, potonganDiakui: 0, ditagihKeToko: 0 });
+    const nilai = nilaiReturBukuBesar({ nilaiFisik: 111_000, nilaiKlaimNota: 111_000, potonganDiakui: 0 });
     const b = barisRetur({ konsinyasi: false, storeId: "t1", tanggal: HARI, pengaturanPpn: PKP, nilai, stokLayak: [], nilaiRusak: 0 });
     expect(peta(b)).toEqual({ "SALES_RETURN|t1|PUTUS": 100_000, "PPN_KELUARAN||": 11_000, "AR_STORE|t1|": -111_000 });
   });
 
   it("kredit retur yang dipakai toko untuk faktur berjurnal bentuk lama dipindah dari AR_STORE ke AR", () => {
-    const nilai = nilaiReturBukuBesar({ nilaiFisik: 300_000, nilaiKlaimNota: 300_000, potonganDiakui: 300_000, ditagihKeToko: 0 });
+    const nilai = nilaiReturBukuBesar({ nilaiFisik: 300_000, nilaiKlaimNota: 300_000, potonganDiakui: 300_000 });
     const b = barisRetur({ konsinyasi: false, storeId: "t1", tanggal: HARI, pengaturanPpn: NON_PKP, nilai, stokLayak: [], nilaiRusak: 0, kreditAr: 300_000 });
     expect(jumlahSen(b)).toBe(0);
     expect(peta(b)).toEqual({ "SALES_RETURN|t1|PUTUS": 300_000, "AR||": -300_000 });
   });
 
   it("retur dari toko konsinyasi bukan urusan jurnal lapangan", () => {
-    const nilai = nilaiReturBukuBesar({ nilaiFisik: 1, nilaiKlaimNota: 1, potonganDiakui: 0, ditagihKeToko: 0 });
+    const nilai = nilaiReturBukuBesar({ nilaiFisik: 1, nilaiKlaimNota: 1, potonganDiakui: 0 });
     expect(
       barisRetur({ konsinyasi: true, storeId: "t1", tanggal: HARI, pengaturanPpn: NON_PKP, nilai, stokLayak: [{ tipeBarang: "FINISHED_GOOD", nilai: 1 }], nilaiRusak: 1 }),
     ).toEqual([]);
@@ -322,7 +401,7 @@ describe("tukar barang", () => {
 });
 
 describe("retur toko — HPP dibalik sebesar HPP saat dijual (bug 6)", () => {
-  const nol = nilaiReturBukuBesar({ nilaiFisik: 0, nilaiKlaimNota: 0, potonganDiakui: 0, ditagihKeToko: 0 });
+  const nol = nilaiReturBukuBesar({ nilaiFisik: 0, nilaiKlaimNota: 0, potonganDiakui: 0 });
 
   it("kemeja M layak: persediaan sebesar kartu stok (103.528,91), HPP dibalik sebesar saat dijual (81.222,22), selisih ke INVENTORY_VARIANCE", () => {
     const baris = barisRetur({
@@ -389,14 +468,15 @@ describe("retur toko — HPP dibalik sebesar HPP saat dijual (bug 6)", () => {
 });
 
 describe("faktur piutang manual/impor (bug 5)", () => {
-  it("dijurnal sendiri hanya bila bukan nota pengiriman, bukan faktur beban retur, dan bukan toko konsinyasi", () => {
-    expect(fakturDijurnalSendiri({ source: "MANUAL", deliveryId: null, note: null, konsinyasi: false })).toBe(true);
-    expect(fakturDijurnalSendiri({ source: "IMPORT", deliveryId: null, note: "catatan biasa", konsinyasi: false })).toBe(true);
-    expect(fakturDijurnalSendiri({ source: "DELIVERY", deliveryId: "d1", note: null, konsinyasi: false })).toBe(false);
+  it("dijurnal sendiri hanya bila bukan nota pengiriman dan bukan tagihan konsinyasi (`isConsignment`)", () => {
+    expect(fakturDijurnalSendiri({ source: "MANUAL", deliveryId: null, konsinyasi: false })).toBe(true);
+    expect(fakturDijurnalSendiri({ source: "IMPORT", deliveryId: null, konsinyasi: false })).toBe(true);
+    expect(fakturDijurnalSendiri({ source: "DELIVERY", deliveryId: "d1", konsinyasi: false })).toBe(false);
     // Nota tagihan lama yang sumbernya tertulis lain tetapi menunjuk pengiriman: jurnal notanya yang berlaku.
-    expect(fakturDijurnalSendiri({ source: "MANUAL", deliveryId: "d1", note: null, konsinyasi: false })).toBe(false);
-    expect(fakturDijurnalSendiri({ source: "MANUAL", deliveryId: null, note: "Selisih retur NRT-1 ditanggung toko. [beban-retur:c1]", konsinyasi: false })).toBe(false);
-    expect(fakturDijurnalSendiri({ source: "MANUAL", deliveryId: null, note: null, konsinyasi: true })).toBe(false);
+    expect(fakturDijurnalSendiri({ source: "MANUAL", deliveryId: "d1", konsinyasi: false })).toBe(false);
+    // Utang konsi kertas yang diketik/diimpor (P32) berdiri di AR_CONSIGNMENT, bukan AR_STORE.
+    expect(fakturDijurnalSendiri({ source: "MANUAL", deliveryId: null, konsinyasi: true })).toBe(false);
+    expect(fakturDijurnalSendiri({ source: "IMPORT", deliveryId: null, konsinyasi: true })).toBe(false);
   });
 
   it("nilai yang dijurnal = nilai faktur dikurangi yang dibayar sebelum impor, tidak pernah negatif", () => {

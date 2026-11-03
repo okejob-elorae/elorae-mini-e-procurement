@@ -1,4 +1,5 @@
 import { FileDigit, Layers, Percent, Ruler, Shield, Store, Tags, Target, UserPlus, Users, type LucideIcon } from "lucide-react";
+import { PERMISSIONS } from "@/lib/rbac";
 
 /**
  * Kartu pusat pengaturan (`/backoffice/settings`): pengaturan usaha yang
@@ -50,3 +51,14 @@ export const KELOMPOK_PENGATURAN: KelompokPengaturan[] = [
 
 export const kunciJudulKartu = (k: KartuPengaturan) => k.judul ?? `${k.key}.title`;
 export const kunciIsiKartu = (k: KartuPengaturan) => k.isi ?? `${k.key}.description`;
+
+/**
+ * Kartu yang hanya tampil bagi pemegang salah satu izin ini; kartu lain selalu tampil.
+ * Daftarnya WAJIB memuat izin yang diminta rutenya (`ROUTE_PERMISSIONS`) — kartu yang tampil
+ * untuk orang yang tidak bisa membuka halamannya hanya mengantar ke /backoffice.
+ */
+export const IZIN_KARTU_PENGATURAN: Record<string, string[]> = {
+  "/backoffice/settings/pack-ratio": [PERMISSIONS.SETTINGS_PACK_RATIO_VIEW, PERMISSIONS.SETTINGS_PACK_RATIO_MANAGE],
+  "/backoffice/settings/spg-commission": [PERMISSIONS.SPG_COMMISSION_MANAGE],
+  "/backoffice/settings/piutang": [PERMISSIONS.RECEIVABLES_MANAGE],
+};

@@ -167,29 +167,21 @@ export function persenTurun(h: Pick<HasilMenurun, "nilai90" | "nilai90Sebelumnya
 /**
  * Toko menurun dalam bentuk yang DIKIRIM KE HP salesman: tanpa rupiah.
  *
- * `nilai90`/`nilai90Sebelumnya` adalah total pesanan toko itu (putus terkirim
- * + konsi disetujui + van), jadi untuk SEMUA toko kedua nilai dikosongkan dan
- * diganti rasionya — cukup untuk "turun X%" dan urutannya (dites).
+ * `nilai90`/`nilai90Sebelumnya` (total pesanan toko itu: putus terkirim +
+ * konsi disetujui + van) dikosongkan dan diganti rasionya — cukup untuk
+ * "turun X%" dan urutannya (dites). Hanya rasio yang dipakai layarnya.
  *
- * Toko yang jendela 180 harinya memuat nilai KONSI (`tokoKonsi`) tidak
- * mendapat rasio sama sekali (aturan mutlak pemilik: total konsi tidak pernah
- * sampai ke HP). Rasio pun membuka total konsi begitu jendelanya bercampur
- * dengan rupiah yang salesman ketahui: 90 hari lalu konsi K, 90 hari terakhir
- * van V (notanya ia pegang) → rasio = V ÷ K, jadi K = V ÷ rasio. Barisnya
- * tetap ditandai, tanpa angka ("Nilai pesanan menurun").
+ * Toko konsinyasi mendapat rasio seperti toko lain (P56, jawaban pemilik
+ * 2026-11-02 "tampilkan semuanya saja"): pengecualiannya dulu ada hanya untuk
+ * menyembunyikan total konsi dari HP salesman.
  *
  * Urutan payload disusun ULANG dari kunci yang terkirim saja (nama lalu
- * aturan urut) — urutan server dihitung dari rupiahnya, dan posisi toko konsi
- * di antara toko lain pun akan membocorkan rasionya. Kuncinya dipilih satu
- * per satu, bukan disalin: kolom rupiah yang kelak ditambahkan ke
- * `TokoMenurun` tidak ikut terkirim tanpa sengaja.
+ * aturan urut). Kuncinya dipilih satu per satu, bukan disalin: kolom rupiah
+ * yang kelak ditambahkan ke `TokoMenurun` tidak ikut terkirim tanpa sengaja.
  */
-export function menurunUntukHp(
-  daftar: readonly TokoMenurun[],
-  opsi: { tokoKonsi?: ReadonlySet<string> } = {},
-): TokoMenurun[] {
+export function menurunUntukHp(daftar: readonly TokoMenurun[]): TokoMenurun[] {
   const hp = daftar.map((m): TokoMenurun => {
-    const r = opsi.tokoKonsi?.has(m.storeId) ? null : rasioTurun(m);
+    const r = rasioTurun(m);
     return {
       storeId: m.storeId,
       nama: m.nama,

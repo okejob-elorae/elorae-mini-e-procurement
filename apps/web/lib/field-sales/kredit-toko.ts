@@ -13,13 +13,22 @@ export type KreditToko = {
   aturan: AturanKredit;
   /** Batas milik toko apa adanya — arti kolom kosong diputuskan `batasKreditBerlaku`, bukan pemanggil. */
   batas: BatasToko;
-  /** null = tagihan GAGAL dibaca. Bukan sama dengan "tidak punya tagihan". */
+  /**
+   * Dibangun dari SATU angka kredit, `computeStoreCreditExposure` (Q10) — sama
+   * dengan gerbang persetujuan. null = tagihan GAGAL dibaca. Bukan sama dengan
+   * "tidak punya tagihan".
+   */
   keadaan: KeadaanTagihan | null;
   /** Faktur yang belum lunas; kosong kalau gagal dibaca. */
   baris: BarisPiutang[];
 };
 
-/** null untuk toko konsinyasi (tidak punya piutang) dan toko yang tidak ada. */
+/**
+ * null untuk toko yang tidak ada, dan untuk toko KONSINYASI: mode kredit dan
+ * batas faktur terbuka hanya berlaku untuk pesanan PUTUS. Transfer konsinyasi
+ * digerbangkan dasar kredit tim atas eksposurnya saja, dan hanya dengan angka
+ * milik tokonya sendiri — batas kosong tidak dibatasi (P21).
+ */
 export async function muatKreditToko(storeId: string): Promise<KreditToko | null> {
   const toko = await prisma.store.findUnique({
     where: { id: storeId },

@@ -64,6 +64,13 @@ export type AlasanGagalKlaim =
   | 'JENIS_HANYA_PKP'
   | 'NOMOR_BENTROK'
   | 'KUNCI_DIPAKAI'
+  /**
+   * Tagihan konsinyasi tidak dipotong retur: barang titipan yang kembali memang
+   * tidak pernah ditagih (diterapkan 2026-11-02 dari model konsinyasi Max).
+   */
+  | "RETUR_TOKO_KONSI"
+  /** Tagihan yang dilunasi sudah dibatalkan (VOIDED) atau dihapusbukukan. */
+  | "PIUTANG_DIBATALKAN"
   | AlasanPengganti
   | AlasanGiro;
 
@@ -219,7 +226,7 @@ export async function buatKlaimPembayaran(input: {
         });
         const piutang = await tx.receivable.findMany({
           where: { id: { in: ids } },
-          select: { id: true, storeId: true },
+          select: { id: true, storeId: true, status: true, isConsignment: true },
         });
         if (piutang.length !== ids.length) {
           return { ok: false as const, alasan: 'PIUTANG_TIDAK_DITEMUKAN' as const };
@@ -227,6 +234,13 @@ export async function buatKlaimPembayaran(input: {
         if (piutang.some((p) => p.storeId !== input.storeId)) {
           return { ok: false as const, alasan: 'BEDA_TOKO' as const };
         }
+        // Dibaca di transaksi serializable yang sama dengan pembatalannya
+        // (`bukaKunci`, "tidak jadi dikirim"): BKM tidak pernah mendarat di
+        // tagihan yang sudah tidak ada.
+        if (piutang.some((p) => p.status === "VOIDED" || p.status === "WRITTEN_OFF")) {
+          return { ok: false as const, alasan: "PIUTANG_DIBATALKAN" as const };
+        }
+        const adaKonsi = piutang.some((p) => p.isConsignment);
 
         for (const baris of pelunasan) {
           const { sisa, tertahan } = await hitungUlangPiutangDanTahanan(tx, baris.receivableId);
@@ -263,6 +277,9 @@ export async function buatKlaimPembayaran(input: {
           for (const p of potongan) {
             const j = p.deductionTypeId ? peta.get(p.deductionTypeId) : undefined;
             if (!j) continue;
+            if (j.method === 'DARI_RETUR' && adaKonsi) {
+              return { ok: false as const, alasan: "RETUR_TOKO_KONSI" as const };
+            }
             if (j.method === 'DARI_RETUR' && !p.storeReturnId) {
               return { ok: false as const, alasan: 'JENIS_BUTUH_RETUR' as const };
             }
@@ -285,6 +302,9 @@ export async function buatKlaimPembayaran(input: {
         const returIds = [
           ...new Set(potongan.map((p) => p.storeReturnId).filter((x): x is string => Boolean(x))),
         ];
+        if (returIds.length > 0 && adaKonsi) {
+          return { ok: false as const, alasan: "RETUR_TOKO_KONSI" as const };
+        }
         if (returIds.length > 0) {
           const retur = await tx.storeReturn.findMany({
             where: { id: { in: returIds } },

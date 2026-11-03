@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Camera, PackageOpen } from "lucide-react";
+import { Camera, ChevronDown, ChevronUp, PackageOpen, PackageSearch } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,9 +22,9 @@ import {
 } from "@/components/ui/dialog";
 import { TanggalInput } from "@/components/ui/tanggal-input";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
-import { catatHitunganGudangAction } from "@/app/actions/store-returns";
+import { catatHitunganGudangAction, catatHitunganSusulanAction } from "@/app/actions/store-returns";
 import { dinamis } from "@/lib/i18n/dinamis";
-import { nilaiHitunganAwal, type NotaHitung } from "./nilai";
+import { nilaiHitunganAwal, type NotaHitung, type NotaSusulan } from "./nilai";
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 const tanggal = (iso: string) =>
@@ -48,9 +48,11 @@ type HasilHitung = {
   noNrt: string;
   klaim: { nilai: number; qty: number } | null;
   fisik: { nilai: number; qty: number };
+  /** Hitungan barang susulan: sisa selisih nota sesudahnya (0 = tertutup). */
+  sisaSelisih?: number;
 };
 
-export function GudangClient({ baris }: { baris: NotaHitung[] }) {
+export function GudangClient({ baris, susulan = [] }: { baris: NotaHitung[]; susulan?: NotaSusulan[] }) {
   const t = useTranslations("pwaGudang");
   // Judul sama dengan menu yang membukanya ("Hitung retur (gudang)").
   const judul = useTranslations("navigation")("navHitungRetur");
@@ -65,6 +67,12 @@ export function GudangClient({ baris }: { baris: NotaHitung[] }) {
   const [catatan, setCatatan] = useState("");
   const [diterima, setDiterima] = useState(hariIniWib());
   const [hasilHitung, setHasilHitung] = useState<HasilHitung | null>(null);
+  // Hitungan yang sedang dibuka: hitungan pertama nota, atau barang susulannya.
+  const [modeSusulan, setModeSusulan] = useState(false);
+  // Nota berselisih yang barangnya belum dilaporkan ditemukan dilipat — biasanya belum ada barang.
+  const [lainTerbuka, setLainTerbuka] = useState(false);
+  const susulanDitemukan = susulan.filter((n) => n.dilaporkanDitemukan);
+  const susulanLain = susulan.filter((n) => !n.dilaporkanDitemukan);
 
   const perBaris = dipilih ? dipilih.baris.length > 0 : false;
   // Kolom kosong = belum dihitung (NaN), bukan nol. Nol hanya kalau diketik.
@@ -73,7 +81,8 @@ export function GudangClient({ baris }: { baris: NotaHitung[] }) {
   const nilaiAwal = dipilih && perBaris ? nilaiHitunganAwal(dipilih.baris, qtyHitung, dipilih.nilaiPerPotong) : 0;
   const nilai = nilaiKetik ?? (perBaris ? String(nilaiAwal) : "");
 
-  const buka = (b: NotaHitung) => {
+  const buka = (b: NotaHitung, susulanNota = false) => {
+    setModeSusulan(susulanNota);
     setDipilih(b);
     // Mulai KOSONG. Mengisi dengan qty klaim membuat satu "Simpan" mencatat
     // fisik = klaim tanpa ada yang menghitung.
@@ -90,7 +99,7 @@ export function GudangClient({ baris }: { baris: NotaHitung[] }) {
       // Selain itu barisnya dikirim tanpa harga dan nilai yang diketik menang
       // (`nilaiDariRincian` di penulis) — jadi angka di layar = angka yang tersimpan.
       const pakaiHarga = nilaiKetik === null && dipilih.baris.some((x) => x.price > 0);
-      const hasil = await catatHitunganGudangAction({
+      const isian = {
         storeReturnId: dipilih.id,
         receivedAt: diterima,
         deliveryMethod: dipilih.caraKirim as "SALES" | "TOKO" | "EKSPEDISI",
@@ -106,7 +115,20 @@ export function GudangClient({ baris }: { baris: NotaHitung[] }) {
             }))
           : undefined,
         note: catatan,
-      });
+      };
+      if (modeSusulan) {
+        const hasil = await catatHitunganSusulanAction(isian);
+        if (!hasil.ok) {
+          toast.error(td(`err${hasil.kode}`));
+          return;
+        }
+        toast.success(t("okCounted"));
+        setHasilHitung({ noNri: hasil.noNri, noNrt: dipilih.noNrt, klaim: null, fisik: hasil.fisik, sisaSelisih: hasil.sisaSelisih });
+        setDipilih(null);
+        router.refresh();
+        return;
+      }
+      const hasil = await catatHitunganGudangAction(isian);
       if (!hasil.ok) {
         toast.error(td(`err${hasil.kode}`));
         return;
@@ -170,12 +192,55 @@ export function GudangClient({ baris }: { baris: NotaHitung[] }) {
         </div>
       )}
 
+      {/* Barang susulan selisih retur: barang yang ketemu di toko dan dikirim balik (P22a).
+          Hitungannya buta, sama dengan hitungan pertama — klaim dan yang kurang tidak dikirim. */}
+      {susulan.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="flex items-center gap-2 text-lg font-semibold">
+            <PackageSearch className="h-5 w-5" aria-hidden />
+            {t("susulan.judul")}
+          </h2>
+          <p className="text-sm text-muted-foreground">{t("susulan.isi")}</p>
+          {susulanDitemukan.length === 0 && (
+            <p className="text-sm text-muted-foreground">{t("susulan.belumAdaDitemukan")}</p>
+          )}
+          {[...susulanDitemukan, ...(lainTerbuka ? susulanLain : [])].map((b) => (
+            <Card key={b.chargeId} className="py-0">
+              <CardContent className="space-y-3 py-4">
+                <span className="min-w-0">
+                  <span className="flex flex-wrap items-center gap-2 font-semibold">
+                    {b.noNrt}
+                    {b.dilaporkanDitemukan && <Badge>{t("susulan.dilaporkan")}</Badge>}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    {b.storeName} · {tanggal(b.tanggal)}
+                  </span>
+                </span>
+                <Button className="w-full" variant="outline" disabled={pending || b.milikSendiri} onClick={() => buka(b, true)}>
+                  {t("susulan.hitung")}
+                </Button>
+                {b.milikSendiri && <p className="text-xs text-muted-foreground">{t("susulan.milikSendiri")}</p>}
+              </CardContent>
+            </Card>
+          ))}
+          {susulanLain.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={() => setLainTerbuka((x) => !x)}>
+              {lainTerbuka ? <ChevronUp className="mr-1.5 h-4 w-4" /> : <ChevronDown className="mr-1.5 h-4 w-4" />}
+              {lainTerbuka ? t("susulan.sembunyikanLain") : t("susulan.tampilkanLain", { count: susulanLain.length })}
+            </Button>
+          )}
+        </section>
+      )}
+
       <Dialog open={dipilih !== null} onOpenChange={(o) => !o && setDipilih(null)}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{t("countTitle")}</DialogTitle>
+            <DialogTitle>{modeSusulan ? t("susulan.hitungJudul") : t("countTitle")}</DialogTitle>
             <DialogDescription>
-              {dipilih && t("countBodyButa", { doc: dipilih.noNrt, store: dipilih.storeName })}
+              {dipilih &&
+                (modeSusulan
+                  ? t("susulan.hitungIsi", { doc: dipilih.noNrt, store: dipilih.storeName })
+                  : t("countBodyButa", { doc: dipilih.noNrt, store: dipilih.storeName }))}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -291,6 +356,12 @@ export function GudangClient({ baris }: { baris: NotaHitung[] }) {
                   </span>
                 </div>
               )}
+              {hasilHitung.sisaSelisih !== undefined &&
+                (hasilHitung.sisaSelisih > 0 ? (
+                  <p className="font-medium text-destructive">{t("susulan.sisa", { value: rupiah(hasilHitung.sisaSelisih) })}</p>
+                ) : (
+                  <p className="text-muted-foreground">{t("susulan.tertutup")}</p>
+                ))}
               {hasilHitung.klaim &&
                 (hasilHitung.klaim.nilai > hasilHitung.fisik.nilai ? (
                   <p className="font-medium text-destructive">

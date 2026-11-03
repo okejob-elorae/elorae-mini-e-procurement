@@ -2,9 +2,12 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { formatDisplayDate } from "@/lib/date-only";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { bolehMembukaKomisiSpg, bolehMembukaKonsi, bolehMemverifikasi } from "@/lib/receivables/izin";
 import { daftarBulanTerakhir } from "@/lib/salesman/komisi";
 import { bacaBulanBayar } from "@/lib/spg/komisi";
 import { daftarKomisiKantor } from "@/lib/spg/komisi-queries";
+import { antreanJadwalBulanKantor } from "@/lib/spg/jadwal-bulan-queries";
+import { daftarUtangSpgKantor } from "@/lib/spg/utang-queries";
 import { KomisiSpgClient, type KonsiTampil, type LaporanPutusTampil, type TunggakanTampil } from "./KomisiSpgClient";
 
 export const dynamic = "force-dynamic";
@@ -21,18 +24,61 @@ const JUMLAH_BULAN = 12;
  * `receivables:manage`; menandai dibayar = `spg_commission:pay` — juga baris gaji & komisi toko
  * konsinyasi (aksi dan izin yang sama dengan di siklusnya, supaya pemegang izin bayar tanpa
  * `consignment:view` tetap bisa membayar). Setiap baris yang belum dibayar memperlihatkan yang AKAN
- * dibayarkan — komisi per SPG sekarang dan koreksi yang ikut (`lib/spg/koreksi.ts`).
+ * dibayarkan — gaji pokok, komisi per SPG sekarang, pengurang, dan koreksi yang ikut
+ * (`lib/spg/koreksi.ts`), atau sebab tahannya (P60).
+ *
+ * Gerbang halaman (P28 + Q9): `spg_sales:view` ATAU `spg_commission:pay` — halaman memagari dirinya
+ * sendiri, bukan lewat ROUTE_PERMISSIONS. Pemegang `payments:verify` saja hanya melihat #utang
+ * (memeriksa penerimaan utang SPG, keputusan 11).
  */
 export default async function KomisiSpgPage({ searchParams }: { searchParams: Promise<{ bulan?: string | string[] }> }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   const izin = session.user.permissions ?? [];
-  if (!hasPermission(izin, PERMISSIONS.SPG_SALES_VIEW)) redirect("/backoffice/dashboard");
+  const bukaPenuh = bolehMembukaKomisiSpg(izin);
+  const verifikasi = bolehMemverifikasi(izin);
+  if (!bukaPenuh && !verifikasi) redirect("/backoffice/dashboard");
 
   const sekarang = new Date();
   const pilihan = daftarBulanTerakhir(sekarang, JUMLAH_BULAN);
   const bulan = bacaBulanBayar((await searchParams).bulan, pilihan);
-  const data = await daftarKomisiKantor(bulan, sekarang);
+  const tanggalHari = (hari: readonly string[]) => hari.map((h) => formatDisplayDate(new Date(`${h}T00:00:00+07:00`)));
+
+  if (!bukaPenuh) {
+    // Pemeriksa pembayaran saja: hanya #utang (P68). Tanpa data komisi apa pun.
+    const utang = await daftarUtangSpgKantor(sekarang);
+    return (
+      <KomisiSpgClient
+        bulan={bulan}
+        bulanIni={bulan}
+        pilihan={pilihan}
+        bolehKelola={false}
+        bolehBayar={false}
+        bolehAturTarif={false}
+        bolehSetujuiJadwal={false}
+        bolehVerifikasi
+        bolehCatatHadir={false}
+        bolehBukaKonsi={false}
+        hanyaUtang
+        jadwal={[]}
+        utang={utang}
+        putus={[]}
+        konsi={[]}
+        menungguCek={[]}
+        konsiMenungguKunci={[]}
+        tunggakan={[]}
+        tunggakanDitahan={[]}
+        koreksiMenunggu={[]}
+        ringkas={{ totalDitetapkan: 0, totalDibayar: 0, totalKoreksi: 0, belumDitetapkan: 0, menungguCek: 0, ditahan: 0 }}
+      />
+    );
+  }
+
+  const [data, jadwal, utang] = await Promise.all([
+    daftarKomisiKantor(bulan, sekarang),
+    antreanJadwalBulanKantor({ sekarang }),
+    daftarUtangSpgKantor(sekarang),
+  ]);
 
   // Tanggal diformat DI SERVER (WIB) — komponen klien menerima teks jadi.
   const putus: LaporanPutusTampil[] = data.putus.map((l) => ({
@@ -45,17 +91,18 @@ export default async function KomisiSpgPage({ searchParams }: { searchParams: Pr
     potongToko: l.potongToko,
     totalToko: l.totalToko,
     potongTanpaTarif: l.potongTanpaTarif,
+    jumlahIkut: l.jumlahIkut,
     adaResmi: l.adaResmi,
     adaDibayar: l.adaDibayar,
     semuaDibayar: l.semuaDibayar,
     berbeda: l.berbeda,
-    aturanLama: l.aturanLama,
     returMenunggu: l.returMenunggu,
     baris: l.baris.map((b) => ({
       userId: b.userId,
       nama: b.nama,
       ditugaskan: b.ditugaskan,
       penerima: b.penerima,
+      peserta: b.peserta,
       potong: b.potong,
       komisi: b.komisi,
       potongTanpaTarif: b.potongTanpaTarif,
@@ -66,12 +113,15 @@ export default async function KomisiSpgPage({ searchParams }: { searchParams: Pr
             commission: b.resmi.commission,
             deduction: b.resmi.deduction,
             unitsSold: b.resmi.unitsSold,
-            aturanLama: b.resmi.aturanLama,
+            baseSalary: b.resmi.baseSalary,
             ditetapkanLabel: formatDisplayDate(b.resmi.lockedAt),
             dibayarLabel: b.resmi.paidAt ? formatDisplayDate(b.resmi.paidAt) : null,
             note: b.resmi.note,
           }
         : null,
+      gaji: b.gaji,
+      tahan: b.tahan ? { alasan: b.tahan.alasan, hariLabel: tanggalHari(b.tahan.hari) } : null,
+      luarRadius: b.luarRadius.length,
       bebanHilangSisa: b.bebanHilangSisa,
       bayar: b.bayar,
       koreksiDiterapkan: b.koreksiDiterapkan,
@@ -95,8 +145,10 @@ export default async function KomisiSpgPage({ searchParams }: { searchParams: Pr
     baris: k.baris.map((b) => ({
       id: b.id,
       nama: b.nama,
-      bergaji: b.bergaji,
       gajiPokok: b.gajiPokok,
+      gaji: b.gaji,
+      tahan: b.tahan ? { alasan: b.tahan.alasan, hariLabel: tanggalHari(b.tahan.hari) } : null,
+      luarRadius: b.luarRadius.length,
       komisi: b.komisi,
       komisiHitung: b.komisiHitung,
       total: b.total,
@@ -121,6 +173,7 @@ export default async function KomisiSpgPage({ searchParams }: { searchParams: Pr
       bayar: t.bayar,
       returMenunggu: t.returMenunggu,
       ditahan: t.ditahan,
+      hariTahanLabel: tanggalHari(t.hariTahan),
     }));
 
   return (
@@ -131,15 +184,20 @@ export default async function KomisiSpgPage({ searchParams }: { searchParams: Pr
       bolehKelola={hasPermission(izin, PERMISSIONS.RECEIVABLES_MANAGE)}
       bolehBayar={hasPermission(izin, PERMISSIONS.SPG_COMMISSION_PAY)}
       bolehAturTarif={hasPermission(izin, PERMISSIONS.SPG_COMMISSION_MANAGE)}
+      bolehSetujuiJadwal={hasPermission(izin, PERMISSIONS.SPG_SCHEDULES_APPROVE)}
+      bolehVerifikasi={verifikasi}
+      bolehCatatHadir={hasPermission(izin, PERMISSIONS.SPG_ATTENDANCE_RECORD) || hasPermission(izin, PERMISSIONS.SPG_ATTENDANCE_VERIFY)}
+      bolehBukaKonsi={bolehMembukaKonsi(izin)}
+      hanyaUtang={false}
+      jadwal={jadwal}
+      utang={utang}
       putus={putus}
       konsi={konsi}
       menungguCek={data.menungguCek}
       konsiMenungguKunci={data.konsiMenungguKunci}
       tunggakan={tunggakan(data.tunggakan)}
       tunggakanDitahan={tunggakan(data.tunggakanDitahan)}
-      tunggakanLama={tunggakan(data.tunggakanLama)}
       koreksiMenunggu={data.koreksiMenunggu}
-      koreksiDitahan={data.koreksiDitahan}
       ringkas={data.ringkas}
     />
   );

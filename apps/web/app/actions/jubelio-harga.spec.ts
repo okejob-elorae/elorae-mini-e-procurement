@@ -6,15 +6,15 @@ vi.mock("@elorae/db", () => ({ prisma: { jubelioPushDefaults: { count: vi.fn() }
 vi.mock("@/lib/jubelio/harga/writer", () => ({
   konfirmasiHargaJubelio: vi.fn(),
   kembalikanHargaErp: vi.fn(),
-  batalkanPengajuanJubelio: vi.fn(),
+  kirimUlangHargaJubelio: vi.fn(),
 }));
 vi.mock("@/lib/jubelio/product-push", () => ({ fireProductPushNow: vi.fn() }));
 
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
-import { batalkanPengajuanJubelio, kembalikanHargaErp, konfirmasiHargaJubelio } from "@/lib/jubelio/harga/writer";
+import { kembalikanHargaErp, kirimUlangHargaJubelio, konfirmasiHargaJubelio } from "@/lib/jubelio/harga/writer";
 import { fireProductPushNow } from "@/lib/jubelio/product-push";
-import { batalkanPengajuanJubelioAction, kembalikanHargaErpAction, konfirmasiHargaJubelioAction } from "./jubelio-harga";
+import { kembalikanHargaErpAction, kirimUlangHargaJubelioAction, konfirmasiHargaJubelioAction } from "./jubelio-harga";
 
 /*
  * Aksi Jubelio → Konfirmasi harga (keputusan pemilik 2026-11-02): ketiganya digerbangi
@@ -104,22 +104,16 @@ describe("konfirmasiHargaJubelioAction", () => {
   });
 });
 
-describe("kembalikanHargaErpAction dan batalkanPengajuanJubelioAction", () => {
+describe("kembalikanHargaErpAction", () => {
   it("digerbangi izin yang sama", async () => {
     vi.mocked(auth).mockResolvedValue(sesi(["items:edit"]));
     expect(await kembalikanHargaErpAction({ itemId: "i1", hargaErp: "100.00" })).toEqual({ ok: false, code: "TANPA_AKSES" });
-    expect(await batalkanPengajuanJubelioAction({ itemId: "i1", diajukanPada: "2026-11-02T03:00:00.000Z" })).toEqual({
-      ok: false,
-      code: "TANPA_AKSES",
-    });
     expect(kembalikanHargaErp).not.toHaveBeenCalled();
-    expect(batalkanPengajuanJubelio).not.toHaveBeenCalled();
   });
 
   it("menolak isian yang salah bentuk", async () => {
     expect(await kembalikanHargaErpAction({ itemId: "i1", hargaErp: "-5" })).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
-    expect(await batalkanPengajuanJubelioAction({ itemId: "i1", diajukanPada: "kemarin" })).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
-    expect(await batalkanPengajuanJubelioAction(null)).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
+    expect(await kembalikanHargaErpAction(null)).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
   });
 
   it("kembalikan: pelaku dari sesi, kiriman langsung bila berhasil", async () => {
@@ -131,17 +125,63 @@ describe("kembalikanHargaErpAction dan batalkanPengajuanJubelioAction", () => {
     expect(kembalikanHargaErp).toHaveBeenCalledWith({ itemId: "i1", hargaErpDiharapkan: "120000.00", olehUserId: "u1" });
     expect(fireProductPushNow).toHaveBeenCalledWith("row-r", "u1");
   });
+});
 
-  it("batalkan: meneruskan token waktu pengajuan dan hasilnya", async () => {
-    vi.mocked(batalkanPengajuanJubelio).mockResolvedValue({ hasil: "PENGAJUAN_BERUBAH" });
-    expect(await batalkanPengajuanJubelioAction({ itemId: "i1", diajukanPada: "2026-11-02T03:00:00.000Z" })).toEqual({
+/*
+ * Jawaban pemilik P74 (2026-11-02): satu-satunya jalan keluar beda harga, digerbangi izin yang sama.
+ * Satu baris per tekan (rancangan R26) — isian berupa larik ditolak, jadi tidak ada penimpaan massal.
+ */
+describe("kirimUlangHargaJubelioAction", () => {
+  const isian = { itemId: "i1", berubahPada: "2026-11-03T01:00:00.000Z" };
+
+  it.each([
+    ["tanpa sesi", null],
+    ["tanpa izin konfirmasi harga", sesi(["items:edit", "settings_security:manage"])],
+  ])("%s → TANPA_AKSES, penulis tidak dipanggil", async (_label, s) => {
+    vi.mocked(auth).mockResolvedValue(s as never);
+    expect(await kirimUlangHargaJubelioAction(isian)).toEqual({ ok: false, code: "TANPA_AKSES" });
+    expect(kirimUlangHargaJubelio).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["larik beberapa baris", [isian, { itemId: "i2", berubahPada: null }]],
+    ["larik satu baris", [isian]],
+    ["kosong", null],
+    ["id kosong", { itemId: "", berubahPada: null }],
+    ["waktu tak terbaca", { itemId: "i1", berubahPada: "kemarin" }],
+    ["waktu bukan teks", { itemId: "i1", berubahPada: 5 }],
+  ])("%s → ISIAN_TIDAK_SAH", async (_label, salah) => {
+    expect(await kirimUlangHargaJubelioAction(salah)).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
+    expect(kirimUlangHargaJubelio).not.toHaveBeenCalled();
+  });
+
+  it("tanpa pengaturan bawaan kirim produk → BAWAAN_BELUM_ADA", async () => {
+    vi.mocked(prisma.jubelioPushDefaults.count).mockResolvedValue(0 as never);
+    expect(await kirimUlangHargaJubelioAction(isian)).toMatchObject({ ok: false, code: "BAWAAN_BELUM_ADA" });
+    expect(kirimUlangHargaJubelio).not.toHaveBeenCalled();
+  });
+
+  it("dikirim ulang: pelaku dari sesi, kiriman langsung", async () => {
+    vi.mocked(kirimUlangHargaJubelio).mockResolvedValue({ hasil: "DIKIRIM_ULANG", outboxId: "row-a" });
+    expect(await kirimUlangHargaJubelioAction({ ...isian, olehUserId: "penyusup" })).toEqual({
       ok: true,
-      data: { hasil: "PENGAJUAN_BERUBAH" },
+      data: { hasil: "DIKIRIM_ULANG", outboxId: "row-a" },
     });
-    expect(batalkanPengajuanJubelio).toHaveBeenCalledWith({
+    expect(kirimUlangHargaJubelio).toHaveBeenCalledWith({
       itemId: "i1",
-      diajukanPadaDiharapkan: "2026-11-02T03:00:00.000Z",
+      berubahPadaDiharapkan: "2026-11-03T01:00:00.000Z",
       olehUserId: "u1",
     });
+    expect(vi.mocked(fireProductPushNow).mock.calls).toEqual([["row-a", "u1"]]);
+  });
+
+  it("ditolak penulis: hasilnya diteruskan, tidak ada kiriman", async () => {
+    vi.mocked(kirimUlangHargaJubelio).mockResolvedValue({ hasil: "TERBACA_BERUBAH" });
+    expect(await kirimUlangHargaJubelioAction({ itemId: "b", berubahPada: null })).toEqual({
+      ok: true,
+      data: { hasil: "TERBACA_BERUBAH" },
+    });
+    expect(kirimUlangHargaJubelio).toHaveBeenCalledWith({ itemId: "b", berubahPadaDiharapkan: null, olehUserId: "u1" });
+    expect(fireProductPushNow).not.toHaveBeenCalled();
   });
 });

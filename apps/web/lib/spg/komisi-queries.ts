@@ -10,25 +10,24 @@ import {
   spgSaleMovements,
   wibMonthRange,
 } from "@/lib/spg-commission/laporan-queries";
-import { commissionPerSpg, confirmsAnyPiece, konsiReportKey, payoutMonth, putusReportKey, type SalesReport } from "@/lib/spg-commission/payout";
+import { commissionPerSpg, konsiReportKey, payoutMonth, putusReportKey, type SalesReport } from "@/lib/spg-commission/payout";
 import { REF_KOMISI_KONSI, REF_KOMISI_SPG_PUTUS } from "./hilang";
-import { bacaAturanHilang, sisaBebanHilangPerOrang } from "./hilang-db";
-import { jumlahDiterima } from "./komisi-hp";
+import { bagianHilangTerbukaSpg, sisaBebanHilangPerOrang } from "./hilang-db";
+import { dibayarkanTersimpan } from "./komisi-hp";
+import { bacaDetailGaji, type AlasanTahanBayar, type HasilGaji, type RincianGaji } from "./gaji-pokok";
+import { kunciGaji, kunciTokoBulan, muatGajiPokok, muatPesertaGaji } from "./gaji-pokok-queries";
 import {
   barisSasaranKoreksi,
-  koreksiDitahan,
-  pratinjauSesudahDicek,
   rencanaBayarSemua,
   selisihMenunggu,
   type BarisKoreksi,
-  type KoreksiDitahan,
+  type KonteksBayar,
   type RefBarisKomisi,
   type RencanaBayarKomisi,
   type UnitKomisiSpg,
 } from "./koreksi";
 import {
   daftarTunggakanKomisi,
-  daftarTunggakanKomisiLama,
   koreksiBulanBayar,
   koreksiPadaPembayaran,
   pemegangKomisiSpg,
@@ -36,9 +35,12 @@ import {
   unitKomisiSpg,
   type TunggakanKomisi,
 } from "./koreksi-queries";
+import { pembayaranAkhir } from "./koreksi-akhir";
+import { bebanReturTerbukaSpg, kembaliBebanTerbukaSpg, potonganLainPadaPembayaran, utangTerbukaSpg } from "./utang-queries";
 import {
-  aturanLama,
   bulanSebelum,
+  laporanPerluDicek,
+  potongTanpaKategori,
   statusResmi,
   sudahBerbeda,
   susunKomisiToko,
@@ -145,14 +147,57 @@ export async function hitunganPutus(
   return { laporan, hasil };
 }
 
-export const keBarisResmi = (r: { id: string; userId: string; unitsSold: number; commission: unknown; basis: string; paidAt: Date | null }): BarisResmiAda => ({
+export const keBarisResmi = (r: {
+  id: string;
+  userId: string;
+  unitsSold: number;
+  commission: unknown;
+  basis: string;
+  baseSalary?: unknown;
+  salaryDetail?: unknown;
+  paidAt: Date | null;
+}): BarisResmiAda => ({
   id: r.id,
   userId: r.userId,
   unitsSold: r.unitsSold,
   commission: angka(r.commission),
   basis: r.basis,
+  baseSalary: angka(r.baseSalary),
+  salaryDetail: r.salaryDetail ?? null,
   paidAt: r.paidAt,
 });
+
+/**
+ * Konteks pengurang setiap SPG yang diminta (bagian beban barang hilang, beban retur pembeli,
+ * pengembalian beban, utang) dan penanda pembayaran terakhirnya — untuk rencana bayar yang
+ * ditampilkan. Satu bacaan dengan penulis (`siapkanBayarKomisi`), jadi yang dilihat = yang dibayar.
+ */
+export async function konteksBayarSpg(
+  db: Klien,
+  units: ReadonlyMap<string, readonly UnitKomisiSpg[]>,
+): Promise<Map<string, Omit<KonteksBayar, "akhir"> & { akhir: (refId: string) => boolean }>> {
+  const hasil = new Map<string, Omit<KonteksBayar, "akhir"> & { akhir: (refId: string) => boolean }>();
+  for (const [userId, daftar] of units) {
+    const belum = daftar.filter((u) => u.baris && !u.baris.dibayar && u.baris.dapatDibayar && !u.ditahan);
+    if (belum.length === 0) continue;
+    const [bebanHilang, bebanRetur, kembaliBeban, utang] = await Promise.all([
+      bagianHilangTerbukaSpg(db, userId),
+      bebanReturTerbukaSpg(db, userId),
+      kembaliBebanTerbukaSpg(db, userId),
+      utangTerbukaSpg(db, userId),
+    ]);
+    const akhir = new Set<string>();
+    const berhenti = await db.user.findUnique({ where: { id: userId }, select: { spgEndedOn: true } });
+    if (berhenti?.spgEndedOn) {
+      for (const u of belum) {
+        if (!u.baris) continue;
+        if ((await pembayaranAkhir(db, { userId, refType: u.baris.refType, refId: u.baris.refId })).akhir) akhir.add(u.baris.refId);
+      }
+    }
+    hasil.set(userId, { bebanHilang, bebanRetur, kembaliBeban, utang, akhir: (refId) => akhir.has(refId) });
+  }
+  return hasil;
+}
 
 // ---------------------------------------------------------------------------
 // HP SPG
@@ -217,15 +262,15 @@ export async function perkiraanKomisiHp(
 }
 
 /**
- * Komisi resmi toko putus milik SPG ini saja. `bulanBayar` = bulan laporannya dicek; baris aturan
- * lama tanpa tanda dicek memakai bulan ditetapkannya.
+ * Baris resmi toko putus milik SPG ini saja. `bulanBayar` = bulan laporannya dicek (toko putus hanya
+ * dibayar sesudah dicek); baris tanpa tanda dicek tidak punya bulan pembayaran.
  */
 export async function komisiPutusResmiSaya(userId: string, batas = 6) {
   const rows = await prisma.spgCommission.findMany({
     where: { userId },
     orderBy: [{ period: "desc" }, { lockedAt: "desc" }],
     take: batas,
-    select: { id: true, storeId: true, period: true, unitsSold: true, commission: true, deduction: true, basis: true, lockedAt: true, paidAt: true },
+    select: { id: true, storeId: true, period: true, unitsSold: true, commission: true, deduction: true, baseSalary: true, salaryDetail: true, lockedAt: true, paidAt: true },
   });
   const [toko, cek] = await Promise.all([
     prisma.store.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.storeId))] } }, select: { id: true, name: true } }),
@@ -247,10 +292,11 @@ export async function komisiPutusResmiSaya(userId: string, batas = 6) {
       toko: nama.get(r.storeId) ?? "—",
       potong: r.unitsSold,
       komisi: angka(r.commission),
-      /** Beban barang hilang yang dipotong saat komisi ini ditetapkan. */
+      gajiPokok: angka(r.baseSalary),
+      salaryDetail: r.salaryDetail,
+      /** Beban barang hilang yang dipotong saat dibayar. */
       potonganHilang: angka(r.deduction),
-      aturanLama: aturanLama(r.basis),
-      bulanBayar: payoutMonth(waktuCek ?? r.lockedAt),
+      bulanBayar: waktuCek ? payoutMonth(waktuCek) : null,
       ditetapkan: r.lockedAt.toISOString(),
       dibayar: r.paidAt ? r.paidAt.toISOString() : null,
     };
@@ -262,13 +308,15 @@ export type KoreksiHp = {
   bulanJual: string;
   toko: string;
   jumlah: number;
+  /** Bagian gaji pokok dari `jumlah` ("koreksi gaji pokok"). */
+  gaji: number;
   /** Sudah diterapkan (pembayaran sudah dibayar); false = ikut dibayar bersama pembayaran ini. */
   diterapkan: boolean;
   /** Bagian minus yang dibawa ke pembayaran berikutnya (≤ 0). */
   dibawa: number;
 };
 
-/** Satu pembayaran resmi di HP SPG: gaji + komisi siklus konsinyasi, atau komisi toko putus. */
+/** Satu pembayaran resmi di HP SPG: gaji pokok + komisi satu bulan kerja (konsinyasi atau toko putus). */
 export type KomisiResmiHp = {
   kunci: string;
   jenis: "KONSI" | "PUTUS";
@@ -277,37 +325,43 @@ export type KomisiResmiHp = {
   /** Bulan pembayarannya (bulan laporannya dicek); null selama kunci siklusnya dibuka lagi. */
   bulanBayar: string | null;
   toko: string;
-  /** Gaji pokok — hanya konsinyasi. */
-  gaji: number | null;
+  /** Gaji pokok: yang dibayar, atau yang AKAN dibayar kalau belum dibayar. */
+  gaji: number;
+  /** Rincian gaji pokoknya (bulan penuh / tengah bulan, hari terjadwal, izin, tidak masuk …). */
+  rincianGaji: RincianGaji | null;
   /** Komisi per SPG: yang dibayar, atau yang AKAN dibayar kalau belum dibayar. */
   komisi: number;
   /** Angka tersimpan yang diganti komisi per SPG saat dibayar; null kalau sama. */
   komisiLama: number | null;
   total: number;
   potonganHilang: number;
+  potonganRetur: number;
+  potonganUtang: number;
+  /** Σ pengurang (koreksi minus, beban, utang) yang diambil dari komisi / dari gaji pokok. */
+  dariKomisi: number;
+  dariGaji: number;
   /** Potong terjual — hanya toko putus (konsinyasi tidak menyimpannya per SPG). */
   potong: number | null;
   ditetapkan: string | null;
   dibayar: string | null;
-  /** Dibayar (atau tertahan) dengan angka aturan lama (tarif barang). */
-  aturanLama: boolean;
   koreksi: KoreksiHp[];
-  /** Yang diterima / akan diterima: total − potongan + koreksi. */
+  /** Yang diterima / akan diterima. */
   diterima: number;
-  /** Pembayarannya menunggu keputusan kantor (angka aturan lama yang tidak bisa dibandingkan). */
-  ditahan: boolean;
-  /**
-   * Belum ada angka yang akan dibayar: siklus yang kuncinya dibuka lagi kantor — angkanya baru ada
-   * saat dikunci lagi. Layar tidak menyebut "Akan diterima" untuknya (begitu juga yang `ditahan`).
-   */
-  belumPasti?: boolean;
+  /** Pembayarannya menunggu (P60): tanpa rupiah di layar, hanya sebab dan harinya. */
+  ditahan: AlasanTahanBayar | null;
+  hariTahan: string[];
 };
 
-type ResmiDasar = Omit<KomisiResmiHp, "komisiLama" | "koreksi" | "diterima" | "ditahan"> & {
+type ResmiDasar = Omit<KomisiResmiHp, "komisiLama" | "koreksi" | "diterima" | "ditahan" | "hariTahan" | "potonganRetur" | "potonganUtang" | "dariKomisi" | "dariGaji"> & {
   refType: RefBarisKomisi;
   refId: string;
   kunciLaporan: string;
   storeId: string;
+};
+
+const rincianTersimpan = (x: unknown): RincianGaji | null => {
+  const d = bacaDetailGaji(x);
+  return d?.jenis === "RINCIAN" ? d.rincian : null;
 };
 
 /** Baris resmi SPG ini apa adanya (angka tersimpan), terbaru dulu menurut bulan pembayaran. */
@@ -324,6 +378,7 @@ async function komisiResmiDasar(userId: string, batas: number): Promise<ResmiDas
         commission: true,
         total: true,
         deduction: true,
+        salaryDetail: true,
         paidAt: true,
         cycle: { select: { storeId: true, periodYear: true, periodMonth: true, lockedAt: true, store: { select: { name: true } } } },
       },
@@ -332,44 +387,48 @@ async function komisiResmiDasar(userId: string, batas: number): Promise<ResmiDas
   ]);
   // Callback bertipe: tanpa itu `refType` melebar ke string di dalam spread (TS2322).
   const semua: ResmiDasar[] = [
-    ...konsi.map((r): ResmiDasar => ({
-      kunci: `konsi:${r.cycleId}`,
-      refType: REF_KOMISI_KONSI,
-      refId: r.id,
-      kunciLaporan: konsiReportKey(r.cycleId),
-      storeId: r.cycle.storeId,
-      jenis: "KONSI" as const,
-      bulanJual: `${r.cycle.periodYear}-${String(r.cycle.periodMonth).padStart(2, "0")}`,
-      bulanBayar: r.cycle.lockedAt ? payoutMonth(r.cycle.lockedAt) : null,
-      toko: r.cycle.store.name,
-      gaji: angka(r.baseSalary),
-      komisi: angka(r.commission),
-      total: angka(r.total),
-      potonganHilang: angka(r.deduction),
-      potong: null,
-      ditetapkan: r.cycle.lockedAt ? r.cycle.lockedAt.toISOString() : null,
-      dibayar: r.paidAt ? r.paidAt.toISOString() : null,
-      aturanLama: false,
-    })),
-    ...putus.map((r): ResmiDasar => ({
-      kunci: `putus:${r.id}`,
-      refType: REF_KOMISI_SPG_PUTUS,
-      refId: r.id,
-      kunciLaporan: putusReportKey(r.storeId, r.periode),
-      storeId: r.storeId,
-      jenis: "PUTUS" as const,
-      bulanJual: r.periode,
-      bulanBayar: r.bulanBayar,
-      toko: r.toko,
-      gaji: null,
-      komisi: r.komisi,
-      total: r.komisi,
-      potonganHilang: r.potonganHilang,
-      potong: r.potong,
-      ditetapkan: r.ditetapkan,
-      dibayar: r.dibayar,
-      aturanLama: r.aturanLama,
-    })),
+    ...konsi.map(
+      (r): ResmiDasar => ({
+        kunci: `konsi:${r.cycleId}`,
+        refType: REF_KOMISI_KONSI,
+        refId: r.id,
+        kunciLaporan: konsiReportKey(r.cycleId),
+        storeId: r.cycle.storeId,
+        jenis: "KONSI" as const,
+        bulanJual: `${r.cycle.periodYear}-${String(r.cycle.periodMonth).padStart(2, "0")}`,
+        bulanBayar: r.cycle.lockedAt ? payoutMonth(r.cycle.lockedAt) : null,
+        toko: r.cycle.store.name,
+        gaji: angka(r.baseSalary),
+        rincianGaji: rincianTersimpan(r.salaryDetail),
+        komisi: angka(r.commission),
+        total: angka(r.total),
+        potonganHilang: angka(r.deduction),
+        potong: null,
+        ditetapkan: r.cycle.lockedAt ? r.cycle.lockedAt.toISOString() : null,
+        dibayar: r.paidAt ? r.paidAt.toISOString() : null,
+      }),
+    ),
+    ...putus.map(
+      (r): ResmiDasar => ({
+        kunci: `putus:${r.id}`,
+        refType: REF_KOMISI_SPG_PUTUS,
+        refId: r.id,
+        kunciLaporan: putusReportKey(r.storeId, r.periode),
+        storeId: r.storeId,
+        jenis: "PUTUS" as const,
+        bulanJual: r.periode,
+        bulanBayar: r.bulanBayar,
+        toko: r.toko,
+        gaji: r.gajiPokok,
+        rincianGaji: rincianTersimpan(r.salaryDetail),
+        komisi: r.komisi,
+        total: r.gajiPokok + r.komisi,
+        potonganHilang: r.potonganHilang,
+        potong: r.potong,
+        ditetapkan: r.ditetapkan,
+        dibayar: r.dibayar,
+      }),
+    ),
   ];
   const urutBayar = (x: string | null) => x ?? "9999-99";
   return semua
@@ -382,31 +441,23 @@ const samaSen = (a: number, b: number) => Math.round(a * 100) === Math.round(b *
 /**
  * Pembayaran resmi SPG ini (konsinyasi dan toko putus, terbaru dulu menurut bulan pembayaran)
  * dengan angka yang SAMA dengan yang dibayar kantor: baris yang sudah dibayar dengan koreksi yang
- * diterapkan padanya; baris yang belum dibayar dengan komisi per SPG sekarang dan koreksi yang
- * akan ikut (`rencanaBayarKomisi`) — termasuk bulan toko putus aturan lama yang belum dicek, yang
- * dibayar dengan komisi per SPG sesudah dicek (`pratinjauSesudahDicek`), tidak pernah dengan angka
- * lamanya — dan koreksi yang menunggu pembayaran berikutnya. Baris yang ditahan (`ditahan`) dan
- * siklus yang kuncinya dibuka lagi (`belumPasti`) tidak membawa angka "akan diterima" yang bisa
- * dipercaya; kedua layar SPG tidak menyebutnya. Hanya milik SPG ini: tidak ada rupiah, nama, atau
- * id rekan.
+ * diterapkan padanya; baris yang belum dibayar dengan gaji pokok dan komisi sekarang, koreksi yang
+ * akan ikut, dan pengurang yang akan dipotong (`rencanaBayarKomisi`). Baris yang ditahan (P60) tidak
+ * membawa rupiah — hanya sebab dan harinya. Hanya milik SPG ini: tidak ada rupiah, nama, atau id
+ * rekan. Satu pembaca untuk kartu Beranda SPG dan `/pwa/spg/gaji`.
  */
 export async function ringkasGajiSaya(
   userId: string,
   batas = 6,
 ): Promise<{ resmi: KomisiResmiHp[]; koreksiMenunggu: Array<{ bulanJual: string; toko: string; jumlah: number }> }> {
   const sekarang = new Date();
-  const [dasar, petaUnit, aturan] = await Promise.all([
-    komisiResmiDasar(userId, batas),
-    unitKomisiSpg(prisma, [userId], sekarang),
-    bacaAturanHilang(prisma),
-  ]);
+  const [dasar, petaUnit] = await Promise.all([komisiResmiDasar(userId, batas), unitKomisiSpg(prisma, [userId], sekarang)]);
   const units = petaUnit.get(userId) ?? [];
+  const konteks = (await konteksBayarSpg(prisma, petaUnit)).get(userId);
+  const rencana = rencanaBayarSemua(units, konteks);
   const unitPer = new Map(units.map((u) => [u.kunci, u]));
-  const rencana = rencanaBayarSemua(units, aturan.maksPotongPersen);
-  const terapan = await koreksiPadaPembayaran(
-    prisma,
-    dasar.filter((r) => r.dibayar !== null).map((r) => ({ refType: r.refType, refId: r.refId })),
-  );
+  const refDibayar = dasar.filter((r) => r.dibayar !== null).map((r) => ({ refType: r.refType, refId: r.refId }));
+  const [terapan, lainDibayar] = await Promise.all([koreksiPadaPembayaran(prisma, refDibayar), potonganLainPadaPembayaran(prisma, refDibayar)]);
   const tokoKoreksi = [...new Set([...terapan.values()].flat().map((k) => k.storeId))];
   const namaToko = new Map(units.map((u) => [u.storeId, u.namaToko]));
   const kurang = tokoKoreksi.filter((id) => !namaToko.has(id));
@@ -421,63 +472,85 @@ export async function ringkasGajiSaya(
       bulanBayar: r.bulanBayar,
       toko: r.toko,
       gaji: r.gaji,
+      rincianGaji: r.rincianGaji,
       komisi: r.komisi,
       total: r.total,
       potonganHilang: r.potonganHilang,
+      potonganRetur: 0,
+      potonganUtang: 0,
+      dariKomisi: 0,
+      dariGaji: 0,
       potong: r.potong,
       ditetapkan: r.ditetapkan,
       dibayar: r.dibayar,
-      aturanLama: r.aturanLama,
     };
     if (r.dibayar !== null) {
-      const k = (terapan.get(refId) ?? []).map((x) => ({ bulanJual: x.bulanJual, toko: namaToko.get(x.storeId) ?? x.storeId, jumlah: x.jumlah, diterapkan: true, dibawa: 0 }));
-      const unit = unitPer.get(kunciLaporan);
+      const k = (terapan.get(refId) ?? []).map((x) => ({
+        bulanJual: x.bulanJual,
+        toko: namaToko.get(x.storeId) ?? x.storeId,
+        jumlah: x.jumlah,
+        gaji: x.gaji,
+        diterapkan: true,
+        dibawa: 0,
+      }));
+      const lain = lainDibayar.get(refId) ?? { retur: 0, utang: 0, kembali: 0 };
+      return {
+        ...tampil,
+        potonganRetur: lain.retur,
+        potonganUtang: lain.utang,
+        komisiLama: null,
+        koreksi: k,
+        diterima: dibayarkanTersimpan({
+          total: r.total,
+          potonganHilang: r.potonganHilang,
+          potonganRetur: lain.retur,
+          potonganUtang: lain.utang,
+          kembali: lain.kembali,
+          koreksi: k.reduce((n, x) => n + x.jumlah, 0),
+        }),
+        ditahan: null,
+        hariTahan: [],
+      };
+    }
+    const p = rencana.get(refId);
+    const unit = unitPer.get(kunciLaporan);
+    if (!p || p.ditahan) {
+      // Belum boleh dibayar (siklus dibuka lagi, toko putus belum dicek) atau ditahan: tanpa rupiah.
       return {
         ...tampil,
         komisiLama: null,
-        aturanLama: r.aturanLama || Boolean(unit?.baris?.dibayar && unit.baris.dasarLama),
-        koreksi: k,
-        diterima: Math.round((jumlahDiterima(r) + k.reduce((n, x) => n + x.jumlah, 0)) * 100) / 100,
-        ditahan: false,
-        belumPasti: false,
+        koreksi: [],
+        diterima: 0,
+        ditahan: p?.ditahan ?? unit?.ditahan ?? null,
+        hariTahan: p?.hariTahan ?? unit?.hariTahan ?? [],
       };
-    }
-    // Belum boleh dibayar tetapi sudah punya bulan pembayaran (bulan toko putus aturan lama yang
-    // belum dicek): pratinjau dengan komisi per SPG sekarang — angka yang dibayar sesudah dicek,
-    // bukan angka aturan lama yang tersimpan.
-    const p = rencana.get(refId) ?? pratinjauSesudahDicek({ units, kunci: kunciLaporan, maksPotongPersen: aturan.maksPotongPersen });
-    if (!p) {
-      // Siklus yang kuncinya dibuka lagi: angkanya belum ada — layar tidak menyebut "Akan diterima".
-      return { ...tampil, komisiLama: null, koreksi: [], diterima: jumlahDiterima(r), ditahan: false, belumPasti: true };
-    }
-    if (p.ditahan) {
-      // Menunggu keputusan pemilik: tidak dibayar dengan angka mana pun sampai diputuskan.
-      return { ...tampil, komisiLama: null, koreksi: [], diterima: jumlahDiterima(r), ditahan: true, belumPasti: false };
     }
     return {
       ...tampil,
+      gaji: p.gajiPokok,
+      rincianGaji: p.gaji,
       komisi: p.komisiBaru,
       komisiLama: p.berubah && !samaSen(p.komisiLama, p.komisiBaru) ? p.komisiLama : null,
-      total: (r.gaji ?? 0) + p.komisiBaru,
+      total: p.gajiPokok + p.komisiBaru,
       potonganHilang: p.potonganHilang,
+      potonganRetur: p.potonganRetur,
+      potonganUtang: p.potonganUtang,
+      dariKomisi: p.dariKomisi,
+      dariGaji: p.dariGaji,
       potong: r.jenis === "PUTUS" ? p.potongBaru : null,
-      // Dibayar dengan komisi per SPG sekarang — bukan lagi angka aturan lama.
-      aturanLama: false,
       koreksi: p.koreksi
         .filter((x) => !samaSen(x.diterapkan, 0) || !samaSen(x.dibawa, 0))
-        .map((x) => ({ bulanJual: x.bulanJual, toko: x.namaToko, jumlah: x.diterapkan, diterapkan: false, dibawa: x.dibawa })),
+        .map((x) => ({ bulanJual: x.bulanJual, toko: x.namaToko, jumlah: x.diterapkan, gaji: x.gajiDiterapkan, diterapkan: false, dibawa: x.dibawa })),
       diterima: p.dibayar,
-      ditahan: false,
-      belumPasti: false,
+      ditahan: null,
+      hariTahan: [],
     };
   });
 
   // Koreksi yang menunggu dan tidak tampil sebagai pratinjau di pembayaran mana pun di daftar.
   const sasaran = barisSasaranKoreksi(units);
   const sasaranTampil = sasaran !== null && dasar.some((r) => r.refId === sasaran.baris.refId);
-  const koreksiMenunggu = sasaranTampil
-    ? []
-    : selisihMenunggu(units).map((k) => ({ bulanJual: k.bulanJual, toko: k.namaToko, jumlah: k.selisih }));
+  const koreksiMenunggu = sasaranTampil ? [] : selisihMenunggu(units).map((k) => ({ bulanJual: k.bulanJual, toko: k.namaToko, jumlah: k.selisih }));
   return { resmi, koreksiMenunggu };
 }
 
@@ -490,30 +563,40 @@ export async function komisiResmiSaya(userId: string, batas = 6): Promise<Komisi
 // Kantor
 // ---------------------------------------------------------------------------
 
+/** Sebab sebuah baris menunggu (P60) dan harinya — tanpa rupiah. */
+export type TahanKantor = { alasan: AlasanTahanBayar; hari: string[] } | null;
+
 export type BarisKomisiKantor = KomisiPerSpg & {
+  /** Peserta gaji toko × bulan itu (B19): mendapat baris saat "Tetapkan" walau komisinya nol. */
+  peserta: boolean;
   status: StatusKomisi;
   resmi: {
     id: string;
     unitsSold: number;
     commission: number;
-    /** Beban barang hilang yang dipotong saat ditetapkan; dibayar = commission − deduction. */
+    baseSalary: number;
+    /** Beban barang hilang yang dipotong saat dibayar. */
     deduction: number;
-    aturanLama: boolean;
     lockedAt: string;
     paidAt: string | null;
     note: string | null;
   } | null;
+  /** Gaji pokok yang tersimpan pada baris ini, atau rinciannya sekarang kalau belum dibayar. */
+  gaji: RincianGaji | null;
+  tahan: TahanKantor;
+  /** Hari check-in di luar radius (P70) — hanya tanda. */
+  luarRadius: string[];
   /** Sisa beban barang hilang SPG ini yang belum terpotong (rupiah) — 0 kalau tidak ada. */
   bebanHilangSisa: number;
-  /** Rencana membayar baris yang belum dibayar: komisi per SPG sekarang, koreksi yang ikut, yang dibayarkan. */
+  /** Rencana membayar baris yang belum dibayar: gaji, komisi, koreksi, pengurang, yang dibayarkan. */
   bayar: RencanaBayarKomisi | null;
   /** Koreksi yang diterapkan pada baris yang sudah dibayar. */
   koreksiDiterapkan: KoreksiDiterapkanKantor[];
-  /** Yang dibayarkan baris yang sudah dibayar: komisi − potongan + koreksi; null kalau belum dibayar. */
+  /** Yang dibayarkan baris yang sudah dibayar; null kalau belum dibayar. */
   dibayarkan: number | null;
 };
 
-export type KoreksiDiterapkanKantor = { bulanJual: string; toko: string; jumlah: number };
+export type KoreksiDiterapkanKantor = { bulanJual: string; toko: string; jumlah: number; gaji: number };
 
 /** Satu toko putus × bulan penjualan yang dibayar di bulan pembayaran yang dibuka. */
 export type LaporanPutusKantor = {
@@ -522,19 +605,22 @@ export type LaporanPutusKantor = {
   kode: string;
   aktif: boolean;
   bulanJual: string;
-  /** Tanda dicek; null untuk komisi aturan lama yang ditetapkan tanpa tanda dicek. */
   dicek: { pada: string; oleh: string | null } | null;
   potongToko: number;
   totalToko: number;
   potongTanpaTarif: number;
   baris: BarisKomisiKantor[];
+  /**
+   * Orang yang akan mendapat baris saat "Tetapkan": peserta gaji ∪ penjual (`rencanaTetapkan`).
+   * Nol = penulisnya menolak `TANPA_PESERTA`; tombolnya memakai angka yang sama.
+   */
+  jumlahIkut: number;
   adaResmi: boolean;
   adaDibayar: boolean;
   semuaDibayar: boolean;
-  /** Hitungan sekarang tidak sama dengan yang sudah ditetapkan. */
+  /** Hitungan sekarang (komisi, peserta, gaji) tidak sama dengan yang sudah ditetapkan. */
   berbeda: boolean;
-  aturanLama: boolean;
-  /** Retur pembeli bulan itu yang masih menunggu persetujuan kantor. */
+  /** Retur pembeli atas nota bulan itu yang masih menunggu persetujuan kantor. */
   returMenunggu: number;
 };
 
@@ -547,40 +633,33 @@ export type LaporanKonsiKantor = {
   kode: string;
   bulanJual: string;
   dikunciPada: string;
-  /** Hitungan sekarang (satu hitungan dengan yang ditulis saat dikunci). */
   totalHitung: number;
-  /** Komisi yang tersimpan di baris gaji siklus (yang dibayar). */
   totalTersimpan: number;
   potongTanpaTarif: number;
   baris: {
     id: string;
     userId: string;
     nama: string;
-    /** Peserta bergaji pokok; false = penjual dari toko lain (komisi saja). */
-    bergaji: boolean;
     gajiPokok: number;
+    gaji: RincianGaji | null;
+    tahan: TahanKantor;
+    luarRadius: string[];
     komisi: number;
-    /** Komisi orang ini menurut hitungan sekarang. */
     komisiHitung: number;
     total: number;
     potonganHilang: number;
     dibayarPada: string | null;
     bayar: RencanaBayarKomisi | null;
     koreksiDiterapkan: KoreksiDiterapkanKantor[];
-    /** Yang dibayarkan baris yang sudah dibayar: total − potongan + koreksi; null kalau belum dibayar. */
     dibayarkan: number | null;
   }[];
-  /**
-   * Hitungan sekarang tidak sama dengan yang tersimpan, per SPG: nota/pengembalian HP yang masuk
-   * sesudah dikunci, atau siklus yang dikunci dengan aturan lama (tarif barang, dibagi rata).
-   */
   berbeda: boolean;
   adaDibayar: boolean;
   semuaDibayar: boolean;
   returMenunggu: number;
 };
 
-/** Toko putus × bulan penjualan yang sudah selesai, berpenjualan SPG, dan belum dicek. */
+/** Toko putus × bulan penjualan yang sudah selesai, berpenjualan SPG atau berpeserta gaji, dan belum dicek. */
 export type MenungguCekKantor = {
   storeId: string;
   nama: string;
@@ -590,12 +669,18 @@ export type MenungguCekKantor = {
   totalToko: number;
   potongTanpaTarif: number;
   jumlahPenerima: number;
-  /** Sudah ada komisi aturan lama yang belum dibayar — sesudah dicek dibayar dengan komisi per SPG. */
-  adaResmiLama: boolean;
+  jumlahPeserta: number;
   returMenunggu: number;
+  /** Potong yang terjual tanpa kategori barang, per barang — komisinya menyusul (P69), tidak menolak. */
+  tanpaKategori: { itemId: string; nama: string; potong: number }[];
 };
 
-/** Toko konsinyasi × bulan penjualan yang sudah selesai, berpenjualan SPG, angkanya belum dikunci. */
+/**
+ * Toko konsinyasi × bulan penjualan yang sudah selesai dan punya peserta gaji (penjual, jadwal,
+ * catatan check-in, atau masa tugas), angkanya belum dikunci — TERMASUK bulan yang siklusnya belum
+ * dibuka sama sekali (`cycleId` null): tanpa siklus tidak ada baris gaji, jadi gaji pokoknya tidak
+ * pernah terbayar kalau bulan itu tidak muncul di sini.
+ */
 export type KonsiMenungguKunciKantor = { storeId: string; nama: string; kode: string; bulanJual: string; cycleId: string | null; noKonsi: string | null };
 
 export type DaftarKomisiKantor = {
@@ -606,16 +691,12 @@ export type DaftarKomisiKantor = {
   konsi: LaporanKonsiKantor[];
   menungguCek: MenungguCekKantor[];
   konsiMenungguKunci: KonsiMenungguKunciKantor[];
-  /** Belum dibayar dari bulan pembayaran sebelumnya (jendela koreksi) dan bisa dibayar — kartu #tunggakan, tepat yang dihitung Beranda. */
+  /** Belum dibayar dari bulan pembayaran sebelumnya dan BISA dibayar — tepat yang dihitung Beranda. */
   tunggakan: TunggakanKantor[];
-  /** Seperti `tunggakan`, tetapi menunggu keputusan pemilik (`ditahan`): tidak bisa dibayar, tidak dihitung di Beranda. */
+  /** Seperti `tunggakan`, tetapi menunggu dasar gajinya (P60): tidak bisa dibayar, dengan sebabnya. */
   tunggakanDitahan: TunggakanKantor[];
-  /** Belum dibayar dari bulan pembayaran lebih tua dari jendela koreksi — tidak dihitung di Beranda. */
-  tunggakanLama: TunggakanKantor[];
   /** Koreksi yang menunggu pembayaran berikutnya, per SPG, dengan baris tempat ia akan ikut. */
   koreksiMenunggu: { userId: string; nama: string; baris: BarisKoreksi[]; sasaran: { bulanJual: string; namaToko: string } | null }[];
-  /** Unit yang menunggu keputusan pemilik (tidak dikoreksi atau diganti otomatis). */
-  koreksiDitahan: { userId: string; nama: string; baris: KoreksiDitahan[] }[];
   ringkas: {
     totalDitetapkan: number;
     /** Yang benar-benar dibayarkan bulan pembayaran ini, termasuk koreksi. */
@@ -624,6 +705,8 @@ export type DaftarKomisiKantor = {
     totalKoreksi: number;
     belumDitetapkan: number;
     menungguCek: number;
+    /** Baris bulan pembayaran ini yang menunggu dasar gajinya (P60). */
+    ditahan: number;
   };
 };
 
@@ -647,78 +730,98 @@ function bulanSelesaiTerakhir(bulanIni: string, n: number): string[] {
 }
 
 /**
- * Toko × bulan penjualan yang sudah selesai dan punya nota SPG, per jenis toko. Satu baca per
- * bulan (`distinct` toko).
+ * Toko × bulan penjualan yang sudah selesai dan punya nota SPG ATAU peserta gaji (jadwal bulan itu,
+ * catatan check-in, atau SPG yang bertugas di sana), per jenis toko.
  */
 async function tokoBerjualan(db: Klien, bulan: readonly string[]): Promise<{ storeId: string; periode: string; termsType: "PUTUS" | "KONSI" }[]> {
   const per = await Promise.all(
     bulan.map(async (periode) => {
       const { start, end } = wibMonthRange(periode);
-      const rows = await db.spgSale.findMany({
-        where: { createdAt: { gte: start, lt: end }, lines: { some: {} } },
-        distinct: ["storeId"],
-        select: { storeId: true, store: { select: { termsType: true } } },
-      });
-      return rows.map((r) => ({ storeId: r.storeId, periode, termsType: r.store.termsType }));
+      const [jual, jadwal, catatan] = await Promise.all([
+        db.spgSale.findMany({ where: { createdAt: { gte: start, lt: end }, lines: { some: {} } }, distinct: ["storeId"], select: { storeId: true } }),
+        db.spgMonthSchedule.findMany({ where: { month: periode }, distinct: ["storeId"], select: { storeId: true } }),
+        db.spgAttendanceRecord.findMany({ where: { month: periode }, distinct: ["storeId"], select: { storeId: true } }),
+      ]);
+      return [...new Set([...jual, ...jadwal, ...catatan].map((r) => r.storeId))].map((storeId) => ({ storeId, periode }));
     }),
   );
-  return per.flat();
+  const pasangan = per.flat();
+  // Toko yang punya SPG bertugas (tanggal mulai diisi) — pesertanya dihitung `muatPesertaGaji`.
+  const bertugas = await db.user.findMany({
+    where: { spgStartedOn: { not: null }, OR: [{ assignedStoreId: { not: null } }, { spgEndedStoreId: { not: null } }] },
+    select: { assignedStoreId: true, spgEndedStoreId: true, spgStartedOn: true, spgEndedOn: true },
+  });
+  for (const u of bertugas) {
+    const storeId = u.assignedStoreId ?? u.spgEndedStoreId;
+    if (!storeId || !u.spgStartedOn) continue;
+    for (const periode of bulan) {
+      if (u.spgStartedOn.slice(0, 7) > periode) continue;
+      if (u.spgEndedOn && u.spgEndedOn.slice(0, 7) < periode) continue;
+      pasangan.push({ storeId, periode });
+    }
+  }
+  const unik = [...new Map(pasangan.map((p) => [kunciPasangan(p.storeId, p.periode), p])).values()];
+  if (unik.length === 0) return [];
+  const toko = await db.store.findMany({ where: { id: { in: [...new Set(unik.map((p) => p.storeId))] } }, select: { id: true, termsType: true } });
+  const syarat = new Map(toko.map((t) => [t.id, t.termsType]));
+  return unik.flatMap((p) => {
+    const t = syarat.get(p.storeId);
+    return t === "PUTUS" || t === "KONSI" ? [{ ...p, termsType: t }] : [];
+  });
 }
 
 /**
- * Toko putus × bulan penjualan yang masih perlu ditindaklanjuti kantor: berpenjualan SPG, belum
- * ada yang dibayar, dan belum dicek — atau sudah dicek tapi belum ditetapkan.
- *
- * Hanya bulan yang hitungannya MENGONFIRMASI potong untuk seorang SPG (`confirmsAnyPiece`): bulan
- * yang seluruh notanya dikembalikan pembeli tidak bisa dicek (`TANPA_PENJUALAN`) maupun ditetapkan
- * (`TANPA_SPG`), jadi tidak pernah masuk antrean — kalau masuk, tombolnya selalu gagal dan baris
- * Beranda tidak pernah habis. Laporannya (`laporan`, bertanggal `sekarang`) ikut dikembalikan
- * supaya halaman tidak membacanya dua kali.
+ * Toko putus × bulan penjualan yang masih perlu ditindaklanjuti kantor: belum ada yang dibayar, dan
+ * belum dicek — atau sudah dicek tapi belum ditetapkan. Hanya bulan yang PERLU dicek
+ * (`laporanPerluDicek`: mengonfirmasi potong ATAU punya peserta gaji) — satu definisi dengan
+ * "Tandai laporan dicek" dan Beranda. Laporannya (bertanggal `sekarang`) dan pesertanya ikut
+ * dikembalikan supaya halaman tidak membacanya dua kali.
  */
-async function pasanganPutusTertunda(
-  db: Klien,
-  bulan: readonly string[],
-  sekarang: Date,
-  sudahDibaca?: Awaited<ReturnType<typeof tokoBerjualan>>,
-) {
+async function pasanganPutusTertunda(db: Klien, bulan: readonly string[], sekarang: Date, sudahDibaca?: Awaited<ReturnType<typeof tokoBerjualan>>) {
   const berjualan = (sudahDibaca ?? (await tokoBerjualan(db, bulan))).filter((p) => p.termsType === "PUTUS");
   if (berjualan.length === 0) return [];
   const [cek, resmi] = await Promise.all([
     db.spgSalesCheck.findMany({ where: { period: { in: [...bulan] } }, select: { storeId: true, period: true } }),
-    db.spgCommission.findMany({ where: { period: { in: [...bulan] } }, select: { storeId: true, period: true, basis: true, paidAt: true } }),
+    db.spgCommission.findMany({ where: { period: { in: [...bulan] } }, select: { storeId: true, period: true, paidAt: true } }),
   ]);
   const dicek = new Set(cek.map((c) => kunciPasangan(c.storeId, c.period)));
   const dibayar = new Set(resmi.filter((r) => r.paidAt !== null).map((r) => kunciPasangan(r.storeId, r.period)));
   const ditetapkan = new Set(resmi.map((r) => kunciPasangan(r.storeId, r.period)));
-  const lama = new Set(resmi.filter((r) => r.paidAt === null && aturanLama(r.basis)).map((r) => kunciPasangan(r.storeId, r.period)));
   const calon = berjualan
     .filter((p) => !dibayar.has(kunciPasangan(p.storeId, p.periode)))
     .map((p) => {
       const k = kunciPasangan(p.storeId, p.periode);
-      return { storeId: p.storeId, periode: p.periode, dicek: dicek.has(k), ditetapkan: ditetapkan.has(k), adaResmiLama: lama.has(k) };
+      return { storeId: p.storeId, periode: p.periode, dicek: dicek.has(k), ditetapkan: ditetapkan.has(k) };
     })
     .filter((p) => !p.dicek || !p.ditetapkan);
-  const laporan = await putusReportsOf(
-    db,
-    calon.map((p) => ({ storeId: p.storeId, salesMonth: p.periode, checkedAt: sekarang })),
-  );
-  return calon.map((p, i) => ({ ...p, laporan: laporan[i] })).filter((p) => confirmsAnyPiece(p.laporan));
+  const [laporan, peserta] = await Promise.all([
+    putusReportsOf(
+      db,
+      calon.map((p) => ({ storeId: p.storeId, salesMonth: p.periode, checkedAt: sekarang })),
+    ),
+    muatPesertaGaji(
+      db,
+      calon.map((p) => ({ storeId: p.storeId, bulan: p.periode })),
+    ),
+  ]);
+  return calon
+    .map((p, i) => ({ ...p, laporan: laporan[i], peserta: peserta.get(kunciTokoBulan(p.storeId, p.periode)) ?? [] }))
+    .filter((p) => laporanPerluDicek(p.laporan, p.peserta));
 }
 
+const tahanDari = (g: HasilGaji | null | undefined): TahanKantor => (g && !g.ok ? { alasan: g.alasan, hari: g.hari } : null);
+const rincianDari = (g: HasilGaji | null | undefined): RincianGaji | null => (g && g.ok ? g.rincian : null);
+
 /**
- * Komisi SPG satu BULAN PEMBAYARAN untuk kantor: setiap toko putus × bulan penjualan yang dicek di
- * bulan itu dan setiap siklus konsinyasi yang angkanya dikunci di bulan itu, plus antrean yang
- * menunggu dicek. Komisi aturan lama (ditetapkan tanpa tanda dicek) tampil di bulan terakhir
- * ditetapkannya.
+ * Gaji & komisi SPG satu BULAN PEMBAYARAN untuk kantor: setiap toko putus × bulan penjualan yang
+ * dicek di bulan itu dan setiap siklus konsinyasi yang angkanya dikunci di bulan itu, plus antrean
+ * yang menunggu dicek / dikunci, tunggakan, dan koreksi yang menunggu.
  */
 export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise<DaftarKomisiKantor> {
   const bulanIni = bulanWib(sekarang);
   const rentang = wibMonthRange(bulan);
   const bulanAntrean = bulanSelesaiTerakhir(bulanIni, BULAN_MENUNGGU_CEK);
 
-  // Toko putus × bulan penjualan yang dibayar bulan ini — dicek di bulan ini, atau komisi aturan
-  // lama yang terakhir ditetapkan di bulan ini tanpa tanda dicek — dengan baris resminya. Satu
-  // pemuat dengan rekap komisi (`getCommissionRecap`), jadi keduanya memuat bulan yang sama.
   const [laporanPutus, konsiDikunci, rates, berjualan] = await Promise.all([
     putusPayoutReports(prisma, { paidIn: rentang }),
     lockedKonsiReports(prisma, { lockedIn: rentang }),
@@ -728,15 +831,17 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
   const tertunda = await pasanganPutusTertunda(prisma, bulanAntrean, sekarang, berjualan);
 
   const resmi = laporanPutus.flatMap((l) => l.stored);
-  const pemegang = new Map(laporanPutus.map((l) => [l.key, l.stored.map((r) => r.userId)]));
+  // Peserta gaji setiap laporan putus (B19): ikut tampil walau tidak menjual dan tidak lagi bertugas,
+  // karena "Tetapkan" menulis baris untuk mereka.
+  const pesertaPutus = await muatPesertaGaji(
+    prisma,
+    laporanPutus.map((l) => ({ storeId: l.storeId, bulan: l.salesMonth })),
+  );
+  const pemegang = new Map(
+    laporanPutus.map((l) => [l.key, [...l.stored.map((r) => r.userId), ...(pesertaPutus.get(kunciTokoBulan(l.storeId, l.salesMonth)) ?? [])]]),
+  );
   const tertundaBelumDicek = tertunda.filter((p) => !p.dicek);
   const laporanTertunda: SalesReport[] = tertundaBelumDicek.map((p) => p.laporan);
-
-  const [hasilPutus, hasilKonsi, hasilTertunda] = await Promise.all([
-    susunLaporan(prisma, laporanPutus, rates, pemegang),
-    susunLaporan(prisma, konsiDikunci, rates),
-    susunLaporan(prisma, laporanTertunda, rates),
-  ]);
 
   const gajiKonsi = konsiDikunci.length
     ? await prisma.consignmentCommission.findMany({
@@ -749,22 +854,38 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
           commission: true,
           total: true,
           deduction: true,
-          salaried: true,
+          salaryDetail: true,
           paidAt: true,
           spgUser: { select: { name: true, email: true } },
         },
       })
     : [];
+  const pemegangKonsi = new Map(konsiDikunci.map((l) => [l.key, gajiKonsi.filter((g) => g.cycleId === l.cycleId).map((g) => g.spgUserId)]));
 
+  const [hasilPutus, hasilKonsi, hasilTertunda] = await Promise.all([
+    susunLaporan(prisma, laporanPutus, rates, pemegang),
+    susunLaporan(prisma, konsiDikunci, rates, pemegangKonsi),
+    susunLaporan(prisma, laporanTertunda, rates),
+  ]);
+
+  // Konsinyasi yang belum dikunci: setiap toko konsi × bulan berpeserta, termasuk yang siklusnya belum dibuka.
   const konsiTertunda = berjualan.filter((p) => p.termsType === "KONSI");
-  const siklusTertunda = konsiTertunda.length
-    ? await prisma.consignmentCycle.findMany({
-        where: { OR: konsiTertunda.map((p) => ({ storeId: p.storeId, periodYear: Number(p.periode.slice(0, 4)), periodMonth: Number(p.periode.slice(5, 7)) })) },
-        select: { id: true, noKonsi: true, storeId: true, periodYear: true, periodMonth: true, lockedAt: true },
-      })
-    : [];
+  const [siklusTertunda, pesertaKonsi] = await Promise.all([
+    konsiTertunda.length
+      ? prisma.consignmentCycle.findMany({
+          where: { OR: konsiTertunda.map((p) => ({ storeId: p.storeId, periodYear: Number(p.periode.slice(0, 4)), periodMonth: Number(p.periode.slice(5, 7)) })) },
+          select: { id: true, noKonsi: true, storeId: true, periodYear: true, periodMonth: true, lockedAt: true },
+        })
+      : Promise.resolve([]),
+    muatPesertaGaji(
+      prisma,
+      konsiTertunda.map((p) => ({ storeId: p.storeId, bulan: p.periode })),
+    ),
+  ]);
   const siklusPer = new Map(siklusTertunda.map((s) => [kunciPasangan(s.storeId, `${s.periodYear}-${String(s.periodMonth).padStart(2, "0")}`), s]));
-  const konsiBelumKunci = konsiTertunda.filter((p) => !siklusPer.get(kunciPasangan(p.storeId, p.periode))?.lockedAt);
+  const konsiBelumKunci = konsiTertunda.filter(
+    (p) => !siklusPer.get(kunciPasangan(p.storeId, p.periode))?.lockedAt && (pesertaKonsi.get(kunciTokoBulan(p.storeId, p.periode)) ?? []).length > 0,
+  );
 
   const idToko = [
     ...new Set([
@@ -774,9 +895,7 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
       ...konsiBelumKunci.map((p) => p.storeId),
     ]),
   ];
-  const tokoSemua = idToko.length
-    ? await prisma.store.findMany({ where: { id: { in: idToko } }, select: { id: true, name: true, code: true, isActive: true } })
-    : [];
+  const tokoSemua = idToko.length ? await prisma.store.findMany({ where: { id: { in: idToko } }, select: { id: true, name: true, code: true, isActive: true } }) : [];
   const toko = new Map(tokoSemua.map((t) => [t.id, t]));
   const namaToko = (id: string) => toko.get(id)?.name ?? id;
 
@@ -786,16 +905,12 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
 
   const bebanHilang = await sisaBebanHilangPerOrang(
     prisma,
-    [...hasilPutus.values()].flatMap((h) => h.perSpg.map((p) => p.userId)),
+    [...hasilPutus.values(), ...hasilKonsi.values()].flatMap((h) => h.perSpg.map((p) => p.userId)),
   );
 
-  // Rencana bayar setiap baris belum dibayar dan koreksi setiap SPG: satu pemuat dengan HP SPG dan
-  // penulis pembayaran (`lib/spg/koreksi.ts`), jadi yang ditampilkan = yang dibayar.
-  const [tunggakanDalam, tunggakanLampau, pemegang, aturanHilang, koreksiBulan] = await Promise.all([
+  const [tunggakanSemua, pemegangKoreksi, koreksiBulan] = await Promise.all([
     daftarTunggakanKomisi(prisma, sekarang),
-    daftarTunggakanKomisiLama(prisma, sekarang),
     pemegangKomisiSpg(prisma, sekarang),
-    bacaAturanHilang(prisma),
     koreksiBulanBayar(prisma, bulan),
   ]);
   const idOrang = [
@@ -803,9 +918,8 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
       ...resmi.map((r) => r.userId),
       ...gajiKonsi.map((g) => g.spgUserId),
       ...[...hasilPutus.values(), ...hasilKonsi.values()].flatMap((h) => h.perSpg.filter((p) => p.penerima).map((p) => p.userId)),
-      ...tunggakanDalam.map((t) => t.spgUserId),
-      ...tunggakanLampau.map((t) => t.spgUserId),
-      ...pemegang,
+      ...tunggakanSemua.map((t) => t.spgUserId),
+      ...pemegangKoreksi,
     ]),
   ];
   const [petaUnit, returMenunggu] = await Promise.all([
@@ -814,24 +928,44 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
       ...laporanPutus.map((l) => ({ storeId: l.storeId, bulanJual: l.salesMonth })),
       ...konsiDikunci.map((l) => ({ storeId: l.storeId, bulanJual: l.salesMonth })),
       ...tertundaBelumDicek.map((p) => ({ storeId: p.storeId, bulanJual: p.periode })),
-      ...tunggakanDalam.map((t) => ({ storeId: t.storeId, bulanJual: t.bulanJual })),
-      ...tunggakanLampau.map((t) => ({ storeId: t.storeId, bulanJual: t.bulanJual })),
+      ...tunggakanSemua.map((t) => ({ storeId: t.storeId, bulanJual: t.bulanJual })),
     ]),
   ]);
+  const konteks = await konteksBayarSpg(prisma, petaUnit);
   const rencana = new Map<string, RencanaBayarKomisi>();
-  for (const units of petaUnit.values()) for (const [id, r] of rencanaBayarSemua(units, aturanHilang.maksPotongPersen)) rencana.set(id, r);
+  for (const [userId, units] of petaUnit) for (const [id, r] of rencanaBayarSemua(units, konteks.get(userId))) rencana.set(id, r);
+  const unitPerRef = new Map<string, UnitKomisiSpg>();
+  for (const units of petaUnit.values()) for (const u of units) if (u.baris) unitPerRef.set(u.baris.refId, u);
+
   // Callback bertipe: tanpa itu `refType` melebar ke string di dalam spread (TS2345).
-  const terapan = await koreksiPadaPembayaran(prisma, [
+  const refDibayar: RefPembayaranKomisi[] = [
     ...resmi.filter((r) => r.paidAt !== null).map((r): RefPembayaranKomisi => ({ refType: REF_KOMISI_SPG_PUTUS, refId: r.id })),
     ...gajiKonsi.filter((g) => g.paidAt !== null).map((g): RefPembayaranKomisi => ({ refType: REF_KOMISI_KONSI, refId: g.id })),
-  ]);
+  ];
+  const [terapan, lainDibayar] = await Promise.all([koreksiPadaPembayaran(prisma, refDibayar), potonganLainPadaPembayaran(prisma, refDibayar)]);
   const namaTokoUnit = new Map<string, string>();
   for (const units of petaUnit.values()) for (const u of units) namaTokoUnit.set(u.storeId, u.namaToko);
   const tampilTerapan = (id: string): KoreksiDiterapkanKantor[] =>
-    (terapan.get(id) ?? []).map((k) => ({ bulanJual: k.bulanJual, toko: namaTokoUnit.get(k.storeId) ?? namaToko(k.storeId), jumlah: k.jumlah }));
+    (terapan.get(id) ?? []).map((k) => ({ bulanJual: k.bulanJual, toko: namaTokoUnit.get(k.storeId) ?? namaToko(k.storeId), jumlah: k.jumlah, gaji: k.gaji }));
   const jumlahTerapan = (id: string) => (terapan.get(id) ?? []).reduce((n, k) => n + k.jumlah, 0);
   const sen2 = (n: number) => Math.round(n * 100) / 100;
+  /** Yang benar-benar dibayarkan baris yang sudah dibayar — urutan rencana bayarnya (`dibayarkanTersimpan`). */
+  const dibayarkanBaris = (id: string, total: number, potonganHilang: number) => {
+    const lain = lainDibayar.get(id) ?? { retur: 0, utang: 0, kembali: 0 };
+    return dibayarkanTersimpan({ total, potonganHilang, potonganRetur: lain.retur, potonganUtang: lain.utang, kembali: lain.kembali, koreksi: jumlahTerapan(id) });
+  };
   const kunciRetur = (storeId: string, bulanJual: string) => `${storeId}\u0000${bulanJual}`;
+  const gajiBaris = (refId: string, tersimpan: unknown, dibayar: boolean): { gaji: RincianGaji | null; tahan: TahanKantor; luarRadius: string[] } => {
+    const u = unitPerRef.get(refId);
+    const g = dibayar ? null : (u?.gaji ?? null);
+    const rincian = dibayar ? (bacaDetailGaji(tersimpan)?.jenis === "RINCIAN" ? (bacaDetailGaji(tersimpan) as { rincian: RincianGaji }).rincian : null) : rincianDari(g);
+    return { gaji: rincian, tahan: dibayar ? null : tahanDari(g), luarRadius: rincian?.tanggalLuarRadius ?? [] };
+  };
+
+  // Gaji sekarang setiap peserta laporan, untuk "berbeda" dan pratinjau baris yang belum ditetapkan.
+  const gajiSekarang = await muatGajiPokok(prisma, [
+    ...laporanPutus.flatMap((l) => (pesertaPutus.get(kunciTokoBulan(l.storeId, l.salesMonth)) ?? []).map((userId) => ({ userId, storeId: l.storeId, bulan: l.salesMonth }))),
+  ]);
 
   const putus: LaporanPutusKantor[] = laporanPutus.map((l) => {
     const hasil = hasilPutus.get(l.key)!;
@@ -839,6 +973,10 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
     const perUser = new Map(rows.map((r) => [r.userId, r]));
     const cek = l.check;
     const t = toko.get(l.storeId);
+    const peserta = pesertaPutus.get(kunciTokoBulan(l.storeId, l.salesMonth)) ?? [];
+    const idPeserta = new Set(peserta);
+    const gajiPer = new Map<string, HasilGaji | null>(peserta.map((u) => [u, gajiSekarang.get(kunciGaji(u, l.salesMonth)) ?? null]));
+    const ikut = new Set([...peserta, ...hasil.perSpg.filter((p) => p.penerima).map((p) => p.userId)]);
     return {
       storeId: l.storeId,
       nama: t?.name ?? l.storeId,
@@ -851,32 +989,39 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
       potongTanpaTarif: hasil.potongTanpaTarif,
       baris: hasil.perSpg.map((p) => {
         const r = perUser.get(p.userId);
+        // Belum ditetapkan: pratinjau gaji pokok peserta menurut dasar sekarang (sama dengan yang ditulis "Tetapkan").
+        const sekarangG = idPeserta.has(p.userId) ? (gajiPer.get(p.userId) ?? null) : null;
+        const g = r
+          ? gajiBaris(r.id, null, r.paidAt !== null)
+          : { gaji: rincianDari(sekarangG), tahan: tahanDari(sekarangG), luarRadius: rincianDari(sekarangG)?.tanggalLuarRadius ?? [] };
         return {
           ...p,
+          peserta: idPeserta.has(p.userId),
           status: statusResmi(r ?? null),
           resmi: r
             ? {
                 id: r.id,
                 unitsSold: r.unitsSold,
                 commission: angka(r.commission),
+                baseSalary: angka(r.baseSalary),
                 deduction: angka(r.deduction),
-                aturanLama: aturanLama(r.basis),
                 lockedAt: r.lockedAt.toISOString(),
                 paidAt: r.paidAt ? r.paidAt.toISOString() : null,
                 note: r.note,
               }
             : null,
+          ...g,
           bebanHilangSisa: bebanHilang.get(p.userId) ?? 0,
           bayar: r && r.paidAt === null ? (rencana.get(r.id) ?? null) : null,
           koreksiDiterapkan: r && r.paidAt !== null ? tampilTerapan(r.id) : [],
-          dibayarkan: r && r.paidAt !== null ? sen2(Math.max(0, angka(r.commission) - angka(r.deduction)) + jumlahTerapan(r.id)) : null,
+          dibayarkan: r && r.paidAt !== null ? dibayarkanBaris(r.id, angka(r.commission) + angka(r.baseSalary), angka(r.deduction)) : null,
         };
       }),
+      jumlahIkut: ikut.size,
       adaResmi: rows.length > 0,
       adaDibayar: rows.some((r) => r.paidAt !== null),
       semuaDibayar: rows.length > 0 && rows.every((r) => r.paidAt !== null),
-      berbeda: sudahBerbeda(hasil, rows.map(keBarisResmi)),
-      aturanLama: rows.some((r) => aturanLama(r.basis)),
+      berbeda: sudahBerbeda(hasil, rows.map(keBarisResmi), peserta, gajiPer),
       returMenunggu: returMenunggu.get(kunciRetur(l.storeId, l.salesMonth)) ?? 0,
     };
   });
@@ -888,7 +1033,6 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
     const t = toko.get(l.storeId);
     const hitungPer = new Map(hasil.perSpg.map((p) => [p.userId, p.komisi]));
     const tersimpanPer = new Map(rows.map((g) => [g.spgUserId, angka(g.commission)]));
-    // Termasuk penjual yang kini berkomisi tetapi belum punya baris gaji (notanya masuk sesudah dikunci).
     const semuaOrang = new Set([...tersimpanPer.keys(), ...hasil.perSpg.filter((p) => p.komisi > 0).map((p) => p.userId)]);
     const berbeda = [...semuaOrang].some((id) => Math.round((hitungPer.get(id) ?? 0) * 100) !== Math.round((tersimpanPer.get(id) ?? 0) * 100));
     return {
@@ -907,8 +1051,8 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
           id: g.id,
           userId: g.spgUserId,
           nama: g.spgUser ? namaOrang(g.spgUser) : g.spgUserId,
-          bergaji: g.salaried,
           gajiPokok: angka(g.baseSalary),
+          ...gajiBaris(g.id, g.salaryDetail, g.paidAt !== null),
           komisi: angka(g.commission),
           komisiHitung: hitungPer.get(g.spgUserId) ?? 0,
           total: angka(g.total),
@@ -916,7 +1060,7 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
           dibayarPada: g.paidAt ? g.paidAt.toISOString() : null,
           bayar: g.paidAt === null ? (rencana.get(g.id) ?? null) : null,
           koreksiDiterapkan: g.paidAt !== null ? tampilTerapan(g.id) : [],
-          dibayarkan: g.paidAt !== null ? sen2(Math.max(0, angka(g.total) - angka(g.deduction)) + jumlahTerapan(g.id)) : null,
+          dibayarkan: g.paidAt !== null ? dibayarkanBaris(g.id, angka(g.total), angka(g.deduction)) : null,
         }))
         .sort((a, b) => a.nama.localeCompare(b.nama)),
       berbeda,
@@ -927,6 +1071,14 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
   });
   konsi.sort((a, b) => a.bulanJual.localeCompare(b.bulanJual) || a.nama.localeCompare(b.nama));
 
+  const tanpaKategoriPer = new Map(laporanTertunda.map((l) => [l.key, potongTanpaKategori(l)]));
+  const idTanpaKategori = [...new Set([...tanpaKategoriPer.values()].flat().map((x) => x.itemId))];
+  const namaBarang = new Map(
+    (idTanpaKategori.length ? await prisma.item.findMany({ where: { id: { in: idTanpaKategori } }, select: { id: true, nameId: true, sku: true } }) : []).map((i) => [
+      i.id,
+      i.nameId?.trim() || i.sku,
+    ]),
+  );
   const menungguCek: MenungguCekKantor[] = laporanTertunda
     .map((l) => {
       const hasil = hasilTertunda.get(l.key)!;
@@ -941,8 +1093,9 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
         totalToko: hasil.totalToko,
         potongTanpaTarif: hasil.potongTanpaTarif,
         jumlahPenerima: hasil.perSpg.filter((x) => x.penerima).length,
-        adaResmiLama: p.adaResmiLama,
+        jumlahPeserta: p.peserta.length,
         returMenunggu: returMenunggu.get(kunciRetur(l.storeId, l.salesMonth)) ?? 0,
+        tanpaKategori: (tanpaKategoriPer.get(l.key) ?? []).map((x) => ({ itemId: x.itemId, nama: namaBarang.get(x.itemId) ?? x.itemId, potong: x.potong })),
       };
     })
     .sort((a, b) => a.bulanJual.localeCompare(b.bulanJual) || a.nama.localeCompare(b.nama));
@@ -954,44 +1107,34 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
     })
     .sort((a, b) => a.bulanJual.localeCompare(b.bulanJual) || a.nama.localeCompare(b.nama));
 
-  // Koreksi yang menunggu dan unit yang ditahan, per SPG (nama dibaca sekali).
-  const perluNama = [...petaUnit].filter(([, units]) => selisihMenunggu(units).length > 0 || koreksiDitahan(units).length > 0).map(([id]) => id);
+  // Koreksi yang menunggu, per SPG (nama dibaca sekali).
+  const perluNama = [...petaUnit].filter(([, units]) => selisihMenunggu(units).length > 0).map(([id]) => id);
   const orangKoreksi = perluNama.length ? await prisma.user.findMany({ where: { id: { in: perluNama } }, select: { id: true, name: true, email: true } }) : [];
   const namaPer = new Map(orangKoreksi.map((u) => [u.id, namaOrang(u)]));
   const koreksiMenunggu: DaftarKomisiKantor["koreksiMenunggu"] = [];
-  const ditahan: DaftarKomisiKantor["koreksiDitahan"] = [];
   for (const [userId, units] of petaUnit) {
     const tunggu = selisihMenunggu(units);
-    if (tunggu.length > 0) {
-      const sasaran = barisSasaranKoreksi(units);
-      koreksiMenunggu.push({
-        userId,
-        nama: namaPer.get(userId) ?? userId,
-        baris: tunggu,
-        sasaran: sasaran ? { bulanJual: sasaran.unit.bulanJual, namaToko: sasaran.unit.namaToko } : null,
-      });
-    }
-    const tahan = koreksiDitahan(units);
-    if (tahan.length > 0) ditahan.push({ userId, nama: namaPer.get(userId) ?? userId, baris: tahan });
+    if (tunggu.length === 0) continue;
+    const sasaran = barisSasaranKoreksi(units);
+    koreksiMenunggu.push({
+      userId,
+      nama: namaPer.get(userId) ?? userId,
+      baris: tunggu,
+      sasaran: sasaran ? { bulanJual: sasaran.unit.bulanJual, namaToko: sasaran.unit.namaToko } : null,
+    });
   }
   koreksiMenunggu.sort((a, b) => a.nama.localeCompare(b.nama));
-  ditahan.sort((a, b) => a.nama.localeCompare(b.nama));
 
-  const unitPer = new Map<string, UnitKomisiSpg>();
-  for (const units of petaUnit.values()) for (const u of units) if (u.baris) unitPer.set(u.baris.refId, u);
   const keTunggakan = (t: TunggakanKomisi): TunggakanKantor => ({
     ...t,
     bayar: rencana.get(t.refId) ?? null,
-    gajiPokok: unitPer.get(t.refId)?.baris?.gajiPokok ?? 0,
-    komisiTersimpan: unitPer.get(t.refId)?.baris?.komisiTersimpan ?? 0,
+    gajiPokok: unitPerRef.get(t.refId)?.baris?.gajiPokok ?? 0,
+    komisiTersimpan: unitPerRef.get(t.refId)?.baris?.komisiTersimpan ?? 0,
     returMenunggu: returMenunggu.get(kunciRetur(t.storeId, t.bulanJual)) ?? 0,
   });
 
-  const putusResmi = resmi;
-  const dibayarkanBulan = [
-    ...putus.flatMap((l) => l.baris.map((b) => b.dibayarkan ?? 0)),
-    ...konsi.flatMap((k) => k.baris.map((b) => b.dibayarkan ?? 0)),
-  ];
+  const dibayarkanBulan = [...putus.flatMap((l) => l.baris.map((b) => b.dibayarkan ?? 0)), ...konsi.flatMap((k) => k.baris.map((b) => b.dibayarkan ?? 0))];
+  const jumlahDitahan = [...putus.flatMap((l) => l.baris), ...konsi.flatMap((k) => k.baris)].filter((b) => b.tahan !== null).length;
   return {
     bulan,
     bulanIni,
@@ -999,19 +1142,17 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
     konsi,
     menungguCek,
     konsiMenungguKunci,
-    tunggakan: tunggakanDalam.filter((t) => t.ditahan === null).map(keTunggakan),
-    tunggakanDitahan: tunggakanDalam.filter((t) => t.ditahan !== null).map(keTunggakan),
-    tunggakanLama: tunggakanLampau.map(keTunggakan),
+    tunggakan: tunggakanSemua.filter((t) => t.ditahan === null).map(keTunggakan),
+    tunggakanDitahan: tunggakanSemua.filter((t) => t.ditahan !== null).map(keTunggakan),
     koreksiMenunggu,
-    koreksiDitahan: ditahan,
     ringkas: {
-      totalDitetapkan:
-        putusResmi.reduce((n, r) => n + angka(r.commission), 0) + gajiKonsi.reduce((n, g) => n + angka(g.commission), 0),
-      // Uang yang benar-benar keluar: dikurangi potongan beban barang hilang, ditambah koreksi.
+      totalDitetapkan: resmi.reduce((n, r) => n + angka(r.commission) + angka(r.baseSalary), 0) + gajiKonsi.reduce((n, g) => n + angka(g.total), 0),
+      // Uang yang benar-benar keluar: dikurangi pengurang, ditambah koreksi.
       totalDibayar: sen2(dibayarkanBulan.reduce((n, x) => n + x, 0)),
       totalKoreksi: sen2(koreksiBulan.reduce((n, k) => n + k.jumlah, 0)),
-      belumDitetapkan: putus.filter((p) => p.dicek !== null && !p.adaResmi && p.baris.some((b) => b.penerima)).length,
+      belumDitetapkan: putus.filter((p) => p.dicek !== null && !p.adaResmi).length,
       menungguCek: menungguCek.length + konsiMenungguKunci.length,
+      ditahan: jumlahDitahan,
     },
   };
 }
@@ -1021,15 +1162,15 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
 // ---------------------------------------------------------------------------
 
 /**
- * Toko PUTUS yang komisi SPG bulan penjualan `periode`-nya masih perlu ditindaklanjuti: ada nota
- * SPG bulan itu yang mengonfirmasi potong, belum ada yang dibayar, dan laporannya belum dicek atau
- * sudah dicek tapi belum ditetapkan. Definisi yang sama dengan antrean di halaman Komisi SPG.
+ * Toko PUTUS yang gaji & komisi SPG bulan penjualan `periode`-nya masih perlu ditindaklanjuti: laporan
+ * yang PERLU dicek (mengonfirmasi potong ATAU berpeserta gaji), belum ada yang dibayar, dan belum
+ * dicek atau sudah dicek tapi belum ditetapkan. Definisi yang sama dengan antrean di Komisi SPG.
  */
 export async function tokoKomisiPutusBelumDitetapkan(periode: string, db: Klien = prisma, sekarang = new Date()): Promise<string[]> {
   return [...new Set((await pasanganPutusTertunda(db, [periode], sekarang)).map((p) => p.storeId))];
 }
 
-/** Angka baris Beranda "komisi SPG toko putus bulan lalu belum ditetapkan". */
+/** Angka baris Beranda "gaji & komisi SPG toko putus bulan lalu belum ditetapkan". */
 export async function jumlahKomisiPutusBelumDitetapkan(sekarang = new Date()): Promise<number> {
   return (await tokoKomisiPutusBelumDitetapkan(bulanSebelum(bulanWib(sekarang)))).length;
 }

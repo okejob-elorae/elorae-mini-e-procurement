@@ -14,12 +14,15 @@ export default async function ShipmentDetailPage({ params }: PageProps) {
   const session = await auth();
   const permissions = session?.user?.permissions ?? [];
   /**
-   * Same either-permission entry as the register: the actor who closes a delivery holds
-   * `deliveries:pod` without `deliveries:ship`, and this page is read-only, so it admits both.
+   * Same any-of entry as the register (and `canReadShipments` in the actions): the actor who closes
+   * a delivery holds `deliveries:pod` without `deliveries:ship`, and Admin Penjualan holds only
+   * `deliveries:cancel_nota` (P41a) while every register row links here. This page is read-only,
+   * so it admits all three.
    */
   const canView =
     hasPermission(permissions, PERMISSIONS.DELIVERIES_SHIP) ||
-    hasPermission(permissions, PERMISSIONS.DELIVERIES_POD);
+    hasPermission(permissions, PERMISSIONS.DELIVERIES_POD) ||
+    hasPermission(permissions, PERMISSIONS.DELIVERIES_CANCEL_NOTA);
   if (!session?.user?.id || !canView) {
     redirect("/backoffice");
   }

@@ -7,6 +7,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { rentangBulanWib } from "@/lib/salesman/komisi";
 import { laporanKomisiBulan } from "@/lib/salesman/komisi-queries";
 import { potonganHilangSalesBulan } from "@/lib/spg/hilang-queries";
+import { potonganReturSalesBulan } from "./potongan-retur-queries";
 
 /**
  * Ekspor laporan komisi salesman ke Excel.
@@ -35,6 +36,10 @@ export type LabelEksporKomisi = {
     /** Beban barang hilang bagian SALES: sisa belum lunas dan yang ditandai dipotong bulan ini. */
     bebanHilang: string;
     dipotongHilang: string;
+    /** Selisih retur bagian SALES: sisa belum dipotong, dipotong bulan ini, dan kelebihan potongan. */
+    bebanRetur: string;
+    dipotongRetur: string;
+    kelebihanRetur: string;
   };
   total: string;
   catatan: string;
@@ -60,11 +65,19 @@ export async function eksporLaporanKomisi(bulan: string, label: LabelEksporKomis
 
   const { skema, baris } = await laporanKomisiBulan(bulan);
   const tertagih = skema.dasar === "TERTAGIH";
-  const potongan = await potonganHilangSalesBulan(
-    baris.map((b) => ({ salesmanId: b.salesmanId, komisi: b.hasil.komisi })),
-    bulan,
-  );
+  const [potongan, potonganRetur] = await Promise.all([
+    potonganHilangSalesBulan(
+      baris.map((b) => ({ salesmanId: b.salesmanId, komisi: b.hasil.komisi })),
+      bulan,
+    ),
+    potonganReturSalesBulan(
+      baris.map((b) => b.salesmanId),
+      bulan,
+    ),
+  ]);
   const hilang = (id: string) => potongan.per[id] ?? { sisa: 0, dipotongBulanIni: 0, saran: 0 };
+  const retur = (id: string) =>
+    potonganRetur[id] ?? { sisa: 0, dipotongBulanIni: 0, kelebihan: 0, dikembalikanBulanIni: 0 };
   const k = label.kolom;
 
   // Persen disimpan sebagai angka (1,5 → 1.5) supaya bisa dihitung di Excel.
@@ -79,6 +92,9 @@ export async function eksporLaporanKomisi(bulan: string, label: LabelEksporKomis
     k.komisi,
     k.bebanHilang,
     k.dipotongHilang,
+    k.bebanRetur,
+    k.dipotongRetur,
+    k.kelebihanRetur,
   ];
   const isi = baris.map((b) => [
     b.nama,
@@ -91,6 +107,9 @@ export async function eksporLaporanKomisi(bulan: string, label: LabelEksporKomis
     b.hasil.komisi,
     hilang(b.salesmanId).sisa,
     hilang(b.salesmanId).dipotongBulanIni,
+    retur(b.salesmanId).sisa,
+    retur(b.salesmanId).dipotongBulanIni,
+    retur(b.salesmanId).kelebihan,
   ]);
   const jumlah = (f: (b: (typeof baris)[number]) => number) => baris.reduce((n, b) => n + f(b), 0);
   const total = [
@@ -104,6 +123,9 @@ export async function eksporLaporanKomisi(bulan: string, label: LabelEksporKomis
     jumlah((b) => b.hasil.komisi),
     jumlah((b) => hilang(b.salesmanId).sisa),
     jumlah((b) => hilang(b.salesmanId).dipotongBulanIni),
+    jumlah((b) => retur(b.salesmanId).sisa),
+    jumlah((b) => retur(b.salesmanId).dipotongBulanIni),
+    jumlah((b) => retur(b.salesmanId).kelebihan),
   ];
 
   const disiapkan = session.user.name ?? session.user.email ?? "-";

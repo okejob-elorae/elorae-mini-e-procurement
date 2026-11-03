@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder, CadanganTidakCocokError } from "./writer";
+import { closeFieldSalesOrderRemainder, CadanganTidakCocokError } from "./writer";
+import { catatNotaUji as recordFieldSalesDelivery } from "./uji-nota";
 import { approveFieldSalesOrder } from "../writer";
 import { DeliveryError } from "../errors";
 import { deliveredGoodsValue } from "./undelivered-residual";
@@ -342,7 +343,14 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     expect(Number(inv.qtyOnHand)).toBe(8);
   });
 
+  /*
+   * The key is `shipment-<shipmentId>` inside shipment creation; the SHIPMENT's own key is what
+   * makes a double submit create one shipment. Here the nota is the backstop: the same key returns
+   * the recorded nota untouched — whatever the replay carries, it never writes a second one — and a
+   * key another order recorded is refused INVALID_STATE.
+   */
   describe("a replayed idempotencyKey", () => {
+    const key = () => `dlv-replay-${token}`;
     const recordFirst = (): Promise<{ deliveryId: string; docNo: string }> =>
       recordFieldSalesDelivery({
         orderId,
@@ -350,103 +358,66 @@ d("recordFieldSalesDelivery (test bed only)", () => {
         lines: [{ orderLineId: lineAId, qty: 2 }],
         invoiceDate: defaultInvoiceDate,
         dueDate: defaultDueDate,
-        idempotencyKey: `dlv-replay-${token}`,
+        idempotencyKey: key(),
       });
 
-    const replay = (over: {
-      invoiceDate?: Date;
-      dueDate?: Date;
-      lines?: Array<{ orderLineId: string; qty: number }>;
-      replayCompare?: "datesAndLines" | "linesOnly";
-    }) =>
-      recordFieldSalesDelivery({
+    it("returns the recorded nota when nothing differs", async () => {
+      const first = await recordFirst();
+      await expect(recordFirst()).resolves.toEqual(first);
+    });
+
+    it("returns the recorded nota untouched even when the replay carries other dates or quantities", async () => {
+      const first = await recordFirst();
+      const again = await recordFieldSalesDelivery({
         orderId,
         deliveredById: userId,
-        lines: over.lines ?? [{ orderLineId: lineAId, qty: 2 }],
-        invoiceDate: over.invoiceDate ?? defaultInvoiceDate,
-        dueDate: over.dueDate ?? defaultDueDate,
-        idempotencyKey: `dlv-replay-${token}`,
-        replayCompare: over.replayCompare,
-      });
-
-    it("returns the recorded delivery when nothing differs", async () => {
-      const first = await recordFirst();
-      await expect(replay({})).resolves.toEqual(first);
-    });
-
-    it("refuses a different invoice date and reports the recorded dates and lines", async () => {
-      const first = await recordFirst();
-      const err = await replay({
+        lines: [{ orderLineId: lineAId, qty: 3 }, { orderLineId: lineBId, qty: 1 }],
         invoiceDate: new Date("2026-01-02T00:00:00.000+07:00"),
-      }).catch((e) => e);
-      expect(err).toBeInstanceOf(DeliveryError);
-      expect(err.code).toBe("REPLAY_MISMATCH");
-      expect(err.replay.deliveryId).toBe(first.deliveryId);
-      expect(err.replay.docNo).toBe(first.docNo);
-      expect(err.replay.invoiceDate.getTime()).toBe(defaultInvoiceDate.getTime());
-      expect(err.replay.dueDate.getTime()).toBe(defaultDueDate.getTime());
-      expect(err.replay.lines).toEqual([{ orderLineId: lineAId, qty: 2 }]);
-    });
-
-    it("refuses a different due date", async () => {
-      await recordFirst();
-      const err = await replay({ dueDate: new Date("2026-01-09T00:00:00.000+07:00") }).catch((e) => e);
-      expect(err).toBeInstanceOf(DeliveryError);
-      expect(err.code).toBe("REPLAY_MISMATCH");
-      expect(err.replay.dueDate.getTime()).toBe(defaultDueDate.getTime());
-    });
-
-    it("refuses a different quantity, and a line the recorded delivery lacks", async () => {
-      await recordFirst();
-      const changed = await replay({ lines: [{ orderLineId: lineAId, qty: 3 }] }).catch((e) => e);
-      expect(changed.code).toBe("REPLAY_MISMATCH");
-      expect(changed.replay.lines).toEqual([{ orderLineId: lineAId, qty: 2 }]);
-      const extra = await replay({
-        lines: [{ orderLineId: lineAId, qty: 2 }, { orderLineId: lineBId, qty: 1 }],
-      }).catch((e) => e);
-      expect(extra.code).toBe("REPLAY_MISMATCH");
-    });
-
-    it("treats a repeated orderLineId summing to the recorded quantity as identical", async () => {
-      const first = await recordFirst();
-      await expect(
-        replay({ lines: [{ orderLineId: lineAId, qty: 1 }, { orderLineId: lineAId, qty: 1 }] }),
-      ).resolves.toEqual(first);
-    });
-
-    it("writes nothing when it refuses", async () => {
-      await recordFirst();
-      const err = await replay({ lines: [{ orderLineId: lineAId, qty: 3 }] }).catch((e) => e);
-      expect(err).toBeInstanceOf(DeliveryError);
-      expect(err.code).toBe("REPLAY_MISMATCH");
-      const all = await prisma.fieldSalesDelivery.findMany({ where: { orderId: seededId(orderId) } });
+        dueDate: new Date("2026-01-09T00:00:00.000+07:00"),
+        idempotencyKey: key(),
+      });
+      expect(again).toEqual(first);
+      const all = await prisma.fieldSalesDelivery.findMany({ where: { orderId: seededId(orderId) }, include: { lines: true } });
       expect(all).toHaveLength(1);
-      const receivables = await prisma.receivable.count({ where: { delivery: { orderId: seededId(orderId) } } });
-      expect(receivables).toBe(1);
-      const taxInvoices = await prisma.taxInvoice.count({ where: { delivery: { orderId: seededId(orderId) } } });
-      expect(taxInvoices).toBe(1);
+      expect(all[0].invoiceDate.getTime()).toBe(defaultInvoiceDate.getTime());
+      expect(all[0].lines.map((l) => ({ orderLineId: l.orderLineId, qty: l.qty }))).toEqual([{ orderLineId: lineAId, qty: 2 }]);
+      expect(await prisma.receivable.count({ where: { delivery: { orderId: seededId(orderId) } } })).toBe(1);
+      expect(await prisma.taxInvoice.count({ where: { delivery: { orderId: seededId(orderId) } } })).toBe(1);
       const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
       expect(Number(inv.qtyOnHand)).toBe(8);
     });
 
-    it("ignores the dates under replayCompare linesOnly and returns the recorded delivery", async () => {
-      const first = await recordFirst();
-      await expect(
-        replay({
-          invoiceDate: new Date("2026-01-02T00:00:00.000+07:00"),
-          dueDate: new Date("2026-01-09T00:00:00.000+07:00"),
-          replayCompare: "linesOnly",
-        }),
-      ).resolves.toEqual(first);
-      const recorded = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: first.deliveryId } });
-      expect(recorded.invoiceDate.getTime()).toBe(defaultInvoiceDate.getTime());
-    });
-
-    it("still refuses a different quantity under replayCompare linesOnly", async () => {
+    it("refuses a key another order already recorded, writing nothing", async () => {
       await recordFirst();
-      const err = await replay({ lines: [{ orderLineId: lineAId, qty: 3 }], replayCompare: "linesOnly" }).catch((e) => e);
-      expect(err).toBeInstanceOf(DeliveryError);
-      expect(err.code).toBe("REPLAY_MISMATCH");
+      const other = await prisma.fieldSalesOrder.create({
+        data: {
+          orderNo: `PUTUS/TEST-FSD-OTHER-${token}`,
+          storeId,
+          salesmanId: userId,
+          status: "APPROVED",
+          orderType: "PUTUS",
+          subtotal: 1000,
+          total: 1000,
+          lines: { create: [{ itemId, variantSku: "", productName: "Other", qty: 1, unitPrice: 1000, lineTotal: 1000 }] },
+        },
+        include: { lines: true },
+      });
+      try {
+        const err = await recordFieldSalesDelivery({
+          orderId: other.id,
+          deliveredById: userId,
+          lines: [{ orderLineId: other.lines[0].id, qty: 1 }],
+          invoiceDate: defaultInvoiceDate,
+          dueDate: defaultDueDate,
+          idempotencyKey: key(),
+        }).catch((e) => e);
+        expect(err).toBeInstanceOf(DeliveryError);
+        expect(err.code).toBe("INVALID_STATE");
+        expect(await prisma.fieldSalesDelivery.count({ where: { orderId: seededId(other.id) } })).toBe(0);
+      } finally {
+        await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(other.id) } });
+        await prisma.fieldSalesOrder.delete({ where: { id: seededId(other.id) } });
+      }
     });
   });
 

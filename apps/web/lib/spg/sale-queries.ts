@@ -1,4 +1,6 @@
 import { prisma } from "@elorae/db";
+import { formatDisplayDate } from "@/lib/date-only";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { parseItemVariants, variantDetailForSku } from "@/lib/items/variants";
 import { SPG_STORE_PRICING_SELECT, spgStorePricingFrom, spgUnitPrice, type SpgStorePricing } from "./pricing";
 
@@ -26,7 +28,14 @@ export async function getSpgStorePricing(storeId: string): Promise<SpgStorePrici
 }
 
 /**
- * SPG catalog — active finished goods. Every variant defined on the item is offered.
+ * SPG catalog — finished goods sold at stores: active and on sale offline ("Toko offline" or
+ * "Keduanya", owner P3a — a "Marketplace saja" item never appears in a salesman/SPG catalog).
+ * Every variant defined on the item is offered.
+ *
+ * Kept on the list whatever its channel or active flag: an item already in this store's stock book
+ * (P73 "setuju" — goods still on the shelf are sold out; the SPG records every sale, Q7), and any
+ * id the caller passes in `opsi.tetapTampilkan` (the stock screens keep the rows of items already
+ * in the book, so their barcode and variant label still resolve).
  *
  * With `storeId`, each row is priced through spgUnitPrice over the same store columns
  * recordSpgSale reads, so each row's price is exactly what the writer charges: a KONSI store at
@@ -45,13 +54,11 @@ export async function getSpgStorePricing(storeId: string): Promise<SpgStorePrici
  * normalised with `?? ""` before each map lookup — matching null against "" finds nothing and
  * would silently report 0 for every variantless item.
  */
-export async function getSellableCatalogForSpg(storeId?: string): Promise<SpgCatalogRow[]> {
-  const [rows, grup, pricing, stockRows] = await Promise.all([
-    prisma.item.findMany({
-      where: { isActive: true, type: "FINISHED_GOOD" },
-      orderBy: { nameId: "asc" },
-      select: { id: true, sku: true, nameId: true, sellingPrice: true, variants: true, categoryId: true },
-    }),
+export async function getSellableCatalogForSpg(
+  storeId?: string,
+  opsi?: { tetapTampilkan?: string[] },
+): Promise<SpgCatalogRow[]> {
+  const [grup, pricing, stockRows] = await Promise.all([
     storeId
       ? prisma.storeStockMovement.groupBy({ by: ["itemId", "variantSku"], where: { storeId }, _sum: { qty: true } })
       : Promise.resolve([]),
@@ -60,6 +67,15 @@ export async function getSellableCatalogForSpg(storeId?: string): Promise<SpgCat
       ? prisma.storeStock.findMany({ where: { storeId }, select: { itemId: true, variantSku: true, qty: true } })
       : Promise.resolve([]),
   ]);
+  const tetap = [...new Set([...grup.map((g) => g.itemId), ...(opsi?.tetapTampilkan ?? [])])];
+  const rows = await prisma.item.findMany({
+    where: {
+      type: "FINISHED_GOOD",
+      OR: [{ isActive: true, ...syaratDijualOffline() }, ...(tetap.length > 0 ? [{ id: { in: tetap } }] : [])],
+    },
+    orderBy: { nameId: "asc" },
+    select: { id: true, sku: true, nameId: true, sellingPrice: true, variants: true, categoryId: true },
+  });
   const saldo = new Map(grup.map((g) => [`${g.itemId}::${g.variantSku}`, g._sum.qty ?? 0]));
   const stok = (itemId: string, variantSku: string | null) => (storeId ? (saldo.get(`${itemId}::${variantSku ?? ""}`) ?? 0) : null);
   const stockByKey = new Map<string, number>();
@@ -201,6 +217,13 @@ export type SpgSaleDetail = {
      * (`SpgSalePromo`, sejak 2026-10-20). null untuk nota lama tanpa rincian.
      */
     promoDiscount: number | null;
+    /**
+     * Kategori barang yang tersimpan di baris ini — dasar komisi (P8): nama kategorinya, tanggal
+     * WIB kategori itu dicatat (sudah diformat di server), dan apakah diisi kemudian (barang yang
+     * terjual tanpa kategori, P69). `null` untuk nota sebelum kategori disimpan per baris.
+     * Opsional supaya pembentuk baris lain (cetak nota) tidak wajib mengisinya.
+     */
+    kategori?: { nama: string | null; tanggal: string; diisiKemudian: boolean } | null;
   }>;
 };
 
@@ -215,12 +238,15 @@ export async function getSpgSaleById(id: string, opts?: { salesmanId?: string })
     include: { salesman: { select: { name: true, email: true } }, store: { select: { name: true } }, lines: true },
   });
   if (!r) return null;
-  const [pelanggan, rincian] = await Promise.all([
+  const idKategori = [...new Set(r.lines.map((l) => l.categoryId).filter((x): x is string => Boolean(x)))];
+  const [pelanggan, rincian, kategori] = await Promise.all([
     r.customerId
       ? prisma.storeCustomer.findFirst({ where: { id: r.customerId, storeId: r.storeId }, select: { id: true, name: true, phone: true } })
       : null,
     prisma.spgSalePromo.findMany({ where: { spgSaleId: r.id, kind: "BARANG" }, select: { spgSaleLineId: true, discount: true } }),
+    idKategori.length > 0 ? prisma.itemCategory.findMany({ where: { id: { in: idKategori } }, select: { id: true, name: true } }) : [],
   ]);
+  const namaKategori = new Map(kategori.map((k) => [k.id, k.name]));
   const adaRincian =
     rincian.length > 0 || (r.orderPromoId !== null && (await prisma.spgSalePromo.count({ where: { spgSaleId: r.id } })) > 0);
   const promoPerBaris = new Map<string, number>();
@@ -262,6 +288,13 @@ export async function getSpgSaleById(id: string, opts?: { salesmanId?: string })
       discount: Number(l.discount),
       promoName: l.promoName,
       promoDiscount: sejakRincian ? (promoPerBaris.get(l.id) ?? 0) : null,
+      kategori: l.categoryAt
+        ? {
+            nama: l.categoryId ? (namaKategori.get(l.categoryId) ?? null) : null,
+            tanggal: formatDisplayDate(l.categoryAt),
+            diisiKemudian: l.categoryFilledLater,
+          }
+        : null,
     })),
   };
 }

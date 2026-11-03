@@ -52,7 +52,7 @@ import {
 import { KeputusanPemilikGrn } from '@/components/grn/KeputusanPemilikGrn';
 import { JurnalGrnPanel } from '@/components/grn/JurnalGrnPanel';
 import { TAUTAN_DOKUMEN } from '@/app/backoffice/purchase-orders/tautan-dokumen';
-import { tabInventori, type TabInventori } from './tab-inventori';
+import { konfirmasiGrnDariUrl, tabInventori, type TabInventori } from './tab-inventori';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { getInventorySnapshot, getStockAdjustments } from '@/app/actions/inventory';
 import {
@@ -114,6 +114,8 @@ interface GRN {
     id?: string;
     docNumber: string;
   };
+  /** GRN tanpa PO yang belum dikonfirmasi admin (P51a) — belum masuk stok dan belum menjadi utang. */
+  menungguKonfirmasi?: boolean;
 }
 
 interface Adjustment {
@@ -176,6 +178,7 @@ export function InventoryPageClient({
   const tWall = useTranslations("inventory.wallboard");
   const tp = useTranslations("inventory.page");
   const tKind = useTranslations("inventory.stockMoveKind");
+  const tTanpaPo = useTranslations("inventory.grnTanpaPo");
   const tToasts = useTranslations("toasts");
   const locale = useLocale();
   const { data: session } = useSession();
@@ -248,6 +251,11 @@ export function InventoryPageClient({
   const [grnPage, setGrnPage] = useState(1);
   const [grnPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [grnTotalCount, setGrnTotalCount] = useState(initialGrnTotalCount);
+  // `?konfirmasi=menunggu` (Beranda/lonceng): halaman server sudah memuat halaman pertamanya tersaring;
+  // saringan ini ikut setiap muat ulang halaman/pencarian sampai dihapus.
+  const [grnKonfirmasi, setGrnKonfirmasi] = useState<"menunggu" | null>(() =>
+    konfirmasiGrnDariUrl(searchParams.get("konfirmasi")),
+  );
   const [adjPage, setAdjPage] = useState(1);
   const [adjPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [adjTotalCount, setAdjTotalCount] = useState(initialAdjTotalCount);
@@ -345,7 +353,11 @@ export function InventoryPageClient({
     }
     const nomor = ++grnPermintaanRef.current;
     setGrnLoading(true);
-    getGRNs(grnSearchDebounced ? { cari: grnSearchDebounced } : undefined, { page: grnPage, pageSize: grnPageSize })
+    const saringGrn = {
+      ...(grnSearchDebounced ? { cari: grnSearchDebounced } : {}),
+      ...(grnKonfirmasi ? { konfirmasiTanpaPo: grnKonfirmasi } : {}),
+    };
+    getGRNs(Object.keys(saringGrn).length > 0 ? saringGrn : undefined, { page: grnPage, pageSize: grnPageSize })
       .then((grnData) => {
         if (nomor !== grnPermintaanRef.current) return;
         if (grnData != null && typeof grnData === 'object' && 'items' in grnData && 'totalCount' in grnData) {
@@ -363,7 +375,7 @@ export function InventoryPageClient({
       .finally(() => {
         if (nomor === grnPermintaanRef.current) setGrnLoading(false);
       });
-  }, [grnPage, grnPageSize, grnSearchDebounced, tToasts]);
+  }, [grnPage, grnPageSize, grnSearchDebounced, grnKonfirmasi, tToasts]);
 
   useEffect(() => {
     const k = grnSearchQuery.trim();
@@ -478,6 +490,16 @@ export function InventoryPageClient({
     params.delete("oversold");
     if (status) params.set("status", status);
     else params.delete("status");
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
+  };
+
+  // Hapus saringan "menunggu konfirmasi" (URL ikut diganti, seperti saringan status stok).
+  const hapusSaringKonfirmasiGrn = () => {
+    setGrnKonfirmasi(null);
+    setGrnPage(1);
+    const params = new URLSearchParams(window.location.search);
+    params.delete("konfirmasi");
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
   };
@@ -669,6 +691,22 @@ export function InventoryPageClient({
               className="pl-9"
             />
           </div>
+          {grnKonfirmasi && (
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">
+                {tWall("showingFilter", { status: tTanpaPo("lencanaMenunggu") })}
+                {" "}({grnTotalCount})
+              </Badge>
+              <Button
+                type="button"
+                variant="link"
+                className="h-auto p-0 text-sm font-normal text-muted-foreground"
+                onClick={hapusSaringKonfirmasiGrn}
+              >
+                {tWall("clearFilter")}
+              </Button>
+            </div>
+          )}
           <Card>
             <CardContent className="p-0">
               <div className={`overflow-x-auto transition-opacity ${isLoading ? "opacity-60" : ""}`}>
@@ -692,7 +730,9 @@ export function InventoryPageClient({
                             ? tp('grnMemuat')
                             : grnSearchDebounced
                               ? tp('grnKosongCari', { cari: grnSearchDebounced })
-                              : tp('grnKosong')}
+                              : grnKonfirmasi
+                                ? tp('grnKosongMenungguKonfirmasi')
+                                : tp('grnKosong')}
                         </TableCell>
                       </TableRow>
                     )}
@@ -733,6 +773,10 @@ export function InventoryPageClient({
                               >
                                 {grn.po.docNumber}
                               </Link>
+                            ) : grn.menungguKonfirmasi ? (
+                              <Badge variant="secondary" className="w-fit">
+                                {tTanpaPo('lencanaMenunggu')}
+                              </Badge>
                             ) : (
                               grn.po?.docNumber || '-'
                             )}

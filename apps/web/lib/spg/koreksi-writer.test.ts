@@ -10,14 +10,16 @@ import { daftarKomisiKantor, ringkasGajiSaya } from "./komisi-queries";
 import { payloadGajiHp } from "./komisi-hp";
 import { batalkanTandaDicek, tandaiKomisiDibayar, tandaiLaporanDicek, tetapkanKomisiToko } from "./komisi-writer";
 import { awalJendelaKoreksi, rencanaBayarKomisi, selisihMenunggu, selisihUnit, type UnitKomisiSpg } from "./koreksi";
+import { hapusGajiUji, siapkanGajiUji } from "./gaji-pokok-uji";
 import {
   daftarTunggakanKomisi,
-  daftarTunggakanKomisiLama,
   jumlahKomisiSpgTertunggak,
   pemegangKomisiSpg,
   unitKomisiSpg,
 } from "./koreksi-queries";
 import { setujuiReturPembeli, tolakReturPembeli } from "./retur-pembeli";
+import { ENTITAS_BAYAR_TAMBAHAN_SPG, ENTITAS_UTANG_SPG, REF_BAYAR_TAMBAHAN_SPG, REF_UTANG_SPG } from "./utang";
+import { catatSisaSpgBerhenti, terapkanKoreksiPlusSesudahAkhir } from "./utang-writer";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -43,7 +45,6 @@ d("koreksi komisi SPG (test bed only)", () => {
   const OKT = bulanSebelum(BULAN_INI);
   /** "September": dua bulan lalu — dulu dibayar bagi rata di bulan "Oktober". */
   const SEP = bulanSebelum(OKT);
-  const MAKS_POTONG = 50;
   let uomId = "";
   let katKaos = "";
   let katTopi = "";
@@ -103,6 +104,13 @@ d("koreksi komisi SPG (test bed only)", () => {
     sari = await orang("Sari", putus);
     dewi = await orang("Dewi", konsi);
     kantor = await orang("Kantor", null);
+    // Gaji pokok Rp 0 dengan dasar hari yang pasti: tes ini tentang KOMISI dan koreksinya, jadi
+    // gaji pokok tidak boleh menahan pembayaran (P60) maupun menyumbang selisih.
+    for (const bulan of [SEP, OKT, BULAN_INI]) {
+      for (const [userId, storeId] of [[ani, putus], [sari, putus], [dewi, konsi]] as const) {
+        await siapkanGajiUji({ userId, storeId, bulan, jumlah: 0, olehUserId: kantor });
+      }
+    }
   });
 
   beforeEach(() => {
@@ -113,8 +121,18 @@ d("koreksi komisi SPG (test bed only)", () => {
 
   afterEach(async () => {
     await prisma.spgCommissionCorrection.deleteMany({ where: { spgUserId: { in: seededIds(orangIds()) } } });
+    const utangUji = await prisma.spgDebt.findMany({ where: { spgUserId: { in: seededIds(orangIds()) } }, select: { id: true } });
+    await prisma.spgDebtSettlement.deleteMany({ where: { debtId: { in: seededIds(utangUji.map((u) => u.id)) } } });
+    await prisma.spgDebt.deleteMany({ where: { spgUserId: { in: seededIds(orangIds()) } } });
+    await prisma.spgExtraPayout.deleteMany({ where: { spgUserId: { in: seededIds(orangIds()) } } });
+    // Ani dan Sari kembali bertugas kalau sebuah tes menandainya berhenti.
+    for (const id of [ani, sari].filter(Boolean)) {
+      await prisma.user.update({ where: { id: seededId(id) }, data: { assignedStoreId: putus, spgEndedOn: null, spgEndedStoreId: null } });
+    }
     const audit = await prisma.auditLog.findMany({
-      where: { entityType: { in: ["SpgCommission", "SpgSalesCheck", "ConsignmentCommission", "SpgSaleReturn", ENTITAS_KOREKSI_KOMISI] } },
+      where: {
+        entityType: { in: ["SpgCommission", "SpgSalesCheck", "ConsignmentCommission", "SpgSaleReturn", ENTITAS_KOREKSI_KOMISI, ENTITAS_UTANG_SPG, ENTITAS_BAYAR_TAMBAHAN_SPG] },
+      },
       select: { id: true, metadata: true },
     });
     const milikUji = audit
@@ -140,6 +158,7 @@ d("koreksi komisi SPG (test bed only)", () => {
   });
 
   afterAll(async () => {
+    await hapusGajiUji([ani, sari, dewi]);
     await prisma.user.deleteMany({ where: { id: { in: seededIds(orangIds()) } } });
     await prisma.store.deleteMany({ where: { id: { in: tokoIds() } } });
     await prisma.item.deleteMany({ where: { id: { in: seededIds([kaos, topi, tas, jaket].filter(Boolean)) } } });
@@ -151,6 +170,8 @@ d("koreksi komisi SPG (test bed only)", () => {
   // ---------------------------------------------------------------- penyiap
 
   async function jual(salesmanId: string, storeId: string, waktu: Date, itemId: string, qty: number) {
+    // Kategori komisi dibaca dari BARIS nota (P8/P69), seperti yang ditulis kasir saat menjual.
+    const kat = (await prisma.item.findUnique({ where: { id: itemId }, select: { categoryId: true } }))?.categoryId ?? null;
     const s = await prisma.spgSale.create({
       data: {
         docNo: `${tag}-${nomor++}`,
@@ -162,7 +183,7 @@ d("koreksi komisi SPG (test bed only)", () => {
         changeGiven: 0,
         createdById: salesmanId,
         createdAt: waktu,
-        lines: { create: [{ itemId, productName: "uji", qty, unitPrice: 50_000, lineTotal: 50_000 * qty }] },
+        lines: { create: [{ itemId, categoryId: kat, categoryAt: waktu, productName: "uji", qty, unitPrice: 50_000, lineTotal: 50_000 * qty }] },
       },
       select: { id: true, lines: { select: { id: true, itemId: true } } },
     });
@@ -242,7 +263,6 @@ d("koreksi komisi SPG (test bed only)", () => {
         baseSalary: isi.pokok,
         commission: isi.komisi,
         total: isi.pokok + isi.komisi,
-        salaried: true,
         ...(isi.dibayar ? { paidAt: isi.dibayar, paidById: kantor } : {}),
       },
       select: { id: true },
@@ -274,12 +294,15 @@ d("koreksi komisi SPG (test bed only)", () => {
   const unitMilik = async (userId: string): Promise<UnitKomisiSpg[]> => (await unitKomisiSpg(prisma, [userId])).get(userId) ?? [];
 
   const rencanaUntuk = async (userId: string, kunci: string) =>
-    rencanaBayarKomisi({ units: await unitMilik(userId), kunci, maksPotongPersen: MAKS_POTONG });
+    rencanaBayarKomisi({ units: await unitMilik(userId), kunci });
 
   // ---------------------------------------------------------------- tes
 
-  it("bulan putus aturan lama yang sebagian sudah dibayar: baris Sari dibayar dengan angka per SPG, bukan Rp 22.500", async () => {
+  it("baris bagi rata September yang belum dibayar (laporannya dicek): baris Sari dibayar dengan angka per SPG, bukan Rp 22.500", async () => {
     const lama = await septemberBagiRata({ ani: true, sari: false });
+    // Baris putus hanya bisa dibayar bila toko × bulan penjualannya dicek (B8) — tanpa itu LAPORAN_BELUM_DICEK.
+    expect(await tandaiKomisiDibayar({ commissionId: lama.sari.id, olehUserId: kantor, jumlahDiharapkan: 20_000 })).toMatchObject({ ok: false, code: "LAPORAN_BELUM_DICEK" });
+    await prisma.spgSalesCheck.create({ data: { storeId: putus, period: SEP, checkedById: kantor, checkedAt: wib(`${OKT}-05T10:00:00`) } });
 
     // Kantor melihat Rp 22.500 (layar basi): ditolak, tidak ada yang tertulis.
     expect(await tandaiKomisiDibayar({ commissionId: lama.sari.id, olehUserId: kantor, jumlahDiharapkan: 22_500 })).toMatchObject({
@@ -341,7 +364,7 @@ d("koreksi komisi SPG (test bed only)", () => {
     const units = await unitMilik(ani);
     expect(selisihUnit(units.find((u) => u.kunci === putusReportKey(putus, SEP))!)).toBe(0);
     expect(selisihMenunggu(units)).toEqual([]);
-    const r = rencanaBayarKomisi({ units, kunci: nov.kunci, maksPotongPersen: MAKS_POTONG });
+    const r = rencanaBayarKomisi({ units, kunci: nov.kunci });
     expect(r?.koreksi.some((x) => x.sumber === putusReportKey(putus, SEP))).toBe(false);
     expect(r?.dibayar).toBe(10_000);
   });
@@ -450,45 +473,7 @@ d("koreksi komisi SPG (test bed only)", () => {
     ]);
   });
 
-  describe("HP SPG — baris yang belum boleh dibayar tidak pernah menjanjikan angka lama", () => {
-    const fmt = { bulan: (p: string) => p, tanggal: (iso: string) => iso.slice(0, 10) };
-
-    it("bulan putus aturan lama yang belum dicek: 'akan diterima' komisi per SPG Rp 20.000, Rp 22.500 hanya sebagai sebelumnya — dan itu yang dibayar sesudah dicek", async () => {
-      const lama = await septemberBagiRata({ ani: false, sari: false });
-      const sep = (await ringkasGajiSaya(sari)).resmi.find((r) => r.jenis === "PUTUS" && r.bulanJual === SEP);
-      expect(sep).toMatchObject({ komisi: 20_000, komisiLama: 22_500, total: 20_000, diterima: 20_000, potong: 10, aturanLama: false, ditahan: false, dibayar: null });
-      expect(sep?.belumPasti).toBe(false);
-      const json = JSON.stringify(payloadGajiHp({ perkiraan: null, resmi: (await ringkasGajiSaya(sari)).resmi }, false, fmt));
-      expect(JSON.parse(json).resmi[0]).toMatchObject({ diterima: 20_000, komisiLama: 22_500, belumPasti: false, ditahan: false });
-
-      // Belum dicek: kantor belum bisa membayarnya; sesudah dicek, angkanya sama dengan yang dilihat HP.
-      expect(await tandaiKomisiDibayar({ commissionId: lama.sari.id, olehUserId: kantor, jumlahDiharapkan: 20_000 })).toMatchObject({
-        ok: false,
-        code: "LAPORAN_BELUM_DICEK",
-      });
-      expect((await tandaiLaporanDicek({ storeId: putus, periode: SEP, olehUserId: kantor })).ok).toBe(true);
-      expect(await tandaiKomisiDibayar({ commissionId: lama.sari.id, olehUserId: kantor, jumlahDiharapkan: 20_000 })).toMatchObject({ ok: true, dibayar: 20_000 });
-    });
-
-    it("ditahan (potong tanpa tarif) dan siklus yang kuncinya dibuka: tidak ada angka 'akan diterima'", async () => {
-      await jual(ani, putus, wib(`${SEP}-10T10:00:00`), jaket, 20);
-      await jual(sari, putus, wib(`${SEP}-11T10:00:00`), jaket, 10);
-      await barisBagiRata({ ani: false, sari: false });
-      const ditahan = (await ringkasGajiSaya(sari)).resmi.find((r) => r.jenis === "PUTUS" && r.bulanJual === SEP);
-      expect(ditahan).toMatchObject({ ditahan: true, komisiLama: null });
-      expect(ditahan?.belumPasti).toBe(false);
-
-      // Siklus September yang kuncinya dibuka lagi: angkanya baru ada saat dikunci lagi.
-      const c = await buatSiklus(SEP, null, [{ itemId: kaos, qty: 3 }]);
-      await gajiKonsi(c, dewi, { pokok: 100_000, komisi: 22_500 });
-      const dibuka = (await ringkasGajiSaya(dewi)).resmi.find((r) => r.jenis === "KONSI" && r.bulanJual === SEP);
-      expect(dibuka).toMatchObject({ bulanBayar: null, ditahan: false, belumPasti: true });
-      const muatan = payloadGajiHp({ perkiraan: null, resmi: dibuka ? [dibuka] : [] }, true, fmt);
-      expect(muatan.resmi[0]).toMatchObject({ bulanBayarLabel: null, belumPasti: true });
-    });
-  });
-
-  it("nota HP bertanggal bulan yang sudah dibayar, masuk sesudahnya: koreksi plus di pembayaran berikutnya", async () => {
+    it("nota HP bertanggal bulan yang sudah dibayar, masuk sesudahnya: koreksi plus di pembayaran berikutnya", async () => {
     await oktoberDitetapkan({ ani: 15 });
     const okt = await barisPutus(ani, OKT);
     expect((await tandaiKomisiDibayar({ commissionId: okt.id, olehUserId: kantor, jumlahDiharapkan: 30_000 })).ok).toBe(true);
@@ -500,10 +485,12 @@ d("koreksi komisi SPG (test bed only)", () => {
     expect(r?.koreksi.map((x) => [x.sumber, x.diterapkan])).toEqual([[putusReportKey(putus, OKT), 4_000]]);
   });
 
-  it("siklus konsi aturan lama yang terkunci dengan baris Rp 22.500 sama rata: Ani dibayar komisi Rp 40.000, tidak pernah Rp 22.500", async () => {
+  it("siklus konsi terkunci dengan baris Rp 22.500 sama rata: Ani dibayar komisi Rp 40.000 dan gaji pokok sekarang, tidak pernah angka tersimpan", async () => {
     await jual(ani, konsi, wib(`${SEP}-10T10:00:00`), kaos, 20);
     await jual(sari, konsi, wib(`${SEP}-11T10:00:00`), kaos, 10);
     const c = await buatSiklus(SEP, wib(`${OKT}-05T10:00:00`), [{ itemId: kaos, qty: 30 }]);
+    // Gaji pokok tersimpan Rp 500.000 (diketik di kunci lama); dasar gaji sekarang Rp 0 (`siapkanGajiUji`):
+    // pembayaran menghitung ulang KEDUANYA di transaksinya (B21).
     const baris = await gajiKonsi(c, ani, { pokok: 500_000, komisi: 22_500 });
     await gajiKonsi(c, sari, { pokok: 500_000, komisi: 22_500 });
 
@@ -511,14 +498,14 @@ d("koreksi komisi SPG (test bed only)", () => {
     const tetap = await prisma.consignmentCommission.findUniqueOrThrow({ where: { id: baris.id }, select: { commission: true, total: true, paidAt: true } });
     expect([Number(tetap.commission), Number(tetap.total), tetap.paidAt]).toEqual([22_500, 522_500, null]);
 
-    expect(await bayarKomisi({ commissionId: baris.id, olehUserId: kantor, jumlahDiharapkan: 540_000 })).toMatchObject({ ok: true, diubah: true, dibayar: 540_000 });
-    const dibayar = await prisma.consignmentCommission.findUniqueOrThrow({ where: { id: baris.id }, select: { commission: true, total: true, paidAt: true } });
-    expect([Number(dibayar.commission), Number(dibayar.total)]).toEqual([40_000, 540_000]);
+    expect(await bayarKomisi({ commissionId: baris.id, olehUserId: kantor, jumlahDiharapkan: 40_000 })).toMatchObject({ ok: true, diubah: true, dibayar: 40_000 });
+    const dibayar = await prisma.consignmentCommission.findUniqueOrThrow({ where: { id: baris.id }, select: { commission: true, baseSalary: true, total: true, paidAt: true } });
+    expect([Number(dibayar.commission), Number(dibayar.baseSalary), Number(dibayar.total)]).toEqual([40_000, 0, 40_000]);
     expect(dibayar.paidAt).not.toBeNull();
     expect(await prisma.auditLog.count({ where: { action: JEJAK_KOMISI_SPG.DIHITUNG_ULANG_SAAT_BAYAR, entityId: seededId(baris.id) } })).toBe(1);
   });
 
-  it("siklus konsi aturan lama yang SUDAH dibayar: selisihnya ikut baris konsi Ani berikutnya", async () => {
+  it("siklus konsi bagi rata yang SUDAH dibayar: selisihnya ikut baris konsi Ani berikutnya", async () => {
     await jual(ani, konsi, wib(`${SEP}-10T10:00:00`), kaos, 20);
     await jual(sari, konsi, wib(`${SEP}-11T10:00:00`), kaos, 10);
     const sep = await buatSiklus(SEP, wib(`${OKT}-05T10:00:00`), [{ itemId: kaos, qty: 30 }]);
@@ -534,81 +521,7 @@ d("koreksi komisi SPG (test bed only)", () => {
     ]);
   });
 
-  describe("penahanan — laporan aturan lama yang tidak bisa dibandingkan jujur", () => {
-    it("tarif pertama baru sejak Oktober (seperti produksi): September bagi rata yang sudah dibayar TIDAK dikoreksi −Rp 22.500, dan baris September yang belum dibayar ditolak TANPA_TARIF", async () => {
-      await jual(ani, putus, wib(`${SEP}-10T10:00:00`), jaket, 20);
-      await jual(sari, putus, wib(`${SEP}-11T10:00:00`), jaket, 10);
-      const lama = await barisBagiRata({ ani: true, sari: false });
-
-      const unitSari = (await unitMilik(sari)).find((u) => u.kunci === putusReportKey(putus, SEP))!;
-      expect(unitSari).toMatchObject({ angka: 0, potongTanpaTarif: 10, ditahan: "TANPA_TARIF" });
-
-      // Tidak dibayar dengan Rp 0 (hitungan sekarang) maupun Rp 22.500 (angka lama): ditolak, tidak ada yang tertulis.
-      for (const jumlahDiharapkan of [0, 22_500]) {
-        expect(await tandaiKomisiDibayar({ commissionId: lama.sari.id, olehUserId: kantor, jumlahDiharapkan })).toEqual({ ok: false, code: "TANPA_TARIF" });
-      }
-      const tetap = await barisPutus(sari, SEP);
-      expect([Number(tetap.commission), tetap.basis, tetap.paidAt]).toEqual([22_500, "BAGI_RATA", null]);
-      expect(await prisma.auditLog.count({ where: { entityId: seededId(lama.sari.id) } })).toBe(0);
-
-      // Pembayaran Ani berikutnya tidak membawa September (−Rp 22.500 kalau potongnya dibaca Rp 0).
-      await oktoberDitetapkan({ ani: 15 });
-      const okt = await barisPutus(ani, OKT);
-      expect(await rencanaUntuk(ani, putusReportKey(putus, OKT))).toMatchObject({ sasaran: true, koreksi: [], jumlahKoreksi: 0, dibayar: 30_000 });
-      expect(await tandaiKomisiDibayar({ commissionId: okt.id, olehUserId: kantor, jumlahDiharapkan: 30_000 })).toMatchObject({ ok: true, koreksi: 0 });
-      expect(await koreksiMilik(ani)).toEqual([]);
-      expect(await koreksiMilik(sari)).toEqual([]);
-
-      // Kantor melihat keduanya menunggu keputusan pemilik.
-      const ditahan = (await daftarKomisiKantor(BULAN_INI, new Date())).koreksiDitahan;
-      expect(ditahan.find((d) => d.userId === ani)?.baris).toEqual([
-        expect.objectContaining({ sumber: putusReportKey(putus, SEP), alasan: "TANPA_TARIF", selisih: -22_500, belumDibayar: false }),
-      ]);
-      expect(ditahan.find((d) => d.userId === sari)?.baris).toEqual([
-        expect.objectContaining({ sumber: putusReportKey(putus, SEP), alasan: "TANPA_TARIF", belumDibayar: true }),
-      ]);
-    });
-
-    it("siklus konsi aturan lama yang angka resminya tidak seluruhnya tercatat di HP (Q7): yang sudah dibayar tidak dikoreksi, yang belum dibayar dibayar dengan aturan hari ini beserta gajinya", async () => {
-      // Resmi 30 kaos + 2 baris diketik tanpa barang; HP mencatat Ani 8, Sari 4.
-      await jual(ani, konsi, wib(`${SEP}-10T10:00:00`), kaos, 8);
-      await jual(sari, konsi, wib(`${SEP}-11T10:00:00`), kaos, 4);
-      const c = await buatSiklus(SEP, wib(`${OKT}-05T10:00:00`), [
-        { itemId: kaos, qty: 30 },
-        { itemId: null, qty: 2 },
-      ]);
-      await gajiKonsi(c, ani, { pokok: 0, komisi: 22_500, dibayar: wib(`${OKT}-06T10:00:00`) });
-      const sariBaris = await gajiKonsi(c, sari, { pokok: 500_000, komisi: 22_500 });
-
-      // Ani sudah dibayar Rp 22.500 dari angka resmi; HP-nya hanya Rp 16.000 → tidak ditarik kembali.
-      expect((await unitMilik(ani)).find((u) => u.kunci === konsiReportKey(c))).toMatchObject({ angka: 16_000, ditahan: "LAPORAN_TIDAK_LENGKAP" });
-      // Baris Sari yang belum dibayar tidak ditahan, juga tidak di kartu #tunggakan.
-      expect((await unitMilik(sari)).find((u) => u.kunci === konsiReportKey(c))).toMatchObject({ angka: 8_000, ditahan: null });
-      const rencanaSari = await rencanaUntuk(sari, konsiReportKey(c));
-      expect(rencanaSari).toMatchObject({ ditahan: null, komisiLama: 22_500, komisiBaru: 8_000, berubah: true, dibayar: 508_000 });
-
-      // Dibayar dengan aturan hari ini (Q7): gaji pokok Rp 500.000 + komisi potong HP 4 × Rp 2.000.
-      expect(await bayarKomisi({ commissionId: sariBaris.id, olehUserId: kantor, jumlahDiharapkan: 508_000 })).toMatchObject({
-        ok: true,
-        diubah: true,
-        dibayar: 508_000,
-        koreksi: 0,
-      });
-      const sesudah = await prisma.consignmentCommission.findUniqueOrThrow({ where: { id: sariBaris.id }, select: { commission: true, total: true, paidAt: true } });
-      expect([Number(sesudah.commission), Number(sesudah.total), sesudah.paidAt !== null]).toEqual([8_000, 508_000, true]);
-      // Dibayar sebesar angkanya: tidak ada selisih, tidak ada yang ditahan.
-      const unitSari = (await unitMilik(sari)).find((u) => u.kunci === konsiReportKey(c))!;
-      expect([unitSari.ditahan, selisihUnit(unitSari)]).toEqual([null, 0]);
-
-      // Pembayaran konsi Ani berikutnya tidak menarik kembali −Rp 6.500 dari September.
-      const berikut = await konsiOktober(ani, 5);
-      expect(await bayarKomisi({ commissionId: berikut.id, olehUserId: kantor, jumlahDiharapkan: 10_000 })).toMatchObject({ ok: true, dibayar: 10_000, koreksi: 0 });
-      expect(await koreksiMilik(ani)).toEqual([]);
-      expect(await koreksiMilik(sari)).toEqual([]);
-    });
-  });
-
-  describe("balapan", () => {
+    describe("balapan", () => {
     it("baris yang sama dibayar dua kali bersamaan: satu berhasil, satu SUDAH_DIBAYAR, satu set koreksi", async () => {
       await septemberBagiRata({ ani: true, sari: true });
       await oktoberDitetapkan({ ani: 15 });
@@ -668,66 +581,7 @@ d("koreksi komisi SPG (test bed only)", () => {
     expect(await rekapLama()).toMatchObject({ pendingDifference: 0 });
   });
 
-  it("tunggakan: daftar tersaring sama dengan kartu #tunggakan; yang lebih tua dari jendela didaftar terpisah dan tidak dihitung Beranda", async () => {
-    const lama = await septemberBagiRata({ ani: true, sari: false });
-    const c = await buatSiklus(SEP, wib(`${OKT}-05T10:00:00`), [{ itemId: kaos, qty: 1 }]);
-    await jual(sari, konsi, wib(`${SEP}-12T10:00:00`), kaos, 1);
-    const konsiBaris = await gajiKonsi(c, sari, { pokok: 0, komisi: 2_000 });
-    // Dikunci sebulan sebelum awal jendela koreksi dan belum pernah dibayar: tunggakan paling tua.
-    const bulanKunciTua = bulanSebelum(awalJendelaKoreksi(BULAN_INI));
-    const tua = await buatSiklus(bulanSebelum(bulanKunciTua), wib(`${bulanKunciTua}-05T10:00:00`), [{ itemId: kaos, qty: 1 }]);
-    const tuaBaris = await gajiKonsi(tua, sari, { pokok: 100_000, komisi: 0 });
-
-    const lingkup = { storeIds: tokoIds() };
-    const urut = (xs: { refId: string }[]) => xs.map((t) => t.refId).sort();
-    const sekarang = new Date();
-    const dalam = urut(await daftarTunggakanKomisi(prisma, sekarang, lingkup));
-    const lampau = urut(await daftarTunggakanKomisiLama(prisma, sekarang, lingkup));
-    expect(dalam).toEqual([lama.sari.id, konsiBaris.id].sort());
-    expect(lampau).toEqual([tuaBaris.id]);
-
-    const halaman = await daftarKomisiKantor(BULAN_INI, sekarang);
-    const milikUji = (xs: { storeId: string; refId: string }[]) => urut(xs.filter((t) => tokoIds().includes(t.storeId)));
-    expect(milikUji(halaman.tunggakan)).toEqual(dalam);
-    expect(milikUji(halaman.tunggakanLama)).toEqual(lampau);
-    // Baris tunggakan lama tidak pernah menjadi sasaran koreksi.
-    expect(halaman.tunggakanLama.find((t) => t.refId === tuaBaris.id)?.bayar?.sasaran).toBe(false);
-
-    // Siklus aturan lama tanpa nota HP (laporan diketik kantor): baris yang belum dibayar TIDAK ditahan —
-    // dibayar dengan aturan hari ini (Q7): komisi Rp 0, gaji pokoknya tetap.
-    expect((await daftarTunggakanKomisiLama(prisma, sekarang, lingkup)).find((t) => t.refId === tuaBaris.id)?.ditahan).toBeNull();
-    expect(halaman.tunggakanLama.find((t) => t.refId === tuaBaris.id)?.bayar).toMatchObject({ ditahan: null, komisiBaru: 0, dibayar: 100_000 });
-
-    // Beranda menghitung tepat bagian di jendela yang bisa dibayar — satu definisi dengan kartu (seluruh basis data, bukan hanya milik uji).
-    const semuaDiJendela = await daftarTunggakanKomisi(prisma, sekarang);
-    expect(await jumlahKomisiSpgTertunggak(sekarang)).toBe(semuaDiJendela.filter((t) => t.ditahan === null).length);
-    expect(semuaDiJendela.some((t) => t.refId === tuaBaris.id)).toBe(false);
-  });
-
-  it("tunggakan yang menunggu keputusan pemilik: didaftar terpisah di kartu #tunggakan dan TIDAK dihitung Beranda", async () => {
-    // September bagi rata dengan jaket (tarifnya baru sejak "Oktober"): Ani dibayar, baris Sari ditahan TANPA_TARIF.
-    await jual(ani, putus, wib(`${SEP}-10T10:00:00`), jaket, 20);
-    await jual(sari, putus, wib(`${SEP}-11T10:00:00`), jaket, 10);
-    const lama = await barisBagiRata({ ani: true, sari: false });
-    const lingkup = { storeIds: tokoIds() };
-    const sekarang = new Date();
-
-    const dalam = await daftarTunggakanKomisi(prisma, sekarang, lingkup);
-    expect(dalam.map((t) => [t.refId, t.ditahan])).toEqual([[lama.sari.id, "TANPA_TARIF"]]);
-
-    const halaman = await daftarKomisiKantor(BULAN_INI, sekarang);
-    expect(halaman.tunggakan.some((t) => t.refId === lama.sari.id)).toBe(false);
-    const ditahan = halaman.tunggakanDitahan.find((t) => t.refId === lama.sari.id);
-    // Satu aturan dengan rencana bayarnya: penulis menolak baris ini dengan sebab yang sama.
-    expect([ditahan?.ditahan, ditahan?.bayar?.ditahan]).toEqual(["TANPA_TARIF", "TANPA_TARIF"]);
-    expect(await tandaiKomisiDibayar({ commissionId: lama.sari.id, olehUserId: kantor, jumlahDiharapkan: 22_500 })).toEqual({ ok: false, code: "TANPA_TARIF" });
-
-    const semuaDiJendela = await daftarTunggakanKomisi(prisma, sekarang);
-    expect(semuaDiJendela.find((t) => t.refId === lama.sari.id)?.ditahan).toBe("TANPA_TARIF");
-    expect(await jumlahKomisiSpgTertunggak(sekarang)).toBe(semuaDiJendela.filter((t) => t.ditahan === null).length);
-  });
-
-  it("penjual tanpa baris di laporan yang sudah tertutup: koreksi menunggunya terlihat sama di kantor dan di HP", async () => {
+      it("penjual tanpa baris di laporan yang sudah tertutup: koreksi menunggunya terlihat sama di kantor dan di HP", async () => {
     // Siklus September dikunci bulan lalu; Ani punya baris (sudah dibayar sebesar angkanya),
     // Dewi menjual 3 kaos tanpa pernah punya baris — angkanya Rp 6.000 menunggu sebagai koreksi.
     await jual(ani, konsi, wib(`${SEP}-10T10:00:00`), kaos, 5);
@@ -807,6 +661,87 @@ d("koreksi komisi SPG (test bed only)", () => {
       ]);
       expect(selisihMenunggu(await unitMilik(dewi))).toEqual([]);
     });
+  });
+
+  it("SPG yang berhenti: dua kantor mencatat sisa minus yang sama bersamaan → tepat satu utang (unit dibangun ulang di transaksinya)", async () => {
+    // September dibayar bagi rata Rp 22.500, per SPG Sari Rp 20.000 → sisa −Rp 2.500 sesudah ia berhenti.
+    await septemberBagiRata({ ani: true, sari: true });
+    await prisma.spgSalesCheck.create({ data: { storeId: putus, period: SEP, checkedById: kantor, checkedAt: wib(`${OKT}-05T10:00:00`) } });
+    const akhirSep = `${SEP}-${String(new Date(Date.UTC(Number(SEP.slice(0, 4)), Number(SEP.slice(5, 7)), 0)).getUTCDate()).padStart(2, "0")}`;
+    await prisma.user.update({ where: { id: sari }, data: { spgEndedOn: akhirSep, spgEndedStoreId: putus, assignedStoreId: null } });
+
+    const [a, b] = await Promise.all([
+      catatSisaSpgBerhenti({ spgUserId: sari, olehUserId: kantor, jumlahDiharapkan: 2_500, kunci: `${tag}-sisa-a` }),
+      catatSisaSpgBerhenti({ spgUserId: sari, olehUserId: kantor, jumlahDiharapkan: 2_500, kunci: `${tag}-sisa-b` }),
+    ]);
+    expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
+    const kalah = a.ok ? b : a;
+    expect(kalah.ok ? null : kalah.kode).toMatch(/^(TIDAK_ADA_SISA|ANGKA_BERUBAH)$/);
+    const utang = await prisma.spgDebt.findMany({ where: { spgUserId: seededId(sari) }, select: { kind: true, amount: true } });
+    expect(utang.map((u) => [u.kind, Number(u.amount)])).toEqual([["KOREKSI", 2_500]]);
+    expect((await koreksiMilik(sari)).filter((k) => k.paidRefType === "SpgDebt")).toHaveLength(1);
+    // Kiriman ulang dialog yang menang tidak mencatat apa pun lagi.
+    const kunciMenang = a.ok ? `${tag}-sisa-a` : `${tag}-sisa-b`;
+    expect(await catatSisaSpgBerhenti({ spgUserId: sari, olehUserId: kantor, jumlahDiharapkan: 2_500, kunci: kunciMenang })).toMatchObject({ ok: true, ulang: true });
+    expect(await prisma.spgDebt.count({ where: { spgUserId: seededId(sari) } })).toBe(1);
+  });
+
+  /** Hari terakhir bulan "YYYY-MM". */
+  const akhirBulan = (bulan: string) =>
+    `${bulan}-${String(new Date(Date.UTC(Number(bulan.slice(0, 4)), Number(bulan.slice(5, 7)), 0)).getUTCDate()).padStart(2, "0")}`;
+
+  it("pembayaran terakhir SPG yang berhenti lewat penulis bayar sungguhan: minus yang tidak tertutup menjadi utang; baris sesudahnya memotongnya penuh (B28, B31)", async () => {
+    // September dibayar bagi rata Rp 22.500, per SPG Sari Rp 20.000 → −Rp 2.500. Oktober Sari menjual 1 kaos (Rp 2.000).
+    await septemberBagiRata({ ani: true, sari: true });
+    await prisma.spgSalesCheck.create({ data: { storeId: putus, period: SEP, checkedById: kantor, checkedAt: wib(`${OKT}-05T10:00:00`) } });
+    await oktoberDitetapkan({ sari: 1 });
+    await prisma.user.update({ where: { id: sari }, data: { spgEndedOn: akhirBulan(OKT), spgEndedStoreId: putus, assignedStoreId: null } });
+    const okt = await barisPutus(sari, OKT);
+
+    // Pembayaran terakhirnya: −Rp 2.000 diambil dari komisinya, −Rp 500 yang tidak tertutup menjadi utang (P6a).
+    expect(await tandaiKomisiDibayar({ commissionId: okt.id, olehUserId: kantor, jumlahDiharapkan: 0 })).toMatchObject({ ok: true, dibayar: 0, koreksi: -2_000, utang: 500 });
+    const utang = await prisma.spgDebt.findMany({ where: { spgUserId: seededId(sari) }, select: { id: true, kind: true, amount: true, status: true } });
+    expect(utang.map((u) => [u.kind, Number(u.amount), u.status])).toEqual([["KOREKSI", 500, "TERBUKA"]]);
+    const k = await koreksiMilik(sari);
+    expect(k.map((x) => [x.paidRefType, Number(x.amount)]).sort()).toEqual(
+      [
+        [REF_KOMISI_SPG_PUTUS, -2_000],
+        [REF_UTANG_SPG, -500],
+      ].sort(),
+    );
+    // Selisih September tertutup seluruhnya: −2.000 dibayar, −500 menjadi utang — tidak dibawa lagi.
+    expect(selisihMenunggu(await unitMilik(sari))).toEqual([]);
+
+    // Baris yang dikunci sesudahnya memotong utangnya penuh (B31): komisi Rp 10.000 − utang Rp 500.
+    const berikut = await konsiOktober(sari, 5);
+    expect(await bayarKomisi({ commissionId: berikut.id, olehUserId: kantor, jumlahDiharapkan: 9_500 })).toMatchObject({ ok: true, dibayar: 9_500 });
+    const lunas = await prisma.spgDebt.findUniqueOrThrow({ where: { id: utang[0].id }, select: { settledAmount: true, status: true } });
+    expect([Number(lunas.settledAmount), lunas.status]).toEqual([500, "LUNAS"]);
+    const potong = await prisma.spgDebtSettlement.findMany({ where: { debtId: seededId(utang[0].id) }, select: { kind: true, refType: true, refId: true, amount: true } });
+    expect(potong.map((x) => [x.kind, x.refType, x.refId, Number(x.amount)])).toEqual([["POTONG", REF_KOMISI_KONSI, berikut.id, 500]]);
+  });
+
+  it("SPG yang berhenti: dua kantor membayarkan koreksi plus yang sama bersamaan → tepat satu pembayaran tambahan (B29, P67)", async () => {
+    // September dibayar bagi rata Rp 22.500, per SPG Ani Rp 40.000 → +Rp 17.500 sesudah ia berhenti.
+    await septemberBagiRata({ ani: true, sari: true });
+    await prisma.spgSalesCheck.create({ data: { storeId: putus, period: SEP, checkedById: kantor, checkedAt: wib(`${OKT}-05T10:00:00`) } });
+    await prisma.user.update({ where: { id: ani }, data: { spgEndedOn: akhirBulan(SEP), spgEndedStoreId: putus, assignedStoreId: null } });
+    const hariIni = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
+    const bayar = (kunci: string) =>
+      terapkanKoreksiPlusSesudahAkhir({ spgUserId: ani, cara: "transfer", dibayarPada: hariIni, kunci, jumlahDiharapkan: 17_500, olehUserId: kantor });
+
+    const [a, b] = await Promise.all([bayar(`${tag}-plus-a`), bayar(`${tag}-plus-b`)]);
+    expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
+    const kalah = a.ok ? b : a;
+    expect(kalah.ok ? null : kalah.kode).toMatch(/^(TIDAK_ADA_KOREKSI_PLUS|ANGKA_BERUBAH)$/);
+    const payout = await prisma.spgExtraPayout.findMany({ where: { spgUserId: seededId(ani) }, select: { amount: true, offsetAmount: true, idempotencyKey: true } });
+    expect(payout.map((p) => [Number(p.amount), Number(p.offsetAmount)])).toEqual([[17_500, 0]]);
+    expect((await koreksiMilik(ani)).filter((x) => x.paidRefType === REF_BAYAR_TAMBAHAN_SPG).map((x) => Number(x.amount))).toEqual([17_500]);
+
+    // Kiriman ulang dialog yang menang tidak membayar apa pun lagi.
+    expect(await bayar(payout[0].idempotencyKey)).toMatchObject({ ok: true, ulang: true });
+    expect(await prisma.spgExtraPayout.count({ where: { spgUserId: seededId(ani) } })).toBe(1);
+    expect(selisihMenunggu(await unitMilik(ani))).toEqual([]);
   });
 
   it("muatan HP Ani tidak membawa id, nama, atau rupiah Sari", async () => {

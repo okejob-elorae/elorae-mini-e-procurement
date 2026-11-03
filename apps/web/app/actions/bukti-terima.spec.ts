@@ -54,6 +54,17 @@ describe("aksi bukti terima", () => {
     expect(mockRevalidate).not.toHaveBeenCalled();
   });
 
+  it("passes a nota that has not left the warehouse, or was voided, through as its own refusal", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["pwa:access"] } });
+    for (const kode of ["BELUM_BERANGKAT", "NOTA_DIBATALKAN"] as const) {
+      mockCatat.mockResolvedValueOnce({ ok: false, kode });
+      expect(await catatBuktiTerimaAction(masukan)).toEqual({ ok: false, kode });
+      mockKoreksi.mockResolvedValueOnce({ ok: false, kode });
+      expect(await koreksiBuktiTerimaAction({ ...masukan, reason: "salah foto" })).toEqual({ ok: false, kode });
+    }
+    expect(mockRevalidate).not.toHaveBeenCalled();
+  });
+
   it("turns an unexpected server error into GAGAL instead of throwing", async () => {
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: [] } });
     mockKoreksi.mockRejectedValue(new Error("koneksi putus"));

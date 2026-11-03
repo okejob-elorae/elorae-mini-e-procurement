@@ -4,6 +4,7 @@ import { aggregateInventoryValues } from "@/lib/items/queries";
 import { getPrimaryImagesBatch } from "@/lib/items/images/queries";
 import { sentItemIds } from "@/lib/field-sales/queries";
 import { parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { returVariantOptions, type ReturVariantOption } from "@/lib/field-sales/retur/variant-options";
 import { saldoBarangToko } from "@/lib/spg/titip-saldo";
 
@@ -31,6 +32,11 @@ export type CatalogItem = {
 export type CatalogPayload = {
   store: { id: string; termsType: "PUTUS" | "KONSI"; markupPercent: number | null; priceDiscountPercent: number | null };
   items: CatalogItem[];
+  /**
+   * Whether `price` carries this store's price: always for a PUTUS store; for a KONSI store only
+   * when the caller asked for it (`hargaKonsi` — the salesman phone, owner answers P18/P18a).
+   */
+  hargaKonsiTampil: boolean;
 };
 
 type CatalogRow = {
@@ -53,18 +59,28 @@ export function serializeCatalogItem(
   imageUrl: string | null,
   neverSent: boolean,
   globalMin: number,
+  opsi: { hargaKonsi?: boolean } = {},
 ): CatalogItem {
   const inv = aggregateInventoryValues(row.inventoryValues);
-  /* Konsi is a consignment transfer, not a sale: the salesman never sees pricing. Keep the retail price off the wire entirely, not just hidden in the UI. */
+  const harga = computeStorePrice({
+    sellingPrice: toNum(row.sellingPrice),
+    termsType: store.termsType,
+    markupPercent: store.markupPercent,
+    priceDiscountPercent: store.priceDiscountPercent,
+  });
+  /*
+   * Konsi is a consignment transfer, not a sale. Its price stays off the wire entirely — not just
+   * hidden in the UI — for every caller that does not ask for it: the store portal, the WhatsApp
+   * catalogue and the SPG phone (owner answer P18a). Only the salesman phone asks (`hargaKonsi`,
+   * P18): the store's retail price at its markup, "Harga retail", and null when the markup cannot
+   * price it (`flagged`) rather than the catalog price under a retail label.
+   */
   const isKonsi = store.termsType === "KONSI";
-  const { price, label } = isKonsi
-    ? { price: null, label: null }
-    : computeStorePrice({
-        sellingPrice: toNum(row.sellingPrice),
-        termsType: store.termsType,
-        markupPercent: store.markupPercent,
-        priceDiscountPercent: store.priceDiscountPercent,
-      });
+  const { price, label } = !isKonsi
+    ? harga
+    : opsi.hargaKonsi && !harga.flagged
+      ? harga
+      : { price: null, label: null };
   const labelBySku = new Map(
     variantSelectOptions(parseItemVariants(row.variants)).map((o) => [o.sku, o.label]),
   );
@@ -135,10 +151,17 @@ export function tempelStokRak(items: CatalogItem[], saldo: SaldoRak[]): CatalogI
  * `stokRak`: hanya katalog HP salesman yang memintanya (rute `/pwa/api/catalog`).
  * Pemakai lain — portal toko, kirim katalog WA — tidak menghitungnya, jadi
  * kolomnya tidak pernah ada di muatan mereka.
+ *
+ * `hargaKonsi`: sama — hanya HP salesman (P18). Tanpanya harga toko KONSI null di
+ * server (portal toko, kirim katalog WA, HP SPG — P18a).
+ *
+ * Barang "Marketplace saja" tidak pernah ada di katalog ini (P3a) — katalog
+ * salesman, portal toko dan kirim katalog WA sekaligus. Katalog retur di bawah
+ * tidak disaring: barang yang sudah ada di toko tetap bisa diretur.
  */
 export async function listCatalogForPwa(
   storeId: string,
-  opsi: { stokRak?: boolean } = {},
+  opsi: { stokRak?: boolean; hargaKonsi?: boolean } = {},
 ): Promise<CatalogPayload | null> {
   const store = await prisma.store.findUnique({
     where: { id: storeId },
@@ -159,7 +182,7 @@ export async function listCatalogForPwa(
   const globalMin = g ? Number(g.value) : 6;
 
   const rows = await prisma.item.findMany({
-    where: { isActive: true, type: "FINISHED_GOOD" },
+    where: { isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() },
     orderBy: { nameId: "asc" },
     select: {
       id: true,
@@ -177,13 +200,18 @@ export async function listCatalogForPwa(
   const images = await getPrimaryImagesBatch(rows.map((r) => ({ itemId: r.id, variantSku: null })));
   const key = (itemId: string) => `${itemId}|`;
 
+  const hargaKonsi = opsi.hargaKonsi === true;
   const items = rows.map((r) =>
-    serializeCatalogItem(r, storeCtx, images.get(key(r.id)) ?? null, storeCtx.termsType === "KONSI" ? !sentSet.has(r.id) : false, globalMin),
+    serializeCatalogItem(r, storeCtx, images.get(key(r.id)) ?? null, storeCtx.termsType === "KONSI" ? !sentSet.has(r.id) : false, globalMin, { hargaKonsi }),
   );
 
   // Sekali per muatan: satu groupBy atas buku toko ini (kosong = toko tanpa buku).
   const rak = opsi.stokRak ? await saldoBarangToko(prisma, store.id, rows.map((r) => r.id)) : new Map<string, number>();
-  return { store: storeCtx, items: tempelStokRak(items, saldoDariPeta(rak)) };
+  return {
+    store: storeCtx,
+    items: tempelStokRak(items, saldoDariPeta(rak)),
+    hargaKonsiTampil: storeCtx.termsType === "PUTUS" || hargaKonsi,
+  };
 }
 
 export type ReturCatalogItem = {

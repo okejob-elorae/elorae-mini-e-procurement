@@ -27,8 +27,9 @@ export async function GET(req: NextRequest) {
 
   // Katalog HP salesman: ikut stok di rak toko (buku stok SPG, pcs) supaya
   // salesman tidak mengirim barang yang masih menumpuk di toko. SPG tidak
-  // memakai stok rak di katalog ini.
-  const payload = await listCatalogForPwa(storeId, { stokRak: !akses.spg });
+  // memakai stok rak di katalog ini. Harga retail konsi hanya untuk HP SALESMAN
+  // (pemilik P18 "berikan selengkapnya saja"); HP SPG tetap tanpa harga konsi (P18a).
+  const payload = await listCatalogForPwa(storeId, { stokRak: !akses.spg, hargaKonsi: !akses.spg });
   if (!payload) return NextResponse.json({ error: "Store not found" }, { status: 404 });
 
   return NextResponse.json(payload);

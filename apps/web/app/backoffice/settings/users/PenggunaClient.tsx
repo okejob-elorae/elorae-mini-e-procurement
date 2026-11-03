@@ -14,19 +14,44 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SANDI_MIN } from "@/lib/users/validasi";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
-import { alasanBelumBisaSimpan, drafAwal, type BukaAwal, type DrafPengguna } from "./aturan-pengguna";
+import {
+  alasanBelumBisaSimpan,
+  butuhMulaiSpg,
+  drafAwal,
+  muatanSimpan,
+  type AkunSpgTampil,
+  type BukaAwal,
+  type DrafPengguna,
+} from "./aturan-pengguna";
 import { useNamaPeran } from "../rbac/pakai-nama-peran";
+import { SpgBerhentiAksi } from "./BerhentiSpgDialog";
 import { urutPeranTampil } from "../rbac/nama-peran";
 
-type Pengguna = { id: string; nama: string; email: string; roleId: string | null; tokoId: string | null; punyaSandi: boolean };
+type Pengguna = {
+  id: string;
+  nama: string;
+  email: string;
+  roleId: string | null;
+  tokoId: string | null;
+  punyaSandi: boolean;
+  spgMulai?: string | null;
+  spgBerhenti?: string | null;
+  spgTokoBerhenti?: string | null;
+  /** Bulan kerja SPG ini yang gaji & komisinya sudah dibayar ("YYYY-MM"). */
+  spgBulanDibayar?: string[];
+};
 type Peran = { id: string; nama: string; sistem: boolean; spg: boolean };
 type Toko = { id: string; name: string; code: string };
 type Draf = DrafPengguna;
 
-const KOSONG: Draf = { id: null, nama: "", email: "", roleId: "", tokoId: null, sandi: "", ulangSandi: "" };
+const KOSONG: Draf = { id: null, nama: "", email: "", roleId: "", tokoId: null, sandi: "", ulangSandi: "", mulai: "" };
+const AKUN_BARU: AkunSpgTampil = { mulaiTersimpan: null, berhenti: null };
+const tanggalTampil = (d: string) =>
+  new Date(`${d}T00:00:00+07:00`).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Jakarta" });
 
 export function PenggunaClient({
   sayaId,
@@ -68,12 +93,16 @@ export function PenggunaClient({
   }, [pengguna, cari]);
 
   const peranDipilih = draf ? peranById.get(draf.roleId) : undefined;
+  // Keadaan SPG akun yang diubah (tanggal mulai tersimpan, berhenti) — sama dengan yang dibaca server.
+  const akunDiubah = draf?.id ? pengguna.find((u) => u.id === draf.id) : undefined;
+  const akun: AkunSpgTampil = akunDiubah ? { mulaiTersimpan: akunDiubah.spgMulai ?? null, berhenti: akunDiubah.spgBerhenti ?? null } : AKUN_BARU;
+  const perluMulai = draf ? butuhMulaiSpg(draf, peranDipilih, akun) : false;
   const ubahSendiri = draf?.id === sayaId;
   // Satu aturan nama peran dengan Peran & izin (`../rbac/nama-peran.ts`): kode tidak pernah tampil mentah.
   const namaTampil = useNamaPeran();
   const namaPeran = (p: Peran) => namaTampil(p.nama);
   const peranUrut = useMemo(() => urutPeranTampil(peran, (p) => namaTampil(p.nama), (p) => p.sistem), [peran, namaTampil]);
-  const alasanBelum = draf ? alasanBelumBisaSimpan(draf, peranDipilih) : null;
+  const alasanBelum = draf ? alasanBelumBisaSimpan(draf, peranDipilih, akun) : null;
 
   const buka = (d: Draf) => {
     setGalat([]);
@@ -84,7 +113,7 @@ export function PenggunaClient({
   const simpan = () => {
     if (!draf) return;
     mulai(async () => {
-      const r = await simpanPenggunaAction(draf);
+      const r = await simpanPenggunaAction(muatanSimpan(draf, perluMulai));
       if (!r.ok) {
         setGalat(r.codes);
         return;
@@ -175,13 +204,28 @@ export function PenggunaClient({
                             </Badge>
                           )}
                         </TableCell>
-                        <TableCell className="whitespace-normal text-sm">{s ? s.name : "—"}</TableCell>
+                        <TableCell className="whitespace-normal text-sm">
+                          {s ? s.name : "—"}
+                          {p?.spg || u.spgBerhenti ? (
+                            <SpgBerhentiAksi
+                              spg={{
+                                id: u.id,
+                                nama: u.nama || u.email,
+                                mulai: u.spgMulai ?? null,
+                                berhenti: u.spgBerhenti ?? null,
+                                tokoBerhenti: u.spgTokoBerhenti ?? null,
+                                aktif: Boolean(u.tokoId),
+                                bulanDibayar: u.spgBulanDibayar ?? [],
+                              }}
+                            />
+                          ) : null}
+                        </TableCell>
                         <TableCell className="text-right">
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() =>
-                              buka({ id: u.id, nama: u.nama, email: u.email, roleId: u.roleId ?? "", tokoId: u.tokoId, sandi: "", ulangSandi: "" })
+                              buka({ id: u.id, nama: u.nama, email: u.email, roleId: u.roleId ?? "", tokoId: u.tokoId, sandi: "", ulangSandi: "", mulai: "" })
                             }
                           >
                             <Pencil className="h-4 w-4" />
@@ -257,7 +301,16 @@ export function PenggunaClient({
                 ) : null}
               </div>
 
-              {peranDipilih?.spg ? (
+              {peranDipilih?.spg && akun.berhenti ? (
+                // SPG yang sudah berhenti: tokonya dilepas dan hanya kembali lewat "Batalkan berhenti"
+                // (server menolak toko di sini dengan BERHENTI_BATALKAN_DULU).
+                <div className="space-y-1.5">
+                  <Label>{t("store")}</Label>
+                  <p className="rounded-md border px-3 py-2 text-sm text-muted-foreground">
+                    {t("storeEnded", { tanggal: tanggalTampil(akun.berhenti), toko: akunDiubah?.spgTokoBerhenti ?? "—" })}
+                  </p>
+                </div>
+              ) : peranDipilih?.spg ? (
                 <div className="space-y-1.5">
                   <Label htmlFor="u-toko">{t("store")}</Label>
                   <Select value={draf.tokoId ?? undefined} onValueChange={(v) => setDraf({ ...draf, tokoId: v })}>
@@ -274,6 +327,16 @@ export function PenggunaClient({
                   </Select>
                   <p className="text-xs text-muted-foreground">{t("storeHint")}</p>
                 </div>
+              ) : null}
+
+              {perluMulai ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="u-mulai">{t("startDate")}</Label>
+                  <TanggalInput id="u-mulai" value={draf.mulai} required onChange={(e) => setDraf({ ...draf, mulai: e.target.value })} />
+                  <p className="text-xs text-muted-foreground">{t("startDateHint")}</p>
+                </div>
+              ) : peranDipilih?.spg && !akun.berhenti && akun.mulaiTersimpan ? (
+                <p className="text-xs text-muted-foreground">{t("startDateSaved", { tanggal: tanggalTampil(akun.mulaiTersimpan) })}</p>
               ) : null}
 
               <div className="space-y-1.5">

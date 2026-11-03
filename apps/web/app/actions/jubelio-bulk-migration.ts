@@ -47,6 +47,8 @@ export async function getEligibleItems(): Promise<EligibleItem[]> {
     where: {
       type: "FINISHED_GOOD",
       source: "ERP",
+      // "Toko offline saja" is never requested for Jubelio (owner answer P3a, 2026-11-02).
+      salesChannel: { not: "OFFLINE" },
       jubelioProductMappings: { none: {} },
     },
     select: {
@@ -107,6 +109,7 @@ export async function requestBulkMigration(
           id: { in: itemIds },
           type: "FINISHED_GOOD",
           source: "ERP",
+          salesChannel: { not: "OFFLINE" },
           jubelioProductMappings: { none: {} },
         },
         select: { id: true },
@@ -117,7 +120,7 @@ export async function requestBulkMigration(
     if (invalid.length > 0) {
       return gagalJubelio(
         "ISIAN_TIDAK_SAH",
-        `${invalid.length} item(s) not eligible (already mapped or wrong type)`,
+        `${invalid.length} item(s) not eligible (already mapped, wrong type or sold offline only)`,
       );
     }
 

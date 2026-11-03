@@ -31,6 +31,13 @@
  * di tingkat barang, kecuali penerimaan tanpa bahan (lebih produksi sesudah WO
  * lengkap, sama dengan `bacaHppBarang`) dan GRN yang ditolak pemilik (stoknya
  * sudah dikeluarkan lagi).
+ *
+ * Selisih harga invoice yang DITERIMA pemilik (koreksi utang pemasok, jawaban
+ * P49 2026-11-02: "HPP harus real") menaikkan HPP penerimaan itu: bagian yang
+ * masuk persediaan (`persediaan` di rincian koreksinya) dibagi pcs baris itu,
+ * ditambahkan ke HPP per pcs-nya, dan barisnya diberi catatan
+ * `DIKOREKSI_INVOICE` dengan HPP sebelum koreksi. HPP terbaru memakai angka
+ * yang sudah dikoreksi.
  */
 import { Decimal } from "decimal.js";
 
@@ -42,8 +49,26 @@ export type AngkaTersimpan = Decimal.Value | { toString(): string } | null | und
 
 export type JenisPeristiwaHpp = "PRODUKSI" | "PEMBELIAN";
 
-/** TANPA_BAHAN = penerimaan yang tidak memikul bahan; DITOLAK_PEMILIK = GRN lebih terima yang ditolak. */
-export type CatatanRiwayatHpp = "TANPA_BAHAN" | "DITOLAK_PEMILIK";
+/**
+ * TANPA_BAHAN = penerimaan yang tidak memikul bahan; DITOLAK_PEMILIK = GRN lebih terima yang ditolak
+ * (keduanya bukan dasar HPP terbaru). DIKOREKSI_INVOICE = HPP baris ini sudah memuat selisih harga
+ * invoice yang diterima pemilik (tetap dasar HPP terbaru).
+ */
+export type CatatanRiwayatHpp = "TANPA_BAHAN" | "DITOLAK_PEMILIK" | "DIKOREKSI_INVOICE";
+
+/** Catatan yang membuat baris BUKAN dasar HPP terbaru. */
+const CATATAN_BUKAN_DASAR: ReadonlySet<CatatanRiwayatHpp> = new Set(["TANPA_BAHAN", "DITOLAK_PEMILIK"]);
+
+/**
+ * Bagian selisih harga invoice yang DITERIMA dan masuk persediaan, per dokumen dan varian (dibaca
+ * dari rincian `SupplierPayableCorrection` oleh `./riwayat-hpp-queries.ts`). Bertanda.
+ */
+export type KoreksiHpp = {
+  dokumen: "GRN" | "FG_RECEIPT";
+  dokumenId: string;
+  variantSku: string | null;
+  persediaan: number;
+};
 
 export type BarisRiwayatHpp = {
   kunci: string;
@@ -67,6 +92,8 @@ export type BarisRiwayatHpp = {
   hppDokumen: number | null;
   rataRataSesudah: number | null;
   catatan: CatatanRiwayatHpp | null;
+  /** Hanya pada baris DIKOREKSI_INVOICE: HPP per satuan sebelum selisih harga invoice. */
+  hppSebelumKoreksi?: number | null;
 };
 
 export type PenerimaanRiwayatHpp = {
@@ -124,6 +151,8 @@ export type MasukanRiwayatHpp = {
    * sebanyak ini mungkin masih menyimpan peristiwa yang lebih lama.
    */
   ambil: number;
+  /** Selisih harga invoice yang diterima, untuk dokumen di halaman ini; kosong = tidak ada. */
+  koreksi?: KoreksiHpp[];
 };
 
 export type RiwayatHpp = {
@@ -349,6 +378,47 @@ function barisPembelian(m: MasukanRiwayatHpp): BarisRiwayatHpp[] {
   });
 }
 
+/**
+ * Selisih harga invoice yang diterima (P49): Σ bagian persediaan baris itu ÷ pcs-nya ditambahkan ke
+ * HPP per pcs-nya, dan Σ bagian dokumen ÷ pcs dokumen ke HPP dokumennya. Catatan lain dipertahankan.
+ */
+function terapkanKoreksi(baris: BarisRiwayatHpp[], koreksi: KoreksiHpp[] | undefined): BarisRiwayatHpp[] {
+  if (!koreksi || koreksi.length === 0) return baris;
+  const kunciDok = (jenis: JenisPeristiwaHpp, id: string) => `${jenis === "PRODUKSI" ? "FG_RECEIPT" : "GRN"}|${id}`;
+  const perBaris = new Map<string, Decimal>();
+  const perDok = new Map<string, Decimal>();
+  for (const k of koreksi) {
+    if (!Number.isFinite(k.persediaan) || k.persediaan === 0) continue;
+    const dok = `${k.dokumen}|${k.dokumenId}`;
+    const nilai = new Decimal(k.persediaan);
+    perDok.set(dok, (perDok.get(dok) ?? NOL).plus(nilai));
+    const b = `${dok}|${varianKosong(k.variantSku)}`;
+    perBaris.set(b, (perBaris.get(b) ?? NOL).plus(nilai));
+  }
+  if (perDok.size === 0) return baris;
+  const qtyDok = new Map<string, Decimal>();
+  for (const b of baris) {
+    const dok = kunciDok(b.jenis, b.dokumenId);
+    if (perDok.has(dok)) qtyDok.set(dok, (qtyDok.get(dok) ?? NOL).plus(b.jumlah));
+  }
+  return baris.map((b) => {
+    const dok = kunciDok(b.jenis, b.dokumenId);
+    const nilaiDok = perDok.get(dok);
+    if (!nilaiDok) return b;
+    const qty = qtyDok.get(dok) ?? NOL;
+    const nilaiBaris = perBaris.get(`${dok}|${varianKosong(b.varianSku)}`);
+    const hppDokumen = b.hppDokumen != null && qty.gt(0) ? duaDesimal(new Decimal(b.hppDokumen).plus(nilaiDok.div(qty))) : b.hppDokumen;
+    if (!nilaiBaris || b.hppPerPcs == null || !(b.jumlah > 0)) return { ...b, hppDokumen };
+    return {
+      ...b,
+      hppDokumen,
+      hppSebelumKoreksi: b.hppPerPcs,
+      hppPerPcs: duaDesimal(new Decimal(b.hppPerPcs).plus(nilaiBaris.div(b.jumlah))),
+      catatan: b.catatan ?? "DIKOREKSI_INVOICE",
+    };
+  });
+}
+
 const urutan = (a: BarisRiwayatHpp, b: BarisRiwayatHpp) =>
   b.tanggal.localeCompare(a.tanggal) ||
   b.dokumen.localeCompare(a.dokumen) ||
@@ -367,7 +437,7 @@ const urutan = (a: BarisRiwayatHpp, b: BarisRiwayatHpp) =>
  *   penunjuk `berikutnya` (eksklusif) tidak melompati apa pun.
  */
 export function susunRiwayatHpp(m: MasukanRiwayatHpp): RiwayatHpp {
-  const semua = [...barisPenerimaan(m), ...barisPembelian(m)].sort(urutan);
+  const semua = terapkanKoreksi([...barisPenerimaan(m), ...barisPembelian(m)], m.koreksi).sort(urutan);
   const ambil = Math.max(1, Math.floor(m.ambil));
   const tepi: number[] = [];
   if (m.penerimaan.length >= ambil) tepi.push(Math.min(...m.penerimaan.map((p) => p.receivedAt.getTime())));
@@ -392,7 +462,9 @@ export function susunRiwayatHpp(m: MasukanRiwayatHpp): RiwayatHpp {
 
 /** HPP terbaru di tingkat barang (dasar rekomendasi harga); null = belum ada. */
 export function hppTerbaruDari(baris: BarisRiwayatHpp[]): HppTerbaru | null {
-  const pilihan = baris.find((b) => b.catatan == null && b.hppDokumen != null && b.hppDokumen > 0);
+  const pilihan = baris.find(
+    (b) => (b.catatan == null || !CATATAN_BUKAN_DASAR.has(b.catatan)) && b.hppDokumen != null && b.hppDokumen > 0,
+  );
   if (!pilihan || pilihan.hppDokumen == null) return null;
   const jumlah = baris
     .filter((b) => b.jenis === pilihan.jenis && b.dokumenId === pilihan.dokumenId)

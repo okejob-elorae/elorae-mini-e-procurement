@@ -1,76 +1,66 @@
 import { formatIDR } from "@/lib/sales-orders/format";
 import { salesMonthLabelId } from "@/lib/spg-commission/payout";
 import { shiftYearMonth } from "@/lib/spg-commission/recap-display";
-import { batasPotongSen, dariSen, keSen, REF_KOMISI_KONSI, REF_KOMISI_SPG_PUTUS } from "./hilang";
+import type { AlasanTahanBayar, HasilGaji, RincianGaji } from "./gaji-pokok";
+import { dariSen, keSen, REF_KOMISI_KONSI, REF_KOMISI_SPG_PUTUS } from "./hilang";
 import { KOREKSI_JENDELA_BULAN } from "./komisi";
 
 /**
- * Pembayaran komisi SPG dan koreksinya — murni, tanpa basis data, aman untuk klien.
+ * Pembayaran gaji & komisi SPG dan koreksinya — murni, tanpa basis data, aman untuk klien
+ * (keputusan pemilik 2026-11-02).
  *
- * Satu aturan (keputusan pemilik 2026-11-02, "jangan ada harga rata-rata"): komisi seorang SPG
- * pada satu laporan = tarif kategori bulan penjualan × potong bersih terkonfirmasi miliknya sendiri
- * (`lib/spg-commission/payout.ts`). Di atasnya dua mekanisme:
+ * SATU pembayaran per SPG × bulan kerja di tokonya: baris `ConsignmentCommission` (siklus konsinyasi
+ * dikunci) atau `SpgCommission` (toko putus ditetapkan). Isinya gaji pokok (`lib/spg/gaji-pokok.ts`,
+ * P7a–P7e, P62–P65, P70) + komisi (tarif kategori bulan penjualan × potong bersihnya sendiri,
+ * `lib/spg-commission/payout.ts`). Baris yang BELUM dibayar selalu dibayar dengan angka yang dihitung
+ * ulang di transaksi pembayarannya (`rencanaBayarKomisi` / `siapkanBayarKomisi`).
  *
- * 1. BAYAR DENGAN ANGKA SEKARANG. Baris yang belum dibayar — toko putus maupun konsinyasi, aturan
- *    lama maupun baru — selalu dibayar dengan angka per SPG saat ditandai dibayar (`komisiBaru`),
- *    kecuali yang ditahan (di bawah). Angka tersimpan yang berbeda dicoret; potongan beban barang
- *    hilang dipertahankan, atau diturunkan sampai batas bruto barunya (tidak pernah dinaikkan).
- * 2. KOREKSI. Satu UNIT = satu laporan × satu SPG. Unit TERTUTUP kalau barisnya sudah dibayar, atau
- *    ia tidak punya baris dan laporannya tertutup. Selisihnya = angka sekarang − yang dibayar −
- *    koreksi yang sudah diterapkan dari unit itu; DITURUNKAN, tidak pernah disimpan. Selisih
- *    menunggu hanya ikut baris SASARAN SPG itu — baris belum dibayar yang paling lama — dan baru
- *    tertulis (`SpgCommissionCorrection`) saat baris itu ditandai dibayar. Koreksi plus diterapkan
- *    penuh; koreksi minus, bulan penjualan terlama dulu, hanya sejauh pembayarannya tetap ≥ Rp 0 —
- *    sisanya tetap selisih dan ikut pembayaran sesudahnya dengan sendirinya.
+ * TAHAN (P60). Selama dasar gaji bulan itu belum pasti, SELURUH pembayaran bulan itu menunggu —
+ * gaji pokok, komisi, dan apa pun yang akan ikut (`AlasanTahanBayar`). Baris yang ditahan bukan
+ * sasaran koreksi dan tidak bisa dibayar; unit koreksinya tidak membawa selisih sampai diputuskan.
  *
- * PENAHANAN. Satu unit laporan ATURAN LAMA (tarif barang, dibagi rata) TIDAK dikoreksi dan TIDAK
- * diganti otomatis kalau angka sekarang tidak bisa dibandingkan jujur dengan uang yang dihitung
- * dengan aturan lain (`alasanTahan`) — ia menunggu keputusan pemilik:
- *    - `TANPA_TARIF`: sebagian potongnya di laporan itu tanpa tarif kategori. Tabel tarif baru ada
- *      sejak 2026-10 dan bulan yang sudah lewat tidak bisa diberi tarif (`setRate` → MONTH_CLOSED),
- *      jadi bulan aturan lama hampir selalu terbaca Rp 0 — memakainya menarik kembali seluruh bagi
- *      rata yang sudah dibayar, bukan +Rp 17.500 / −Rp 2.500 seperti contoh pemilik. Baris belum
- *      dibayarnya juga TIDAK dibayar (tidak dengan angka lama, tidak dengan Rp 0) — satu-satunya
- *      sebab yang menahan pembayaran (`MENAHAN_PEMBAYARAN`).
- *    - `LAPORAN_TIDAK_LENGKAP` (konsinyasi): angka resmi siklusnya tidak seluruhnya tercatat di HP
- *      SPG (ada baris diketik tanpa barang, atau potong HP < angka resmi), DAN baris SPG itu sudah
- *      dibayar LEBIH dari angka sekarangnya. Komisi konsinyasi dari potong HP saja (dibatasi angka
- *      resmi; laporan yang diketik kantor tanpa nota HP = Rp 0) adalah aturan hari ini yang masih
- *      ditanyakan ke pemilik (Q7), jadi ia berlaku seperti biasa: baris yang BELUM dibayar dibayar
- *      dengan aturan itu, gaji pokoknya ikut, dan selisih plus tetap dikoreksi (potong HP batas
- *      bawahnya). Yang ditahan hanya uang yang dulu dibayar dari angka resmi: ia tidak ditarik
- *      kembali lewat koreksi sampai Q7 dijawab.
- *    Laporan aturan baru tidak pernah ditahan: potong tanpa tarif di sana juga Rp 0 di angka
- *    tersimpannya, jadi selisihnya jujur.
+ * KOREKSI. Satu UNIT = satu laporan × satu SPG. Unit TERTUTUP kalau barisnya sudah dibayar, atau ia
+ * tidak punya baris dan laporannya tertutup. Selisihnya per BAGIAN — komisi dan gaji pokok —
+ * = angka sekarang − yang dibayar − koreksi yang sudah diterapkan; DITURUNKAN, tidak pernah
+ * disimpan. Hanya unit yang bulan PENJUALANNYA masih dalam 12 bulan (P10) yang diperiksa. Selisih
+ * ikut baris SASARAN SPG itu — baris belum dibayar, boleh dibayar, tidak ditahan, yang paling lama
+ * (tanpa batas umur) — dan baru tertulis (`SpgCommissionCorrection`) saat baris itu dibayar.
+ *
+ * SUSUNAN PEMBAYARAN (B22, P5, P11, P11a, P13a). Dua kantong: komisi (komisi sekarang + bagian
+ * komisi koreksi plus) dan gaji (gaji pokok sekarang + bagian gaji koreksi plus). Lalu semua
+ * pengurang diambil PENUH sejauh kantongnya cukup, berurutan: koreksi minus (sasaran saja, bulan
+ * penjualan terlama dulu), bagian beban barang hilang SPG itu, beban retur pembeli yang ditolak,
+ * utang SPG — masing-masing dari kantong komisi dulu, baru kantong gaji. Yang dibayarkan = sisa kedua
+ * kantong, tidak pernah di bawah Rp 0. Urutannya hanya menentukan mana yang masih terutang, tidak
+ * pernah jumlah utangnya.
+ *
+ * SPG yang masih bekerja: koreksi minus yang tidak tertutup tetap selisih dan ikut pembayaran
+ * berikutnya; bagian beban dan beban retur tetap terbuka. Pembayaran TERAKHIR SPG yang berhenti
+ * (`akhir`): semua yang tidak tertutup menjadi utang SPG (`keUtang`) — tidak ada yang diikhlaskan
+ * (P6, P6a).
  *
  * Semua uang dihitung dalam sen bulat.
  */
 
 export type RefBarisKomisi = typeof REF_KOMISI_KONSI | typeof REF_KOMISI_SPG_PUTUS;
 
-/** Sebab sebuah unit menunggu keputusan pemilik (`alasanTahan`). */
-export type AlasanTahanKoreksi = "TANPA_TARIF" | "LAPORAN_TIDAK_LENGKAP";
-
 /** Baris resmi SPG pada satu laporan: `ConsignmentCommission` atau `SpgCommission`. */
 export type BarisKomisiSpg = {
   refType: RefBarisKomisi;
   refId: string;
   dibayar: boolean;
-  /** Belum dibayar dan sudah boleh dibayar: siklus terkunci; toko putus dicek, atau sebagian bulannya sudah dibayar. */
+  /** Belum dibayar dan sudah boleh dibayar: siklus terkunci; toko putus sudah dicek. */
   dapatDibayar: boolean;
-  /** Bulan pembayarannya (WIB): kunci siklus, tanda dicek, atau penetapan terakhir aturan lama. */
+  /** Bulan pembayarannya (WIB): kunci siklus atau tanda dicek. */
   bulanBayar: string | null;
-  /** Komisi kotor yang tersimpan (sebelum potongan). */
+  /** Komisi yang tersimpan. */
   komisiTersimpan: number;
   /** Potong yang tersimpan — toko putus saja; konsinyasi tidak menyimpannya per SPG. */
   potongTersimpan: number | null;
-  /** Ditetapkan/dikunci dengan aturan lama (tarif barang, bagi rata). */
-  dasarLama: boolean;
+  /** Gaji pokok yang tersimpan (yang dibayar, kalau sudah dibayar). */
   gajiPokok: number;
-  /** Potongan beban barang hilang yang tersimpan. */
+  /** Potongan beban barang hilang yang tersimpan (diambil saat dibayar). */
   potonganHilang: number;
-  /** Bulan pembayarannya di dalam jendela koreksi — hanya baris itu yang bisa menjadi sasaran koreksi. */
-  dalamJendela: boolean;
 };
 
 export type UnitKomisiSpg = {
@@ -86,15 +76,19 @@ export type UnitKomisiSpg = {
   potong: number;
   potongTanpaTarif: number;
   baris: BarisKomisiSpg | null;
-  /** Konsinyasi: siklusnya terkunci. Toko putus: sudah ada baris toko × bulan itu yang dibayar. */
+  /** Konsinyasi: siklusnya terkunci. Toko putus: sudah dicek. */
   laporanTertutup: boolean;
-  /** Σ koreksi yang sudah diterapkan dari unit ini. */
+  /** Σ koreksi (komisi + gaji) yang sudah diterapkan dari unit ini. */
   koreksiTerapan: number;
-  /**
-   * Menunggu keputusan pemilik (`alasanTahan`): tanpa selisih. Baris belum dibayarnya hanya
-   * tertahan (bukan sasaran, tidak dibayar) oleh sebab yang menahan pembayaran (`alasanTahanBayar`).
-   */
-  ditahan: AlasanTahanKoreksi | null;
+  /** Σ bagian gaji pokok dari koreksi yang sudah diterapkan dari unit ini. */
+  gajiTerapan: number;
+  /** Gaji pokok bulan kerja unit ini sekarang; null = unit ini tidak memegang gaji (gajinya di baris lain). */
+  gaji: HasilGaji | null;
+  /** Sebab SELURUH pembayaran unit ini menunggu (P60) — dari `gaji`. */
+  ditahan: AlasanTahanBayar | null;
+  hariTahan: string[];
+  /** Bulan penjualannya lebih tua dari jendela koreksi 12 bulan (P10): tidak dikoreksi lagi. */
+  diLuarJendela?: boolean;
 };
 
 export type BarisKoreksi = {
@@ -104,10 +98,14 @@ export type BarisKoreksi = {
   storeId: string;
   namaToko: string;
   bulanJual: string;
-  /** Seluruh selisihnya saat ini. */
+  /** Seluruh selisihnya saat ini (komisi + gaji). */
   selisih: number;
+  /** Bagian gaji pokok dari `selisih`. */
+  selisihGaji: number;
   /** Yang diterapkan pada pembayaran ini (0 untuk yang hanya menunggu). */
   diterapkan: number;
+  /** Bagian gaji pokok dari `diterapkan` — `SpgCommissionCorrection.salaryAmount`. */
+  gajiDiterapkan: number;
   /** Bagian minus yang belum bisa diterapkan dan dibawa ke pembayaran berikutnya (≤ 0). */
   dibawa: number;
   /** Suku-suku rumusnya saat itu (disimpan sebagai potret di `SpgCommissionCorrection`). */
@@ -115,6 +113,40 @@ export type BarisKoreksi = {
   dibayarSebelum: number;
   terapanSebelum: number;
 };
+
+/** Satu pengurang yang diambil dari pembayaran. */
+export type PotongBayar = {
+  jenis: "KOREKSI" | "BARANG_HILANG" | "RETUR_PEMBELI" | "UTANG";
+  /** Kunci laporan (KOREKSI), id bagian beban (BARANG_HILANG), id beban (RETUR_PEMBELI), id utang (UTANG). */
+  sumber: string;
+  storeId: string | null;
+  /** Yang terutang sebelum pembayaran ini (positif). */
+  jumlah: number;
+  dariKomisi: number;
+  dariGaji: number;
+  /** Yang masih terutang sesudahnya (positif). */
+  sisa: number;
+};
+
+/** Yang menjadi utang SPG pada pembayaran terakhirnya (B28). */
+export type KeUtang = {
+  koreksi: { sumber: string; jenis: "KONSI" | "PUTUS"; storeId: string; bulanJual: string; jumlah: number; gaji: number }[];
+  hilang: { shareId: string; lossId: string; storeId: string | null; jumlah: number }[];
+  retur: { chargeId: string; storeId: string; jumlah: number }[];
+};
+
+/** Bentuk yang dibaca modul beban retur pembeli (retur-spg-lanjutan) — turunan dari `potong`. */
+export type BarisBebanDipotongRencana = {
+  chargeId: string;
+  storeId: string;
+  sisaSebelum: number;
+  diterapkan: number;
+  dariKomisi: number;
+  dariGaji: number;
+  dibawa: number;
+};
+
+export type BarisKembaliBebanRencana = { chargeId: string; storeId: string; jumlah: number };
 
 export type RencanaBayarKomisi = {
   refType: RefBarisKomisi;
@@ -125,134 +157,108 @@ export type RencanaBayarKomisi = {
   /** Komisi per SPG sekarang — yang dibayar. */
   komisiBaru: number;
   potongBaru: number;
-  /** Baris diganti saat dibayar (angka, potong, atau dasar aturan lama). */
+  /** Komisi, potong, atau gaji pokok berbeda dari yang tersimpan — barisnya ditulis ulang saat dibayar. */
   berubah: boolean;
+  /** Rincian gaji pokok sekarang (null: gaji bulan itu di baris lain, atau ditahan). */
+  gaji: RincianGaji | null;
+  /** Gaji pokok yang tersimpan. */
+  gajiLama: number;
+  /** Gaji pokok sekarang — yang dibayar. */
   gajiPokok: number;
-  /** Potongan beban barang hilang yang dipakai (tidak pernah lebih dari yang tersimpan). */
-  potonganHilang: number;
-  /** gaji + komisi baru − potongan, ≥ 0. */
+  /** Komisi + gaji pokok sekarang. */
   dasar: number;
+  potong: PotongBayar[];
+  potonganHilang: number;
+  potonganRetur: number;
+  potonganUtang: number;
+  /** Σ pengurang (termasuk koreksi minus) yang diambil dari kantong komisi / gaji. */
+  dariKomisi: number;
+  dariGaji: number;
   /** Baris ini tempat koreksi SPG itu ikut. */
   sasaran: boolean;
   koreksi: BarisKoreksi[];
+  /** Σ koreksi yang diterapkan (bertanda). */
   jumlahKoreksi: number;
-  /** Yang dibayarkan: dasar + Σ koreksi diterapkan, ≥ 0. */
+  /** Uang pengembalian beban retur yang ikut dibayar (P79), di luar kedua kantong. */
+  kembaliBeban: BarisKembaliBebanRencana[];
+  jumlahKembaliBeban: number;
+  /** Yang dibayarkan, ≥ 0. */
   dibayar: number;
-  /** Σ koreksi minus yang dibawa ke pembayaran berikutnya (≤ 0). */
+  /** Σ koreksi minus yang dibawa ke pembayaran berikutnya (≤ 0); 0 pada pembayaran terakhir. */
   dibawa: number;
   /** Koreksi yang menunggu ikut baris lain (sasaran SPG ini), bukan baris ini. */
   koreksiDiBarisLain: { kunci: string; bulanJual: string; namaToko: string; jumlah: number } | null;
-  /**
-   * Menunggu keputusan pemilik: baris ini TIDAK bisa dibayar (penulis menolaknya dengan kode ini).
-   * Rencananya hanya untuk tampilan — dari angka tersimpan, tanpa koreksi. Hanya sebab yang menahan
-   * pembayaran (`MENAHAN_PEMBAYARAN`, kini `TANPA_TARIF`) — tidak pernah `LAPORAN_TIDAK_LENGKAP`.
-   */
-  ditahan: AlasanTahanKoreksi | null;
+  /** Pembayaran terakhir SPG yang berhenti. */
+  akhir: boolean;
+  keUtang: KeUtang | null;
+  /** Menunggu (P60): baris ini TIDAK bisa dibayar; tanpa angka. */
+  ditahan: AlasanTahanBayar | null;
+  hariTahan: string[];
+  /** Bentuk turunan untuk modul beban retur pembeli. */
+  beban: BarisBebanDipotongRencana[];
+  jumlahBeban: number;
 };
 
-/** Unit yang menunggu keputusan pemilik — kartu "Koreksi komisi", bagian "perlu keputusan". */
-export type KoreksiDitahan = {
-  sumber: string;
-  jenis: "KONSI" | "PUTUS";
-  storeId: string;
-  namaToko: string;
-  bulanJual: string;
-  alasan: AlasanTahanKoreksi;
-  /** Selisih yang AKAN ada kalau angka sekarang dipakai — hanya informasi. */
-  selisih: number;
-  potongTanpaTarif: number;
-  /** Baris yang belum dibayar dan pembayarannya tertahan (bukan selisih sesudah dibayar). */
-  belumDibayar: boolean;
+/** Konteks pengurang SPG itu saat dibayar (dari basis data). Uang dalam sen. */
+export type KonteksBayar = {
+  bebanHilang: readonly { shareId: string; lossId: string; storeId: string | null; sisaSen: number }[];
+  bebanRetur: readonly { chargeId: string; storeId: string; sisaSen: number }[];
+  kembaliBeban?: readonly { chargeId: string; storeId: string; sen: number }[];
+  utang: readonly { debtId: string; jenis: string; storeId: string | null; sisaSen: number }[];
+  akhir: boolean;
 };
+
+export const KONTEKS_KOSONG: KonteksBayar = { bebanHilang: [], bebanRetur: [], kembaliBeban: [], utang: [], akhir: false };
 
 const sen = keSen;
 const rupiah = dariSen;
 const tanpaMinNol = (n: number) => (n === 0 ? 0 : n);
 const bandingId = (a: string, b: string) => (a === b ? 0 : a < b ? -1 : 1);
 
-/** Bulan penjualan/pembayaran paling tua yang masih masuk jendela koreksi. */
+/** Bulan penjualan paling tua yang masih diperiksa untuk koreksi (P10). */
 export function awalJendelaKoreksi(bulanIni: string): string {
   return shiftYearMonth(bulanIni, -KOREKSI_JENDELA_BULAN);
 }
 
-/**
- * Satu definisi jendela untuk sasaran koreksi, untuk kartu #tunggakan, dan untuk baris Beranda
- * `spgCommissionsUnpaidPast`: tunggakan yang bulan pembayarannya lebih tua didaftar terpisah
- * ("lebih dari 12 bulan"), tidak pernah menjadi sasaran koreksi, dan tidak dihitung di Beranda.
- */
 export function dalamJendelaKoreksi(bulan: string | null | undefined, bulanIni: string): boolean {
   if (!bulan) return false;
   return bulan >= awalJendelaKoreksi(bulanIni);
-}
-
-/**
- * Sebab sebuah unit menunggu keputusan pemilik, atau null. Hanya laporan aturan lama
- * (`dasarLama`): potong tanpa tarif kategori (`TANPA_TARIF`), atau — konsinyasi — angka resmi yang
- * tidak seluruhnya tercatat di HP pada baris yang sudah dibayar lebih dari angka sekarangnya
- * (`LAPORAN_TIDAK_LENGKAP`). Lihat penjelasan di kepala berkas.
- *
- * `komisiDibayar` = komisi tersimpan baris SPG itu kalau barisnya SUDAH dibayar; null kalau belum
- * dibayar atau ia tidak punya baris di laporan itu — baris seperti itu tidak pernah ditahan karena
- * laporannya tidak lengkap. Pemanggil yang tidak mengisinya mendapat bacaan paling hati-hati (setiap
- * unit siklus aturan lama yang tidak lengkap ditahan); setiap pemuat dan penulis mengisinya.
- */
-export function alasanTahan(u: {
-  jenis: "KONSI" | "PUTUS";
-  dasarLama: boolean;
-  potongTanpaTarif: number;
-  laporanTidakLengkap: boolean;
-  komisiDibayar?: number | null;
-  /** Komisi per SPG sekarang, dibandingkan dengan `komisiDibayar`. */
-  angka?: number;
-}): AlasanTahanKoreksi | null {
-  if (!u.dasarLama) return null;
-  if (u.potongTanpaTarif > 0) return "TANPA_TARIF";
-  if (u.jenis !== "KONSI" || !u.laporanTidakLengkap) return null;
-  if (u.komisiDibayar === undefined) return "LAPORAN_TIDAK_LENGKAP";
-  if (u.komisiDibayar === null) return null;
-  // Angka sekarang ≥ yang dibayar: tidak ada yang ditarik kembali; selisih plusnya jujur (batas bawah).
-  return sen(u.angka ?? 0) < sen(u.komisiDibayar) ? "LAPORAN_TIDAK_LENGKAP" : null;
-}
-
-/**
- * Sebab mana yang juga menahan PEMBAYARAN baris yang belum dibayar — gaji pokok konsinyasinya ikut.
- * Hanya `TANPA_TARIF`: `LAPORAN_TIDAK_LENGKAP` hanya menahan koreksi atas uang yang sudah dibayar
- * (Q7), dan baris yang belum dibayar dibayar dengan aturan hari ini.
- */
-export const MENAHAN_PEMBAYARAN: Readonly<Record<AlasanTahanKoreksi, boolean>> = {
-  TANPA_TARIF: true,
-  LAPORAN_TIDAK_LENGKAP: false,
-};
-
-/** Sebab yang menahan pembayaran baris yang belum dibayar (`MENAHAN_PEMBAYARAN`), atau null. */
-export function alasanTahanBayar(a: AlasanTahanKoreksi | null | undefined): AlasanTahanKoreksi | null {
-  return a && MENAHAN_PEMBAYARAN[a] ? a : null;
 }
 
 export function unitTertutup(u: UnitKomisiSpg): boolean {
   return u.baris ? u.baris.dibayar : u.laporanTertutup;
 }
 
-/** Angka atau potongnya berbeda dari yang tersimpan (bukan sekadar dasar aturan lama). */
-function angkaBerbeda(u: UnitKomisiSpg): boolean {
-  const b = u.baris;
-  if (!b) return u.angka !== 0;
-  return sen(u.angka) !== sen(b.komisiTersimpan) || (u.jenis === "PUTUS" && u.potong !== b.potongTersimpan);
-}
+/** Gaji pokok sekarang milik unit (0 bila gajinya di baris lain atau ditahan). */
+const gajiSekarang = (u: UnitKomisiSpg): number => (u.gaji && u.gaji.ok ? u.gaji.rincian.gajiPokok : 0);
 
 /**
- * Selisih unit yang menunggu koreksi: angka sekarang − yang dibayar − koreksi yang sudah
- * diterapkan. Nol untuk unit yang belum tertutup, dan untuk unit yang ditahan (`koreksiDitahan`).
+ * Selisih unit yang menunggu koreksi, per bagian: komisi dan gaji pokok. Nol untuk unit yang belum
+ * tertutup, yang ditahan, dan yang bulan penjualannya di luar jendela 12 bulan.
  */
-export function selisihUnit(u: UnitKomisiSpg): number {
-  if (u.ditahan || !unitTertutup(u)) return 0;
-  return tanpaMinNol(rupiah(sen(u.angka) - (u.baris?.dibayar ? sen(u.baris.komisiTersimpan) : 0) - sen(u.koreksiTerapan)));
+export function selisihUnitRinci(u: UnitKomisiSpg): { komisi: number; gaji: number } {
+  if (u.ditahan || !unitTertutup(u) || u.diLuarJendela) return { komisi: 0, gaji: 0 };
+  const b = u.baris;
+  const komisiDibayar = b?.dibayar ? sen(b.komisiTersimpan) : 0;
+  const gajiDibayar = b?.dibayar ? sen(b.gajiPokok) : 0;
+  const gajiTerapan = sen(u.gajiTerapan);
+  const komisiTerapan = sen(u.koreksiTerapan) - gajiTerapan;
+  return {
+    komisi: tanpaMinNol(rupiah(sen(u.angka) - komisiDibayar - komisiTerapan)),
+    gaji: tanpaMinNol(rupiah(sen(gajiSekarang(u)) - gajiDibayar - gajiTerapan)),
+  };
 }
 
-/** Baris yang belum dibayar, boleh dibayar, pembayarannya tidak ditahan, dan bulan pembayarannya di jendela koreksi. */
+/** Seluruh selisih unit (komisi + gaji). */
+export function selisihUnit(u: UnitKomisiSpg): number {
+  const r = selisihUnitRinci(u);
+  return tanpaMinNol(rupiah(sen(r.komisi) + sen(r.gaji)));
+}
+
+/** Baris yang belum dibayar, boleh dibayar, dan tidak ditahan. Tanpa batas umur (spesifikasi putaran 3). */
 function bisaJadiSasaran(u: UnitKomisiSpg): boolean {
   const b = u.baris;
-  return Boolean(b && !alasanTahanBayar(u.ditahan) && !b.dibayar && b.dapatDibayar && b.dalamJendela);
+  return Boolean(b && !u.ditahan && !b.dibayar && b.dapatDibayar);
 }
 
 const urutSasaran = (a: UnitKomisiSpg, b: UnitKomisiSpg) =>
@@ -262,9 +268,9 @@ const urutSasaran = (a: UnitKomisiSpg, b: UnitKomisiSpg) =>
   bandingId(a.baris?.refId ?? "", b.baris?.refId ?? "");
 
 /**
- * Baris SASARAN koreksi seorang SPG: baris belum dibayar yang boleh dibayar (dan tidak ditahan),
- * bulan pembayarannya di jendela koreksi, dengan bulan pembayaran terlama, lalu bulan penjualan
- * terlama, konsinyasi sebelum toko putus, lalu id. Membayar baris lain tidak menerapkan koreksi apa pun.
+ * Baris SASARAN koreksi seorang SPG: baris belum dibayar yang boleh dibayar dan tidak ditahan,
+ * dengan bulan pembayaran terlama, lalu bulan penjualan terlama, konsinyasi sebelum toko putus,
+ * lalu id. Membayar baris lain tidak menerapkan koreksi apa pun.
  */
 export function barisSasaranKoreksi(units: readonly UnitKomisiSpg[]): { unit: UnitKomisiSpg; baris: BarisKomisiSpg } | null {
   const calon = units.filter(bisaJadiSasaran).sort(urutSasaran);
@@ -277,21 +283,20 @@ const urutKoreksi = (a: { bulanJual: string; sumber: string }, b: { bulanJual: s
 
 const keBarisKoreksi = (
   u: UnitKomisiSpg,
-  selisih: number,
-  diterapkan: number,
-  dibawa: number,
-  dibayarSebelum: number = u.baris?.dibayar ? u.baris.komisiTersimpan : 0,
+  m: { selisihSen: number; selisihGajiSen: number; diterapkanSen: number; gajiDiterapkanSen: number; dibawaSen: number; dibayarSebelum: number },
 ): BarisKoreksi => ({
   sumber: u.kunci,
   jenis: u.jenis,
   storeId: u.storeId,
   namaToko: u.namaToko,
   bulanJual: u.bulanJual,
-  selisih: tanpaMinNol(selisih),
-  diterapkan: tanpaMinNol(diterapkan),
-  dibawa: tanpaMinNol(dibawa),
+  selisih: tanpaMinNol(rupiah(m.selisihSen)),
+  selisihGaji: tanpaMinNol(rupiah(m.selisihGajiSen)),
+  diterapkan: tanpaMinNol(rupiah(m.diterapkanSen)),
+  gajiDiterapkan: tanpaMinNol(rupiah(m.gajiDiterapkanSen)),
+  dibawa: tanpaMinNol(rupiah(m.dibawaSen)),
   angka: u.angka,
-  dibayarSebelum,
+  dibayarSebelum: m.dibayarSebelum,
   terapanSebelum: u.koreksiTerapan,
 });
 
@@ -299,136 +304,213 @@ const keBarisKoreksi = (
 export function selisihMenunggu(units: readonly UnitKomisiSpg[]): BarisKoreksi[] {
   return units
     .flatMap((u) => {
-      const s = selisihUnit(u);
-      return s === 0 ? [] : [keBarisKoreksi(u, s, 0, 0)];
-    })
-    .sort(urutKoreksi);
-}
-
-/**
- * Unit yang menunggu keputusan pemilik, bulan penjualan terlama dulu: setiap baris belum dibayar
- * yang sebenarnya sudah boleh dibayar tetapi ditahan (`belumDibayar`; `selisih` = angka sekarang −
- * angka tersimpannya), dan setiap unit tertutup yang ditahan dengan selisih bukan nol (angka
- * sekarang − yang dibayar − yang sudah diterapkan). `selisih` hanya informasi — tidak pernah
- * diterapkan. Baris yang belum dibayar hanya terdaftar karena sebab yang menahan pembayarannya
- * (`alasanTahanBayar`) — sama dengan `rencanaBayarKomisi`, yang membayar baris lainnya.
- */
-export function koreksiDitahan(units: readonly UnitKomisiSpg[]): KoreksiDitahan[] {
-  return units
-    .flatMap((u): KoreksiDitahan[] => {
-      const b = u.baris;
-      const alasan = b && !b.dibayar ? alasanTahanBayar(u.ditahan) : u.ditahan;
-      if (!alasan) return [];
-      const belumDibayar = Boolean(b && !b.dibayar && b.dapatDibayar);
-      let selisihSen = 0;
-      if (b && !b.dibayar) selisihSen = sen(u.angka) - sen(b.komisiTersimpan) - sen(u.koreksiTerapan);
-      else if (unitTertutup(u)) selisihSen = sen(u.angka) - (b?.dibayar ? sen(b.komisiTersimpan) : 0) - sen(u.koreksiTerapan);
-      if (!belumDibayar && selisihSen === 0) return [];
+      const r = selisihUnitRinci(u);
+      const s = sen(r.komisi) + sen(r.gaji);
+      if (s === 0) return [];
       return [
-        {
-          sumber: u.kunci,
-          jenis: u.jenis,
-          storeId: u.storeId,
-          namaToko: u.namaToko,
-          bulanJual: u.bulanJual,
-          alasan,
-          selisih: tanpaMinNol(rupiah(selisihSen)),
-          potongTanpaTarif: u.potongTanpaTarif,
-          belumDibayar,
-        },
+        keBarisKoreksi(u, {
+          selisihSen: s,
+          selisihGajiSen: sen(r.gaji),
+          diterapkanSen: 0,
+          gajiDiterapkanSen: 0,
+          dibawaSen: 0,
+          dibayarSebelum: u.baris?.dibayar ? u.baris.komisiTersimpan + u.baris.gajiPokok : 0,
+        }),
       ];
     })
     .sort(urutKoreksi);
 }
 
+/** Unit yang ditahan (P60) — kartu "menunggu" di Komisi SPG: barisnya belum bisa dibayar. */
+export function unitDitahan(units: readonly UnitKomisiSpg[]): UnitKomisiSpg[] {
+  return units.filter((u) => u.ditahan && u.baris && !u.baris.dibayar && u.baris.dapatDibayar).sort(urutSasaran);
+}
+
+const rencanaTahan = (u: UnitKomisiSpg, b: BarisKomisiSpg, akhir: boolean): RencanaBayarKomisi => ({
+  refType: b.refType,
+  refId: b.refId,
+  kunci: u.kunci,
+  komisiLama: b.komisiTersimpan,
+  komisiBaru: 0,
+  potongBaru: 0,
+  berubah: false,
+  gaji: null,
+  gajiLama: b.gajiPokok,
+  gajiPokok: 0,
+  dasar: 0,
+  potong: [],
+  potonganHilang: 0,
+  potonganRetur: 0,
+  potonganUtang: 0,
+  dariKomisi: 0,
+  dariGaji: 0,
+  sasaran: false,
+  koreksi: [],
+  jumlahKoreksi: 0,
+  kembaliBeban: [],
+  jumlahKembaliBeban: 0,
+  dibayar: 0,
+  dibawa: 0,
+  koreksiDiBarisLain: null,
+  akhir,
+  keUtang: null,
+  ditahan: u.ditahan,
+  hariTahan: u.hariTahan,
+  beban: [],
+  jumlahBeban: 0,
+});
+
 /**
- * Rencana membayar satu baris (`kunci` = laporannya): angka per SPG sekarang, potongan beban
- * barang hilang yang dipakai, koreksi yang ikut, dan yang dibayarkan. Null kalau unit itu tidak
- * punya baris yang belum dibayar dan boleh dibayar. Halaman yang memperlihatkannya dan penulis yang
- * membayarnya memakai fungsi ini, jadi yang ditampilkan = yang dibayar. Unit yang pembayarannya
- * ditahan (`alasanTahanBayar`) mendapat rencana bertanda `ditahan` yang tidak bisa dibayar; baris
- * siklus yang laporannya tidak lengkap (Q7) dibayar seperti biasa, dengan angka per SPG sekarang.
- *
- * Potongan beban barang hilang = yang tersimpan, atau batas bruto barunya kalau lebih kecil
- * (aturan batas sekarang) — penulis menurunkannya di transaksi yang sama setiap kali angka ini
- * lebih kecil dari yang tersimpan, berubah atau tidak komisinya, jadi baris yang dibayar, jurnal,
- * dan kabarnya sama dengan yang dilihat kantor.
+ * Rencana membayar satu baris (`kunci` = laporannya): gaji pokok dan komisi sekarang, koreksi yang
+ * ikut, pengurang yang diambil penuh dari komisi dulu lalu gaji pokok, dan yang dibayarkan. Null
+ * kalau unit itu tidak punya baris yang belum dibayar dan boleh dibayar. Halaman yang
+ * memperlihatkannya dan penulis yang membayarnya memakai fungsi ini, jadi yang ditampilkan = yang
+ * dibayar. Unit yang ditahan mendapat rencana bertanda `ditahan` tanpa angka.
  */
-export function rencanaBayarKomisi(input: {
-  units: readonly UnitKomisiSpg[];
-  kunci: string;
-  maksPotongPersen: number;
-}): RencanaBayarKomisi | null {
-  const { units, kunci, maksPotongPersen } = input;
+export function rencanaBayarKomisi(input: { units: readonly UnitKomisiSpg[]; kunci: string; konteks?: KonteksBayar }): RencanaBayarKomisi | null {
+  const { units, kunci } = input;
+  const konteks = input.konteks ?? KONTEKS_KOSONG;
   const u0 = units.find((u) => u.kunci === kunci && u.baris && !u.baris.dibayar && u.baris.dapatDibayar);
   const b = u0?.baris;
   if (!u0 || !b) return null;
+  if (u0.ditahan) return rencanaTahan(u0, b, konteks.akhir);
 
-  const tahanBayar = alasanTahanBayar(u0.ditahan);
-  if (tahanBayar) {
-    // Ditahan: tidak bisa dibayar. Hanya tampilan, dari angka tersimpan — bukan angka sekarang yang
-    // belum diputuskan — tanpa koreksi apa pun.
-    const potongTersimpanSen = Math.max(0, sen(b.potonganHilang));
-    const dasarTahanSen = Math.max(0, sen(b.gajiPokok) + sen(b.komisiTersimpan) - potongTersimpanSen);
-    return {
-      refType: b.refType,
-      refId: b.refId,
-      kunci: u0.kunci,
-      komisiLama: b.komisiTersimpan,
-      komisiBaru: u0.angka,
-      potongBaru: u0.potong,
-      berubah: false,
-      gajiPokok: b.gajiPokok,
-      potonganHilang: rupiah(potongTersimpanSen),
-      dasar: rupiah(dasarTahanSen),
-      sasaran: false,
-      koreksi: [],
-      jumlahKoreksi: 0,
-      dibayar: rupiah(dasarTahanSen),
-      dibawa: 0,
-      koreksiDiBarisLain: null,
-      ditahan: tahanBayar,
-    };
-  }
+  const gajiBaru = gajiSekarang(u0);
+  const rincianGaji = u0.gaji && u0.gaji.ok ? u0.gaji.rincian : null;
+  const berubah =
+    sen(u0.angka) !== sen(b.komisiTersimpan) ||
+    sen(gajiBaru) !== sen(b.gajiPokok) ||
+    (u0.jenis === "PUTUS" && u0.potong !== b.potongTersimpan);
 
-  const berubah = angkaBerbeda(u0) || (u0.jenis === "PUTUS" && b.dasarLama);
-
-  const brutoSen = sen(b.gajiPokok) + sen(u0.angka);
-  const potonganSen = Math.min(sen(b.potonganHilang), batasPotongSen(rupiah(brutoSen), maksPotongPersen));
-  const dasarSen = Math.max(0, brutoSen - potonganSen);
+  let kantongKomisi = sen(u0.angka);
+  let kantongGaji = sen(gajiBaru);
+  const dasarSen = kantongKomisi + kantongGaji;
 
   const sasaranAda = barisSasaranKoreksi(units);
   const sasaran = sasaranAda !== null && sasaranAda.baris.refId === b.refId && sasaranAda.baris.refType === b.refType;
 
-  // Koreksi yang dulu sudah diterapkan dari unit INI (dibayar lewat koreksi sebelum ia punya baris)
-  // ditarik di pembayarannya sendiri, sasaran atau bukan — total unit ini tepat angkanya.
-  const calon: { u: UnitKomisiSpg; selisihSen: number }[] = [];
-  if (sen(u0.koreksiTerapan) !== 0) calon.push({ u: u0, selisihSen: -sen(u0.koreksiTerapan) });
-  // Unit yang dibayar sekarang: "yang dibayar" = angka barunya.
-  const dibayarSebelum = (u: UnitKomisiSpg) => (u === u0 ? u0.angka : u.baris?.dibayar ? u.baris.komisiTersimpan : 0);
+  // Koreksi per unit sebagai dua komponen bertanda (komisi, gaji). Koreksi yang dulu diterapkan dari
+  // unit INI (dibayar lewat koreksi sebelum ia punya baris) ditarik di pembayarannya sendiri,
+  // sasaran atau bukan — total unit ini tepat angkanya.
+  type Calon = { u: UnitKomisiSpg; komisiSen: number; gajiSen: number; dibayarSebelum: number };
+  const calon: Calon[] = [];
+  const terapanSendiriGaji = sen(u0.gajiTerapan);
+  const terapanSendiriKomisi = sen(u0.koreksiTerapan) - terapanSendiriGaji;
+  if (terapanSendiriKomisi !== 0 || terapanSendiriGaji !== 0) {
+    calon.push({ u: u0, komisiSen: -terapanSendiriKomisi, gajiSen: -terapanSendiriGaji, dibayarSebelum: u0.angka + gajiBaru });
+  }
   if (sasaran) {
     for (const u of units) {
       if (u === u0) continue;
-      const s = sen(selisihUnit(u));
-      if (s !== 0) calon.push({ u, selisihSen: s });
+      const r = selisihUnitRinci(u);
+      if (sen(r.komisi) === 0 && sen(r.gaji) === 0) continue;
+      calon.push({
+        u,
+        komisiSen: sen(r.komisi),
+        gajiSen: sen(r.gaji),
+        dibayarSebelum: u.baris?.dibayar ? u.baris.komisiTersimpan + u.baris.gajiPokok : 0,
+      });
     }
   }
-  const urut = (x: { u: UnitKomisiSpg }, y: { u: UnitKomisiSpg }) => urutKoreksi({ bulanJual: x.u.bulanJual, sumber: x.u.kunci }, { bulanJual: y.u.bulanJual, sumber: y.u.kunci });
+  calon.sort((x, y) => urutKoreksi({ bulanJual: x.u.bulanJual, sumber: x.u.kunci }, { bulanJual: y.u.bulanJual, sumber: y.u.kunci }));
 
-  let berjalan = dasarSen;
-  let dibawaSen = 0;
-  const koreksi: BarisKoreksi[] = [];
-  for (const c of calon.filter((c) => c.selisihSen > 0).sort(urut)) {
-    berjalan += c.selisihSen;
-    koreksi.push(keBarisKoreksi(c.u, rupiah(c.selisihSen), rupiah(c.selisihSen), 0, dibayarSebelum(c.u)));
+  // 1. Setiap komponen PLUS mengisi kantongnya sendiri, penuh.
+  const terapKomisi = new Map<Calon, number>();
+  const terapGaji = new Map<Calon, number>();
+  for (const c of calon) {
+    if (c.komisiSen > 0) {
+      kantongKomisi += c.komisiSen;
+      terapKomisi.set(c, c.komisiSen);
+    }
+    if (c.gajiSen > 0) {
+      kantongGaji += c.gajiSen;
+      terapGaji.set(c, c.gajiSen);
+    }
   }
-  for (const c of calon.filter((c) => c.selisihSen < 0).sort(urut)) {
-    const terap = tanpaMinNol(Math.max(c.selisihSen, -berjalan));
-    berjalan += terap;
-    dibawaSen += c.selisihSen - terap;
-    koreksi.push(keBarisKoreksi(c.u, rupiah(c.selisihSen), rupiah(terap), rupiah(c.selisihSen - terap), dibayarSebelum(c.u)));
+
+  /** Ambil `perlu` sen dari kantong komisi dulu, lalu gaji (P5). */
+  const ambil = (perlu: number): { dariKomisi: number; dariGaji: number } => {
+    const dariKomisi = Math.min(Math.max(0, kantongKomisi), perlu);
+    kantongKomisi -= dariKomisi;
+    const dariGaji = Math.min(Math.max(0, kantongGaji), perlu - dariKomisi);
+    kantongGaji -= dariGaji;
+    return { dariKomisi, dariGaji };
+  };
+
+  const potong: PotongBayar[] = [];
+  let dariKomisiSen = 0;
+  let dariGajiSen = 0;
+  const catat = (jenis: PotongBayar["jenis"], sumber: string, storeId: string | null, perluSen: number) => {
+    const a = ambil(perluSen);
+    dariKomisiSen += a.dariKomisi;
+    dariGajiSen += a.dariGaji;
+    const diambil = a.dariKomisi + a.dariGaji;
+    potong.push({ jenis, sumber, storeId, jumlah: rupiah(perluSen), dariKomisi: rupiah(a.dariKomisi), dariGaji: rupiah(a.dariGaji), sisa: rupiah(perluSen - diambil) });
+    return diambil;
+  };
+
+  // 2a. Komponen MINUS koreksi, bulan penjualan terlama dulu; dalam satu unit komisi dulu, lalu gaji.
+  const dibawa = new Map<Calon, number>();
+  const sisaMinus = new Map<Calon, { komisi: number; gaji: number }>();
+  for (const c of calon) {
+    const negKomisi = c.komisiSen < 0 ? -c.komisiSen : 0;
+    const negGaji = c.gajiSen < 0 ? -c.gajiSen : 0;
+    if (negKomisi + negGaji === 0) continue;
+    const diambil = catat("KOREKSI", c.u.kunci, c.u.storeId, negKomisi + negGaji);
+    const diambilKomisi = Math.min(diambil, negKomisi);
+    const diambilGaji = diambil - diambilKomisi;
+    if (diambilKomisi > 0) terapKomisi.set(c, (terapKomisi.get(c) ?? 0) - diambilKomisi);
+    if (diambilGaji > 0) terapGaji.set(c, (terapGaji.get(c) ?? 0) - diambilGaji);
+    dibawa.set(c, -(negKomisi + negGaji - diambil));
+    sisaMinus.set(c, { komisi: negKomisi - diambilKomisi, gaji: negGaji - diambilGaji });
   }
+  // 2b–2d. Beban barang hilang, beban retur pembeli, utang — pada pembayaran mana pun, penuh.
+  let hilangSen = 0;
+  for (const h of konteks.bebanHilang) if (h.sisaSen > 0) hilangSen += catat("BARANG_HILANG", h.shareId, h.storeId, h.sisaSen);
+  let returSen = 0;
+  for (const r of konteks.bebanRetur) if (r.sisaSen > 0) returSen += catat("RETUR_PEMBELI", r.chargeId, r.storeId, r.sisaSen);
+  let utangSen = 0;
+  for (const d of konteks.utang) if (d.sisaSen > 0) utangSen += catat("UTANG", d.debtId, d.storeId, d.sisaSen);
+
+  const kembali = (konteks.kembaliBeban ?? []).filter((k) => k.sen > 0);
+  const kembaliSen = kembali.reduce((n, k) => n + k.sen, 0);
+  const dibayarSen = Math.max(0, kantongKomisi) + Math.max(0, kantongGaji) + kembaliSen;
+
+  const koreksi: BarisKoreksi[] = calon.map((c) => {
+    const tk = terapKomisi.get(c) ?? 0;
+    const tg = terapGaji.get(c) ?? 0;
+    return keBarisKoreksi(c.u, {
+      selisihSen: c.komisiSen + c.gajiSen,
+      selisihGajiSen: c.gajiSen,
+      diterapkanSen: tk + tg,
+      gajiDiterapkanSen: tg,
+      dibawaSen: konteks.akhir ? 0 : (dibawa.get(c) ?? 0),
+      dibayarSebelum: c.dibayarSebelum,
+    });
+  });
   koreksi.sort(urutKoreksi);
+  const jumlahKoreksiSen = koreksi.reduce((n, k) => n + sen(k.diterapkan), 0);
+  const dibawaSen = koreksi.reduce((n, k) => n + sen(k.dibawa), 0);
+
+  let keUtang: KeUtang | null = null;
+  if (konteks.akhir) {
+    const sisaDari = (jenis: PotongBayar["jenis"], sumber: string) => potong.find((p) => p.jenis === jenis && p.sumber === sumber)?.sisa ?? 0;
+    keUtang = {
+      koreksi: calon.flatMap((c) => {
+        const s = sisaMinus.get(c);
+        if (!s || s.komisi + s.gaji <= 0) return [];
+        return [{ sumber: c.u.kunci, jenis: c.u.jenis, storeId: c.u.storeId, bulanJual: c.u.bulanJual, jumlah: rupiah(s.komisi + s.gaji), gaji: rupiah(s.gaji) }];
+      }),
+      hilang: konteks.bebanHilang.flatMap((h) => {
+        const s = sisaDari("BARANG_HILANG", h.shareId);
+        return sen(s) > 0 ? [{ shareId: h.shareId, lossId: h.lossId, storeId: h.storeId, jumlah: s }] : [];
+      }),
+      retur: konteks.bebanRetur.flatMap((r) => {
+        const s = sisaDari("RETUR_PEMBELI", r.chargeId);
+        return sen(s) > 0 ? [{ chargeId: r.chargeId, storeId: r.storeId, jumlah: s }] : [];
+      }),
+    };
+  }
 
   let koreksiDiBarisLain: RencanaBayarKomisi["koreksiDiBarisLain"] = null;
   if (!sasaran && sasaranAda) {
@@ -443,6 +525,18 @@ export function rencanaBayarKomisi(input: {
     }
   }
 
+  const beban: BarisBebanDipotongRencana[] = potong
+    .filter((p) => p.jenis === "RETUR_PEMBELI")
+    .map((p) => ({
+      chargeId: p.sumber,
+      storeId: p.storeId ?? "",
+      sisaSebelum: p.jumlah,
+      diterapkan: rupiah(sen(p.dariKomisi) + sen(p.dariGaji)),
+      dariKomisi: p.dariKomisi,
+      dariGaji: p.dariGaji,
+      dibawa: p.sisa,
+    }));
+
   return {
     refType: b.refType,
     refId: b.refId,
@@ -451,58 +545,56 @@ export function rencanaBayarKomisi(input: {
     komisiBaru: u0.angka,
     potongBaru: u0.potong,
     berubah,
-    gajiPokok: b.gajiPokok,
-    potonganHilang: rupiah(potonganSen),
+    gaji: rincianGaji,
+    gajiLama: b.gajiPokok,
+    gajiPokok: gajiBaru,
     dasar: rupiah(dasarSen),
+    potong,
+    potonganHilang: rupiah(hilangSen),
+    potonganRetur: rupiah(returSen),
+    potonganUtang: rupiah(utangSen),
+    dariKomisi: rupiah(dariKomisiSen),
+    dariGaji: rupiah(dariGajiSen),
     sasaran,
     koreksi,
-    jumlahKoreksi: tanpaMinNol(rupiah(berjalan - dasarSen)),
-    dibayar: rupiah(berjalan),
+    jumlahKoreksi: tanpaMinNol(rupiah(jumlahKoreksiSen)),
+    kembaliBeban: kembali.map((k) => ({ chargeId: k.chargeId, storeId: k.storeId, jumlah: rupiah(k.sen) })),
+    jumlahKembaliBeban: rupiah(kembaliSen),
+    dibayar: rupiah(dibayarSen),
     dibawa: tanpaMinNol(rupiah(dibawaSen)),
     koreksiDiBarisLain,
+    akhir: konteks.akhir,
+    keUtang,
     ditahan: null,
+    hariTahan: [],
+    beban,
+    jumlahBeban: rupiah(returSen),
   };
 }
 
 /**
- * Pratinjau baris yang belum dibayar dan BELUM boleh dibayar tetapi sudah punya bulan pembayaran —
- * bulan toko putus yang ditetapkan dengan aturan lama, belum dicek, dan belum ada yang dibayar:
- * yang akan dibayar SESUDAH laporannya dicek, dengan komisi per SPG sekarang (bukan angka
- * tersimpannya). Tidak pernah menjadi sasaran koreksi (koreksi bulan lain tetap menunggu di daftar
- * koreksi), jadi hanya angkanya sendiri. Unit yang ditahan mendapat rencana bertanda `ditahan`
- * seperti di `rencanaBayarKomisi`. Null untuk baris lain — termasuk siklus yang kuncinya dibuka
- * (tanpa bulan pembayaran): angkanya baru ada saat dikunci lagi. Hanya tampilan; penulis tetap
- * menolak membayarnya sebelum dicek.
+ * Rencana bayar setiap baris yang belum dibayar dan boleh dibayar, menurut id barisnya. Pengurang
+ * SPG itu (`konteks`) ditampilkan pada setiap barisnya — mana pun yang dibayar lebih dulu yang
+ * mengambilnya. `akhir(refId)`: baris itu pembayaran terakhir SPG yang berhenti.
  */
-export function pratinjauSesudahDicek(input: {
-  units: readonly UnitKomisiSpg[];
-  kunci: string;
-  maksPotongPersen: number;
-}): RencanaBayarKomisi | null {
-  const u0 = input.units.find((u) => u.kunci === input.kunci && u.baris && !u.baris.dibayar && !u.baris.dapatDibayar && u.baris.bulanBayar !== null);
-  if (!u0 || !u0.baris) return null;
-  const andai: UnitKomisiSpg = { ...u0, baris: { ...u0.baris, dapatDibayar: true, dalamJendela: false } };
-  return rencanaBayarKomisi({
-    units: input.units.map((u) => (u === u0 ? andai : u)),
-    kunci: input.kunci,
-    maksPotongPersen: input.maksPotongPersen,
-  });
-}
-
-/** Rencana bayar setiap baris yang belum dibayar dan boleh dibayar, menurut id barisnya. */
-export function rencanaBayarSemua(units: readonly UnitKomisiSpg[], maksPotongPersen: number): Map<string, RencanaBayarKomisi> {
+export function rencanaBayarSemua(
+  units: readonly UnitKomisiSpg[],
+  konteks: Omit<KonteksBayar, "akhir"> & { akhir?: (refId: string) => boolean } = { bebanHilang: [], bebanRetur: [], kembaliBeban: [], utang: [] },
+): Map<string, RencanaBayarKomisi> {
   const hasil = new Map<string, RencanaBayarKomisi>();
   for (const u of units) {
     if (!u.baris || u.baris.dibayar || !u.baris.dapatDibayar) continue;
-    const r = rencanaBayarKomisi({ units, kunci: u.kunci, maksPotongPersen });
+    const akhir = konteks.akhir ? konteks.akhir(u.baris.refId) : false;
+    const r = rencanaBayarKomisi({ units, kunci: u.kunci, konteks: { ...konteks, akhir } });
     if (r) hasil.set(r.refId, r);
   }
   return hasil;
 }
 
 /** "Koreksi komisi penjualan September 2026 — Toko X" — catatan baris koreksi. */
-export function teksKoreksi(k: { bulanJual: string; namaToko: string }): string {
-  return `Koreksi komisi penjualan ${salesMonthLabelId(k.bulanJual)} — ${k.namaToko}`;
+export function teksKoreksi(k: { bulanJual: string; namaToko: string; gajiDiterapkan?: number }): string {
+  const apa = k.gajiDiterapkan && sen(k.gajiDiterapkan) !== 0 ? "Koreksi gaji & komisi" : "Koreksi komisi";
+  return `${apa} penjualan ${salesMonthLabelId(k.bulanJual)} — ${k.namaToko}`;
 }
 
 /** "Komisi penjualan Oktober 2026 — Toko X" — nama sebuah laporan pembayaran. */
@@ -515,7 +607,10 @@ export function formatKoreksi(n: number): string {
   return sen(n) < 0 ? `−${formatIDR(rupiah(-sen(n)))}` : `+${formatIDR(rupiah(sen(n)))}`;
 }
 
-/** Kalimat koreksi untuk kabar pembayaran: setiap koreksi yang diterapkan, dan sisa minus yang dibawa. */
+/**
+ * Kalimat koreksi untuk kabar pembayaran: setiap koreksi yang diterapkan (menyebut bagian gaji
+ * pokoknya), dan sisa minus yang dibawa.
+ */
 export function kalimatKoreksiKabar(k: readonly BarisKoreksi[]): string {
   const terap = k.filter((x) => sen(x.diterapkan) !== 0);
   const dibawaSen = k.reduce((n, x) => n + sen(x.dibawa), 0);
@@ -523,4 +618,14 @@ export function kalimatKoreksiKabar(k: readonly BarisKoreksi[]): string {
   if (terap.length > 0) bagian.push(`Termasuk ${terap.map((x) => `${teksKoreksi(x)} ${formatKoreksi(x.diterapkan)}`).join("; ")}.`);
   if (dibawaSen < 0) bagian.push(`Sisa koreksi ${formatIDR(rupiah(-dibawaSen))} dikurangkan dari pembayaran berikutnya.`);
   return bagian.join(" ");
+}
+
+/** Kalimat pengurang untuk kabar pembayaran: beban barang hilang, beban retur, utang — dari komisi / gaji. */
+export function kalimatPotongKabar(r: Pick<RencanaBayarKomisi, "potonganHilang" | "potonganRetur" | "potonganUtang" | "dariGaji">): string {
+  const bagian: string[] = [];
+  if (r.potonganHilang > 0) bagian.push(`beban barang hilang ${formatIDR(r.potonganHilang)}`);
+  if (r.potonganRetur > 0) bagian.push(`beban retur pembeli ${formatIDR(r.potonganRetur)}`);
+  if (r.potonganUtang > 0) bagian.push(`utang ${formatIDR(r.potonganUtang)}`);
+  if (bagian.length === 0) return "";
+  return `Dipotong ${bagian.join(", ")}${r.dariGaji > 0 ? ` (sebagian dari gaji pokok ${formatIDR(r.dariGaji)})` : ""}.`;
 }

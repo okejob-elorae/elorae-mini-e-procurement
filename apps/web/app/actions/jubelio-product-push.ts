@@ -13,7 +13,9 @@ import {
  * The item page's "Ajukan ke Jubelio" button — for ERP finished goods that never reached Jubelio
  * (e.g. imported with the Jubelio box unticked, or a request someone cancelled). It REQUESTS
  * creation and pushes nothing: the product waits on Jubelio → Konfirmasi harga and is created in
- * Jubelio once its price is confirmed (owner decision 2026-11-02). Name kept for its callers.
+ * Jubelio once its price is confirmed (owner decision 2026-11-02). Never for a "Toko offline saja"
+ * item (owner answer P3a, `offline_channel`): whether an item goes to Jubelio is its sales channel.
+ * Name kept for its callers.
  */
 export async function createItemInJubelio(
   itemId: string,
@@ -40,6 +42,8 @@ export async function createItemInJubelio(
       return { ok: false, reason: "already_mapped" };
     case "BUKAN_BARANG_JADI_ERP":
       return { ok: false, reason: "not_erp_finished_good" };
+    case "SALURAN_OFFLINE":
+      return { ok: false, reason: "offline_channel" };
     default:
       return { ok: false, reason: "not_found" };
   }

@@ -120,7 +120,7 @@ describe("target", () => {
 });
 
 describe("toko teratas", () => {
-  it("urut pcs; konsi hanya menyumbang pcs; pembeli tanpa toko dilewati", () => {
+  it("urut pcs; konsi ikut dengan rupiahnya (P56); pembeli tanpa toko dilewati", () => {
     const r = tokoTeratas([
       { storeId: "A", jenis: "putus", nilai: 50_000, pcs: 5 },
       { storeId: "A", jenis: "van", nilai: 10_000.5, pcs: 1 },
@@ -129,12 +129,10 @@ describe("toko teratas", () => {
       { storeId: "C", jenis: "putus", nilai: 1_000, pcs: 0 },
     ]);
     expect(r).toEqual([
-      { storeId: "B", pcs: 9, pcsKonsi: 9, nilaiTanpaKonsi: 0 },
-      { storeId: "A", pcs: 6, pcsKonsi: 0, nilaiTanpaKonsi: 60_000.5 },
-      { storeId: "C", pcs: 0, pcsKonsi: 0, nilaiTanpaKonsi: 1_000 },
+      { storeId: "B", pcs: 9, pcsKonsi: 9, nilai: 99_000 },
+      { storeId: "A", pcs: 6, pcsKonsi: 0, nilai: 60_000.5 },
+      { storeId: "C", pcs: 0, pcsKonsi: 0, nilai: 1_000 },
     ]);
-    // Nilai konsi tidak pernah muncul di hasil.
-    expect(JSON.stringify(r)).not.toContain("99000");
   });
 
   it("dibatasi", () => {
@@ -144,14 +142,14 @@ describe("toko teratas", () => {
 });
 
 describe("barang teratas", () => {
-  it("rupiah tanpa konsinyasi, pcs semua saluran", () => {
+  it("rupiah dan pcs semua saluran, konsinyasi ikut (P56)", () => {
     const r = barangTeratas(
       { i1: { nilai: 52_999.99, pcs: 7 }, i2: { nilai: 40_000, pcs: 4 }, i3: { nilai: 100, pcs: 0 } },
       { i1: { nilai: 40_000, pcs: 4 }, i2: { nilai: 40_000, pcs: 4 } },
     );
     expect(r).toEqual([
-      { itemId: "i1", pcs: 7, pcsKonsi: 4, nilaiTanpaKonsi: 12_999.99 },
-      { itemId: "i2", pcs: 4, pcsKonsi: 4, nilaiTanpaKonsi: 0 },
+      { itemId: "i1", pcs: 7, pcsKonsi: 4, nilai: 52_999.99 },
+      { itemId: "i2", pcs: 4, pcsKonsi: 4, nilai: 40_000 },
     ]);
   });
 });

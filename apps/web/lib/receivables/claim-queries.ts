@@ -47,11 +47,9 @@ export type RincianKlaim = {
 };
 
 /**
- * Satu nota retur yang bisa dipilih sebagai potongan. `sisa` = batas potong NRT
+ * Satu nota retur yang bisa dipilih sebagai potongan. `sisa` = nilai NRT
  * dikurangi potongan atasnya di seluruh BKM yang masih hidup — yang benar-benar
- * masih boleh dipotongkan (penulisnya menolak yang melebihi). Batasnya nilai
- * NRT, atau fisik + beban yang ditagih balik sesudah selisihnya ditetapkan ke
- * toko (`batasPotongNota`).
+ * masih boleh dipotongkan (penulisnya menolak yang melebihi).
  */
 export type PilihanRetur = { id: string; noNrt: string; nilaiKlaim: number; sisa: number };
 
@@ -110,7 +108,10 @@ export async function rincianKlaim(id: string): Promise<RincianKlaim | null> {
               claimedAmount: true,
               status: true,
               warehouseReturn: { select: { physicalAmount: true, status: true } },
-              charges: { select: { status: true } },
+              // Barang susulan yang sudah dihitung ikut menjadi nilai fisik nota
+              // (`nilaiFisikNota`), dan beban ditanggung toko menahan tetap.
+              followUps: { where: { status: "FINAL" }, select: { physicalAmount: true } },
+              charges: { select: { status: true, bearer: true } },
             },
           },
         },
@@ -170,7 +171,8 @@ export async function rincianKlaim(id: string): Promise<RincianKlaim | null> {
 }
 
 export type BahanKlaimBaru = {
-  toko: { id: string; name: string; pkp: boolean }[];
+  /** `konsi` = toko konsinyasi: jenis potongan DARI_RETUR dikunci di formulir. */
+  toko: { id: string; name: string; pkp: boolean; konsi: boolean }[];
   piutangPerToko: Record<string, BarisPiutang[]>;
   returPerToko: Record<string, PilihanRetur[]>;
   jenisPotongan: {
@@ -207,11 +209,6 @@ export async function bahanKlaimBaru(opsi?: {
     jenisPotonganAktif(),
   ]);
 
-  // Status PKP tiap toko, untuk mengunci jenis potongan khusus PKP di formulir.
-  const pkp = new Set(
-    (await prisma.store.findMany({ where: { isPkp: true }, select: { id: true } })).map((t) => t.id),
-  );
-
   const terbuka = semua.filter((p) => p.outstanding > 0);
   const piutangPerToko: Record<string, BarisPiutang[]> = {};
   const namaToko = new Map<string, string>();
@@ -220,15 +217,31 @@ export async function bahanKlaimBaru(opsi?: {
     namaToko.set(p.storeId, p.storeName);
   }
 
+  // Status PKP dan jenis tiap toko di formulir ini saja: PKP mengunci jenis
+  // potongan khusus PKP, konsinyasi mengunci jenis potongan dari retur.
+  const sifat = new Map(
+    (namaToko.size
+      ? await prisma.store.findMany({
+          where: { id: { in: [...namaToko.keys()] } },
+          select: { id: true, isPkp: true, termsType: true },
+        })
+      : []
+    ).map((t) => [t.id, { pkp: t.isPkp, konsi: t.termsType === "KONSI" }]),
+  );
+  // Nota retur toko konsinyasi tidak pernah menjadi potongan: barang titipan
+  // yang kembali memang tidak pernah ditagih (aturan potongan, bukan saringan
+  // tampilan — penulis BKM menolaknya juga).
+  const tokoNonKonsi = [...namaToko.keys()].filter((id) => !sifat.get(id)?.konsi);
+
   /*
    * Nota retur HANYA untuk toko yang muncul di formulir ini — toko yang punya
    * piutang terbuka yang boleh ditagih pengguna ini. Dulu seluruh NRT semua
    * toko ikut terkirim ke payload HP, jadi sales bisa membaca nomor dan nilai
    * retur toko orang lain.
    */
-  const retur = namaToko.size
+  const retur = tokoNonKonsi.length
     ? await prisma.storeReturn.findMany({
-        where: { status: { not: 'BATAL' }, storeId: { in: [...namaToko.keys()] } },
+        where: { status: { not: 'BATAL' }, storeId: { in: tokoNonKonsi } },
         orderBy: { claimDate: 'desc' },
         select: { id: true, noNrt: true, storeId: true, claimedAmount: true },
       })
@@ -242,7 +255,12 @@ export async function bahanKlaimBaru(opsi?: {
   });
 
   return {
-    toko: [...namaToko.entries()].map(([id, name]) => ({ id, name, pkp: pkp.has(id) })),
+    toko: [...namaToko.entries()].map(([id, name]) => ({
+      id,
+      name,
+      pkp: sifat.get(id)?.pkp ?? false,
+      konsi: sifat.get(id)?.konsi ?? false,
+    })),
     piutangPerToko,
     returPerToko,
     jenisPotongan: jenis,

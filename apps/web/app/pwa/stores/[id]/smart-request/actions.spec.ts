@@ -6,7 +6,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
  * `prisma.itemCategory` ditirukan selama `h.unit` menyala. Yang dipasak: penjaga
  * server (SPG, pwa:access, toko aktif, kunci "hanya toko sendiri") menolak
  * SEBELUM apa pun dibaca atau ditulis; HP tidak pernah bisa mengirim harga; draf
- * konsinyasi tidak membawa harga walaupun pemuat (keliru) memberinya.
+ * konsinyasi membawa harga tampilan konsi dari pemuat per baris (pemilik P18:
+ * HP salesman menampilkan konsi lengkap) tetapi tidak pernah anggaran.
  *
  * Pesanan cepat per kategori (bagian kedua) memakai basis data uji sungguhan:
  * suite-nya mematikan `h.unit`, jadi `prisma` kembali ke klien aslinya.
@@ -78,7 +79,7 @@ const toko = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-/** Bahan satu barang i1 dengan dua ukuran. `harga` sengaja diisi juga di `info` untuk konsinyasi. */
+/** Bahan satu barang i1 dengan dua ukuran. `info.harga` = harga tampilan yang dihitung pemuat (untuk konsinyasi: `hargaKonsiHp`). */
 const bahanSatuBarang = () => ({
   bahan: {
     kandidat: [
@@ -164,18 +165,21 @@ describe("penjaga server rencana kirim", () => {
 });
 
 describe("bangunRencanaKirimAction", () => {
-  it("a consignment draft carries no price, total or rupiah — even if the loader handed one over", async () => {
+  it("a consignment draft carries the loader's konsi display price on every line, and never a budget", async () => {
     h.store.mockResolvedValue(toko({ termsType: "KONSI", markupPercent: 30 }));
-    const r = await bangunRencanaKirimAction(kriteria);
+    // Anggaran sekecil apa pun dari HP tidak berlaku untuk konsinyasi.
+    const r = await bangunRencanaKirimAction({ ...kriteria, anggaran: 1 });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.konsi).toBe(true);
-    expect(r.artikel.map((a) => a.baris.map((b) => [b.variantSku, b.qty]))).toEqual([[["i1-S", 2], ["i1-M", 4]]]);
-    const json = JSON.stringify(r);
-    expect(json).not.toMatch(/harga|price|total|nilai|anggaran|budget|rupiah/i);
-    expect(json).not.toContain("Rp");
-    expect(json).not.toContain("12345");
-    expect(h.muat).toHaveBeenCalledWith(expect.objectContaining({ termsType: "KONSI", storeId: "s1" }));
+    expect(r.artikel.map((a) => a.baris.map((b) => [b.variantSku, b.qty, b.hargaSatuan]))).toEqual([
+      [
+        ["i1-S", 2, 12_345],
+        ["i1-M", 4, 12_345],
+      ],
+    ]);
+    expect(JSON.stringify(r)).not.toMatch(/anggaran|budget/i);
+    expect(h.muat).toHaveBeenCalledWith(expect.objectContaining({ termsType: "KONSI", storeId: "s1", markupPercent: 30 }));
   });
 
   it("a putus draft prices every line from the server and honours the budget", async () => {

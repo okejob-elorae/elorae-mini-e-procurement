@@ -19,6 +19,7 @@ d("finished-good Warna must be in the colour master (test bed only)", () => {
     nameEn: "t",
     type: "FINISHED_GOOD",
     uomId,
+    salesChannel: "BOTH",
     ...over,
   });
 

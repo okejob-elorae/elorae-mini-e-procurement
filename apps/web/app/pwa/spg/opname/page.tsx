@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { stokToko, tokoSpg } from "@/lib/spg/queries";
 import { getActiveVisit } from "@/lib/stores/queries";
 import { tanpaAngkaSistem } from "@/lib/spg/opname-acuan";
+import { barangDisisihkan } from "@/lib/spg/retur-pembeli-queries";
 import { pilihanBarang } from "../stok/pilihan";
 import { OpnameClient } from "./OpnameClient";
 
@@ -21,7 +22,7 @@ export default async function SpgOpnamePage() {
   // Worker, dan SPG yang check-in TANPA sinyal menghitung dari halaman tersimpan
   // itu. Tanpa check-in (di server maupun di HP) layar tetap hanya menampilkan
   // pesan check-in.
-  const stok = await stokToko(toko.id);
+  const [stok, disisihkan] = await Promise.all([stokToko(toko.id), barangDisisihkan(toko.id)]);
   const pilihan = await pilihanBarang(stok);
 
   return (
@@ -33,6 +34,8 @@ export default async function SpgOpnamePage() {
       opnamePertama={stok.length === 0}
       // Hitungan buta: saldo sistem tidak ikut ke layar hitung (juga tidak di muatannya).
       pilihan={tanpaAngkaSistem(pilihan)}
+      // Barang retur pembeli yang disisihkan (P12): tidak di rak, jangan dihitung.
+      disisihkan={disisihkan}
     />
   );
 }

@@ -631,6 +631,31 @@ d("amplop queries (test bed only)", () => {
     expect(row?.taxInvoiceStatus).toBeNull();
   });
 
+  it("keeps a konsi bill (isConsignment) off the phone even at a store whose terms read PUTUS", async () => {
+    /*
+     * The konsi mark lives on the bill itself, not on the store's terms today: a consignment cycle
+     * bill, or a paper konsi debt typed in by hand (P32), is paid from the phone only through a BKM.
+     * Reuses `manualReceivableId` so the shared teardown removes it.
+     */
+    manualReceivableId = (
+      await prisma.receivable.create({
+        data: {
+          invoiceNo: `TEST-AMP-KONSI-${token}`,
+          source: "MANUAL",
+          isConsignment: true,
+          storeId: collectorStoreId,
+          invoiceDate: new Date("2026-05-10T00:00:00.000+07:00"),
+          dueDate: new Date("2026-05-10T00:00:00.000+07:00"),
+          amount: 120, outstanding: 120,
+          originalAmount: 120, outstandingAmount: 120,
+          collectorId: collectorUserId,
+        },
+      })
+    ).id;
+    const amplop = await listAmplop(collectorUserId, asOf);
+    expect(amplop.stores.flatMap((st) => st.rows).find((r) => r.receivableId === manualReceivableId)).toBeUndefined();
+  });
+
   it("keeps a konsi sell-through receivable off the phone, for the report's own salesman and for its collector", async () => {
     /*
      * Its total is a konsi figure, and konsi totals never reach the salesman's phone. Both ways a

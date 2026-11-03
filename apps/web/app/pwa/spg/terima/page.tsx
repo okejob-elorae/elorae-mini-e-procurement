@@ -45,6 +45,7 @@ export default async function SpgTerimaPage() {
         jumlahBaris: k.lines.length,
         totalQty: k.lines.reduce((n, l) => n + l.qty, 0),
         pesananNo: k.pesananNo ?? null,
+        tahap: k.dalamPerjalanan ? "DALAM_PERJALANAN" : k.diserahkan ? "DISERAHKAN" : null,
       }))}
       rusak={rusak.map((r) => ({
         // Barang rusak dari kiriman yang sudah diterima — tanpa harga.

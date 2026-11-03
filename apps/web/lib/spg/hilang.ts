@@ -28,6 +28,17 @@ import { spgUnitPrice } from "./pricing";
  * 4. DIBATALKAN — dengan alasan (mis. ternyata terjual tanpa nota), hanya
  *    selama belum ada potongan/tagihan atas bagian orang atau toko.
  *
+ * Klaim EKSPEDISI (barang hilang di perjalanan sebuah pengiriman lewat
+ * ekspedisi; jawaban pemilik 2026-11-02, P36, P42, keputusan 11): penanggung
+ * EKSPEDISI hanya untuk catatan yang pengirimannya lewat EKSPEDISI dan selalu
+ * SATU-SATUNYA bagian (seluruh kekurangan diklaim; penanggung lain baru setelah
+ * klaimnya ditolak). Nilai bawaannya = nilai jual di nota / surat jalan
+ * (`StockLoss.claimValue`), boleh diubah kantor. Alurnya:
+ * DIAJUKAN → (dibayar ekspedisi: transfer, tunai, atau potong tagihan ongkir)
+ * MENUNGGU_CEK → (dicek Keuangan yang BUKAN pencatatnya) DIBAYAR, atau
+ * dikembalikan ke DIAJUKAN; DIAJUKAN → DITOLAK, lalu kantor memilih penanggung
+ * lain lewat "Ubah keputusan". Uangnya baru diakui setelah dicek.
+ *
  * Uang dihitung dalam SEN (bilangan bulat) supaya pembagian dan cicilan selalu
  * berjumlah tepat sama dengan totalnya.
  */
@@ -38,8 +49,24 @@ export type StatusHilang = (typeof STATUS_HILANG)[number];
 export const SUMBER_HILANG = ["OPNAME", "MUTASI", "PENERIMAAN", "MANUAL"] as const;
 export type SumberHilang = (typeof SUMBER_HILANG)[number];
 
-export const PENANGGUNG = ["TOKO", "SPG", "SALES", "ELORAE"] as const;
+export const PENANGGUNG = ["TOKO", "SPG", "SALES", "ELORAE", "EKSPEDISI"] as const;
 export type Penanggung = (typeof PENANGGUNG)[number];
+
+/** Status klaim bagian EKSPEDISI (`StockLossShare.claimStatus`). */
+export const STATUS_KLAIM = ["DIAJUKAN", "MENUNGGU_CEK", "DIBAYAR", "DITOLAK"] as const;
+export type StatusKlaim = (typeof STATUS_KLAIM)[number];
+
+/** Cara ekspedisi membayar klaimnya (P36). */
+export const CARA_BAYAR_KLAIM = ["transfer", "tunai", "potong_ongkir"] as const;
+export type CaraBayarKlaim = (typeof CARA_BAYAR_KLAIM)[number];
+
+export function bacaStatusKlaim(v: unknown): StatusKlaim | null {
+  return typeof v === "string" && (STATUS_KLAIM as readonly string[]).includes(v) ? (v as StatusKlaim) : null;
+}
+
+export function bacaCaraBayarKlaim(v: unknown): CaraBayarKlaim | null {
+  return typeof v === "string" && (CARA_BAYAR_KLAIM as readonly string[]).includes(v) ? (v as CaraBayarKlaim) : null;
+}
 
 /** Penanggung yang berupa ORANG — wajib `bearerUserId`, dipotong dari gaji/komisinya. */
 export const PENANGGUNG_ORANG: readonly Penanggung[] = ["SPG", "SALES"];
@@ -60,6 +87,16 @@ export const JEJAK_HILANG = {
   /** Potongan/tagihan dilepas — komisi ditetapkan ulang atau kunci siklus dibuka. */
   POTONGAN_DILEPAS: "STOCK_LOSS_DEDUCTION_RELEASED",
   PENGATURAN_DIUBAH: "STOCK_LOSS_SETTINGS_CHANGED",
+  /** Pembayaran klaim ekspedisi dicatat (menunggu dicek Keuangan). */
+  KLAIM_DICATAT: "STOCK_LOSS_CLAIM_PAYMENT_RECORDED",
+  /** Pembayaran klaim ekspedisi dicek sah — bagian EKSPEDISI lunas. */
+  KLAIM_DIBAYAR: "STOCK_LOSS_CLAIM_PAID",
+  /** Pembayaran klaim dikembalikan pemeriksa untuk direvisi. */
+  KLAIM_DIKEMBALIKAN: "STOCK_LOSS_CLAIM_RETURNED",
+  /** Ekspedisi menolak klaimnya — kantor memilih penanggung lain. */
+  KLAIM_DITOLAK: "STOCK_LOSS_CLAIM_REJECTED",
+  /** Nilai klaim diubah selama masih DIAJUKAN. */
+  KLAIM_DIUBAH: "STOCK_LOSS_CLAIM_VALUE_CHANGED",
 } as const;
 
 export const ENTITAS_HILANG = "StockLoss";
@@ -74,6 +111,8 @@ export const REF_KOMISI_SALESMAN = "KomisiSalesman";
 export const REF_KOMISI_SPG_PUTUS = "SpgCommission";
 /** Gaji + komisi SPG konsinyasi — `refId` = `ConsignmentCommission.id`. */
 export const REF_KOMISI_KONSI = "ConsignmentCommission";
+/** Klaim yang dibayar ekspedisi dan sudah dicek sah — `refId` = `StockLossShare.id`. */
+export const REF_KLAIM_EKSPEDISI = "KlaimEkspedisi";
 
 export const BATAS_TEKS_HILANG = 500;
 export const BATAS_BARIS_HILANG = 200;
@@ -133,7 +172,11 @@ export type KodeTolakBagian =
   | "BAGIAN_KEMBAR"
   | "JUMLAH_TIDAK_SAH"
   | "TOTAL_TIDAK_SAH"
-  | "JUMLAH_TIDAK_SAMA";
+  | "JUMLAH_TIDAK_SAMA"
+  /** EKSPEDISI dipilih untuk catatan yang tidak berasal dari pengiriman lewat ekspedisi. */
+  | "EKSPEDISI_TIDAK_ADA"
+  /** EKSPEDISI selalu satu-satunya bagian: seluruh kekurangan diklaim ke ekspedisi. */
+  | "EKSPEDISI_HARUS_SENDIRI";
 
 /**
  * Periksa bagian-bagian keputusan terhadap total. Setiap bagian lebih dari nol,
@@ -145,6 +188,8 @@ export function periksaBagian(
   isian: unknown,
   total: number,
   adaToko: boolean,
+  /** Catatan ini berasal dari pengiriman lewat EKSPEDISI — hanya itu yang boleh berpenanggung EKSPEDISI. */
+  adaEkspedisi = false,
 ): { ok: true; bagian: IsianBagian[] } | { ok: false; kode: KodeTolakBagian } {
   const totalSen = senSah(total);
   if (totalSen === null || totalSen <= 0) return { ok: false, kode: "TOTAL_TIDAK_SAH" };
@@ -164,6 +209,8 @@ export function periksaBagian(
       if (!orang || orang.length > 64) return { ok: false, kode: "ORANG_WAJIB" };
     }
     if (bearer === "TOKO" && !adaToko) return { ok: false, kode: "TOKO_WAJIB" };
+    if (bearer === "EKSPEDISI" && !adaEkspedisi) return { ok: false, kode: "EKSPEDISI_TIDAK_ADA" };
+    if (bearer === "EKSPEDISI" && isian.length > 1) return { ok: false, kode: "EKSPEDISI_HARUS_SENDIRI" };
     const k = `${bearer}:${orang ?? ""}`;
     if (kunci.has(k)) return { ok: false, kode: "BAGIAN_KEMBAR" };
     kunci.add(k);
@@ -196,7 +243,7 @@ export function bagiRata(totalSen: number, n: number): number[] {
   return hasil;
 }
 
-export type JenisPreset = "ELORAE" | "TOKO" | "SPG_TOKO" | "SALES_TOKO";
+export type JenisPreset = "ELORAE" | "TOKO" | "SPG_TOKO" | "SALES_TOKO" | "EKSPEDISI";
 
 /**
  * Isian bagian untuk tombol cepat di formulir keputusan. Null kalau preset itu
@@ -204,8 +251,21 @@ export type JenisPreset = "ELORAE" | "TOKO" | "SPG_TOKO" | "SALES_TOKO";
  */
 export function presetBagian(
   jenis: JenisPreset,
-  konteks: { total: number; adaToko: boolean; spgIds: string[]; salesmanId: string | null },
+  konteks: {
+    total: number;
+    adaToko: boolean;
+    spgIds: string[];
+    salesmanId: string | null;
+    /** Nilai klaim ekspedisi (nilai jual di nota / surat jalan); hanya catatan dari pengiriman lewat ekspedisi. */
+    adaEkspedisi?: boolean;
+    nilaiKlaim?: number | null;
+  },
 ): IsianBagian[] | null {
+  if (jenis === "EKSPEDISI") {
+    if (!konteks.adaEkspedisi) return null;
+    const sen = senSah(konteks.nilaiKlaim ?? konteks.total);
+    return sen === null || sen <= 0 ? null : [{ bearer: "EKSPEDISI", bearerUserId: null, amount: dariSen(sen) }];
+  }
   const totalSen = senSah(konteks.total);
   if (totalSen === null || totalSen <= 0) return null;
   const total = dariSen(totalSen);

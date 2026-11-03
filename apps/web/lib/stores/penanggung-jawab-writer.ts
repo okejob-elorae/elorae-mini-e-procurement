@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from "@elorae/db";
+import { runSerializable } from "@/lib/db/tx-retry";
 import { lingkupPindah, type LingkupPindah } from "./penanggung-jawab";
 
 /**
@@ -18,12 +19,27 @@ export const AKSI_PINDAH_TOKO = "STORE_SALESMAN_CHANGED";
  * Toko yang sudah dipegang tujuan dilewati, supaya jejaknya hanya berisi
  * perpindahan yang sungguh terjadi. Penyaringan itu di kode, bukan di kueri:
  * `NOT { salesmanId: x }` di SQL ikut membuang toko yang pemegangnya NULL.
+ *
+ * Mengosongkan pemegang ditolak SELURUHNYA (`KONSI_WAJIB_PEMEGANG`, tanpa satu
+ * pun penulisan) kalau lingkupnya memuat toko KONSI yang akan ikut kosong:
+ * toko konsi pasti punya salesman pemegang (pemilik P47, 2026-11-02), yang
+ * sendirian melihat dan menagih tagihan konsinya (P31).
+ *
+ * Penjaga itu "baca `termsType`, lalu tulis" — maka seluruhnya di dalam
+ * `runSerializable`. Di transaksi biasa, formulir toko (`updateStore`) yang
+ * mengubah toko dalam lingkup menjadi KONSI bisa tersimpan di antara bacaan dan
+ * `updateMany`, dan pengosongan ini lalu menimpa pemegangnya: toko KONSI tanpa
+ * pemegang. Di bawah serializable salah satunya diulang dan membaca keadaan
+ * yang lain.
  */
 export async function pindahkanToko(input: {
   lingkup: LingkupPindah;
   keSalesmanId: string | null;
   olehUserId: string;
-}): Promise<{ ok: true; jumlah: number } | { ok: false; alasan: "LINGKUP_KOSONG" | "SALES_TIDAK_DITEMUKAN" }> {
+}): Promise<
+  | { ok: true; jumlah: number }
+  | { ok: false; alasan: "LINGKUP_KOSONG" | "SALES_TIDAK_DITEMUKAN" | "KONSI_WAJIB_PEMEGANG" }
+> {
   const l = lingkupPindah(input.lingkup);
   if (!l.ok) return l;
   if (input.keSalesmanId) {
@@ -31,10 +47,13 @@ export async function pindahkanToko(input: {
     if (!ada) return { ok: false, alasan: "SALES_TIDAK_DITEMUKAN" };
   }
 
-  return prisma.$transaction(async (tx) => {
-    const toko = await tx.store.findMany({ where: l.where, select: { id: true, salesmanId: true } });
+  return runSerializable(async (tx) => {
+    const toko = await tx.store.findMany({ where: l.where, select: { id: true, salesmanId: true, termsType: true } });
     const pindah = toko.filter((s) => s.salesmanId !== input.keSalesmanId);
     if (pindah.length === 0) return { ok: true as const, jumlah: 0 };
+    if (input.keSalesmanId === null && pindah.some((s) => s.termsType === "KONSI")) {
+      return { ok: false as const, alasan: "KONSI_WAJIB_PEMEGANG" as const };
+    }
 
     await tx.store.updateMany({
       where: { id: { in: pindah.map((s) => s.id) } },

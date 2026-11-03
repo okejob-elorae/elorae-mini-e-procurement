@@ -22,6 +22,9 @@ const PEMBELIAN = [
   { href: "/backoffice/supplier-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
   { href: "/backoffice/supplier-payments/umur-hutang", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
   { href: "/backoffice/vendor-bills", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
+  // P19 dan P27 (jawaban pemilik 2026-11-02): satu izin dengan Vendor Billing, awalan rute yang sama.
+  { href: "/backoffice/vendor-bills/belum-ditagih", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
+  { href: "/backoffice/vendor-bills/selisih-harga", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
   { href: "/backoffice/vendor-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
   { href: "/backoffice/vendor-returns", permission: PERMISSIONS.VENDOR_RETURNS_VIEW },
 ];
@@ -29,7 +32,7 @@ const PEMBELIAN = [
 const grup = navItems.find((i) => i.labelKey === "navGroupPurchasing");
 
 describe("menu Pembelian", () => {
-  it("satu grup berisi PO, permintaan barang, pembayaran pemasok, umur utang, tagihan pemasok, pembayaran tagihan, dan retur ke pemasok — izinnya sama dengan pagar rutenya", () => {
+  it("satu grup berisi PO, permintaan barang, pembayaran pemasok, umur utang, tagihan pemasok (dengan invoice belum ditagih dan selisih harga invoice), pembayaran tagihan, dan retur ke pemasok — izinnya sama dengan pagar rutenya", () => {
     expect(grup).toBeDefined();
     expect(grup?.section).toBe("secOperations");
     expect(grup?.children?.map((c) => ({ href: c.href, permission: c.permission }))).toEqual(PEMBELIAN);
@@ -59,6 +62,15 @@ describe("menu Pembelian", () => {
   it("href grup unik (kunci buka-tutup grup memakai href induk)", () => {
     const hrefInduk = navItems.map((i) => i.href);
     expect(new Set(hrefInduk).size).toBe(hrefInduk.length);
+  });
+
+  it("pemegang Vendor Billing saja melihat ketiga halamannya, bukan PO maupun pembayaran", () => {
+    const terlihat = (grup?.children ?? []).filter((c) => bolehAnak([PERMISSIONS.VENDOR_BILLS_VIEW], c.permission)).map((c) => c.href);
+    expect(terlihat).toEqual([
+      "/backoffice/vendor-bills",
+      "/backoffice/vendor-bills/belum-ditagih",
+      "/backoffice/vendor-bills/selisih-harga",
+    ]);
   });
 
   it("pemegang izin pembayaran pemasok saja melihat pembayaran, umur utang, dan pembayaran tagihan, bukan PO", () => {

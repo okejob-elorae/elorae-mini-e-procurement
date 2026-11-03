@@ -28,7 +28,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "jubelio.settings.subtitle" },
       "Bila layanan integrasi (apps/api) tidak bisa dihubungi atau menolak permintaan, kartu yang bersangkutan menampilkan pesannya dalam bahasa Indonesia; teks teknis untuk pengelola sistem ada di balik Rincian.",
-      "Halaman ini bisa dibuka dengan izin Buka Pengaturan; memperbarui token, pratinjau dan impor katalog, menyimpan nilai bawaan (termasuk margin dan biaya tambahan bawaan untuk rekomendasi harga), dan menghapus produk butuh izin Kelola pengguna & keamanan — tanpa izin itu isian dan tombolnya terkunci dan halaman menyebutkannya.",
+      "Halaman ini bisa dibuka dengan izin Buka Pengaturan; memperbarui token, pratinjau dan impor katalog, menyimpan nilai bawaan (termasuk markup/margin bawaan dan biaya tambahan bawaan — bantalan margin — untuk rekomendasi harga), dan menghapus produk butuh izin Kelola pengguna & keamanan — tanpa izin itu isian dan tombolnya terkunci dan halaman menyebutkannya.",
     ],
     kartu: [
       { judul: { kunci: "jubelio.settings.token.title" }, isi: { kunci: "jubelio.settings.token.description" } },
@@ -44,7 +44,7 @@ export const ENTRI: EntriBantuan[] = [
         judul: { kunci: "jubelio.settings.defaults.title" },
         isi: [
           { kunci: "jubelio.settings.defaults.description" },
-          "Menyimpan nilai bawaan hanya menyimpan nilai-nilai ini; dipakai saat sebuah barang dikirim ke Jubelio berikutnya. Harga jual barang tidak tersentuh. Margin dan biaya tambahan bawaan hanya bahan rekomendasi harga di halaman barang, untuk barang yang tidak punya sendiri; menyimpannya tidak mengubah harga jual barang mana pun (keputusan pemilik 2026-11-01).",
+          "Menyimpan nilai bawaan hanya menyimpan nilai-nilai ini; dipakai saat sebuah barang dikirim ke Jubelio berikutnya. Harga jual barang tidak tersentuh. Markup/margin bawaan (isi salah satu, yang lain dihitung) dan biaya tambahan bawaan (bantalan margin per pcs, ditambahkan sesudah harga dari HPP dan markup/margin) hanya bahan rekomendasi harga di halaman barang, untuk barang yang tidak punya sendiri; menyimpannya tidak mengubah harga jual barang mana pun (keputusan pemilik 2026-11-01).",
         ],
       },
       { judul: { kunci: "jubelio.settings.cleanup.title" }, isi: { kunci: "jubelio.settings.cleanup.description" } },
@@ -65,7 +65,7 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "jubelio",
     judul: { kunci: "jubelio.migration.title" },
     isi: [
-      "Mengajukan barang jadi buatan ERP ke Jubelio sekaligus. Hanya barang yang belum terhubung ke Jubelio yang tampil.",
+      "Mengajukan barang jadi buatan ERP ke Jubelio sekaligus. Hanya barang yang belum terhubung ke Jubelio yang tampil, dan barang Toko offline saja tidak pernah tampil.",
       "Barang yang dipilih DIAJUKAN, bukan langsung dikirim: masuk daftar Jubelio → Konfirmasi harga dan baru dibuat di Jubelio setelah harganya dikonfirmasi (keputusan pemilik 2026-11-02). Barang yang sudah diajukan ditandai Menunggu konfirmasi harga dan tidak bisa dicentang lagi; kartu di atas menghitung berapa yang masih menunggu.",
       "Barang yang tidak bisa dicentang karena datanya: \"Belum punya kategori\" berarti barangnya belum diberi kategori (tautannya membuka barang itu); \"Kategori belum dipetakan\" berarti kategorinya belum dihubungkan di Kategori Jubelio (tautannya membuka halaman itu).",
       "Setelah harganya dikonfirmasi, produknya dibuat sebagai listing sungguhan di akun Jubelio. Antreannya diproses bertahap; kemajuannya bisa dipantau di Pemantauan Jubelio (antrean kirim).",
@@ -78,8 +78,8 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "jubelio.harga.title" },
     isi: [
       "Harga jual dibuat dan diubah di ERP — di halaman barang atau lewat impor barang. Harga itu baru sampai ke Jubelio setelah dikonfirmasi di sini; sampai saat itu Jubelio tetap memakai harga yang terakhir dikonfirmasi. Di ERP sendiri (pesanan lapangan, SPG) harga baru langsung berlaku.",
-      "Produk baru buatan ERP — dari formulir barang, impor barang dengan centang Jubelio, tombol Ajukan ke Jubelio di halaman barang, atau migrasi massal — menunggu di sini sebagai \"Belum di Jubelio\" dan baru dibuat di Jubelio setelah harganya dikonfirmasi.",
-      "Perubahan nama, deskripsi, foto, varian, atau status aktif tetap dikirim otomatis ke Jubelio, dengan harga yang sudah dikonfirmasi. Impor katalog dan sinkron dari Jubelio tidak pernah mengubah harga jual barang yang sudah ada di ERP.",
+      "Produk baru buatan ERP — dari formulir barang, impor barang, tombol Ajukan ke Jubelio di halaman barang, atau migrasi massal — menunggu di sini sebagai \"Belum di Jubelio\" dan baru dibuat di Jubelio setelah harganya dikonfirmasi. Hanya barang yang \"Dijual di\" Marketplace atau keduanya yang diajukan; barang Toko offline saja tidak pernah dikirim ke Jubelio (yang sudah ada di Jubelio dinonaktifkan di sana, tidak dihapus).",
+      "Perubahan nama, deskripsi, foto, varian, atau status aktif tetap dikirim otomatis ke Jubelio, dengan harga yang sudah dikonfirmasi — kecuali selama harga barang itu di Jubelio berbeda dengan ERP (lihat Beda di Jubelio). Impor katalog dan sinkron dari Jubelio tidak pernah mengubah harga jual barang yang sudah ada di ERP.",
     ],
     kartu: [
       {
@@ -91,8 +91,15 @@ export const ENTRI: EntriBantuan[] = [
         isi: "Untuk perubahan harga yang tidak jadi: harga jual di ERP diganti kembali menjadi harga yang ada di Jubelio, tercatat di riwayat harga jual barang, dan harga itu dikirim ulang ke Jubelio.",
       },
       {
-        judul: "Batalkan pengajuan",
-        isi: "Untuk produk baru yang tidak perlu dijual di marketplace: barangnya keluar dari daftar dan tidak dibuat di Jubelio. Bisa diajukan lagi dari halaman barang.",
+        judul: "Beda di Jubelio",
+        isi: [
+          "Barang yang harganya di Jubelio berbeda dengan harga ERP terkonfirmasi — misalnya karena diubah langsung di Jubelio. Jubelio dibaca setiap kali produknya berubah di Jubelio, saat Impor katalog, setiap 10 menit, dan sesudah setiap kiriman, jadi perubahan tampil paling lambat sekitar 10 menit. Bila variannya berbeda harga, harga tertinggi yang dihitung dan rentangnya ditampilkan. Peringatannya juga tampil di kartu barang, Beranda, dan lonceng.",
+          "Selama bedanya terbuka, tidak ada kiriman lain ke Jubelio untuk barang itu (nama, foto, varian, status aktif), supaya harga di Jubelio tidak tertimpa diam-diam. Kiriman yang ditahan berangkat sendiri begitu bedanya beres.",
+        ],
+      },
+      {
+        judul: "Kirim ulang harga ERP",
+        isi: "Satu-satunya tombol untuk beda harga, satu barang setiap kali: harga di Jubelio diganti dengan harga ERP terkonfirmasi, dan dialognya menyebut harga Jubelio yang akan diganti. Tercatat di Jejak audit. Bila Jubelio ternyata sudah menampilkan harga ERP yang BARU, konfirmasikan di Perubahan harga. ERP tidak pernah mengambil harga Jubelio menjadi harga jual barang yang sudah ada. Untuk produk baru yang tidak perlu dijual di marketplace, ubah \"Dijual di\" di halaman barangnya.",
       },
       {
         judul: "Baris yang tidak bisa dicentang",

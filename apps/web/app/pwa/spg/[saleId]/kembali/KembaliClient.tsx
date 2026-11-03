@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ClipboardList, CloudOff, Hourglass, Minus, Plus } from "lucide-react";
+import { AlertTriangle, ClipboardList, CloudOff, Hourglass, Minus, PackageX, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,43 +14,65 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { KeteranganKirim } from "@/app/pwa/KeteranganKirim";
-import { catatReturPembeliAction } from "@/app/actions/spg-retur";
+import { catatReturPembeliAction } from "@/app/actions/retur-spg";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { newLocalId } from "@/lib/pwa/id-lokal";
 import { formatDisplayDateTime } from "@/lib/date-only";
 import type { NotaUntukKembali } from "@/lib/spg/retur-pembeli";
-import { denganBatasWaktu, tanpaSinyal } from "@/lib/pwa/offline/batas-waktu";
+import { unggahFotoReturPembeli } from "@/lib/spg/foto-retur-pembeli-klien";
+import type { JenisFotoReturPembeli } from "@/lib/spg/foto-retur-pembeli-kunci";
+import { BatasWaktuHabis, denganBatasWaktu, tanpaSinyal } from "@/lib/pwa/offline/batas-waktu";
 import { PERISTIWA_ANTREAN } from "@/lib/pwa/offline/hitung";
 import { antreReturPembeli, returPembeliTertahanUntuk } from "@/lib/pwa/offline/luring-antrean";
+import type { FotoR2Tertunda } from "@/lib/pwa/offline/db";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
+import { FotoReturTunda, type FotoTunda } from "@/app/pwa/spg/retur-pembeli/FotoReturTunda";
+import { cn } from "@/lib/utils";
 
 const KONDISI = ["LAYAK", "RUSAK"] as const;
 type Kondisi = (typeof KONDISI)[number];
+type JawabanUang = "BELUM" | "SUDAH";
+
+/** Galat unggah yang tidak akan berhasil diulang (4xx). Sinyal putus, batas waktu, sesi habis, atau server sibuk → antrean HP. */
+function ditolakServer(err: unknown): string | null {
+  if (err instanceof TypeError || err instanceof BatasWaktuHabis) return null;
+  if (err instanceof Error && err.message && err.message !== "GAGAL") return err.message;
+  return null;
+}
 
 /**
- * Barang yang dikembalikan pembeli ke counter. Kasir toko yang mengembalikan
- * uangnya — layar ini hanya MELAPORKAN barang, jumlah, kondisi, dan alasannya.
- * Laporannya menunggu persetujuan kantor (keputusan pemilik 2026-11-02); baru
- * sesudah disetujui barang layak kembali ke stok rak toko (yang rusak tercatat
- * tanpa masuk rak) dan penjualan bersih serta komisinya berkurang.
+ * Barang yang dikembalikan pembeli ke counter (keputusan pemilik 2026-11-02).
+ * SPG MELAPORKAN barang, jumlah, kondisi, alasan, dan foto barangnya (wajib,
+ * P14/P77), lalu menjawab apakah kasir sudah mengembalikan uang pembeli. Uang
+ * baru boleh dikembalikan SESUDAH kantor menyetujui (P13a) — kalau ternyata
+ * sudah, foto struk wajib dan bila laporannya ditolak uang itu menjadi beban
+ * SPG. Selama menunggu, barangnya DISISIHKAN (P12): tidak ke rak, tidak dijual,
+ * tidak dihitung.
  *
- * `sisa` dari server sudah dikurangi potong yang masih menunggu kantor di
- * laporan mana pun, jadi potong yang sama tidak bisa dilaporkan dua kali.
+ * `sisa` dari server sudah dikurangi potong yang masih menunggu kantor atau
+ * ditahan beban di laporan mana pun, jadi potong yang sama tidak bisa
+ * dilaporkan dua kali. Foto diunggah saat dikirim (kunci = kunci formulir);
+ * tanpa sinyal, foto dan laporannya disimpan di HP dan dikirim saat sinyal kembali.
  */
 export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; storeId: string }) {
   const t = useTranslations("spgRetur.pembeli");
   const tl = useTranslations("pwaLuring.stok");
+  const tf = dinamis(useTranslations("foto"));
   const tk = dinamis(useTranslations("spgRetur"));
   const te = dinamis(t);
   const router = useRouter();
   const locale = useLocale();
   const [pending, startTransition] = useTransition();
   // Satu kunci per formulir: ketukan ganda atau kiriman ulang tidak mencatat dua kali.
+  // Kunci yang sama menjadi folder foto laporan ini di R2.
   const [kunci] = useState(newLocalId);
   const [isian, setIsian] = useState<Record<string, { qty: number; kondisi: Kondisi }>>(() =>
     Object.fromEntries(nota.baris.map((b) => [b.saleLineId, { qty: 0, kondisi: "LAYAK" as Kondisi }])),
   );
   const [alasan, setAlasan] = useState("");
+  const [fotoBarang, setFotoBarang] = useState<FotoTunda | null>(null);
+  const [uang, setUang] = useState<JawabanUang | null>(null);
+  const [fotoStruk, setFotoStruk] = useState<FotoTunda | null>(null);
   // Barang kembali dari nota ini yang sudah dicatat TANPA sinyal dan masih di
   // HP: jumlahnya dikurangkan dari sisa di layar, supaya tidak dicatat dua kali
   // (server menolak yang melebihi sisa — MELEBIHI_SISA).
@@ -76,7 +98,7 @@ export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; store
     };
   }, [nota.id]);
   const potongTertahan = [...tertahan.values()].reduce((a, b) => a + b, 0);
-  /** Sisa yang masih bisa dilaporkan: sisa server (sudah tanpa yang menunggu kantor) dikurangi yang tercatat di HP. */
+  /** Sisa yang masih bisa dilaporkan: sisa server (tanpa yang menunggu kantor atau ditahan) dikurangi yang tercatat di HP. */
   const sisaDari = (b: { saleLineId: string; sisa: number }) => Math.max(0, b.sisa - (tertahan.get(b.saleLineId) ?? 0));
 
   const ubah = (id: string, sisa: number, qty: number) =>
@@ -84,15 +106,25 @@ export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; store
 
   const dipilih = nota.baris.filter((b) => (isian[b.saleLineId]?.qty ?? 0) > 0);
   const semuaSudahKembali = nota.baris.every((b) => sisaDari(b) === 0);
+  // Urutan sama dengan urutan isian di layar: barang, alasan, foto barang, jawaban uang, foto struk.
   const kurang = pending
     ? null
     : dipilih.length === 0
       ? t("kurangBarang")
       : alasan.trim() === ""
         ? t("kurangAlasan")
-        : null;
+        : !fotoBarang
+          ? t("kurangFotoBarang")
+          : uang === null
+            ? t("kurangJawabUang")
+            : uang === "SUDAH" && !fotoStruk
+              ? t("kurangFotoStruk")
+              : null;
 
   const kirim = () => {
+    if (!fotoBarang || uang === null) return;
+    const waktu = Date.now();
+    const uangSudah = uang === "SUDAH";
     const baris = dipilih
       .map((b) => ({
         saleLineId: b.saleLineId,
@@ -101,10 +133,15 @@ export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; store
         condition: isian[b.saleLineId].kondisi,
       }))
       .filter((b) => b.qty > 0);
+    const kunciFoto: Record<JenisFotoReturPembeli, string | null> = { barang: null, struk: null };
+    const tertunda = (jenis: JenisFotoReturPembeli, f: FotoTunda): FotoR2Tertunda =>
+      kunciFoto[jenis] ? { nama: f.nama, key: kunciFoto[jenis] ?? undefined } : { nama: f.nama, blob: f.berkas };
+
     /**
-     * Ke antrean HP: tanpa sinyal, atau jawaban server tidak datang. Kunci yang
-     * sama dengan kiriman langsung — kalau ternyata sudah sampai, antrean hanya
-     * mendapat catatan yang ada. Retur pembeli tidak butuh check-in.
+     * Ke antrean HP: tanpa sinyal, atau unggah/jawaban server tidak datang. Kunci
+     * yang sama dengan kiriman langsung — kalau ternyata sudah sampai, antrean
+     * hanya mendapat catatan yang ada. Foto yang sudah naik disimpan kuncinya,
+     * yang belum disimpan berkasnya. Retur pembeli tidak butuh check-in.
      */
     const simpanDiHp = async () => {
       try {
@@ -113,9 +150,12 @@ export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; store
           storeId,
           spgSaleId: nota.id,
           docNo: nota.docNo,
-          waktu: Date.now(),
+          waktu,
           alasan,
           baris: baris.map((b) => ({ ...b, productName: nota.baris.find((x) => x.saleLineId === b.saleLineId)?.productName ?? "" })),
+          uangSudahDikembalikan: uangSudah,
+          fotoBarang: tertunda("barang", fotoBarang),
+          ...(uangSudah && fotoStruk ? { fotoStruk: tertunda("struk", fotoStruk) } : {}),
         });
       } catch {
         toast.error(tl("gagalSimpan"));
@@ -124,14 +164,39 @@ export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; store
       toast.success(tl("tersimpanKembali"));
       router.replace(`/pwa/spg/${nota.id}/nota`);
     };
+
     startTransition(async () => {
       if (tanpaSinyal()) {
         await simpanDiHp();
         return;
       }
+      try {
+        kunciFoto.barang = (await denganBatasWaktu(unggahFotoReturPembeli({ berkas: fotoBarang.berkas, nama: fotoBarang.nama, jenis: "barang", kunci }))).key;
+        if (uangSudah && fotoStruk) {
+          kunciFoto.struk = (await denganBatasWaktu(unggahFotoReturPembeli({ berkas: fotoStruk.berkas, nama: fotoStruk.nama, jenis: "struk", kunci }))).key;
+        }
+      } catch (err) {
+        const kode = ditolakServer(err);
+        if (kode) {
+          toast.error(tf(`err${kode}`));
+          return;
+        }
+        await simpanDiHp();
+        return;
+      }
       let hasil: Awaited<ReturnType<typeof catatReturPembeliAction>>;
       try {
-        hasil = await denganBatasWaktu(catatReturPembeliAction({ spgSaleId: nota.id, alasan, idempotencyKey: kunci, baris }));
+        hasil = await denganBatasWaktu(
+          catatReturPembeliAction({
+            spgSaleId: nota.id,
+            alasan,
+            idempotencyKey: kunci,
+            baris,
+            fotoBarangKey: kunciFoto.barang,
+            uangSudahDikembalikan: uangSudah,
+            fotoStrukKey: uangSudah ? kunciFoto.struk : null,
+          }),
+        );
       } catch {
         await simpanDiHp();
         return;
@@ -171,6 +236,11 @@ export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; store
         </Link>
       </div>
 
+      <p className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+        <PackageX className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+        <span>{t("disisihkan")}</span>
+      </p>
+
       {potongTertahan > 0 ? (
         <p className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
           <CloudOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
@@ -197,9 +267,15 @@ export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; store
                       {t("menungguKantor", { n: b.menunggu })}
                     </p>
                   ) : null}
+                  {b.ditahan > 0 ? (
+                    <p className="flex items-center gap-1 text-xs text-amber-800 dark:text-amber-300">
+                      <Hourglass className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      {t("ditahanBeban", { n: b.ditahan })}
+                    </p>
+                  ) : null}
                 </div>
                 {sisa === 0 ? (
-                  <p className="text-sm text-muted-foreground">{t(b.menunggu > 0 ? "semuaDilaporkan" : "sudahSemua")}</p>
+                  <p className="text-sm text-muted-foreground">{t(b.menunggu > 0 || b.ditahan > 0 ? "semuaDilaporkan" : "sudahSemua")}</p>
                 ) : (
                   <div className="flex items-center gap-2">
                     <Button
@@ -256,15 +332,61 @@ export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; store
 
       {!semuaSudahKembali && (
         <Card className="py-0">
-          <CardContent className="space-y-2 py-4">
-            <Label htmlFor="kb-alasan">{t("alasan")}</Label>
-            <Textarea
-              id="kb-alasan"
-              value={alasan}
-              onChange={(e) => setAlasan(e.target.value)}
-              rows={2}
-              placeholder={t("alasanContoh")}
+          <CardContent className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="kb-alasan">{t("alasan")}</Label>
+              <Textarea
+                id="kb-alasan"
+                value={alasan}
+                onChange={(e) => setAlasan(e.target.value)}
+                rows={2}
+                placeholder={t("alasanContoh")}
+              />
+            </div>
+            <FotoReturTunda
+              id="kb-foto-barang"
+              label={t("fotoBarang")}
+              petunjuk={t("fotoBarangPetunjuk")}
+              nilai={fotoBarang}
+              onChange={setFotoBarang}
+              disabled={pending}
             />
+          </CardContent>
+        </Card>
+      )}
+
+      {!semuaSudahKembali && (
+        <Card className="py-0">
+          <CardContent className="space-y-3 py-4">
+            <p className="font-medium" id="kb-uang-tanya">
+              {t("uangTanya")}
+            </p>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-labelledby="kb-uang-tanya">
+              {(["BELUM", "SUDAH"] as const).map((j) => (
+                <Button
+                  key={j}
+                  type="button"
+                  role="radio"
+                  aria-checked={uang === j}
+                  variant={uang === j ? "default" : "outline"}
+                  className={cn("h-auto whitespace-normal py-3")}
+                  disabled={pending}
+                  onClick={() => setUang(j)}
+                >
+                  {j === "BELUM" ? t("uangBelum") : t("uangSudah")}
+                </Button>
+              ))}
+            </div>
+            {uang === "BELUM" ? <p className="text-sm text-muted-foreground">{t("uangBelumKet")}</p> : null}
+            {uang === "SUDAH" ? (
+              <>
+                <p className="flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                  <span>{t("uangSudahPeringatan")}</span>
+                </p>
+                <FotoReturTunda id="kb-foto-struk" label={t("fotoStruk")} nilai={fotoStruk} onChange={setFotoStruk} disabled={pending} />
+              </>
+            ) : null}
           </CardContent>
         </Card>
       )}

@@ -39,7 +39,7 @@ d("komisi SPG per pcs lama di jalur simpan barang (test bed only)", () => {
     if (uomId) await prisma.uOM.delete({ where: { id: seededId(uomId) } });
   });
 
-  const gamis = () => ({ nameId: "Gamis uji", nameEn: "Test dress", type: "FINISHED_GOOD" as const, uomId });
+  const gamis = () => ({ nameId: "Gamis uji", nameEn: "Test dress", type: "FINISHED_GOOD" as const, uomId, salesChannel: "BOTH" as const });
 
   it("disimpan, tidak tersentuh bila tidak dikirim, 0 bila dikosongkan; angka di payload klien; perubahan tercatat di jejak", async () => {
     const { item } = await createItem({ ...gamis(), sku: `TEST-KSP-${token}`, commissionPerPcs: 10_000 });

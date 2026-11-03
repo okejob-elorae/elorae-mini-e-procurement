@@ -2,6 +2,7 @@ import { prisma, Prisma, type PrismaClient } from "@elorae/db";
 import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { bagiTotalPerPeranPersediaan, type NilaiPerPeran } from "@/lib/finance/journals/peran-persediaan";
 import { barisPpnMasukan } from "@/lib/finance/pajak/jurnal-ppn";
+import { grnBelumDiproses } from "@/lib/grn/grn-tanpa-po";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -41,10 +42,26 @@ function bacaBaris(raw: unknown): BarisGrnTersimpan[] {
 async function grnValue(
   grnId: string,
   client: AnyClient,
-): Promise<{ value: number; ppn: number; dppPpn: number; docNumber: string; grnDate: Date; perPeran: NilaiPerPeran[] } | null> {
+): Promise<{
+  value: number;
+  ppn: number;
+  dppPpn: number;
+  docNumber: string;
+  grnDate: Date;
+  perPeran: NilaiPerPeran[];
+  belumDiproses: boolean;
+} | null> {
   const grn = await client.gRN.findUnique({
     where: { id: grnId },
-    select: { totalAmount: true, ppnAmount: true, docNumber: true, grnDate: true, items: true },
+    select: {
+      totalAmount: true,
+      ppnAmount: true,
+      docNumber: true,
+      grnDate: true,
+      items: true,
+      requiresNoPoConfirmation: true,
+      noPoConfirmedAt: true,
+    },
   });
   if (!grn) return null;
   const value = Number(grn.totalAmount);
@@ -67,16 +84,22 @@ async function grnValue(
       nilai: b.totalCost != null ? Number(b.totalCost) : Number(b.qty ?? 0) * Number(b.unitCost ?? 0),
     })),
   );
-  return { value, ppn, dppPpn, docNumber: grn.docNumber, grnDate: grn.grnDate, perPeran };
+  return { value, ppn, dppPpn, docNumber: grn.docNumber, grnDate: grn.grnDate, perPeran, belumDiproses: grnBelumDiproses(grn) };
 }
 
+/**
+ * GRN tanpa PO yang masih menunggu konfirmasi admin (P51a) belum menggerakkan stok dan belum
+ * menjadi hutang, jadi tidak dijurnal: `NOTHING_TO_POST`, sama seperti `createGRN` dan tombol
+ * posting ulang yang sudah menolaknya. Konfirmasi (`putuskanGrnTanpaPoAction`) memposting sesudah
+ * `noPoConfirmedAt` tercatat.
+ */
 export async function postGrnJournal(
   grnId: string,
   postedById: string,
   client: AnyClient = prisma,
 ): Promise<GenerateAutoJournalResult> {
   const grn = await grnValue(grnId, client);
-  if (!grn || Math.abs(grn.value) < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
+  if (!grn || grn.belumDiproses || Math.abs(grn.value) < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
   const hutang = Math.round((grn.value + grn.ppn) * 100) / 100;
   const lines = [
     ...grn.perPeran.map((p) => ({ role: p.role, debit: p.nilai, credit: 0 })),

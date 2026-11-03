@@ -30,6 +30,9 @@ d("infoProdukSpg / daftarProdukSpg (test bed only)", () => {
   let matiDiBukuId = "";
   let matiId = "";
   let lainId = "";
+  /* "Marketplace saja" (P3a): one still in this store's book (P73), one in no book. */
+  let mpDiBukuId = "";
+  let mpId = "";
   let tokoId = "";
   let tokoBaruId = "";
   let tokoSpgLainId = "";
@@ -51,6 +54,8 @@ d("infoProdukSpg / daftarProdukSpg (test bed only)", () => {
     matiDiBukuId = "";
     matiId = "";
     lainId = "";
+    mpDiBukuId = "";
+    mpId = "";
     tokoId = "";
     tokoBaruId = "";
     tokoSpgLainId = "";
@@ -134,6 +139,16 @@ d("infoProdukSpg / daftarProdukSpg (test bed only)", () => {
     lainId = (
       await prisma.item.create({ data: { sku: `TEST-PRD-L-${token}`, nameId: `Lain ${token}`, nameEn: "x", type: "FINISHED_GOOD", uomId } })
     ).id;
+    mpDiBukuId = (
+      await prisma.item.create({
+        data: { sku: `TEST-PRD-MPB-${token}`, nameId: `Marketplace di rak ${token}`, nameEn: "x", type: "FINISHED_GOOD", uomId, salesChannel: "MARKETPLACE" },
+      })
+    ).id;
+    mpId = (
+      await prisma.item.create({
+        data: { sku: `TEST-PRD-MP-${token}`, nameId: `Marketplace saja ${token}`, nameEn: "x", type: "FINISHED_GOOD", uomId, salesChannel: "MARKETPLACE" },
+      })
+    ).id;
 
     // Toko konsinyasi dengan markup sah (25%): harga di toko = 123.456 × 1,25 = 154.320.
     const toko = async (k: string, aktif = true) =>
@@ -158,6 +173,7 @@ d("infoProdukSpg / daftarProdukSpg (test bed only)", () => {
         { storeId: tokoId, itemId, variantSku: skuM, qty: 5, kind: "TERIMA", createdById: oleh },
         { storeId: tokoId, itemId, variantSku: skuM, qty: -3, kind: "JUAL", createdById: oleh },
         { storeId: tokoId, itemId: matiDiBukuId, variantSku: "", qty: 1, kind: "OPNAME", createdById: oleh },
+        { storeId: tokoId, itemId: mpDiBukuId, variantSku: "", qty: 2, kind: "TERIMA", createdById: oleh },
         { storeId: tokoSpgLainId, itemId, variantSku: skuM, qty: 4, kind: "TERIMA", createdById: oleh },
         { storeId: tokoSpgLainId, itemId, variantSku: skuL, qty: 0, kind: "OPNAME", createdById: oleh },
         { storeId: tokoTanpaSpgId, itemId, variantSku: skuM, qty: 9, kind: "TERIMA", createdById: oleh },
@@ -192,9 +208,9 @@ d("infoProdukSpg / daftarProdukSpg (test bed only)", () => {
     });
     await prisma.user.deleteMany({ where: { id: { in: seededIds(userIds) } } });
     await prisma.store.deleteMany({ where: { id: { in: seededIds([tokoId, tokoBaruId, tokoSpgLainId, tokoTanpaSpgId, tokoMatiId]) } } });
-    await prisma.itemImage.deleteMany({ where: { itemId: { in: seededIds([itemId, polosId, matiDiBukuId, matiId, lainId]) } } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: seededIds([itemId, polosId, matiDiBukuId, matiId, lainId]) } } });
-    await prisma.item.deleteMany({ where: { id: { in: seededIds([itemId, polosId, matiDiBukuId, matiId, lainId]) } } });
+    await prisma.itemImage.deleteMany({ where: { itemId: { in: seededIds([itemId, polosId, matiDiBukuId, matiId, lainId, mpDiBukuId, mpId]) } } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: seededIds([itemId, polosId, matiDiBukuId, matiId, lainId, mpDiBukuId, mpId]) } } });
+    await prisma.item.deleteMany({ where: { id: { in: seededIds([itemId, polosId, matiDiBukuId, matiId, lainId, mpDiBukuId, mpId]) } } });
     await prisma.sizeChart.deleteMany({ where: { id: { in: seededIds([chartId, chartBarangId]) } } });
     await prisma.itemCategory.deleteMany({ where: { id: seededId(katId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
@@ -302,6 +318,10 @@ d("infoProdukSpg / daftarProdukSpg (test bed only)", () => {
     expect(milik.has(matiId)).toBe(false);
     // Toko lain: barang nonaktif di rak toko SAYA tidak ikut.
     expect((await daftarProdukSpg(tokoBaruId)).some((x) => x.itemId === matiDiBukuId)).toBe(false);
+    // "Marketplace saja": hanya yang masih di buku toko ini yang ikut (P3a, P73).
+    expect(milik.has(mpDiBukuId)).toBe(true);
+    expect(milik.has(mpId)).toBe(false);
+    expect((await daftarProdukSpg(tokoBaruId)).some((x) => x.itemId === mpDiBukuId)).toBe(false);
     const teks = JSON.stringify(daftar.filter((x) => x.nama.endsWith(token)));
     expect(teks).not.toContain(String(GUDANG_RAHASIA));
   });

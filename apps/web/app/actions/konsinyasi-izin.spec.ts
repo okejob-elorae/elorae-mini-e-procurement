@@ -29,16 +29,18 @@ vi.mock("@/lib/konsinyasi/writer", () => {
     bukaKunci: penulis("bukaKunci"),
     bayarKomisi: penulis("bayarKomisi"),
     catatNomorDokumen: penulis("catatNomorDokumen"),
-    kirimTitipan: vi.fn(),
-    catatPembayaranToko: vi.fn(),
-    batalkanPembayaranToko: vi.fn(),
+    kirimTitipan: penulis("kirimTitipan"),
   };
 });
+vi.mock("@/lib/konsinyasi/siklus-pertama", () => ({
+  aturBulanSiklusPertama: vi.fn(async () => {
+    state.dipanggil.push("aturBulanSiklusPertama");
+    return { ok: true };
+  }),
+}));
 vi.mock("@/lib/konsinyasi/laporan-spg", () => ({ bahanLaporanSpg: vi.fn() }));
 vi.mock("@/lib/finance/operasional/kait", () => ({
   kaitBayarGajiKonsi: vi.fn(async () => {}),
-  kaitBayarTokoKonsi: vi.fn(async () => {}),
-  kaitKirimTitipan: vi.fn(async () => {}),
   kaitSiklusKonsi: vi.fn(async () => {}),
 }));
 
@@ -54,7 +56,7 @@ beforeEach(() => {
 });
 
 const DITOLAK = { ok: false, kode: "TANPA_AKSES" };
-const kunci = () => aksi.kunciAngkaAction("c1", [], 0);
+const kunci = () => aksi.kunciAngkaAction("c1", []);
 const bukaKunci = () => aksi.bukaKunciAction("c1");
 const bayar = () => aksi.bayarKomisiAction("k1", undefined, 1_010_000);
 const nomor = (jenis: "NOTA" | "PAJAK") => aksi.catatNomorDokumenAction("c1", jenis, "NP-202607-0058");
@@ -72,6 +74,29 @@ describe("mengunci dan membuka kunci angka: consignment:lock", () => {
     expect(await kunci()).toEqual({ ok: true });
     expect(await bukaKunci()).toEqual({ ok: true });
     expect(state.dipanggil).toEqual(["kunciAngka", "bukaKunci"]);
+  });
+});
+
+describe("bulan siklus pertama: consignment:lock", () => {
+  it("pengelola siklus ditolak; pemegang izin kunci mengatur", async () => {
+    masuk(["consignment:manage", "receivables:manage"]);
+    expect(await aksi.aturBulanSiklusPertamaAction("2026-11")).toEqual(DITOLAK);
+    expect(state.dipanggil).toEqual([]);
+    masuk(["consignment:lock"]);
+    expect(await aksi.aturBulanSiklusPertamaAction("2026-11")).toEqual({ ok: true });
+    expect(state.dipanggil).toEqual(["aturBulanSiklusPertama"]);
+  });
+});
+
+describe("kirim titipan dihentikan", () => {
+  it("pengelola siklus mendapat PAKAI_PENGIRIMAN dan penulisnya tidak pernah dipanggil", async () => {
+    masuk(["consignment:manage"]);
+    expect(
+      await aksi.kirimTitipanAction({ storeId: "s1", shippedAt: "2026-10-03", items: [] }),
+    ).toEqual({ ok: false, kode: "PAKAI_PENGIRIMAN" });
+    masuk(["consignment:view"]);
+    expect(await aksi.kirimTitipanAction({ storeId: "s1", shippedAt: "2026-10-03", items: [] })).toEqual(DITOLAK);
+    expect(state.dipanggil).toEqual([]);
   });
 });
 

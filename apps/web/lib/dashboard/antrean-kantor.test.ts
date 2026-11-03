@@ -29,9 +29,17 @@ const IZIN_TERKECIL: Record<KunciAntrean, string[]> = {
   // spg_sales:view; menetapkan penanggung = receivables:decide_bearer (barang-hilang.ts) — jadi
   // izin keputusan saja sudah membuka dan memutuskan.
   stockLossOpen: ["receivables:decide_bearer"],
+  // Klaim ekspedisi: halaman barang hilang yang sama; mencatat jawaban ekspedisi = receivables:manage,
+  // memeriksa uangnya = payments:verify, menetapkan penanggung lain = receivables:decide_bearer
+  // (barang-hilang.ts). payments:verify saja tidak membuka halamannya (P28).
+  klaimEkspedisiMenunggu: ["receivables:manage"],
+  klaimEkspedisiCek: ["spg_sales:view", "payments:verify"],
+  klaimEkspedisiDitolak: ["receivables:decide_bearer"],
   // /backoffice/retur-spg: ROUTE_PERMISSIONS + penjaga halaman spg_sales:view; menyetujui dan
   // menolak = spg_returns:approve (spg-retur.ts).
   spgReturnsPending: ["spg_sales:view", "spg_returns:approve"],
+  // Sama halamannya; memutuskan barangnya = spg_returns:approve (retur-spg.ts).
+  spgReturnGoodsPending: ["spg_sales:view", "spg_returns:approve"],
   storeProposalsPending: ["stores:view", "stores:manage"],
   fieldPromisesUnconfirmed: ["receivables:manage"],
   damagedDeliveriesOpen: ["inventory:manage"],
@@ -39,12 +47,33 @@ const IZIN_TERKECIL: Record<KunciAntrean, string[]> = {
   // /backoffice/pelunasan: penjaga halaman bolehMembacaPelunasan; memutuskan = payments:verify.
   claimCorrectionsPending: ["payments:verify"],
   returnCorrectionsPending: ["receivables:manage"],
+  // /backoffice/retur-toko: penjaga halaman bolehMembacaRetur; memutuskan penanggung selisih retur =
+  // store_returns:decide_shortfall (store-returns.ts, registri izin 2026-11-02).
+  returnShortfallsUndecided: ["receivables:view", "store_returns:decide_shortfall"],
   shiftSwapsPending: ["spg_sales:view", "stores:manage"],
+  // /backoffice/jadwal-spg: ROUTE_PERMISSIONS + penjaga spg_sales:view; menyetujui = spg_schedules:approve.
+  spgSchedulesPending: ["spg_sales:view", "spg_schedules:approve"],
+  // /backoffice/komisi-spg/catatan-hadir memagari dirinya (record ATAU verify ATAU spg_sales:view).
+  spgAttendanceToEnter: ["spg_attendance:record"],
+  spgAttendanceToCheck: ["spg_attendance:verify"],
   stockRequestsUnheld: ["spg_sales:view", "stores:manage"],
-  // /backoffice/komisi-spg: ROUTE_PERMISSIONS + penjaga halaman spg_sales:view; menetapkan = receivables:manage.
+  // /backoffice/komisi-spg: penjaga halaman spg_sales:view ATAU spg_commission:pay (P28/Q9, tidak di
+  // ROUTE_PERMISSIONS); menetapkan = receivables:manage.
   spgCommissionsUnset: ["spg_sales:view", "receivables:manage"],
-  // Sama halamannya; menandai dibayar = spg_commission:pay (spg-komisi.ts, konsinyasi.ts bayarKomisiAction).
-  spgCommissionsUnpaidPast: ["spg_sales:view", "spg_commission:pay"],
+  // Sama halamannya; menandai dibayar = spg_commission:pay (spg-komisi.ts, konsinyasi.ts bayarKomisiAction),
+  // yang sendirian sudah membuka halamannya.
+  spgCommissionsUnpaidPast: ["spg_commission:pay"],
+  // Kartu #utang: mencatat = spg_commission:pay; memeriksa pembayaran utang = payments:verify, yang
+  // membuka halaman ini untuk kartu #utang saja.
+  spgDebtsOpen: ["spg_commission:pay"],
+  spgDebtPaymentsToCheck: ["payments:verify"],
+  // Vendor Billing: ROUTE_PERMISSIONS vendor_bills:view; meminta invoice = vendor_bills:manage,
+  // memutuskan selisih harga = vendor_bills:decide_price.
+  receiptsWithoutInvoice: ["vendor_bills:view", "vendor_bills:manage"],
+  invoiceRequestsOverdue: ["vendor_bills:view", "vendor_bills:manage"],
+  vendorBillPriceDifferences: ["vendor_bills:view", "vendor_bills:decide_price"],
+  // Inventori: ROUTE_PERMISSIONS inventory:view; mengonfirmasi GRN tanpa PO = goods_receipts:confirm_no_po.
+  grnNoPoPending: ["inventory:view", "goods_receipts:confirm_no_po"],
   // /backoffice/production/follow-up: penjaga halaman production_planning:view; tindak lanjutnya
   // menanyai pemasok, jadi izin lihat juga izin bertindak.
   productionStepsOverdue: ["production_planning:view"],
@@ -59,6 +88,7 @@ const IZIN_TERKECIL: Record<KunciAntrean, string[]> = {
   // /backoffice/jubelio/harga: ROUTE_PERMISSIONS + penjaga halaman jubelio_prices:confirm, dan aksinya
   // (jubelio-harga.ts) memeriksa izin yang sama.
   jubelioPricesPending: ["jubelio_prices:confirm"],
+  jubelioPricesDiffer: ["jubelio_prices:confirm"],
 };
 
 /** Saringan yang WAJIB ada di tautan tiap baris — angka Beranda dihitung dengan saringan ini. */
@@ -71,18 +101,33 @@ const SARINGAN: Record<KunciAntrean, Record<string, string>> = {
   transfersPendingApproval: { status: "DIAJUKAN" },
   transferShortfallsOpen: { selisih: "1" },
   stockLossOpen: { status: "TERBUKA" },
+  klaimEkspedisiMenunggu: { status: "DITETAPKAN", klaim: "DIAJUKAN" },
+  klaimEkspedisiCek: { status: "DITETAPKAN", klaim: "MENUNGGU_CEK" },
+  klaimEkspedisiDitolak: { status: "DITETAPKAN", klaim: "DITOLAK" },
   spgReturnsPending: { status: "MENUNGGU" },
+  spgReturnGoodsPending: { status: "KEPUTUSAN_BARANG" },
   storeProposalsPending: { status: "PENDING" },
   fieldPromisesUnconfirmed: { saring: "belum" },
   damagedDeliveriesOpen: { tab: "terbuka" },
   damagedWarehouseOpen: { tab: "saldo" },
   claimCorrectionsPending: { koreksi: "1" },
   returnCorrectionsPending: { koreksi: "1" },
+  returnShortfallsUndecided: { langkah: "keputusan" },
   shiftSwapsPending: { tab: "tukar" },
+  spgSchedulesPending: { tab: "bulanan" },
+  spgAttendanceToEnter: { perlu: "masukkan" },
+  spgAttendanceToCheck: { perlu: "periksa" },
   stockRequestsUnheld: { status: "BARU", pemegang: "tanpa" },
   spgCommissionsUnset: { bulan: "lalu" },
   // Jangkar #tunggakan, bukan saringan: kartunya tidak bergantung pada bulan yang dibuka.
   spgCommissionsUnpaidPast: {},
+  // Jangkar #utang: kartu utang SPG tidak bergantung pada bulan yang dibuka.
+  spgDebtsOpen: {},
+  spgDebtPaymentsToCheck: {},
+  receiptsWithoutInvoice: { status: "belum" },
+  invoiceRequestsOverdue: { tab: "permintaan", status: "terlambat" },
+  vendorBillPriceDifferences: { status: "MENUNGGU" },
+  grnNoPoPending: { tab: "grn", konfirmasi: "menunggu" },
   productionStepsOverdue: { saring: "terlambat" },
   productionStepsDueToday: { saring: "hari-ini" },
   ledgerDocsWithoutJournal: { tanpaJurnal: "diam" },
@@ -91,6 +136,7 @@ const SARINGAN: Record<KunciAntrean, Record<string, string>> = {
   manualJournalsPendingApproval: { status: "draf" },
   // Daftar tanpa saringan = semua yang menunggu konfirmasi, persis hitungannya.
   jubelioPricesPending: {},
+  jubelioPricesDiffer: { jenis: "BEDA" },
 };
 
 const nol: BuildActionItemsInput = {
@@ -201,6 +247,66 @@ describe("ANTREAN_KANTOR — baris keputusan pemilik 2026-11-02", () => {
   });
 });
 
+/*
+ * Baris jawaban pemilik 2026-11-02 (putaran kedua). Kode yang memutuskan baris = kode tombol dan
+ * aksinya; membuka halamannya saja tidak cukup, dan kode yang dipisah tidak lagi saling mewakili.
+ */
+describe("ANTREAN_KANTOR — baris jawaban pemilik 2026-11-02 (putaran kedua)", () => {
+  it("klaim ekspedisi: KEUANGAN (payments:verify saja) tidak mendapat baris yang memantul (P28)", () => {
+    expect(bolehLihatAntrean("klaimEkspedisiCek", ["dashboard:view", "payments:verify"])).toBe(false);
+    expect(bolehLihatAntrean("klaimEkspedisiCek", ["dashboard:view", "receivables:manage", "payments:verify"])).toBe(true);
+    // Mencatat jawaban ekspedisi bukan memeriksa uangnya, dan sebaliknya.
+    expect(bolehLihatAntrean("klaimEkspedisiCek", ["dashboard:view", "receivables:manage"])).toBe(false);
+    expect(bolehLihatAntrean("klaimEkspedisiMenunggu", ["dashboard:view", "receivables:decide_bearer"])).toBe(false);
+    expect(bolehLihatAntrean("klaimEkspedisiDitolak", ["dashboard:view", "receivables:manage"])).toBe(false);
+  });
+
+  it("selisih retur: receivables:decide_bearer (barang hilang) tidak memutuskan selisih retur (P22)", () => {
+    const bacaPiutang = ["dashboard:view", "receivables:view"];
+    expect(bolehLihatAntrean("returnShortfallsUndecided", [...bacaPiutang, "receivables:decide_bearer"])).toBe(false);
+    expect(bolehLihatAntrean("returnShortfallsUndecided", [...bacaPiutang, "receivables:manage"])).toBe(false);
+    expect(bolehLihatAntrean("returnShortfallsUndecided", [...bacaPiutang, "store_returns:decide_shortfall"])).toBe(true);
+    expect(bolehLihatAntrean("stockLossOpen", ["dashboard:view", "store_returns:decide_shortfall"])).toBe(false);
+  });
+
+  it("komisi SPG: KEUANGAN (spg_commission:pay) membuka halamannya tanpa spg_sales:view (P28)", () => {
+    const keuangan = ["dashboard:view", "spg_commission:pay", "payments:verify"];
+    expect(bolehLihatAntrean("spgCommissionsUnpaidPast", keuangan)).toBe(true);
+    expect(bolehLihatAntrean("spgDebtsOpen", keuangan)).toBe(true);
+    expect(bolehLihatAntrean("spgDebtPaymentsToCheck", keuangan)).toBe(true);
+    // Menetapkan komisi tetap receivables:manage.
+    expect(bolehLihatAntrean("spgCommissionsUnset", keuangan)).toBe(false);
+  });
+
+  it("pemeriksa pembayaran saja melihat kartu #utang, tetapi tidak mencatat utangnya", () => {
+    expect(bolehLihatAntrean("spgDebtPaymentsToCheck", ["dashboard:view", "payments:verify"])).toBe(true);
+    expect(bolehLihatAntrean("spgDebtsOpen", ["dashboard:view", "payments:verify"])).toBe(false);
+  });
+
+  it("catatan check-in toko: mencatat dan memeriksa dua izin; pengawas SPG hanya membaca", () => {
+    expect(bolehLihatAntrean("spgAttendanceToEnter", ["dashboard:view", "spg_attendance:verify"])).toBe(false);
+    expect(bolehLihatAntrean("spgAttendanceToCheck", ["dashboard:view", "spg_attendance:record"])).toBe(false);
+    expect(bolehLihatAntrean("spgAttendanceToEnter", ["dashboard:view", "spg_sales:view"])).toBe(false);
+  });
+
+  it("jadwal bulanan SPG: mengubah jadwal (stores:manage) tidak menyetujui", () => {
+    expect(bolehLihatAntrean("spgSchedulesPending", ["dashboard:view", "spg_sales:view", "stores:manage"])).toBe(false);
+  });
+
+  it("pembelian: melihat Vendor Billing tidak memutuskan selisih harga; inventory:manage tidak mengonfirmasi GRN tanpa PO", () => {
+    expect(bolehLihatAntrean("vendorBillPriceDifferences", ["dashboard:view", "vendor_bills:view", "vendor_bills:manage"])).toBe(false);
+    expect(bolehLihatAntrean("grnNoPoPending", ["dashboard:view", "inventory:view", "inventory:manage"])).toBe(false);
+  });
+
+  it("barang retur pembeli SPG: pengawas SPG saja tidak memutuskan barangnya", () => {
+    expect(bolehLihatAntrean("spgReturnGoodsPending", ["dashboard:view", "spg_sales:view"])).toBe(false);
+  });
+
+  it("harga beda di Jubelio: izin Pengaturan Jubelio tidak mengirim ulang harga", () => {
+    expect(bolehLihatAntrean("jubelioPricesDiffer", ["dashboard:view", "settings_security:manage", "jubelio_admin:view"])).toBe(false);
+  });
+});
+
 describe("buildActionItems — baris antrean kantor", () => {
   const semua = Object.fromEntries(KUNCI_ANTREAN.map((k, i) => [k, i + 1]));
 
@@ -252,6 +358,9 @@ const TANPA_SARINGAN: Record<string, string> = {
   jubelioPricesPending: "daftar konfirmasi harga tanpa saringan = seluruh hitungannya",
   // Kartu #tunggakan dihitung dari hari ini, bukan dari bulan yang dibuka; tautannya membawa jangkar.
   spgCommissionsUnpaidPast: "kartu tunggakan tidak bergantung pada saringan bulan; tautannya berjangkar #tunggakan",
+  // Kartu #utang dihitung dari hari ini, bukan dari bulan yang dibuka.
+  spgDebtsOpen: "kartu utang SPG tidak bergantung pada saringan bulan; tautannya berjangkar #utang",
+  spgDebtPaymentsToCheck: "kartu utang SPG tidak bergantung pada saringan bulan; tautannya berjangkar #utang",
 };
 
 describe("buildActionItems — setiap baris membawa saringan halaman tujuannya", () => {

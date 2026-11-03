@@ -28,6 +28,8 @@ const state = {
   kunci: new Map<string, { salesmanId: string }>(),
   dicatat: [] as Record<string, unknown>[],
   lingkup: [] as Record<string, unknown>[],
+  /** Tagihan konsinyasi: id faktur → pemegang toko sekarang. */
+  konsi: new Map<string, string | null>(),
 };
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => state.sesi) }));
@@ -52,6 +54,11 @@ vi.mock("@/lib/receivables/claim-writer", () => ({
 }));
 vi.mock("@elorae/db", () => ({
   prisma: {
+    receivable: {
+      findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+        where.id.in.filter((id) => state.konsi.has(id)).map((id) => ({ store: { salesmanId: state.konsi.get(id) ?? null } })),
+      ),
+    },
     paymentClaim: {
       findUnique: vi.fn(async ({ where }: { where: { idempotencyKey: string } }) =>
         state.kunci.get(where.idempotencyKey) ?? null,
@@ -78,6 +85,7 @@ beforeEach(() => {
   state.kunci = new Map();
   state.dicatat = [];
   state.lingkup = [];
+  state.konsi = new Map();
 });
 
 describe("buatKlaimAction — SPG tidak menagih", () => {
@@ -193,6 +201,36 @@ describe("buatKlaimAction — kunci hanya toko sendiri", () => {
   it("still refuses someone with neither pwa:access nor receivables:manage", async () => {
     state.sesi = { user: { id: "u1", permissions: ["dashboard:view"] } };
     expect(await buatKlaimAction(DASAR)).toEqual({ ok: false, kode: "TANPA_AKSES" });
+  });
+});
+
+describe("buatKlaimAction — tagihan konsinyasi hanya lewat pemegang toko (P31)", () => {
+  it("accepts the store holder's report on a konsi bill, lock off", async () => {
+    state.konsi.set("f1", "u1");
+    expect(await buatKlaimAction(DASAR)).toEqual({ ok: true, docNo: "BKM/1" });
+  });
+
+  it("refuses a non-holder even with the own-store lock off", async () => {
+    state.konsi.set("f1", "u2");
+    expect(await buatKlaimAction(DASAR)).toEqual({ ok: false, kode: "TOKO_TIDAK_DIIZINKAN" });
+    expect(state.dicatat).toHaveLength(0);
+  });
+
+  it("refuses a konsi bill at a store without a holder", async () => {
+    state.konsi.set("f1", null);
+    expect(await buatKlaimAction(DASAR)).toEqual({ ok: false, kode: "TOKO_TIDAK_DIIZINKAN" });
+  });
+
+  it("still returns the salesperson's own recorded replay first", async () => {
+    state.konsi.set("f1", "u2");
+    state.kunci.set("hp-9", { salesmanId: "u1" });
+    expect(await buatKlaimAction({ ...DASAR, idempotencyKey: "hp-9" })).toEqual({ ok: true, docNo: "BKM/1" });
+  });
+
+  it("leaves the office path exempt", async () => {
+    state.sesi = { user: { id: "kantor", permissions: ["receivables:manage"] } };
+    state.konsi.set("f1", "u2");
+    expect(await buatKlaimAction(DASAR)).toEqual({ ok: true, docNo: "BKM/1" });
   });
 });
 

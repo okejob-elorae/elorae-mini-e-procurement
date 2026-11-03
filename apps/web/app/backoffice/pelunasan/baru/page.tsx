@@ -6,7 +6,11 @@ import { KlaimBaruClient } from "./KlaimBaruClient";
 
 export const dynamic = "force-dynamic";
 
-export default async function KlaimBaruPage({ searchParams }: { searchParams: Promise<{ salin?: string }> }) {
+export default async function KlaimBaruPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ salin?: string; toko?: string }>;
+}) {
   const session = await auth();
   if (!session) redirect("/login");
   if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE)) {
@@ -14,7 +18,10 @@ export default async function KlaimBaruPage({ searchParams }: { searchParams: Pr
   }
 
   // "Buat ulang" dari BKM yang ditolak/dibatalkan: tanggal, cara bayar, giro, foto ikut.
-  const { salin } = await searchParams;
-  const awal = salin ? await bahanSalinKlaim(salin) : null;
-  return <KlaimBaruClient bahan={await bahanKlaimBaru()} awal={awal} />;
+  // `?toko=` (dari kartu Tagihan siklus konsinyasi): toko itu langsung terpilih,
+  // hanya kalau memang ada di pemilih formulir ini.
+  const { salin, toko } = await searchParams;
+  const [awal, bahan] = await Promise.all([salin ? bahanSalinKlaim(salin) : null, bahanKlaimBaru()]);
+  const tokoAwal = typeof toko === "string" && bahan.toko.some((t) => t.id === toko) ? toko : null;
+  return <KlaimBaruClient bahan={bahan} awal={awal} tokoAwal={tokoAwal} />;
 }

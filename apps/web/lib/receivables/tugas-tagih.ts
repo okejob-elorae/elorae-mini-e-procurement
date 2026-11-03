@@ -105,6 +105,8 @@ export type AlasanGagalTugas =
   | "SUDAH_LUNAS"
   | "SUDAH_DITUGASKAN"
   | "BUKAN_PETUGAS_LAPANGAN"
+  /** Tagihan konsinyasi hanya ditugaskan ke sales pemegang toko (P31). */
+  | "KONSI_HANYA_PEMEGANG"
   | "TENGGAT_LAMPAU";
 
 /**
@@ -119,16 +121,23 @@ export type AlasanGagalTugas =
  * Satu faktur hanya boleh berada di SATU tugas terbuka. Kalau tidak, dua orang
  * datang menagih faktur yang sama ke toko yang sama — persis kebocoran yang
  * juga dijaga kontrabon.
+ *
+ * Tagihan konsinyasi hanya boleh ditugaskan ke pemegang toko sekarang (P31,
+ * "pemegang toko"): nominalnya hanya untuk dia.
  */
 export function periksaTugasBaru(input: {
   storeId: string;
   receivableIds: readonly string[];
   /** Faktur yang DITEMUKAN untuk id di atas, dengan sisa yang dihitung ulang. */
-  faktur: readonly { id: string; storeId: string; sisa: number }[];
+  faktur: readonly { id: string; storeId: string; sisa: number; konsi?: boolean }[];
   /** Faktur yang sedang berada di tugas lain yang masih TERBUKA. */
   sedangDitugaskan: ReadonlySet<string>;
   /** Yang ditugasi memang orang lapangan (salesman aktif, bukan SPG, bukan admin). */
   petugasLapangan: boolean;
+  /** Yang ditugasi. */
+  assigneeId?: string;
+  /** Pemegang toko sekarang (`Store.salesmanId`). */
+  pemegangToko?: string | null;
   tenggat: Date | null;
   hariIni: Date;
 }): { ok: true; receivableIds: string[] } | { ok: false; alasan: AlasanGagalTugas } {
@@ -143,6 +152,12 @@ export function periksaTugasBaru(input: {
   if (faktur.some((f) => f.sisa <= 0)) return { ok: false, alasan: "SUDAH_LUNAS" };
   if (ids.some((id) => input.sedangDitugaskan.has(id))) return { ok: false, alasan: "SUDAH_DITUGASKAN" };
   if (!input.petugasLapangan) return { ok: false, alasan: "BUKAN_PETUGAS_LAPANGAN" };
+  if (
+    faktur.some((f) => f.konsi) &&
+    (!input.pemegangToko || input.assigneeId !== input.pemegangToko)
+  ) {
+    return { ok: false, alasan: "KONSI_HANYA_PEMEGANG" };
+  }
 
   // Tenggat hari ini masih boleh — "tagih hari ini" adalah tugas yang paling umum.
   if (input.tenggat && hariWib(input.tenggat) < hariWib(input.hariIni)) {

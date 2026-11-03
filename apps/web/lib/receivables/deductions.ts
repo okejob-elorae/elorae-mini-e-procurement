@@ -22,8 +22,18 @@ export type PotonganBasisData = {
     status: string;
     /** Hitungan gudang. Belum ada, atau masih draft, berarti belum dihitung. */
     warehouseReturn: { physicalAmount: unknown; status: string } | null;
-    /** Beban yang sudah tercatat atas nota ini. */
-    charges: { status: string }[];
+    /**
+     * Hitungan barang SUSULAN — barang selisih yang ketemu dan dikirim balik
+     * (P22a). Wajib ikut dipilih: nilai fisik nota adalah hitungan asli
+     * DITAMBAH susulannya (`nilaiFisikNota`). Pembaca yang lupa memilihnya
+     * menahan lebih banyak dari yang seharusnya.
+     */
+    followUps: { physicalAmount: unknown; status?: string }[];
+    /**
+     * Beban yang sudah tercatat atas nota ini. `bearer` wajib: beban yang
+     * ditanggung TOKO tidak melepas apa pun (keputusan 1, 2026-10-29; P84).
+     */
+    charges: { status: string; bearer: string | null }[];
   } | null;
 };
 
@@ -36,14 +46,50 @@ export const PILIH_POTONGAN = {
       claimedAmount: true,
       status: true,
       warehouseReturn: { select: { physicalAmount: true, status: true } },
-      charges: { select: { status: true } },
+      followUps: { where: { status: 'FINAL' }, select: { physicalAmount: true } },
+      charges: { select: { status: true, bearer: true } },
     },
   },
 } as const;
 
+/**
+ * Potongan retur hasil terjemahan. `ditanggungToko` menandai potongan yang
+ * selisihnya sudah ditetapkan ditanggung TOKO: bagian itu tetap tertahan di
+ * faktur asal (tidak pernah dikreditkan ke toko), tapi BUKAN "tertahan retur"
+ * yang menunggu gudang atau keputusan — tokonya memang berutang, dan sales
+ * menagihnya. Layar dan pesan yang menyebut "tertahan retur / menunggu
+ * pemeriksaan" harus mengecualikannya.
+ */
+export type PotonganReturDiterjemahkan = PotonganRetur & { ditanggungToko?: boolean };
+
 const angka = (v: unknown): number => Number(v ?? 0);
 
-export function potonganRetur(deductions: PotonganBasisData[]): PotonganRetur[] {
+/**
+ * Nilai fisik sebuah nota retur: hitungan asli gudang DITAMBAH setiap hitungan
+ * susulan yang sudah final (barang selisih yang ketemu dan dikirim balik, P22a).
+ * Dijumlah dalam sen.
+ *
+ * `null` selama hitungan aslinya belum ada atau belum final — susulan saja
+ * tidak pernah membuat sebuah nota "sudah dihitung": tanpa hitungan aslinya
+ * belum ada yang tahu berapa yang sampai pertama kali. Susulan yang membawa
+ * statusnya dan belum final diabaikan; yang tidak membawanya sudah disaring
+ * kuerinya (`PILIH_POTONGAN`).
+ */
+export function nilaiFisikNota(r: {
+  warehouseReturn: { physicalAmount: unknown; status: string } | null;
+  followUps: { physicalAmount: unknown; status?: string }[];
+}): number | null {
+  const asli = r.warehouseReturn;
+  if (asli === null || asli.status !== 'FINAL') return null;
+  const susulanSen = r.followUps
+    .filter((f) => f.status === undefined || f.status === 'FINAL')
+    .reduce((n, f) => n + Math.round(angka(f.physicalAmount) * 100), 0);
+  return (Math.round(angka(asli.physicalAmount) * 100) + susulanSen) / 100;
+}
+
+export function potonganRetur(deductions: PotonganBasisData[]): PotonganReturDiterjemahkan[] {
+  // Nota yang selisihnya ditanggung toko — sejajar dengan `bahan` (dipasangkan di bawah).
+  const tokoMenanggung: boolean[] = [];
   const bahan: PotonganPadaKlaim[] = deductions.map((d) => {
     const r = d.storeReturn;
 
@@ -60,6 +106,7 @@ export function potonganRetur(deductions: PotonganBasisData[]): PotonganRetur[] 
      * sebagai potongan biasa dan uangnya lepas tanpa jejak.
      */
     if (!r) {
+      tokoMenanggung.push(false);
       if (d.storeReturnId === null) return { nilaiPotongan: angka(d.amount), retur: null };
       return {
         nilaiPotongan: angka(d.amount),
@@ -76,6 +123,7 @@ export function potonganRetur(deductions: PotonganBasisData[]): PotonganRetur[] 
      * datang membetulkannya; menganggapnya lunas akan menghapus utang diam-diam.
      */
     if (r.status === 'BATAL') {
+      tokoMenanggung.push(false);
       return {
         nilaiPotongan: angka(d.amount),
         // Tahanan tetap: nota batal tidak pernah dihitung atau diputuskan, jadi
@@ -89,21 +137,35 @@ export function potonganRetur(deductions: PotonganBasisData[]): PotonganRetur[] 
      * melepas potongan adalah NRI **final**. Selama gudang belum menutup
      * hitungannya, angkanya masih bisa berubah, dan melepas uang atas angka
      * yang masih bergerak persis kesalahan yang aturan ini cegah.
+     *
+     * Barang susulan yang sudah dihitung ikut menjadi nilai fisik nota: barang
+     * selisih yang ketemu di toko dan dikirim balik mengecilkan yang ditahan.
      */
-    const nri = r.warehouseReturn;
-    const sudahDihitung = nri !== null && nri.status === 'FINAL';
+    const nilaiFisik = nilaiFisikNota(r);
+
+    /*
+     * Beban yang masih TERBUKA belum menanggung apa pun; yang menanggung adalah
+     * DITETAPKAN (dan LUNAS). Satu pengecualian: beban yang ditetapkan ke TOKO
+     * (P84, keputusan 1 2026-10-29) — selisihnya TETAP TERBUKA di nota asal.
+     * Bagian itu tidak pernah dikreditkan ke toko: tahanan tetap, yang boleh
+     * dilunasi BKM berikutnya — itulah cara toko membayar. Mengalihkannya ke
+     * sales (menutup nota sebelum toko membayar) melepasnya.
+     */
+    const diputuskan = r.charges.filter((c) => c.status !== 'TERBUKA');
+    const toko = diputuskan.some((c) => c.bearer === 'TOKO');
+    tokoMenanggung.push(toko);
 
     return {
       nilaiPotongan: angka(d.amount),
-      retur: {
-        nilaiKlaim: angka(r.claimedAmount),
-        nilaiFisik: sudahDihitung ? angka(nri.physicalAmount) : null,
-        // Beban yang masih TERBUKA belum menanggung apa pun; yang menanggung
-        // adalah DITETAPKAN (dan LUNAS, yang sudah dibayar balik).
-        bebanDiputuskan: r.charges.some((c) => c.status !== 'TERBUKA'),
-      },
+      retur: toko
+        ? { nilaiKlaim: angka(r.claimedAmount), nilaiFisik, bebanDiputuskan: false, tetap: true }
+        : { nilaiKlaim: angka(r.claimedAmount), nilaiFisik, bebanDiputuskan: diputuskan.length > 0 },
     };
   });
 
-  return bahanPotonganRetur(bahan);
+  // `bahanPotonganRetur` melewati potongan yang bukan retur, jadi hasilnya
+  // dipasangkan kembali dengan bahannya menurut urutan.
+  const hasil = bahanPotonganRetur(bahan);
+  const tanda = bahan.flatMap((b, i) => (b.retur ? [tokoMenanggung[i]] : []));
+  return hasil.map((p, i) => (tanda[i] ? { ...p, ditanggungToko: true } : p));
 }

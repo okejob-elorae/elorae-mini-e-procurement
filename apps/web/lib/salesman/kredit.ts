@@ -3,8 +3,15 @@
  *
  * Dipakai tiga pihak yang tidak boleh berbeda pendapat: layar HP (peringatan
  * sebelum Kirim), server (menolak atau menandai saat pesanan dibuat), dan
- * layar persetujuan kantor. Toko konsinyasi tidak punya piutang, jadi pemanggil
- * tidak menilai mereka sama sekali.
+ * layar persetujuan kantor. Lapis mode ini hanya menilai toko PUTUS. Tagihan
+ * konsinyasi TETAP piutang, dan batas nilai MILIK toko konsinyasi menggerbangkan
+ * transfernya saat disetujui (gerbang tim, atas eksposurnya saja).
+ *
+ * Kedua lapis membaca SATU angka: `computeStoreCreditExposure`
+ * (`lib/finance/ar/credit-exposure.ts`) lewat `keadaanDariEksposur`, dan
+ * membandingkannya dengan batas lewat `lewatBatasNilai` (keputusan pemilik
+ * 2026-11-02, Q10: pesanan disetujui yang belum masuk nota ikut dihitung di
+ * kedua pemeriksaan).
  *
  * Mode diatur pemilik di Pengaturan → Salesman (`SystemSetting salesman.kredit`):
  * - PERINGATAN (bawaan): salesman dan penyetuju diberi tahu, pesanan jalan.
@@ -27,7 +34,7 @@ export const MODE_KREDIT: readonly ModeKredit[] = ["PERINGATAN", "TAHAN", "BLOKI
 
 export type AturanKredit = {
   mode: ModeKredit;
-  /** Batas sisa piutang toko sesudah pesanan ini; null = tidak dibatasi. */
+  /** Batas sisa tagihan toko (faktur belum lunas + disetujui belum dinota) sesudah pesanan ini; null = tidak dibatasi. */
   batasNilai: number | null;
   /** Batas jumlah faktur yang belum lunas; null = tidak dibatasi. */
   batasFaktur: number | null;
@@ -38,9 +45,27 @@ export type AturanKredit = {
 export const ATURAN_KREDIT_BAWAAN: AturanKredit = { mode: "PERINGATAN", batasNilai: null, batasFaktur: null, hariToleransi: 0 };
 export const KUNCI_ATURAN_KREDIT = "salesman.kredit";
 
+/**
+ * Bahan angka kredit dari `computeStoreCreditExposure`, tanpa impor — supaya
+ * berkas murni ini tetap bisa dipakai layar HP.
+ */
+export type EksposurKredit = {
+  receivableOutstanding: number;
+  undeliveredOrderResidual: number;
+  openInvoiceCount: number;
+};
+
 export type KeadaanTagihan = {
-  /** Sisa piutang toko, dihitung ulang (bukan kolom `outstanding`). */
+  /**
+   * Sisa faktur yang belum lunas = `computeStoreCreditExposure.receivableOutstanding`
+   * (kolom tim `outstandingAmount`, yang dijaga selaras oleh setiap penulis piutang).
+   */
   sisa: number;
+  /**
+   * Pesanan PUTUS yang sudah disetujui tapi belum masuk nota, dari
+   * `computeStoreCreditExposure`. Ikut batas nilai, tidak pernah ikut hitungan faktur.
+   */
+  belumDinota: number;
   fakturTerbuka: number;
   /** Sisa piutang yang sudah lewat janji bayar / jatuh tempo (sesudah toleransi). */
   lewatJanji: number;
@@ -49,18 +74,25 @@ export type KeadaanTagihan = {
 
 export type AlasanKredit =
   | { kode: "LEWAT_JANJI"; nilai: number; faktur: number }
-  | { kode: "MELEBIHI_BATAS_NILAI"; sisaSesudah: number; batas: number }
+  | {
+      kode: "MELEBIHI_BATAS_NILAI";
+      sisaSesudah: number;
+      batas: number;
+      /** Rinciannya: faktur belum lunas, disetujui belum dinota, dan pesanan ini. */
+      sisaFaktur?: number;
+      belumDinota?: number;
+      pesanan?: number;
+    }
   | { kode: "MELEBIHI_BATAS_FAKTUR"; faktur: number; batas: number };
 
 export type TingkatKredit = "AMAN" | ModeKredit;
 export type HasilKredit = { tingkat: TingkatKredit; alasan: AlasanKredit[] };
 
 /**
- * Keputusan pemilik yang belum dijawab: apakah batas bawaan di Pengaturan →
- * Salesman juga berlaku untuk toko KONSINYASI yang kolom batasnya kosong
- * (gerbang persetujuan transfer konsi). Sementara TIDAK — bawaan itu diatur di
- * kartu pesanan PUTUS, dan toko konsi berkolom kosong tetap tidak dibatasi
- * seperti sebelumnya. Ubah di sini saja kalau pemilik memutuskan lain.
+ * Keputusan pemilik P21 (2026-11-02, "Tidak"): toko KONSINYASI yang kolom
+ * batasnya kosong TIDAK dibatasi sama sekali — batas bawaan di Pengaturan →
+ * Salesman hanya untuk toko PUTUS. Ini mengoreksi kesimpulan sebelumnya (Q11)
+ * dari jawaban 1 November. Toko konsi yang berbatas sendiri tetap dinilai.
  */
 export const BAWAAN_BERLAKU_UNTUK_KONSI: boolean = false;
 
@@ -82,7 +114,7 @@ export type BatasToko = {
  * - BAWAAN: kolom toko kosong, angka bawaan Pengaturan dipakai.
  * - TANPA_BATAS: toko dicentang "Tanpa batas kredit".
  * - BAWAAN_KOSONG: kolom toko kosong dan bawaan Pengaturan juga kosong.
- * - KONSI_KOSONG: toko konsinyasi berkolom kosong (lihat `BAWAAN_BERLAKU_UNTUK_KONSI`).
+ * - KONSI_KOSONG: toko konsinyasi berkolom kosong — tidak dibatasi (P21, lihat `BAWAAN_BERLAKU_UNTUK_KONSI`).
  */
 export type BatasBerlaku =
   | { sumber: "TOKO"; nilai: number }
@@ -120,6 +152,34 @@ export function batasKreditBerlaku(
   };
 }
 
+/**
+ * Keadaan tagihan dari satu bacaan `computeStoreCreditExposure`, ditambah
+ * keadaan janji bayar dari daftar piutang. Satu-satunya cara lapis mode
+ * memperoleh `sisa`, `belumDinota`, dan `fakturTerbuka` — angka yang sama
+ * dengan gerbang persetujuan.
+ */
+export function keadaanDariEksposur(
+  eksposur: EksposurKredit,
+  lewat: Pick<KeadaanTagihan, "lewatJanji" | "fakturLewatJanji">,
+): KeadaanTagihan {
+  return {
+    sisa: eksposur.receivableOutstanding,
+    belumDinota: eksposur.undeliveredOrderResidual,
+    fakturTerbuka: eksposur.openInvoiceCount,
+    lewatJanji: lewat.lewatJanji,
+    fakturLewatJanji: lewat.fakturLewatJanji,
+  };
+}
+
+/**
+ * Apakah sisa sesudah pesanan melewati batas nilai — dibandingkan per sen,
+ * supaya pecahan float (0,1 + 0,2) tidak pernah memutus beda. Sama dengan batas
+ * BUKAN lewat. Dipakai kedua lapis kredit dan pratinjaunya.
+ */
+export function lewatBatasNilai(sisaSesudah: number, batas: number): boolean {
+  return Math.round(sisaSesudah * 100) > Math.round(batas * 100);
+}
+
 export function nilaiKredit(
   keadaan: KeadaanTagihan,
   aturan: AturanKredit,
@@ -131,9 +191,19 @@ export function nilaiKredit(
     alasan.push({ kode: "LEWAT_JANJI", nilai: keadaan.lewatJanji, faktur: keadaan.fakturLewatJanji });
   }
   const batas = batasKreditBerlaku(toko, aturan);
-  const sisaSesudah = keadaan.sisa + Math.max(0, nilaiPesanan);
-  if (batas.nilai.nilai !== null && sisaSesudah > batas.nilai.nilai) {
-    alasan.push({ kode: "MELEBIHI_BATAS_NILAI", sisaSesudah, batas: batas.nilai.nilai });
+  // Halaman HP yang tersimpan sebelum pembaruan tidak membawa `belumDinota`: dihitung nol.
+  const belumDinota = Number.isFinite(keadaan.belumDinota) ? keadaan.belumDinota : 0;
+  const pesanan = Math.max(0, nilaiPesanan);
+  const sisaSesudah = keadaan.sisa + belumDinota + pesanan;
+  if (batas.nilai.nilai !== null && lewatBatasNilai(sisaSesudah, batas.nilai.nilai)) {
+    alasan.push({
+      kode: "MELEBIHI_BATAS_NILAI",
+      sisaSesudah,
+      batas: batas.nilai.nilai,
+      sisaFaktur: keadaan.sisa,
+      belumDinota,
+      pesanan,
+    });
   }
   if (batas.faktur.nilai !== null && keadaan.fakturTerbuka >= batas.faktur.nilai) {
     alasan.push({ kode: "MELEBIHI_BATAS_FAKTUR", faktur: keadaan.fakturTerbuka, batas: batas.faktur.nilai });

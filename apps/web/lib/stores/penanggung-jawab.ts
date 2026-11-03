@@ -27,8 +27,18 @@ export function bolehPegangToko(opts: {
  * Siapa yang menagih sebuah piutang (keputusan pemilik): pemegang toko yang
  * sekarang — sales baru membantu menagih faktur sales lama. Selama toko belum
  * punya pemegang, penjual aslinya.
+ *
+ * Tagihan konsinyasi (`konsi`) hanya ditagih PEMEGANG toko (pemilik P31,
+ * 2026-11-02: nominal tagihan konsi hanya untuk salesman pemegang toko), tidak
+ * pernah jatuh ke penjualnya — tanpa pemegang tidak ada penagih lapangan.
+ * Faktur tanpa penjual (impor/manual) di toko tanpa pemegang juga tanpa penagih.
  */
-export function penagihPiutang(opts: { penanggungJawabId: string | null; penjualId: string }): string {
+export function penagihPiutang(opts: {
+  penanggungJawabId: string | null;
+  penjualId: string | null;
+  konsi?: boolean;
+}): string | null {
+  if (opts.konsi) return opts.penanggungJawabId;
   return opts.penanggungJawabId ?? opts.penjualId;
 }
 

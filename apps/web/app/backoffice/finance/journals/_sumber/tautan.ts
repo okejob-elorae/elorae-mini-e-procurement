@@ -25,6 +25,9 @@ export const JENIS_SUMBER_JURNAL = [
   "VAN_RECONCILE",
   "SUPPLIER_PAYMENT",
   "SUPPLIER_PAYMENT_REVERSAL",
+  // Koreksi utang pemasok dari selisih harga invoice yang diterima admin (lib/vendor-billing/koreksi-utang-*).
+  "SUPPLIER_PAYABLE_CORRECTION",
+  "SUPPLIER_PAYABLE_CORRECTION_REVERSAL",
   "KOL_FEE",
   "KOL_PAYMENT",
   "KOL_PAYMENT_REVERSAL",
@@ -55,11 +58,15 @@ export const JENIS_SUMBER_JURNAL = [
   "CONSIGNMENT_CYCLE",
   "CONSIGNMENT_COMMISSION",
   "CONSIGNMENT_COMMISSION_PAYMENT",
-  "CONSIGNMENT_PAYMENT",
   "SPG_COMMISSION",
   "SPG_COMMISSION_PAYMENT",
+  // Utang SPG yang berhenti: penerimaan uangnya dan pembayaran koreksi plusnya (lib/spg/utang-*).
+  "SPG_DEBT_PAYMENT",
+  "SPG_EXTRA_PAYOUT",
   "STOCK_LOSS",
   "LOSS_SALES_DEDUCTION",
+  // Potongan (atau pengembalian) beban selisih retur dari komisi sales (lib/receivables/potong-beban-retur.ts).
+  "RETURN_SALES_DEDUCTION",
   "DAMAGED_STOCK",
   "STOCK_ADJUSTMENT",
   "VENDOR_RETURN",
@@ -93,15 +100,23 @@ export type IndukDokumen = {
   fieldOrderId?: string | null;
   /** Hitungan gudang (NRI) tampil di rincian nota retur tokonya. */
   storeReturnId?: string | null;
-  /** Kiriman titipan, gaji SPG, dan pembayaran toko tampil di rincian siklus konsinyasinya. */
+  /** Kiriman titipan dan gaji SPG tampil di rincian siklus konsinyasinya. */
   cycleId?: string | null;
   /** Komisi SPG toko putus tampil di halaman Komisi SPG bulan itu ("YYYY-MM"). */
   periode?: string | null;
   /** Faktur piutang manual/impor tidak punya halaman sendiri: dicari di daftar Faktur & Piutang. */
   noFaktur?: string | null;
+  /** Koreksi utang pemasok tampil di rincian tagihan pemasoknya (Vendor Billing). */
+  billId?: string | null;
 };
 
-/** Pembayaran pemasok ber-sourceId `poId#generasi`; jenis lain memakai sourceId apa adanya. */
+/**
+ * Id dokumen dari sourceId jurnal. Sumber bergenerasi (`<id>`, `<id>#2`, …) dipotong di `#` —
+ * daftarnya HARUS sama dengan `SUMBER_BERGENERASI` (lib/finance/lapangan/aturan.ts) dan
+ * `SUMBER_BERGENERASI_OPERASIONAL` (lib/finance/operasional/aturan.ts); yang tertinggal membuat
+ * generasi #2 dan seterusnya kehilangan nomor dokumennya dan dilaporkan yatim oleh Integritas.
+ * Jenis lain memakai sourceId apa adanya.
+ */
 export function idDokumenDariSumber(sourceType: string | null, sourceId: string | null): string | null {
   if (!sourceType || !sourceId) return null;
   if (
@@ -111,7 +126,9 @@ export function idDokumenDariSumber(sourceType: string | null, sourceId: string 
     sourceType === "KOL_FEE" ||
     sourceType === "KOL_PAYMENT" ||
     sourceType === "KOL_PAYMENT_REVERSAL" ||
-    // Jurnal lapangan bergenerasi: `<id>`, `<id>#2`, … (lib/finance/lapangan/selaras.ts).
+    // Jurnal lapangan bergenerasi: `<id>`, `<id>#2`, … (lib/finance/lapangan/selaras.ts). Nota tagihan
+    // bergenerasi sejak penolakan di pintu toko, koreksi nota, dan "tidak jadi dikirim" menyelaraskannya.
+    sourceType === "FIELD_DELIVERY" ||
     sourceType === "FIELD_COLLECTION" ||
     sourceType === "STORE_RETURN" ||
     sourceType === "STORE_INVOICE" ||
@@ -122,13 +139,15 @@ export function idDokumenDariSumber(sourceType: string | null, sourceId: string 
     sourceType === "PPH_FINAL_REVERSAL" ||
     // Jurnal penutup tahun ber-sourceId `<tahun>`, `<tahun>#2`, `<tahun>#2#balik` (lib/finance/periode).
     sourceType === "YEAR_END_CLOSE" ||
-    // Jurnal operasional bergenerasi: `<id>`, `<id>#2`, … (lib/finance/operasional, lewat selaras.ts).
+    // Jurnal operasional bergenerasi: `<id>`, `<id>#2`, … (lib/finance/operasional, lewat selaras.ts —
+    // SUMBER_BERGENERASI_OPERASIONAL).
+    sourceType === "CONSIGNMENT_TRANSFER" ||
     sourceType === "CONSIGNMENT_RETURN" ||
     sourceType === "CONSIGNMENT_CYCLE" ||
     sourceType === "CONSIGNMENT_COMMISSION" ||
-    sourceType === "CONSIGNMENT_PAYMENT" ||
     sourceType === "SPG_COMMISSION" ||
-    sourceType === "STOCK_LOSS"
+    sourceType === "STOCK_LOSS" ||
+    sourceType === "SPG_DEBT_PAYMENT"
   ) {
     const id = sourceId.split("#")[0];
     return id ? id : null;
@@ -231,8 +250,7 @@ export function tautanDokumenSumber(
     // Jurnal operasional (lib/finance/operasional).
     case "CONSIGNMENT_SHIPMENT":
     case "CONSIGNMENT_COMMISSION_PAYMENT":
-    case "CONSIGNMENT_PAYMENT":
-      // Kiriman, gaji SPG, dan pembayaran toko tampil di rincian siklusnya; kiriman tanpa siklus hanya di daftar.
+      // Kiriman dan gaji SPG tampil di rincian siklusnya; kiriman tanpa siklus hanya di daftar.
       return induk.cycleId ? `/backoffice/konsinyasi/${seg(induk.cycleId)}` : "/backoffice/konsinyasi";
     case "CONSIGNMENT_CYCLE":
     case "CONSIGNMENT_COMMISSION":
@@ -249,9 +267,20 @@ export function tautanDokumenSumber(
     case "SPG_COMMISSION":
     case "SPG_COMMISSION_PAYMENT":
       return induk.periode ? `/backoffice/komisi-spg?bulan=${seg(induk.periode)}` : "/backoffice/komisi-spg";
+    case "SPG_DEBT_PAYMENT":
+    case "SPG_EXTRA_PAYOUT":
+      // Penerimaan utang dan pembayaran koreksi plus SPG yang berhenti tampil di kartu "Utang SPG"
+      // halaman Komisi SPG (UtangSpgCard, `id="utang"`), di bulan mana pun.
+      return "/backoffice/komisi-spg#utang";
     case "STOCK_LOSS":
       return `/backoffice/barang-hilang/${seg(id)}`;
+    case "SUPPLIER_PAYABLE_CORRECTION":
+    case "SUPPLIER_PAYABLE_CORRECTION_REVERSAL":
+      // Koreksi tampil di kartu "Selisih harga" rincian tagihannya; tanpa tagihan → daftar selisih harga.
+      return induk.billId ? `/backoffice/vendor-bills/${seg(induk.billId)}` : "/backoffice/vendor-bills/selisih-harga";
     case "LOSS_SALES_DEDUCTION":
+    case "RETURN_SALES_DEDUCTION":
+      // Potongan beban barang hilang dan selisih retur dicatat di laporan komisi salesman.
       return "/backoffice/laporan/komisi-salesman";
     case "DAMAGED_STOCK":
       return "/backoffice/gudang-rusak";

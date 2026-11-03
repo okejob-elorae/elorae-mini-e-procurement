@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -78,6 +79,14 @@ export function TugasBaruClient({
   const faktur = useMemo(() => bahan.fakturPerToko[storeId] ?? [], [bahan, storeId]);
   const bisaDipilih = faktur.filter((f) => !f.ditugaskanKe);
   const nilai = faktur.filter((f) => terpilih.has(f.id)).reduce((s, f) => s + f.sisa, 0);
+  /*
+   * Tagihan konsinyasi hanya boleh ditugaskan ke sales pemegang toko sekarang (P31) — aturan yang
+   * sama dengan `periksaTugasBaru` (KONSI_HANYA_PEMEGANG). Untuk toko yang punya tagihan konsi,
+   * `petugasBawaan` ADALAH pemegang tokonya, atau "" bila toko itu belum punya pemegang
+   * (`bahanTugasBaru`).
+   */
+  const pemegangKonsi = bawaanUntuk(storeId);
+  const adaKonsiDipilih = faktur.some((f) => f.konsi && terpilih.has(f.id));
 
   const pilihToko = (id: string) => {
     // Satu tugas = satu toko: pilihan faktur toko sebelumnya dibuang, dan petugas
@@ -87,13 +96,26 @@ export function TugasBaruClient({
     setPetugas(bawaanUntuk(id));
   };
 
-  const alihkan = (id: string) =>
+  // Mencentang tagihan konsinyasi memilihkan pemegang tokonya sebagai petugas.
+  const pilihPemegangBilaKonsi = (ids: readonly string[]) => {
+    if (faktur.some((f) => f.konsi && ids.includes(f.id))) setPetugas(pemegangKonsi);
+  };
+
+  const alihkan = (id: string) => {
+    if (!terpilih.has(id)) pilihPemegangBilaKonsi([id]);
     setTerpilih((lama) => {
       const baru = new Set(lama);
       if (baru.has(id)) baru.delete(id);
       else baru.add(id);
       return baru;
     });
+  };
+
+  const pilihSemua = () => {
+    const ids = bisaDipilih.map((f) => f.id);
+    pilihPemegangBilaKonsi(ids.filter((id) => !terpilih.has(id)));
+    setTerpilih(new Set(ids));
+  };
 
   const simpan = () => {
     startTransition(async () => {
@@ -119,11 +141,15 @@ export function TugasBaruClient({
       ? t("whyStore")
       : terpilih.size === 0
         ? t("whyInvoices")
-        : petugas === ""
-          ? t("whyAssignee")
-          : !(tenggat >= hariIni)
-            ? t("whyDue")
-            : null;
+        : adaKonsiDipilih && pemegangKonsi === ""
+          ? t("konsiTanpaPemegang")
+          : petugas === ""
+            ? t("whyAssignee")
+            : adaKonsiDipilih && petugas !== pemegangKonsi
+              ? t("konsiHanyaPemegang")
+              : !(tenggat >= hariIni)
+                ? t("whyDue")
+                : null;
   const bisaSimpan = !pending && belumSimpan === null;
 
   return (
@@ -168,7 +194,7 @@ export function TugasBaruClient({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={() => setTerpilih(new Set(bisaDipilih.map((f) => f.id)))}
+                  onClick={pilihSemua}
                 >
                   {t("selectAll")}
                 </Button>
@@ -194,7 +220,10 @@ export function TugasBaruClient({
                   >
                     <Checkbox checked={aktif} disabled={terkunci} onCheckedChange={() => alihkan(f.id)} />
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium">{f.invoiceNo}</span>
+                      <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                        {f.invoiceNo}
+                        {f.konsi && <Badge variant="outline">{t("tagKonsi")}</Badge>}
+                      </span>
                       <span className="block text-xs text-muted-foreground">
                         {t("dueOn", { date: f.jatuhTempoTeks })}
                         {f.doc && ` · ${f.doc}`}
@@ -243,9 +272,21 @@ export function TugasBaruClient({
               <p className="text-xs text-muted-foreground">{t("assigneeDefaultHint")}</p>
               {/* Penagih faktur = pemegang toko (keputusan pemilik). Menugaskan orang lain
                   boleh: faktur di tugas ini ikut terbuka di HP-nya selama tugasnya terbuka
-                  (`daftarPiutang`), dan pemegang toko tetap bisa menagihnya juga. */}
-              {petugas !== "" && bawaanUntuk(storeId) !== "" && petugas !== bawaanUntuk(storeId) && (
-                <p className="text-xs text-amber-700 dark:text-amber-400">{t("bukanPenagih")}</p>
+                  (`daftarPiutang`), dan pemegang toko tetap bisa menagihnya juga. Kecuali
+                  tagihan konsinyasi: hanya pemegang toko (P31), dan tombol Simpan mati. */}
+              {adaKonsiDipilih ? (
+                pemegangKonsi === "" ? (
+                  <p className="text-xs text-destructive">{t("konsiTanpaPemegang")}</p>
+                ) : (
+                  petugas !== "" &&
+                  petugas !== pemegangKonsi && <p className="text-xs text-destructive">{t("konsiHanyaPemegang")}</p>
+                )
+              ) : (
+                petugas !== "" &&
+                bawaanUntuk(storeId) !== "" &&
+                petugas !== bawaanUntuk(storeId) && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400">{t("bukanPenagih")}</p>
+                )
               )}
             </div>
             <div className="space-y-2">

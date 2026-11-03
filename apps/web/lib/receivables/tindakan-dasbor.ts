@@ -8,8 +8,8 @@
  * mendarat di faktur itu, bukan mencarinya di antara ratusan baris.
  */
 
-import type { KeadaanPiutang, LangkahRetur } from './rules';
-import type { KeadaanTampil } from './jatuh-tempo';
+import type { JenisTahanan, KeadaanPiutang, LangkahRetur } from './rules';
+import { kalimatTertahan, type KalimatTertahan, type KeadaanTampil } from './jatuh-tempo';
 
 export type JenisTindakan = 'lewat' | 'jatuh_tempo' | 'klaim' | 'tertahan' | 'cek' | 'keputusan' | 'jodoh';
 
@@ -37,6 +37,8 @@ export type TindakanHariIni = {
      * nilainya (= klaim toko) tidak dikirim — hitungan gudang harus buta.
      */
     klaimTersembunyi?: boolean;
+    /** Faktur tertahan (Q15): yang menunggu dan sebabnya, yang tetap, bagian yang lewat tempo. */
+    tahanan?: KalimatTertahan;
   };
 };
 
@@ -48,7 +50,14 @@ type PiutangTindakan = {
   outstanding: number;
   keadaan: KeadaanPiutang;
   keadaanTampil: KeadaanTampil;
-  alasan: { nilaiTertahan?: number; hariTerlambat?: number; hariLewatJatuhTempo?: number };
+  alasan: {
+    nilaiTertahan?: number;
+    hariTerlambat?: number;
+    hariLewatJatuhTempo?: number;
+    ditahanRetur?: number;
+    sebabDitahan?: JenisTahanan;
+    lewatTempoDiLuarTahanan?: { hari: number; nilai: number };
+  };
 };
 
 export type KlaimMenungguTindakan = {
@@ -142,15 +151,19 @@ export function susunTindakan(b: BahanTindakan): TindakanHariIni[] {
         konteks: { toko: p.storeName, hari },
       });
     } else if (p.keadaanTampil === 'tertahan') {
+      // Q15: bagian bebas yang lewat tempo ditagih lebih dulu; kalau tidak ada,
+      // yang menunggu returnya beres, lalu tahanan tetap.
+      const k = kalimatTertahan(p.alasan);
+      const nilai = k.lewatTempo?.nilai ?? k.tunggu?.nilai ?? k.tetap ?? 0;
       tindakan.push({
         jenis: 'tertahan',
-        risiko: 800 + bobotNilai(p.alasan.nilaiTertahan ?? 1),
+        risiko: k.lewatTempo ? 850 + k.lewatTempo.hari * 10 + bobotNilai(nilai) : 800 + bobotNilai(nilai),
         judul: p.invoiceNo,
         // Ke fakturnya, seperti baris faktur lain: kalimat alasannya menyebut
         // nilai yang ditahan; nota returnya ada di daftar Retur & pencocokan.
         tautan: tautanPiutang({ keadaan: 'tertahan', cari: p.invoiceNo }),
-        nilai: p.alasan.nilaiTertahan ?? 0,
-        konteks: { toko: p.storeName },
+        nilai,
+        konteks: { toko: p.storeName, tahanan: k },
       });
     }
   }

@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { bolehMembukaKonsi, bolehMengelolaKonsi } from "@/lib/receivables/izin";
+import { prisma } from "@elorae/db";
+import { bolehMembukaKonsi, bolehMengelolaKonsi, bolehMengunciKonsi } from "@/lib/receivables/izin";
 import { daftarSiklus, tokoKonsi } from "@/lib/konsinyasi/queries";
-import { katalogBarang } from "@/lib/receivables/return-queries";
+import { muatBulanSiklusPertama } from "@/lib/konsinyasi/siklus-pertama";
 import { KonsinyasiClient } from "./KonsinyasiClient";
 import { bacaSaringSiklus, saringSiklus } from "./saring";
 import { URUT_TAHAP } from "./tahap";
@@ -27,10 +28,10 @@ export default async function KonsinyasiPage(props?: {
   const saring = bacaSaringSiklus(sp.tahap);
   const cari = bacaCari(sp.cari);
   const kelola = bolehMengelolaKonsi(session.user.permissions);
-  const [semua, toko, katalog] = await Promise.all([
+  const [semua, toko, pertama] = await Promise.all([
     daftarSiklus(),
     kelola ? tokoKonsi() : Promise.resolve([]),
-    kelola ? katalogBarang() : Promise.resolve([]),
+    muatBulanSiklusPertama(prisma),
   ]);
   const halaman = potongHalaman(saringSiklus(semua, { saring, cari }), bacaHalaman(sp.halaman));
 
@@ -50,8 +51,9 @@ export default async function KonsinyasiPage(props?: {
       saring={saring}
       cari={cari}
       toko={toko}
-      katalog={katalog}
       bolehMengelola={kelola}
+      siklusPertama={pertama.diatur ? pertama.bulan : null}
+      bolehMengunci={bolehMengunciKonsi(session.user.permissions)}
       // Halaman isi ulang memagari dirinya dengan stores:view.
       bolehIsiUlang={hasPermission(session.user.permissions ?? [], PERMISSIONS.STORES_VIEW)}
     />

@@ -151,11 +151,24 @@ d("delivery journals (test bed only)", () => {
     expect(await postFieldDeliveryCogsJournal(deliveryId, userId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
   });
 
-  it("returns a standing nota journal unchanged for both kinds", async () => {
+  /*
+   * A standing nota journal is resynced, never returned as is: a nota corrected at handover or voided
+   * ("tidak jadi dikirim") posts its difference as the next generation through the nota hook.
+   */
+  it("resyncs a standing nota journal through the nota hook for both kinds", async () => {
     const notaId = await seedJournal("FIELD_DELIVERY");
+    notaHook.result = { ok: true, journalId: notaId, created: false };
     expect(await postFieldDeliveryRevenueJournal(deliveryId, userId)).toEqual({ ok: true, journalId: notaId, created: false });
     expect(await postFieldDeliveryCogsJournal(deliveryId, userId)).toEqual({ ok: true, journalId: notaId, created: false });
-    expect(notaHook.calls).toEqual([]);
+    expect(notaHook.calls).toEqual([deliveryId, deliveryId]);
+  });
+
+  it("passes a resync's new generation back as created", async () => {
+    await seedJournal("FIELD_DELIVERY");
+    notaHook.result = { ok: true, journalId: "nota-generasi-2", created: true };
+    expect(await postFieldDeliveryRevenueJournal(deliveryId, userId)).toEqual({ ok: true, journalId: "nota-generasi-2", created: true });
+    expect(notaHook.calls).toEqual([deliveryId]);
+    expect(await journalOf("FIELD_DELIVERY_REVENUE")).toBeNull();
   });
 
   it("returns the old pair's half that already stands, without touching the nota engine", async () => {

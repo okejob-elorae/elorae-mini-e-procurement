@@ -15,7 +15,9 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  * - `assignUserRole` memegang aturan toko tetap SPG yang sama dengan
  *   Pengaturan → Pengguna: peran SPG wajib punya toko tetap (aktif), dan
  *   berganti ke peran lain mengosongkannya — pengguna lain yang kebetulan
- *   punya toko tetap diperlakukan sebagai SPG di HP.
+ *   punya toko tetap diperlakukan sebagai SPG di HP. SPG yang sudah punya
+ *   riwayat di tokonya tidak diganti perannya di sini (`SPG_GUNAKAN_BERHENTI`),
+ *   dan SPG yang sudah berhenti tidak wajib punya toko tetap.
  */
 
 type SesiUji = { user: { id: string; email: null; role: string; permissions: string[] } };
@@ -91,13 +93,18 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
 
   beforeEach(async () => {
     await prisma.auditLog.deleteMany({ where: { userId: { in: pengguna() } } });
-    await prisma.user.update({ where: { id: seededId(target) }, data: { roleId: peranBiasa, assignedStoreId: null } });
+    await prisma.storeVisit.deleteMany({ where: { userId: seededId(target) } });
+    await prisma.user.update({
+      where: { id: seededId(target) },
+      data: { roleId: peranBiasa, assignedStoreId: null, spgEndedOn: null, spgEndedStoreId: null },
+    });
   });
 
   afterAll(async () => {
     sesi.kini = null;
     await prisma.auditLog.deleteMany({ where: { userId: { in: pengguna() } } });
     await prisma.auditLog.deleteMany({ where: { entityId: { in: [...pengguna(), ...peranIds.filter(Boolean).map(seededId)] } } });
+    await prisma.storeVisit.deleteMany({ where: { userId: seededId(target) } });
     await prisma.user.deleteMany({ where: { id: { in: pengguna() } } });
     const peran = peranIds.filter(Boolean).map(seededId);
     await prisma.rolePermission.deleteMany({ where: { roleId: { in: seededIds(peran) } } });
@@ -266,6 +273,27 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
         before: { roleId: peranSpg, assignedStoreId: tokoAktif },
         after: { roleId: peranBiasa, assignedStoreId: null },
       });
+    });
+
+    it("SPG yang sudah punya riwayat di tokonya tidak diganti perannya — pakai SPG berhenti", async () => {
+      await prisma.user.update({ where: { id: seededId(target) }, data: { roleId: peranSpg, assignedStoreId: tokoAktif } });
+      await prisma.storeVisit.create({ data: { storeId: tokoAktif, userId: target, checkinLat: 0, checkinLng: 0 } });
+      masuk(["settings_security:manage"]);
+      expect(await assignUserRole(target, peranBiasa)).toEqual({ ok: false, code: "SPG_GUNAKAN_BERHENTI" });
+      const u = await prisma.user.findUniqueOrThrow({ where: { id: seededId(target) }, select: { roleId: true, assignedStoreId: true } });
+      expect(u).toEqual({ roleId: peranSpg, assignedStoreId: tokoAktif });
+      expect(await jejak(target, "USER_UPDATED")).toHaveLength(0);
+    });
+
+    it("SPG yang sudah berhenti boleh diberi peran SPG tanpa toko tetap — tokonya tidak kembali", async () => {
+      await prisma.user.update({
+        where: { id: seededId(target) },
+        data: { roleId: peranBiasa, assignedStoreId: null, spgEndedOn: "2026-10-31", spgEndedStoreId: tokoAktif },
+      });
+      masuk(["settings_security:manage"]);
+      expect(await assignUserRole(target, peranSpg)).toEqual({ ok: true });
+      const u = await prisma.user.findUniqueOrThrow({ where: { id: seededId(target) }, select: { roleId: true, assignedStoreId: true } });
+      expect(u).toEqual({ roleId: peranSpg, assignedStoreId: null });
     });
   });
 });

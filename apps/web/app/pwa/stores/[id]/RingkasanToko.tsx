@@ -22,6 +22,8 @@ export type RingkasanTokoView = {
     fakturLewatJanji: number;
     lebih: number;
     bolehLihat: boolean;
+    /** Pesanan putus yang sudah disetujui tetapi belum masuk nota (dari batas kredit toko). */
+    belumDinota?: number;
     faktur: Array<{
       id: string;
       invoiceNo: string;
@@ -32,6 +34,8 @@ export type RingkasanTokoView = {
       lewat: boolean;
     }>;
   } | null;
+  /** Tagihan disembunyikan: ada tagihan konsinyasi dan penonton bukan pemegang toko (P31). */
+  tagihanHanyaPemegang?: boolean;
   favorit: Array<{ itemId: string; nama: string; pcs: number }>;
   pesananTerakhir: {
     id: string;
@@ -39,6 +43,8 @@ export type RingkasanTokoView = {
     tanggal: string;
     keadaan: KeadaanPesanan;
     total: number | null;
+    /** Konsinyasi menunggu persetujuan: perkiraan nilai retailnya (P18). */
+    perkiraan?: { nilai: number; lengkap: boolean } | null;
     milikSaya: boolean;
   } | null;
   kunjunganTerakhir: { tanggal: string; oleh: string; olehSaya: boolean } | null;
@@ -78,6 +84,11 @@ export function RingkasanToko({ r }: { r: RingkasanTokoView }) {
             <div className="col-span-2 min-w-0">
               <dt className="text-[11px] leading-tight text-muted-foreground">{t("sisa")}</dt>
               <dd className="text-xl font-semibold tabular-nums">{formatIDR(r.tagihan.sisa)}</dd>
+              {(r.tagihan.belumDinota ?? 0) > 0 ? (
+                <dd className="text-[11px] leading-tight text-muted-foreground">
+                  {t("belumDinota", { nilai: formatIDR(r.tagihan.belumDinota ?? 0) })}
+                </dd>
+              ) : null}
             </div>
             <div className="min-w-0">
               <dt className="text-[11px] leading-tight text-muted-foreground">{t("lewat")}</dt>
@@ -145,9 +156,9 @@ export function RingkasanToko({ r }: { r: RingkasanTokoView }) {
             </Link>
           ) : null}
         </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">{t("konsiNoBill")}</p>
-      )}
+      ) : r.tagihanHanyaPemegang ? (
+        <p className="text-sm text-muted-foreground">{t("konsiHanyaPemegang")}</p>
+      ) : null}
 
       <div className="space-y-1.5 border-t pt-3">
         <h3 className="text-xs font-medium text-muted-foreground">{t("favoritesTitle")}</h3>
@@ -191,7 +202,11 @@ export function RingkasanToko({ r }: { r: RingkasanTokoView }) {
               <span className="block font-medium">{r.pesananTerakhir.tanggal}</span>
               <span className="block text-xs text-muted-foreground">
                 {tp(`keadaan.${r.pesananTerakhir.keadaan}`)}
-                {r.pesananTerakhir.total !== null ? ` · ${formatIDR(r.pesananTerakhir.total)}` : null}
+                {r.pesananTerakhir.total !== null
+                  ? ` · ${formatIDR(r.pesananTerakhir.total)}`
+                  : r.pesananTerakhir.perkiraan
+                    ? ` · ${tp("perkiraan", { value: formatIDR(r.pesananTerakhir.perkiraan.nilai) })}`
+                    : null}
               </span>
             </dd>
           ) : (

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { ChevronRight, CloudOff, PackageCheck, PackageX, Truck, TriangleAlert, Undo2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { dinamis } from "@/lib/i18n/dinamis";
@@ -29,6 +30,11 @@ export type KirimanRingkas = {
   totalQty: number;
   /** Nomor pesanan asal (pengiriman putus, antaran konsinyasi). */
   pesananNo?: string | null;
+  /**
+   * Kiriman gudang lewat pengiriman: masih di jalan (belum dikonfirmasi ekspedisi/kurir) atau sudah
+   * diserahkan ke toko (R13). Kiriman lain: null. Hanya jumlah potong — tanpa harga (P18a).
+   */
+  tahap?: "DALAM_PERJALANAN" | "DISERAHKAN" | null;
 };
 
 /** Barang rusak dari kiriman yang sudah diterima toko ini — tanpa harga. */
@@ -170,6 +176,11 @@ export function TerimaClient({
                       <span className="block text-xs text-muted-foreground">
                         {t("lines", { count: k.jumlahBaris, pcs: k.totalQty })}
                       </span>
+                      {k.tahap ? (
+                        <Badge variant={k.tahap === "DALAM_PERJALANAN" ? "secondary" : "outline"} className="mt-1">
+                          {k.tahap === "DALAM_PERJALANAN" ? t("tahap.dalamPerjalanan") : t("tahap.diserahkan")}
+                        </Badge>
+                      ) : null}
                       {ditahan ? (
                         <span
                           className={cn(

@@ -6,29 +6,50 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  *   tanpa memanggil penulis;
  * - pengiriman pesanan pre-order yang belum dirilis sampai ke layar sebagai
  *   alasannya sendiri (INDEN_BELUM_RILIS), bukan lemparan yang disamarkan digest.
+ *   Nota putus terbit saat pengiriman DIBUAT (keputusan pemilik 2026-11-02; "Catat
+ *   pengiriman" tanpa surat jalan dihapus, P44a), jadi penolakannya datang dari
+ *   pembuatan pengiriman.
  */
-const { mockAuth, mockSimpan, mockRilis, mockRecord } = vi.hoisted(() => ({
+const { mockAuth, mockSimpan, mockRilis, mockCreateShipment } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockSimpan: vi.fn(),
   mockRilis: vi.fn(),
-  mockRecord: vi.fn(),
+  mockCreateShipment: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/field-sales/inden-writer", () => ({ simpanJendelaInden: mockSimpan, rilisJendelaInden: mockRilis }));
-vi.mock("@/lib/field-sales/delivery/writer", () => ({ recordFieldSalesDelivery: mockRecord, closeFieldSalesOrderRemainder: vi.fn() }));
+vi.mock("@/lib/delivery/shipment-writer", () => ({
+  createDeliveryShipment: mockCreateShipment,
+  updateShipmentTracking: vi.fn(),
+  reassignShipmentCarrier: vi.fn(),
+  shipDeliveryShipment: vi.fn(),
+  completeDeliveryShipment: vi.fn(),
+  cancelDeliveryShipment: vi.fn(),
+}));
+vi.mock("@/lib/delivery/shipment-queries", () => ({ listDeliveryShipments: vi.fn(), getDeliveryShipment: vi.fn() }));
+vi.mock("@/lib/spg/kabar-pengiriman", () => ({
+  kabarkanPengirimanBerangkat: vi.fn(),
+  kabarkanPengirimanDiserahkan: vi.fn(),
+  kabarkanPengirimanDibatalkan: vi.fn(),
+}));
+vi.mock("@/lib/spg/stok-writer", () => ({ sebarSesudahTerima: vi.fn() }));
+vi.mock("@/lib/jubelio/antre-push-stok", () => ({ antrekanPushStok: vi.fn() }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 vi.mock("@/lib/notifications/kabar-pengguna", () => ({ JENIS_KABAR: {}, kabariPengguna: vi.fn() }));
 vi.mock("./audit", () => ({ logPrint: vi.fn() }));
 vi.mock("@elorae/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@elorae/db")>()),
-  prisma: { fieldSalesDelivery: { findUnique: vi.fn().mockResolvedValue(null) } },
+  prisma: {
+    fieldSalesDelivery: { findUnique: vi.fn().mockResolvedValue(null) },
+    deliveryShipment: { findUnique: vi.fn().mockResolvedValue(null) },
+  },
 }));
 
 import { rilisJendelaIndenAction, simpanJendelaIndenAction } from "./inden";
-import { recordDeliveryAction } from "./field-sales-deliveries";
-import { IndenBelumRilisError } from "@/lib/field-sales/inden";
+import { createShipmentAction } from "./delivery-shipments";
+import { DeliveryShipmentError } from "@/lib/delivery/errors";
 
 const sesi = (permissions: string[]) => ({ user: { id: "u1", permissions } });
 
@@ -64,14 +85,14 @@ describe("aksi pre-order", () => {
   });
 });
 
-describe("recordDeliveryAction — pre-order belum dirilis", () => {
-  it("memetakan IndenBelumRilisError ke INDEN_BELUM_RILIS", async () => {
-    mockAuth.mockResolvedValue(sesi(["field_sales_orders:deliver"]));
-    mockRecord.mockReset().mockRejectedValue(new IndenBelumRilisError("o1"));
-    const r = await recordDeliveryAction({
+describe("createShipmentAction — pre-order belum dirilis", () => {
+  it("penolakan penulis pengiriman sampai ke layar sebagai INDEN_BELUM_RILIS", async () => {
+    mockAuth.mockResolvedValue(sesi(["deliveries:ship"]));
+    mockCreateShipment.mockReset().mockRejectedValue(new DeliveryShipmentError("INDEN_BELUM_RILIS"));
+    const r = await createShipmentAction({
       orderId: "o1",
+      method: "SALESMAN_CARRY",
       lines: [{ orderLineId: "l1", qty: 1 }],
-      invoiceDate: "2026-10-01",
       dueDate: "2026-10-31",
       idempotencyKey: "k1",
     });

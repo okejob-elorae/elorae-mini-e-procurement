@@ -19,6 +19,7 @@ import { catatKreditReturPo } from '@/lib/purchase-orders/kredit-retur-writer';
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { kaitReturPemasok } from "@/lib/finance/operasional/kait";
 import { parseVendorReturnLines } from "@/lib/vendor-returns/baris-retur";
+import { grnBelumDiproses } from "@/lib/grn/grn-tanpa-po";
 
 async function requireSession() {
   const session = await auth();
@@ -63,16 +64,29 @@ function parseGrnStoredItems(raw: unknown): Array<{ itemId?: string; qty?: unkno
   return [];
 }
 
-/** When vendor return is linked to a GRN: max returnable qty per itemId. Before owner approval = PO ordered qty; after = received qty on GRN (JSON lines + fabric rolls on that GRN). */
+/**
+ * When vendor return is linked to a GRN: max returnable qty per itemId. Before owner approval = PO ordered qty; after = received qty on GRN (JSON lines + fabric rolls on that GRN).
+ * A GRN without a PO that is still waiting for the admin's confirmation (P51a) moved no stock, so nothing
+ * can be returned from it: every cap is zero and `refusal` is `GRN_BELUM_DIPROSES`.
+ */
 async function getGrnReturnCaps(grnId: string): Promise<{
   byItem: Map<string, number>;
   usesPendingPoCaps: boolean;
+  refusal?: "GRN_BELUM_DIPROSES";
 } | null> {
   const grn = await prisma.gRN.findUnique({
     where: { id: grnId },
-    select: { items: true, poId: true, requiresOwnerApproval: true, ownerApprovedAt: true },
+    select: {
+      items: true,
+      poId: true,
+      requiresOwnerApproval: true,
+      ownerApprovedAt: true,
+      requiresNoPoConfirmation: true,
+      noPoConfirmedAt: true,
+    },
   });
   if (!grn) return null;
+  if (grnBelumDiproses(grn)) return { byItem: new Map(), usesPendingPoCaps: false, refusal: "GRN_BELUM_DIPROSES" };
   const items = parseGrnStoredItems(grn.items);
   const receivedByItem = new Map<string, number>();
   for (const row of items) {
@@ -112,6 +126,11 @@ async function getGrnReturnCaps(grnId: string): Promise<{
   }
   return { byItem: receivedByItem, usesPendingPoCaps: false };
 }
+
+/** `GRN_BELUM_DIPROSES`: the receipt is not in stock yet, so the return is refused whatever its quantities. */
+const GRN_BELUM_DIPROSES_MESSAGE =
+  "This GRN has no PO and is still waiting for the admin's confirmation, so none of its goods entered stock yet and nothing can be returned from it. " +
+  "Ask an admin to confirm the receipt first, or clear GRN.";
 
 function grnQtyExceededMessage(
   max: number,
@@ -210,6 +229,7 @@ export async function createVendorReturn(
 
   if (data.grnId) {
     const caps = await getGrnReturnCaps(data.grnId);
+    if (caps?.refusal === "GRN_BELUM_DIPROSES") throw new Error(GRN_BELUM_DIPROSES_MESSAGE);
     if (caps) {
       for (const line of data.lines) {
         if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {
@@ -319,6 +339,7 @@ export async function updateVendorReturn(
 
   if (data.grnId) {
     const caps = await getGrnReturnCaps(data.grnId);
+    if (caps?.refusal === "GRN_BELUM_DIPROSES") throw new Error(GRN_BELUM_DIPROSES_MESSAGE);
     if (caps) {
       for (const line of data.lines) {
         if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {

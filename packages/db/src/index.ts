@@ -51,10 +51,15 @@ export {
   updateItemFromIngest,
   markJubelioCreateRequested,
   recordJubelioPriceOnMapping,
+  recordJubelioObservedPrice,
+  SALURAN_BARANG_DARI_JUBELIO,
   type IngestItemCreateData,
   type IngestItemUpdateData,
   type JubelioPriceStateField,
+  type ObservedJubelioPrice,
 } from "./item-writer";
+export { hargaJubelioBerbeda, keputusanHargaBerlaku, type HargaMasukan } from "./item-writer-harga";
+export { isiKategoriPenjualanSpg } from "./spg-sale-category";
 export {
   applyJubelioStockAdjustment,
   InventoryValueMissingError,
@@ -116,6 +121,10 @@ export {
   transferKonsiStock,
   transferKonsiFieldSalesOrder,
   konsiTransferKeyForLine,
+  reopenFieldSalesLineStock,
+  ReservationReopenError,
+  type ReopenFieldSalesLineInput,
+  type ReopenFieldSalesLineResult,
   type KonsiTransferLine,
   type KonsiTransferShortLine,
   type KonsiTransferResult,

@@ -13,10 +13,10 @@ export const dynamic = "force-dynamic";
  *
  * Hanya milik salesman yang login. Angkanya memakai `penjualanSalesman`, sumber
  * kartu "Bulan ini" di beranda, jadi bulan berjalan di sini sama persis dengan
- * beranda. Aturan mutlak: rupiah konsinyasi tidak pernah sampai ke HP — setiap
- * rupiah di halaman ini putus + van, dan konsinyasi hanya pcs (per bulan, per
- * toko, per barang). `riwayatPenjualan` sudah membentuknya; payload di bawah
- * hanya menyalin. SPG punya berandanya sendiri, jadi dikembalikan ke sana.
+ * beranda. HP salesman menampilkan konsinyasi lengkap (pemilik P56, 2026-11-02):
+ * rupiah di halaman ini putus + konsi + van, dengan pcs konsinyasi di sampingnya.
+ * `riwayatPenjualan` sudah membentuknya; payload di bawah hanya menyalin. SPG
+ * punya berandanya sendiri, jadi dikembalikan ke sana.
  */
 export default async function PenjualanPage({ searchParams }: { searchParams: Promise<{ bulan?: string | string[] }> }) {
   const session = await auth();

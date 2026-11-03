@@ -68,14 +68,12 @@ export function SellThroughDetailClient({
   canManage,
   canDecide,
   canPrint,
-  salesmanCandidates,
 }: {
   report: SellThroughDetail;
   canManage: boolean;
   /* `consignment:lock` — the code `approveSellThroughAction`/`voidSellThroughAction` enforce. */
   canDecide: boolean;
   canPrint: boolean;
-  salesmanCandidates: Array<{ id: string; name: string }>;
 }) {
   const t = useTranslations("konsiSellThrough");
   const tDetail = useTranslations("konsiSellThrough.detail");
@@ -105,7 +103,15 @@ export function SellThroughDetailClient({
   const canEditResolution = isSpgPos && isDraft && canManage;
   const heldLines = report.lines.filter((l) => l.held);
   const lateLineCount = report.lines.filter((l) => l.hasLateMovements).length;
-  const statusKey = report.status === "APPROVED" ? (report.baseline ? "APPROVED_BASELINE" : "APPROVED_INVOICED") : report.status;
+  /* An approved report that is neither a baseline nor invoiced was RECORDED: it froze the figures and billed nothing. */
+  const statusKey =
+    report.status === "APPROVED"
+      ? report.baseline
+        ? "APPROVED_BASELINE"
+        : report.invoiceDate === null
+          ? "APPROVED_RECORDED"
+          : "APPROVED_INVOICED"
+      : report.status;
   /* Every column left of Line Total, so the footer's total sits under it. */
   const totalLabelSpan = isSpgPos ? 10 : 9;
 
@@ -331,8 +337,17 @@ export function SellThroughDetailClient({
         )}
       </Card>
 
-      {(report.status === "APPROVED" || report.status === "VOIDED") && (
+      {/* Invoiced reports are legacy; a recorded or draft report bills nothing — the cycle does (decision 2026-10-29). */}
+      {(report.status === "APPROVED" || report.status === "VOIDED") && report.invoiceDate !== null && (
         <SellThroughInvoiceCard report={report} canPrint={canPrint} canManage={canManage} describeError={errorMessage} />
+      )}
+      {!report.baseline && report.invoiceDate === null && report.status !== "CANCELLED" && (
+        <p className="text-sm text-muted-foreground">
+          {tDetail("billFromCycle")}{" "}
+          <Link href="/backoffice/konsinyasi" className="font-medium text-foreground underline underline-offset-4">
+            {tDetail("billFromCycleLink")}
+          </Link>
+        </p>
       )}
 
       <Card>
@@ -552,12 +567,10 @@ export function SellThroughDetailClient({
           open={approveOpen}
           onOpenChange={setApproveOpen}
           report={report}
-          salesmanCandidates={salesmanCandidates}
           onApproved={() => {
             setApproveOpen(false);
             router.refresh();
           }}
-          onPriceChanged={() => router.refresh()}
           describeError={errorMessage}
         />
       )}

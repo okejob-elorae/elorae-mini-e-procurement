@@ -7,6 +7,8 @@ import {
   reserveKonsiFieldSalesOrder,
   transferKonsiStock,
   transferKonsiFieldSalesOrder,
+  reopenFieldSalesLineStock,
+  ReservationReopenError,
 } from "./reservation-writer";
 import { seededId } from "./spec-teardown";
 
@@ -73,6 +75,69 @@ d("field-sales reservation fns (test bed only)", () => {
     const adj = await prisma.stockAdjustment.findFirst({ where: { itemId, source: "FIELD_SALES_CONSUME" } });
     expect(adj).not.toBeNull();
     expect(Number(adj!.qtyChange)).toBe(-6);
+  });
+
+  it("reopen puts a consumed slice back: consumedQty down, qtyOnHand and reservedQty up, average blended at the issue cost", async () => {
+    const lineId = `line-${sku}-reopen`;
+    await reserveFieldSalesOrder(prisma, { orderNo: "PUTUS-T-R", lines: [{ fieldSalesLineId: lineId, itemId, variantSku, qty: 6 }] });
+    await consumeFieldSalesOrderPartial(prisma, {
+      orderNo: "PUTUS-T-R",
+      deliveryId: `dlv-r-${sku}`,
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku, qty: 6 }],
+    });
+    const hasil = await prisma.$transaction((tx) =>
+      reopenFieldSalesLineStock(tx, {
+        fieldSalesLineId: lineId,
+        source: "FIELD_SALES",
+        itemId,
+        variantSku,
+        qty: 2,
+        unitCost: 1000,
+        refType: "FieldSalesConsume",
+        refId: lineId,
+        refDocNumber: "DLV-T",
+        createdById: null,
+      }),
+    );
+    expect(hasil).toMatchObject({ prevQty: 94, newQty: 96, prevAvgCost: 1000, newAvgCost: 1000 });
+    const inv = await prisma.inventoryValue.findUnique({ where: { itemId_variantSku: { itemId, variantSku } } });
+    expect(Number(inv!.qtyOnHand)).toBe(96);
+    expect(Number(inv!.reservedQty)).toBe(2);
+    const res = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: lineId } });
+    expect(Number(res.consumedQty)).toBe(4);
+    expect(res.state).toBe("RESERVED");
+    expect(await prisma.stockLedgerEntry.count({ where: { refType: "FieldSalesConsume", refId: lineId, qty: 2 } })).toBe(1);
+  });
+
+  it("reopen refuses more than was drawn, another source, or a released reservation — and writes nothing", async () => {
+    const lineId = `line-${sku}-reopen-tolak`;
+    await reserveFieldSalesOrder(prisma, { orderNo: "PUTUS-T-RT", lines: [{ fieldSalesLineId: lineId, itemId, variantSku, qty: 3 }] });
+    await consumeFieldSalesOrderPartial(prisma, {
+      orderNo: "PUTUS-T-RT",
+      deliveryId: `dlv-rt-${sku}`,
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku, qty: 1 }],
+    });
+    const buka = (qty: number, source: "FIELD_SALES" | "FIELD_SALES_KONSI") =>
+      prisma.$transaction((tx) =>
+        reopenFieldSalesLineStock(tx, {
+          fieldSalesLineId: lineId,
+          source,
+          itemId,
+          variantSku,
+          qty,
+          unitCost: 1000,
+          refType: "FieldSalesConsume",
+          refId: lineId,
+          refDocNumber: "DLV-T",
+          createdById: null,
+        }),
+      );
+    await expect(buka(2, "FIELD_SALES")).rejects.toBeInstanceOf(ReservationReopenError);
+    await expect(buka(1, "FIELD_SALES_KONSI")).rejects.toBeInstanceOf(ReservationReopenError);
+    await releaseFieldSalesOrder(prisma, { fieldSalesLineIds: [lineId] });
+    await expect(buka(1, "FIELD_SALES")).rejects.toBeInstanceOf(ReservationReopenError);
+    const inv = await prisma.inventoryValue.findUnique({ where: { itemId_variantSku: { itemId, variantSku } } });
+    expect(Number(inv!.qtyOnHand)).toBe(99);
   });
 
   it("release frees reservedQty without touching qtyOnHand", async () => {

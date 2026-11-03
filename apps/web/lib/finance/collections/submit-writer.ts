@@ -6,6 +6,7 @@ import { sumPendingClaimsOnReceivable } from "@/lib/finance/ar/pending-claims";
 import { urlFromKey } from "@/lib/r2";
 import { isR2KeyInFolder, isSafeR2KeySegment } from "@/lib/r2-key";
 import { CollectionError } from "./errors";
+import { isKonsiBill } from "./phone-scope";
 
 export type SubmitCollectionInput = {
   receivableId: string;
@@ -75,11 +76,18 @@ export async function submitCollection(input: SubmitCollectionInput): Promise<{ 
 
     const receivable = await tx.receivable.findUnique({
       where: { id: input.receivableId },
-      select: { id: true, storeId: true, outstandingAmount: true, status: true, collectorId: true },
+      select: { id: true, storeId: true, outstandingAmount: true, status: true, collectorId: true, isConsignment: true, sellThroughId: true },
     });
     if (!receivable) throw new CollectionError("NOT_FOUND");
     if (receivable.collectorId !== input.collectorId) throw new CollectionError("NOT_ASSIGNED_COLLECTOR");
     if (receivable.status === "PAID" || receivable.status === "WRITTEN_OFF" || receivable.status === "VOIDED") throw new CollectionError("ALREADY_SETTLED");
+    /*
+     * A konsi bill is paid only through a BKM (`isKonsiBill`). The queue and the collect screen
+     * already hide it (`RECEIVABLES_ON_PHONE`); this refuses the raw request, including one for a
+     * konsi bill a collector was assigned to before `assignCollector` started refusing that. After
+     * `ALREADY_SETTLED`, so a voided cycle bill still reads as settled, like every other AR writer.
+     */
+    if (isKonsiBill(receivable)) throw new CollectionError("KONSI_LEWAT_BKM");
 
     /**
      * Netted against EVERY pending claim on this receivable — PENDING collection submissions AND

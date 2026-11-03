@@ -34,18 +34,22 @@ export type JenisUbinLapor = "laporPelunasan" | "laporRetur";
  *
  * Formulirnya membaca `?toko=` dan memilih toko ini bila penonton boleh
  * melapor untuknya — aturan yang sama dengan pemilih toko formulir; selain itu
- * diabaikan diam-diam. Pelunasan hanya untuk toko PUTUS: toko konsinyasi tidak
- * pernah punya piutang. SPG tidak menagih dan punya layar retur sendiri.
+ * diabaikan diam-diam. Pelunasan: toko PUTUS seperti sebelumnya; toko
+ * KONSINYASI hanya untuk pemegang tokonya (P31 — tagihan konsinyasi dengan
+ * nominal hanya sampai ke pemegang toko, dan penulisnya menolak yang lain).
+ * SPG tidak menagih dan punya layar retur sendiri.
  */
 export function ubinLapor(m: {
   storeId: string;
   termsType: "PUTUS" | "KONSI";
   spg: boolean;
+  /** Penonton adalah pemegang toko sekarang (`Store.salesmanId`). */
+  pemegang?: boolean;
 }): Array<{ jenis: JenisUbinLapor; href: string; ikon: LucideIcon }> {
   if (m.spg) return [];
   const toko = encodeURIComponent(m.storeId);
   return [
-    ...(m.termsType === "PUTUS"
+    ...(m.termsType === "PUTUS" || m.pemegang
       ? [{ jenis: "laporPelunasan" as const, href: `/pwa/bkm/baru?toko=${toko}`, ikon: Banknote }]
       : []),
     { jenis: "laporRetur" as const, href: `/pwa/retur/baru?toko=${toko}`, ikon: Undo2 },
@@ -53,12 +57,25 @@ export function ubinLapor(m: {
 }
 
 /** `ubinLapor` dengan label terjemahan. */
-export function useUbinLapor(m: { storeId: string; termsType: "PUTUS" | "KONSI"; spg: boolean }): Ubin[] {
+export function useUbinLapor(m: {
+  storeId: string;
+  termsType: "PUTUS" | "KONSI";
+  spg: boolean;
+  pemegang?: boolean;
+}): Ubin[] {
   const t = useTranslations("pwa.kunjunganBerjalan");
   return ubinLapor(m).map((u) => ({ href: u.href, label: t(u.jenis), ikon: u.ikon }));
 }
 
 /** Ubin lapor di luar kunjungan — selama kunjungan keduanya ada di kartu Kunjungan berjalan. */
-export function LaporDariToko({ storeId, termsType }: { storeId: string; termsType: "PUTUS" | "KONSI" }) {
-  return <GridUbin ubin={useUbinLapor({ storeId, termsType, spg: false })} />;
+export function LaporDariToko({
+  storeId,
+  termsType,
+  pemegang = false,
+}: {
+  storeId: string;
+  termsType: "PUTUS" | "KONSI";
+  pemegang?: boolean;
+}) {
+  return <GridUbin ubin={useUbinLapor({ storeId, termsType, spg: false, pemegang })} />;
 }

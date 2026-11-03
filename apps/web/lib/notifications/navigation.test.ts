@@ -461,6 +461,9 @@ describe("getNotificationHref — kabar yang sampai ke lonceng kantor", () => {
     "KOMISI_SPG",
     "RETUR_PEMBELI_DISETUJUI",
     "RETUR_PEMBELI_DITOLAK",
+    "KIRIMAN_DIBATALKAN",
+    "RETUR_SELISIH_CEK",
+    "RETUR_DITANGGUNG_TOKO",
   ])(
     "kabar khusus HP %s tetap tanpa tautan kantor",
     (jenis) => {
@@ -492,6 +495,102 @@ describe("getNotificationHref — retur pembeli SPG menunggu persetujuan", () =>
 
   it("di HP tidak ke mana-mana (pekerjaan kantor)", () => {
     expect(getNotificationHref("RETUR_PEMBELI_MENUNGGU", { returnId: "rp-1" }, "pwa")).toBeNull();
+  });
+});
+
+/*
+ * Kategori lonceng kantor baru dari jawaban pemilik putaran 4 (2026-11-02 malam). Masing-masing membuka
+ * dokumennya bila metadata membawa id-nya, dan daftar yang tepat bila tidak. Di HP tidak ke mana-mana.
+ */
+describe("getNotificationHref — kategori kantor putaran 4", () => {
+  it.each([
+    // Penerimanya Keuangan dan admin pajak, yang tidak bisa membuka rincian pesanan: ke antrean faktur pajak,
+    // dicari ke nomor notanya.
+    ["DELIVERY_NOTA_VOIDED", { orderId: "fso-1", deliveryId: "d-1", docNo: "DLV/1" }, "/backoffice/finance/faktur-pajak?q=DLV%2F1"],
+    ["DELIVERY_NOTA_CORRECTED", { orderId: "fso-2", deliveryId: "d-2", docNo: "DLV/2" }, "/backoffice/finance/faktur-pajak?q=DLV%2F2"],
+    [
+      "TAX_INVOICE_NOTA_CHANGED",
+      { orderId: "fso-3", deliveryId: "d-3", docNo: "DLV/3", taxInvoiceId: "ti-1", invoiceNo: "010.000-26.00000001", jenis: "BATAL" },
+      "/backoffice/finance/faktur-pajak?q=DLV%2F3",
+    ],
+    ["VENDOR_BILL_PRICE_DIFFERENCE", { billId: "vb-1" }, "/backoffice/vendor-bills/vb-1"],
+    ["SUPPLIER_INVOICE_OVERDUE", { supplierId: "sp-1" }, "/backoffice/vendor-bills/belum-ditagih?tab=permintaan&status=terlambat&pemasok=sp-1"],
+    ["GRN_NO_PO_PENDING", { grnId: "g-1", supplierId: "sp-1", docNumber: "GRN/1" }, "/backoffice/inventory/grn/g-1"],
+    ["RETUR_SELISIH", { storeReturnId: "nrt-1", chargeId: "c-1", storeId: "s-1" }, "/backoffice/retur-toko/nrt-1"],
+    ["SPG_SCHEDULE_SUBMITTED", { userId: "u-1", storeId: "s-1", bulan: "2026-11" }, "/backoffice/jadwal-spg?tab=bulanan"],
+    ["SPG_ATTENDANCE_NEEDED", { userId: "u-1", bulan: "2026-11" }, "/backoffice/komisi-spg/catatan-hadir?perlu=masukkan"],
+    ["SPG_ATTENDANCE_SUBMITTED", { recordId: "r-1" }, "/backoffice/komisi-spg/catatan-hadir?perlu=periksa"],
+    ["SPG_ATTENDANCE_RETURNED", { recordId: "r-1" }, "/backoffice/komisi-spg/catatan-hadir?perlu=dikembalikan"],
+    ["SPG_DEBT_PAYMENT_SUBMITTED", { paymentId: "p-1", spgUserId: "u-1" }, "/backoffice/komisi-spg#utang"],
+    ["SPG_DEBT_PAYMENT_RETURNED", { paymentId: "p-1", spgUserId: "u-1" }, "/backoffice/komisi-spg#utang"],
+    ["JUBELIO_PRICE_DIFFERS", { itemId: "i-1", sku: "KAOS-01" }, "/backoffice/jubelio/harga?jenis=BEDA&cari=KAOS-01"],
+  ])("%s → dokumennya di kantor", (jenis, data, href) => {
+    expect(getNotificationHref(jenis, data)).toBe(href);
+  });
+
+  it.each([
+    ["DELIVERY_NOTA_VOIDED", "/backoffice/finance/faktur-pajak"],
+    ["DELIVERY_NOTA_CORRECTED", "/backoffice/finance/faktur-pajak"],
+    ["TAX_INVOICE_NOTA_CHANGED", "/backoffice/finance/faktur-pajak"],
+    ["VENDOR_BILL_PRICE_DIFFERENCE", "/backoffice/vendor-bills/selisih-harga?status=MENUNGGU"],
+    ["SUPPLIER_INVOICE_OVERDUE", "/backoffice/vendor-bills/belum-ditagih?tab=permintaan&status=terlambat"],
+    ["GRN_NO_PO_PENDING", "/backoffice/inventory?tab=grn&konfirmasi=menunggu"],
+    ["RETUR_SELISIH", "/backoffice/retur-toko?langkah=keputusan"],
+    ["JUBELIO_PRICE_DIFFERS", "/backoffice/jubelio/harga?jenis=BEDA"],
+  ])("%s tanpa id → daftarnya", (jenis, href) => {
+    expect(getNotificationHref(jenis, {})).toBe(href);
+    expect(getNotificationHref(jenis, null)).toBe(href);
+  });
+
+  it("id di-encode; id kosong dianggap tidak ada", () => {
+    expect(getNotificationHref("DELIVERY_NOTA_VOIDED", { docNo: "a/b&c" })).toBe("/backoffice/finance/faktur-pajak?q=a%2Fb%26c");
+    // Nomor pesanan saja tidak lagi membawa ke mana-mana: penerimanya tidak bisa membuka rincian pesanan.
+    expect(getNotificationHref("DELIVERY_NOTA_CORRECTED", { orderId: "fso-9" })).toBe("/backoffice/finance/faktur-pajak");
+    expect(getNotificationHref("TAX_INVOICE_NOTA_CHANGED", { docNo: "  " })).toBe("/backoffice/finance/faktur-pajak");
+    expect(getNotificationHref("VENDOR_BILL_PRICE_DIFFERENCE", { billId: "  " })).toBe(
+      "/backoffice/vendor-bills/selisih-harga?status=MENUNGGU",
+    );
+    expect(getNotificationHref("SUPPLIER_INVOICE_OVERDUE", { supplierId: "x&y" })).toBe(
+      "/backoffice/vendor-bills/belum-ditagih?tab=permintaan&status=terlambat&pemasok=x%26y",
+    );
+    expect(getNotificationHref("RETUR_SELISIH", { storeReturnId: 12 })).toBe("/backoffice/retur-toko?langkah=keputusan");
+  });
+
+  it("beda harga Jubelio mencari ke SKU hanya bila SKU teks wajar (≤ 100 huruf)", () => {
+    expect(getNotificationHref("JUBELIO_PRICE_DIFFERS", { sku: "A B&C" })).toBe("/backoffice/jubelio/harga?jenis=BEDA&cari=A%20B%26C");
+    expect(getNotificationHref("JUBELIO_PRICE_DIFFERS", { sku: "x".repeat(100) })).toBe(
+      `/backoffice/jubelio/harga?jenis=BEDA&cari=${"x".repeat(100)}`,
+    );
+    expect(getNotificationHref("JUBELIO_PRICE_DIFFERS", { sku: "x".repeat(101) })).toBe("/backoffice/jubelio/harga?jenis=BEDA");
+    expect(getNotificationHref("JUBELIO_PRICE_DIFFERS", { sku: 123 })).toBe("/backoffice/jubelio/harga?jenis=BEDA");
+  });
+
+  it.each([
+    "DELIVERY_NOTA_VOIDED",
+    "DELIVERY_NOTA_CORRECTED",
+    "TAX_INVOICE_NOTA_CHANGED",
+    "VENDOR_BILL_PRICE_DIFFERENCE",
+    "SUPPLIER_INVOICE_OVERDUE",
+    "GRN_NO_PO_PENDING",
+    "RETUR_SELISIH",
+    "SPG_SCHEDULE_SUBMITTED",
+    "SPG_ATTENDANCE_NEEDED",
+    "SPG_ATTENDANCE_SUBMITTED",
+    "SPG_ATTENDANCE_RETURNED",
+    "SPG_DEBT_PAYMENT_SUBMITTED",
+    "SPG_DEBT_PAYMENT_RETURNED",
+    "JUBELIO_PRICE_DIFFERS",
+  ])("%s tidak punya tujuan di HP (pekerjaan kantor)", (jenis) => {
+    expect(NOTIFICATION_TYPES).toContain(jenis);
+    expect(getNotificationHref(jenis, { orderId: "o1", storeId: "s1", billId: "b1" }, "pwa")).toBeNull();
+  });
+
+  // Dua sumber jurnal operasional baru (pembayaran utang SPG yang berhenti, bayaran plus sesudah gaji
+  // terakhirnya): posting ulangnya di rekonsiliasi persediaan, seperti sumber operasional lain.
+  it.each(["spg_utang_bayar", "spg_bayar_tambahan"])("jurnal operasional %s → rekonsiliasi persediaan", (kind) => {
+    expect(getNotificationHref("JOURNAL_PENDING", { docId: `${kind}-1`, kind, reason: "UNMAPPED_ROLE" })).toBe(
+      "/backoffice/finance/rekonsiliasi-persediaan#tertunda",
+    );
   });
 });
 

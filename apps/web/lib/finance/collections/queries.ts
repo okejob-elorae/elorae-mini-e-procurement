@@ -213,7 +213,7 @@ export type CollectionAccess =
  * out when a receivable was reassigned. `not_assigned` carries NO receivable fields: the caller
  * learns only that the id exists, never anything about another collector's receivable. A konsi
  * receivable reads as `missing` even to its own collector, since this only ever serves the phone
- * (`RECEIVABLES_ON_PHONE`); it is collected from the backoffice.
+ * (`RECEIVABLES_ON_PHONE`); its payment is reported through a BKM instead.
  */
 export async function getReceivableCollectionAccess(receivableId: string, collectorId: string): Promise<CollectionAccess> {
   const r = await prisma.receivable.findFirst({

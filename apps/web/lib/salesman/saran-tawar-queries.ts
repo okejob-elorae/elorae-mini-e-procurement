@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { aggregateInventoryValues } from "@/lib/items/queries";
 import { getPrimaryImagesBatch } from "@/lib/items/images/queries";
 import {
@@ -251,9 +252,10 @@ export async function bahanSaranTawar(
       peers.map((p) => p.id),
       hariIni,
     ),
-    // Himpunan yang sama dengan katalog HP: barang jadi yang aktif.
+    // Himpunan yang sama dengan katalog HP: barang jadi yang aktif dan dijual
+    // offline (saluran Toko offline atau Keduanya, P3).
     prisma.item.findMany({
-      where: { isActive: true, type: "FINISHED_GOOD" },
+      where: { isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() },
       select: {
         id: true,
         sku: true,

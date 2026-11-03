@@ -2,6 +2,8 @@ import { prisma, Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { catatJejak, JEJAK } from './jejak';
 import { bacaTanggalMulaiTagihan, tagihanSesudahMulaiBuku } from './gerbang-tanggal-mulai';
+import { muatBulanSiklusPertama } from "@/lib/konsinyasi/siklus-pertama";
+import { fakturKonsiLewatSiklusPertama } from "@/lib/konsinyasi/siklus-pertama-aturan";
 
 /**
  * Penulis faktur yang diketik manual.
@@ -24,7 +26,12 @@ export type AlasanGagalFaktur =
   | 'NOMOR_WAJIB'
   | 'NOMOR_SUDAH_ADA'
   | 'TOKO_TIDAK_DITEMUKAN'
-  | 'TOKO_KONSI'
+  /**
+   * Utang toko konsinyasi bertanggal pada atau sesudah bulan siklus konsinyasi
+   * pertama di sistem (P59): bulan itu dan sesudahnya ditagih lewat siklus,
+   * bukan lewat faktur manual atau impor — supaya tidak tertagih dua kali.
+   */
+  | "KONSI_SESUDAH_SIKLUS_PERTAMA"
   | 'NILAI_TIDAK_VALID'
   | 'TEMPO_SEBELUM_FAKTUR'
   /** Sejak tanggal mulai buku besar, tagihan barang hanya lewat nota tagihan pengiriman. */
@@ -81,10 +88,16 @@ export async function buatPiutangManual(input: {
 /**
  * Tulis satu faktur manual DI DALAM transaksi pemanggil.
  *
- * Dipisah supaya penulis lain — beban selisih retur yang ditanggung toko —
- * bisa melahirkan faktur di transaksi yang sama dengan keputusannya: keputusan
- * tanpa faktur, atau faktur tanpa keputusan, keduanya tidak boleh tersisa.
- * Penjagaan toko (ada, bukan konsinyasi) dan nomor kembar tetap di sini.
+ * Dipisah supaya penulis lain bisa melahirkan faktur di transaksi yang sama
+ * dengan keputusannya. Penjagaan toko, nomor kembar, dan gerbang siklus
+ * konsinyasi pertama tetap di sini.
+ *
+ * Toko konsinyasi DITERIMA (P32, jawaban pemilik 2026-11-02: utang toko konsi
+ * di kertas boleh masuk lewat impor atau ketik manual) dan fakturnya ditandai
+ * `isConsignment` menurut jenis toko SAAT dibuat — tanda itu tidak pernah
+ * diubah sesudahnya. Faktur konsi bertanggal pada/sesudah bulan siklus pertama
+ * di sistem ditolak (P59). Faktur konsi tidak dijurnal STORE_INVOICE; lawannya
+ * diketik di Saldo awal → Akun pada akun Piutang Toko Konsinyasi.
  */
 export async function tulisPiutangManual(
   tx: Prisma.TransactionClient,
@@ -112,8 +125,14 @@ export async function tulisPiutangManual(
     select: { id: true, termsType: true },
   });
   if (!toko) return { ok: false as const, alasan: 'TOKO_TIDAK_DITEMUKAN' as const };
-  // Toko konsinyasi tidak melahirkan piutang: barangnya masih milik kita.
-  if (toko.termsType === 'KONSI') return { ok: false as const, alasan: 'TOKO_KONSI' as const };
+  const konsi = toko.termsType === "KONSI";
+  if (konsi) {
+    // Dibaca di transaksi ini juga: pengaturan yang disimpan bersamaan tidak lolos.
+    const pertama = await muatBulanSiklusPertama(tx);
+    if (pertama.diatur && fakturKonsiLewatSiklusPertama(input.invoiceDate, pertama.bulan)) {
+      return { ok: false as const, alasan: "KONSI_SESUDAH_SIKLUS_PERTAMA" as const };
+    }
+  }
 
   const kembar = await tx.receivable.findFirst({
     where: { invoiceNo: nomor },
@@ -137,6 +156,7 @@ export async function tulisPiutangManual(
       originalAmount: D(total),
       outstandingAmount: D(total),
       source: 'MANUAL',
+      isConsignment: konsi,
       ...(input.note ? { note: input.note } : {}),
       items: {
         create: items.map((b) => ({
@@ -156,7 +176,7 @@ export async function tulisPiutangManual(
     action: JEJAK.FAKTUR_MANUAL,
     entityType: 'Receivable',
     entityId: piutang.id,
-    changes: { after: { invoiceNo: nomor, storeId: input.storeId, amount: total } },
+    changes: { after: { invoiceNo: nomor, storeId: input.storeId, amount: total, isConsignment: konsi } },
     metadata: { jumlahBaris: items.length, ...(input.metadataJejak ?? {}) },
   });
 

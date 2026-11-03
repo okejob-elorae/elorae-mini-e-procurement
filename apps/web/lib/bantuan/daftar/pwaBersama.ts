@@ -260,8 +260,9 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "pwaRetur.pageTitle" },
     isi: [
       "Nota retur toko yang Anda laporkan beserta keadaannya: menunggu gudang menghitung, menunggu keputusan kantor atas selisih, atau beres. Potongan retur baru diakui sebesar barang yang dihitung gudang, bukan sebesar klaim toko.",
+      "Selisih retur yang perlu Anda cek: kalau gudang menerima kurang dari nota retur toko yang Anda pegang sekarang, tanyakan ke toko dan ke SPG toko itu, lalu laporkan Barang ditemukan atau Tidak ditemukan (dengan catatan apa kata mereka). Hanya pemegang toko sekarang yang bisa menjawab. Barang yang ditemukan dikirim balik ke gudang — tidak perlu nota retur baru. Selisih yang tidak ketemu diputuskan kantor, dan bisa dibebankan ke pemegang toko pada tanggal nota retur itu.",
       "Selama gudang belum menghitung, Anda bisa menarik nota sendiri lewat Tarik laporan, misalnya karena salah toko atau salah nomor. Sesudah dihitung, gunakan Minta koreksi — kantor yang membetulkannya. Nota yang dibatalkan bisa dilaporkan ulang dengan isian yang tersalin.",
-      "Salesman membukanya dari menu Lainnya → Retur toko, SPG dari menu Lainnya → Retur ke gudang. Untuk toko konsinyasi yang tampil jumlah potongnya.",
+      "Salesman membukanya dari menu Lainnya → Retur toko, SPG dari menu Lainnya → Retur ke gudang. Nilai nota retur toko konsinyasi ikut tampil di daftar salesman; di HP SPG yang tampil jumlah potongnya.",
       "Salesman juga melihat nota retur yang dilaporkan SPG di toko yang ia pegang, bertanda Dari SPG. Nota itu hanya untuk dilihat: menarik atau meminta koreksinya dilakukan SPG atau kantor.",
     ],
   },
@@ -331,11 +332,11 @@ export const ENTRI: EntriBantuan[] = [
     kartu: [
       {
         judul: { kunci: "bebanHilangSaya.judul" },
-        isi: "Barang hilang yang sebagian atau seluruhnya dibebankan ke Anda. Bagian Anda dipotong dari komisi atau gaji, paling banyak sebesar persen yang diatur kantor dari satu pembayaran; sisanya dicicil ke pembayaran berikutnya. Bila kantor memberi keringanan diskon pegawai, angkanya sudah termasuk keringanan itu.",
+        isi: "Barang hilang yang sebagian atau seluruhnya dibebankan ke Anda. Bagi salesman, bagian Anda dipotong dari komisi paling banyak sebesar persen yang diatur kantor dari satu pembayaran; sisanya dicicil ke pembayaran berikutnya. Bagi SPG, bagian Anda dipotong penuh saat pembayaran — dari komisi dulu, lalu dari gaji pokok — dan sisanya dibawa ke pembayaran berikutnya. Bila kantor memberi keringanan diskon pegawai, angkanya sudah termasuk keringanan itu.",
       },
       {
         judul: { kunci: "bebanHilangSaya.judulRetur" },
-        isi: "Selisih antara klaim retur toko dan barang yang dihitung gudang yang diputuskan kantor menjadi tanggungan Anda, sampai selisihnya diganti.",
+        isi: "Selisih antara klaim retur toko dan barang yang dihitung gudang yang diputuskan kantor menjadi tanggungan Anda. Bebannya dipotong dari komisi Anda; kartunya menyebut beban, yang sudah dipotong, sisanya, dan kelebihan potong yang akan dikembalikan bila barangnya ketemu kemudian.",
       },
     ],
   },

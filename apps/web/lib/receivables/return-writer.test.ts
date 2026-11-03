@@ -27,6 +27,13 @@ const state = {
   bebanUpdates: [] as Record<string, unknown>[],
   bebanDihapus: 0,
   bebanDiputuskanCount: 0,
+  /** Hasil bandingkan-lalu-tukar (`updateMany`) pada beban — 0 = kalah balapan. */
+  casBeban: 1,
+  /** Beban TERBUKA berlapor DITEMUKAN di toko yang sama (penjaga nota baru). */
+  bebanDitemukan: [] as Record<string, unknown>[],
+  /** Hitungan susulan yang menempel pada nota (penjaga lepas pasangan). */
+  susulanCount: 0,
+  notifKantor: [] as Record<string, unknown>[],
   potongan: [] as { paymentClaimId: string }[],
   links: [] as { receivableId: string }[],
   dihitungUlang: [] as string[],
@@ -95,6 +102,7 @@ const tx = {
   warehouseReturn: {
     findFirst: vi.fn(async () => null),
     findUnique: vi.fn(async () => state.nri),
+    count: vi.fn(async () => state.susulanCount),
     create: vi.fn(async (a: { data: Record<string, unknown> }) => {
       state.nriDibuat.push(a.data);
       const baris = ((a.data.items as { create?: Record<string, unknown>[] } | undefined)?.create ?? []).map((b, i) => ({
@@ -114,7 +122,13 @@ const tx = {
   },
   returnCharge: {
     findUnique: vi.fn(async () => state.beban),
+    findMany: vi.fn(async () => state.bebanDitemukan),
     count: vi.fn(async () => state.bebanDiputuskanCount),
+    updateMany: vi.fn(async (a: { data: Record<string, unknown> }) => {
+      if (state.casBeban !== 1) return { count: state.casBeban };
+      state.bebanUpdates.push(a.data);
+      return { count: 1 };
+    }),
     create: vi.fn(async (a: { data: Record<string, unknown> }) => {
       state.bebanDibuat.push(a.data);
       return {};
@@ -132,6 +146,12 @@ const tx = {
     create: vi.fn(async (a: { data: Record<string, unknown> }) => {
       state.jejak.push(a.data);
       return {};
+    }),
+  },
+  adminNotification: {
+    create: vi.fn(async (a: { data: Record<string, unknown> }) => {
+      state.notifKantor.push(a.data);
+      return { id: `an${state.notifKantor.length}`, ...a.data };
     }),
   },
   paymentClaimDeduction: { findMany: vi.fn(async () => state.potongan) },
@@ -191,7 +211,10 @@ vi.mock('./writer', () => ({
     state.dihitungUlang.push(id);
     return 0;
   },
+  bacaSisaPiutang: async () => 0,
 }));
+// Lonceng kantor disebar sesudah commit — tesnya sendiri di admin-fanout.test.ts.
+vi.mock('@/lib/notifications/admin-fanout', () => ({ fanOutAdminNotification: async () => undefined }));
 // Push stok ke Jubelio sesudah commit punya tesnya sendiri (return-writer-push-stok.test.ts).
 vi.mock('@/lib/jubelio/antre-push-stok', () => ({
   antrekanPushStok: async () => ({ diantrekan: [], sudahAntre: [], tanpaPemetaan: [], barisGabungan: [], gagal: false }),
@@ -223,6 +246,8 @@ const {
   batalkanRetur,
   nilaiDariRincian,
   alihkanBeban,
+  laporHasilCekSelisih,
+  lebihBayarBaru,
 } = await import('./return-writer');
 
 const HARI_INI = new Date('2026-08-26T00:00:00+07:00');
@@ -250,6 +275,10 @@ beforeEach(() => {
   state.bebanUpdates = [];
   state.bebanDihapus = 0;
   state.bebanDiputuskanCount = 0;
+  state.casBeban = 1;
+  state.bebanDitemukan = [];
+  state.susulanCount = 0;
+  state.notifKantor = [];
   state.potongan = [{ paymentClaimId: 'k1' }];
   state.links = [{ receivableId: 'r1' }, { receivableId: 'r2' }];
   state.dihitungUlang = [];
@@ -499,6 +528,15 @@ describe('jodohkanRetur', () => {
     });
   });
 
+  it('menolak menjodohkan hitungan SUSULAN nota lain — ia bukan yatim', async () => {
+    state.nri = { ...state.nri, followUpOfStoreReturnId: 'nrtX' };
+    expect(await jodohkanRetur({ warehouseReturnId: 'nri1', storeReturnId: 'nrt1', olehUserId: 'u1' })).toEqual({
+      ok: false,
+      alasan: 'BUKAN_YATIM',
+    });
+    expect(state.nriUpdates).toHaveLength(0);
+  });
+
   it('menolak menjodohkan ke toko yang berbeda', async () => {
     // Memindahkan barang satu toko ke tagihan toko lain.
     state.nri = { ...state.nri, storeId: 't2' };
@@ -518,7 +556,7 @@ describe('jodohkanRetur', () => {
 
   it('menjodohkan dan menghitung ulang piutang', async () => {
     const h = await jodohkanRetur({ warehouseReturnId: 'nri1', storeReturnId: 'nrt1', olehUserId: 'u1' });
-    expect(h).toEqual({ ok: true, piutangDihitungUlang: 2 });
+    expect(h).toEqual({ ok: true, piutangDihitungUlang: 2, selisihBaru: null });
     expect(state.nriUpdates[0]).toMatchObject({ storeReturnId: 'nrt1', storeId: 't1' });
   });
 });
@@ -534,6 +572,14 @@ describe('lepasPasangan', () => {
       alasan: 'BEBAN_SUDAH_DIPUTUSKAN',
     });
     expect(state.nriUpdates).toHaveLength(0);
+  });
+
+  it('MENOLAK melepas selama nota itu punya hitungan susulan', async () => {
+    state.nri = { ...state.nri, storeReturnId: 'nrt1' };
+    state.susulanCount = 1;
+    expect(await lepasPasangan({ warehouseReturnId: 'nri1', olehUserId: 'u1' })).toEqual({ ok: false, alasan: 'ADA_SUSULAN' });
+    expect(state.nriUpdates).toHaveLength(0);
+    expect(state.bebanDihapus).toBe(0);
   });
 
   it('melepas dan membuang beban yang masih terbuka', async () => {
@@ -582,6 +628,33 @@ describe('putuskanBeban', () => {
     await putuskanBeban({ ...DASAR, bearer: 'PERUSAHAAN', bearerUserId: 'sales7' });
     expect(state.bebanUpdates[0].bearerUserId).toBeNull();
   });
+
+  it('menolak TOKO di toko konsinyasi — tidak ada nota asal yang menahan selisihnya', async () => {
+    state.beban = { ...state.beban, storeId: 't1' };
+    state.toko = { termsType: 'KONSI', markupPercent: 20 };
+    expect(await putuskanBeban({ ...DASAR, bearer: 'TOKO' })).toEqual({ ok: false, alasan: 'TOKO_KONSI' });
+    expect(state.bebanUpdates).toHaveLength(0);
+  });
+
+  it('TOKO di toko putus: diputuskan tanpa faktur baru — selisihnya tetap terbuka di nota asal', async () => {
+    state.beban = { ...state.beban, storeId: 't1' };
+    state.toko = { termsType: 'PUTUS', markupPercent: null };
+    const h = await putuskanBeban({ ...DASAR, bearer: 'TOKO' });
+    expect(h).toEqual({ ok: true, piutangDihitungUlang: 2 });
+    expect(state.bebanUpdates[0]).toMatchObject({ bearer: 'TOKO', status: 'DITETAPKAN' });
+    expect(state.dihitungUlang).toEqual(['r1', 'r2']);
+  });
+
+  it('kantor memilih orangnya: siapa pun yang dipilih tersimpan, tidak dipaksa pemegang toko (P85)', async () => {
+    await putuskanBeban({ ...DASAR, bearer: 'SALES', bearerUserId: 'sales-lain' });
+    expect(state.bebanUpdates[0]).toMatchObject({ bearer: 'SALES', bearerUserId: 'sales-lain' });
+  });
+
+  it('kalah balapan bandingkan-lalu-tukar = sudah diputuskan, tanpa jejak', async () => {
+    state.casBeban = 0;
+    expect(await putuskanBeban({ ...DASAR, bearer: 'GUDANG' })).toEqual({ ok: false, alasan: 'SUDAH_DIPUTUSKAN' });
+    expect(state.jejak).toHaveLength(0);
+  });
 });
 
 describe('tandaiBebanLunas', () => {
@@ -592,13 +665,25 @@ describe('tandaiBebanLunas', () => {
     });
   });
 
-  it('menandai lunas TANPA menyentuh piutang', async () => {
+  it('menandai lunas TANPA menyentuh piutang (gudang / perusahaan), tercatat terbayar penuh', async () => {
     // Fakturnya sudah dilepas saat bebannya ditetapkan. Ini penagihan pengganti
     // yang berjalan sendiri.
-    state.beban = { ...state.beban, status: 'DITETAPKAN' };
+    state.beban = { ...state.beban, status: 'DITETAPKAN', bearer: 'GUDANG' };
     expect(await tandaiBebanLunas({ chargeId: 'b1', olehUserId: 'u1' })).toEqual({ ok: true });
     expect(state.bebanUpdates[0].status).toBe('LUNAS');
+    expect(Number((state.bebanUpdates[0].settledAmount as { value: number }).value)).toBe(200_000);
     expect(state.dihitungUlang).toEqual([]);
+  });
+
+  it('menolak beban TOKO — dibayar lewat nota asalnya', async () => {
+    state.beban = { ...state.beban, status: 'DITETAPKAN', bearer: 'TOKO' };
+    expect(await tandaiBebanLunas({ chargeId: 'b1', olehUserId: 'u1' })).toEqual({ ok: false, alasan: 'DITAGIH_LEWAT_PIUTANG' });
+  });
+
+  it('menolak beban SALES — dipotong dari komisinya di Laporan → Komisi salesman', async () => {
+    state.beban = { ...state.beban, status: 'DITETAPKAN', bearer: 'SALES' };
+    expect(await tandaiBebanLunas({ chargeId: 'b1', olehUserId: 'u1' })).toEqual({ ok: false, alasan: 'POTONG_LEWAT_KOMISI' });
+    expect(state.bebanUpdates).toHaveLength(0);
   });
 
   it('menolak beban yang sudah lunas', async () => {
@@ -1097,5 +1182,123 @@ describe('putuskanBeban / alihkanBeban — SALES wajib orangnya di server', () =
       alasan: 'PENANGGUNG_WAJIB',
     });
     expect(state.bebanUpdates).toHaveLength(0);
+  });
+});
+
+describe('alihkanBeban — yang sudah dipotong tidak dialihkan', () => {
+  it('menolak SUDAH_DIPOTONG begitu ada potongan dari komisi penanggungnya', async () => {
+    state.beban = { ...state.beban, status: 'DITETAPKAN', bearer: 'SALES', bearerUserId: 'sales7', settledAmount: 50_000 };
+    expect(
+      await alihkanBeban({ chargeId: 'b1', bearer: 'PERUSAHAAN', alasan: 'salah orang', olehUserId: 'u1' }),
+    ).toEqual({ ok: false, alasan: 'SUDAH_DIPOTONG' });
+    expect(state.bebanUpdates).toHaveLength(0);
+  });
+
+  it('menghitung ulang piutang yang tersentuh, karena tahanan faktur mengikuti penanggungnya', async () => {
+    state.beban = { ...state.beban, status: 'DITETAPKAN', bearer: 'GUDANG', settledAmount: 0 };
+    const h = await alihkanBeban({ chargeId: 'b1', bearer: 'SALES', bearerUserId: 'sales7', alasan: 'x', olehUserId: 'u1' });
+    expect(h).toEqual({ ok: true, piutangDihitungUlang: 2 });
+    expect(state.bebanUpdates[0]).toMatchObject({ bearer: 'SALES', bearerUserId: 'sales7' });
+  });
+});
+
+describe('laporHasilCekSelisih — isian ditolak sebelum menulis apa pun', () => {
+  const DASAR = { chargeId: 'b1', olehUserId: 'pemegang1' };
+
+  it('menolak hasil yang bukan ditemukan / tidak ditemukan', async () => {
+    expect(await laporHasilCekSelisih({ ...DASAR, hasil: 'MUNGKIN' as never })).toEqual({ ok: false, alasan: 'HASIL_TIDAK_SAH' });
+  });
+
+  it('TIDAK_DITEMUKAN wajib membawa jawaban toko dan SPG; DITEMUKAN boleh tanpa catatan', async () => {
+    expect(await laporHasilCekSelisih({ ...DASAR, hasil: 'TIDAK_DITEMUKAN', catatan: '  ' })).toEqual({
+      ok: false,
+      alasan: 'CATATAN_WAJIB',
+    });
+    state.beban = { ...state.beban, checkStatus: 'DITANYAKAN', storeReturn: { id: 'nrt1', status: 'SELISIH', store: { salesmanId: 'pemegang1' } } };
+    expect(await laporHasilCekSelisih({ ...DASAR, hasil: 'DITEMUKAN' })).toEqual({ ok: true, notifikasi: null });
+    expect(state.bebanUpdates[0]).toMatchObject({ checkStatus: 'DITEMUKAN', checkNote: null, checkedById: 'pemegang1' });
+  });
+
+  it('menolak catatan di atas 500 karakter (dihitung per code point)', async () => {
+    expect(await laporHasilCekSelisih({ ...DASAR, hasil: 'TIDAK_DITEMUKAN', catatan: '😀'.repeat(501) })).toEqual({
+      ok: false,
+      alasan: 'CATATAN_TERLALU_PANJANG',
+    });
+    expect(state.bebanUpdates).toHaveLength(0);
+  });
+
+  it('hanya pemegang toko SEKARANG yang melapor (P85)', async () => {
+    state.beban = { ...state.beban, storeReturn: { id: 'nrt1', status: 'SELISIH', store: { salesmanId: 'pemegang1' } } };
+    expect(await laporHasilCekSelisih({ ...DASAR, olehUserId: 'spg1', hasil: 'DITEMUKAN' })).toEqual({
+      ok: false,
+      alasan: 'BUKAN_PEMEGANG',
+    });
+    expect(state.bebanUpdates).toHaveLength(0);
+  });
+
+  it('menolak sesudah bebannya diputuskan', async () => {
+    state.beban = { ...state.beban, status: 'DITETAPKAN', storeReturn: { id: 'nrt1', status: 'SELISIH', store: { salesmanId: 'pemegang1' } } };
+    expect(await laporHasilCekSelisih({ ...DASAR, hasil: 'DITEMUKAN' })).toEqual({ ok: false, alasan: 'SUDAH_DIPUTUSKAN' });
+  });
+
+  it('menulis jejak sebelum/sesudah di transaksi yang sama', async () => {
+    state.beban = { ...state.beban, checkStatus: 'DITANYAKAN', checkNote: null, storeReturn: { id: 'nrt1', status: 'SELISIH', store: { salesmanId: 'pemegang1' } } };
+    await laporHasilCekSelisih({ ...DASAR, hasil: 'DITEMUKAN', catatan: 'ada di gudang toko' });
+    expect(state.jejak[0]).toMatchObject({
+      action: 'RETURN_CHARGE_CHECK_REPORTED',
+      changes: { before: { checkStatus: 'DITANYAKAN', checkNote: null }, after: { checkStatus: 'DITEMUKAN', checkNote: 'ada di gudang toko' } },
+    });
+  });
+});
+
+describe('catatReturToko — barang selisih yang sedang dikirim balik', () => {
+  const BEBAN_DITEMUKAN = {
+    storeReturn: {
+      noNrt: 'NRT-LAMA',
+      items: [{ itemId: 'brg1', variantSku: 'KMJ-M', itemName: 'Kemeja — M', qty: 3 }],
+      warehouseReturn: { status: 'FINAL', items: [{ itemId: 'brg1', variantSku: 'KMJ-M', itemName: 'Kemeja — M', qty: 1 }] },
+      followUps: [],
+    },
+  };
+  const NRT_KANTOR = {
+    ...NRT_DASAR,
+    noNrt: 'NRT-BARU',
+    items: [{ itemId: 'brg1', variantSku: 'KMJ-M', itemName: 'Kemeja — M', qty: 2, price: 80_000 }],
+  };
+
+  it('menolak baris yang jumlahnya muat di kekurangan nota lain yang dilaporkan DITEMUKAN', async () => {
+    state.bebanDitemukan = [BEBAN_DITEMUKAN];
+    expect(await catatReturToko(NRT_KANTOR)).toEqual({ ok: false, alasan: 'ADA_SELISIH_DITEMUKAN', noNrt: 'NRT-LAMA' });
+    expect(state.nrtDibuat).toHaveLength(0);
+  });
+
+  it('menerima baris yang melebihi kekurangan itu — jelas bukan (hanya) barang selisihnya', async () => {
+    state.bebanDitemukan = [BEBAN_DITEMUKAN];
+    const h = await catatReturToko({ ...NRT_KANTOR, items: [{ ...NRT_KANTOR.items[0], qty: 5 }] });
+    expect(h).toMatchObject({ ok: true });
+  });
+
+  it('menerima bila pelapor menyatakan retur lain, dan mencatat kecocokannya di jejak', async () => {
+    state.bebanDitemukan = [BEBAN_DITEMUKAN];
+    const h = await catatReturToko({ ...NRT_KANTOR, returLain: true });
+    expect(h).toMatchObject({ ok: true });
+    expect((state.jejak[0].metadata as Record<string, unknown>).returLainDariSelisih).toEqual([
+      { noNrt: 'NRT-LAMA', itemId: 'brg1', variantSku: 'KMJ-M', qty: 2, qtyKurang: 2 },
+    ]);
+  });
+
+  it('tidak membaca beban sama sekali untuk baris yang hanya diketik namanya', async () => {
+    state.bebanDitemukan = [BEBAN_DITEMUKAN];
+    expect(await catatReturToko({ ...NRT_DASAR, claimedAmount: 100_000 })).toMatchObject({ ok: true });
+  });
+});
+
+describe('lebihBayarBaru — kelebihan bayar yang LAHIR dari perubahan', () => {
+  it('menandai sisa yang menjadi negatif dan lebih rendah dari sebelumnya', () => {
+    expect(lebihBayarBaru(new Map([['r1', 0], ['r2', 50]]), new Map([['r1', -200], ['r2', 10]]))).toEqual(['r1']);
+  });
+
+  it('tidak menyalahkan kelebihan bayar yang sudah ada sebelumnya', () => {
+    expect(lebihBayarBaru(new Map([['r1', -200]]), new Map([['r1', -200]]))).toEqual([]);
   });
 });

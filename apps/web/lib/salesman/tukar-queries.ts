@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { dijualOffline, syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { cariTeks } from "@/lib/db/cari-teks";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
@@ -97,7 +98,9 @@ export async function bahanTukarToko(storeId: string, sekarang = new Date()): Pr
   const idDibeli = [...new Set([...perKunci.values()].map((d) => d.itemId))];
 
   const rows = await prisma.item.findMany({
-    where: { OR: [{ isActive: true, type: "FINISHED_GOOD" }, { id: { in: idDibeli } }] },
+    // Barang yang boleh KELUAR ke toko putus hanya yang dijual offline (P3);
+    // barang yang pernah dibeli toko tetap tampil supaya bisa diterima kembali.
+    where: { OR: [{ isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() }, { id: { in: idDibeli } }] },
     orderBy: { nameId: "asc" },
     select: {
       id: true,
@@ -105,6 +108,7 @@ export async function bahanTukarToko(storeId: string, sekarang = new Date()): Pr
       nameId: true,
       isActive: true,
       type: true,
+      salesChannel: true,
       sellingPrice: true,
       variants: true,
       inventoryValues: { select: { itemId: true, variantSku: true, qtyOnHand: true, reservedQty: true } },
@@ -126,7 +130,7 @@ export async function bahanTukarToko(storeId: string, sekarang = new Date()): Pr
         priceDiscountPercent: diskonHarga,
       }).price,
       gambar: gambar.get(`${r.id}|`) ?? null,
-      bisaKeluar: r.isActive && r.type === "FINISHED_GOOD",
+      bisaKeluar: r.isActive && r.type === "FINISHED_GOOD" && dijualOffline(r.salesChannel),
       varian: pilihan.map((p) => ({ variantSku: p.sku, label: p.label, tersedia: tersedia(r.id, p.sku) })),
       tersedia: pilihan.length === 0 ? tersedia(r.id, "") : 0,
     };

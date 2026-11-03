@@ -29,10 +29,10 @@ describe("kabarPesananDisetujui", () => {
     expect(kabarPesananDisetujui({ ...dasar, ajuanDiterima: 1 }).isi).toContain("Harga ajuan Anda disetujui.");
   });
 
-  it("KONSI: tidak menyebut harga, menyebut barang tambahan kantor", () => {
+  it("KONSI: menyebut nilai retail transfer untuk salesman (P18) dan barang tambahan kantor", () => {
     const k = kabarPesananDisetujui({ ...dasar, orderType: "KONSI", orderNo: "KONSI-9", ditambahKantor: 3 });
-    expect(k.isi).not.toContain("Rp");
-    expect(k.isi).toBe("Toko Maju · transfer konsinyasi disetujui. Kantor menambahkan 3 barang baru.");
+    expect(k.isi).toContain("Rp");
+    expect(biasa(k.isi)).toBe("Toko Maju · transfer konsinyasi disetujui · nilai retail Rp 1.250.000. Kantor menambahkan 3 barang baru.");
   });
 });
 

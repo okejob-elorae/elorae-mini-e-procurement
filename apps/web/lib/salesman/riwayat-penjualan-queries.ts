@@ -14,7 +14,7 @@ import {
   type CapaianTarget,
   type JualKeToko,
 } from "./riwayat-penjualan";
-import { jumlahHp, pcsKonsiBulan, seriHp, tanpaKonsi, type RingkasanBulanHp, type TitikBulanHp } from "./penjualan-hp";
+import { jumlahHp, pcsKonsiBulan, seriHp, type RingkasanBulanHp, type TitikBulanHp } from "./penjualan-hp";
 import { pcsKonsiSalesman } from "./penjualan-hp-queries";
 import { lakuKonsiSatuSalesman } from "./penjualan-konsi-queries";
 import { rentangBulanWib } from "./target-rinci";
@@ -26,9 +26,9 @@ import { capaianRinciSales } from "./target-rinci-queries";
  *
  * Angka bulanan (total, kanal, grafik, pembanding) memakai `penjualanSalesman`
  * SENDIRI — bukan salinannya — jadi bulan ini di halaman ini selalu sama dengan
- * kartu "Bulan ini" di beranda. Halaman ini hanya untuk HP salesman, jadi
- * rupiahnya putus + van saja dan konsinyasi hanya pcs (`penjualan-hp.ts`):
- * total, grafik, pembanding, dan capaian target tidak pernah memuat rupiah konsi. Barang teratas memakai `capaianRinciSales`
+ * kartu "Bulan ini" di beranda. Rupiah konsinyasi laku ikut di setiap angka —
+ * total, grafik, pembanding, capaian target, toko dan barang teratas (P56,
+ * `penjualan-hp.ts`). Barang teratas memakai `capaianRinciSales`
  * (sumber yang sama, dipasak tesnya sama dengan beranda); toko teratas
  * membaca dokumen yang sama dengan aturan tanggal yang sama (`rentangBulanWib`).
  * Semuanya disaring ke satu salesman: layar HP tidak pernah menampilkan angka
@@ -37,8 +37,8 @@ import { capaianRinciSales } from "./target-rinci-queries";
 
 const angka = (v: unknown) => Number(v ?? 0);
 
-export type TokoTeratasBaris = { storeId: string; nama: string; pcs: number; pcsKonsi: number; nilaiTanpaKonsi: number };
-export type BarangTeratasBaris = { itemId: string; nama: string; sku: string; pcs: number; pcsKonsi: number; nilaiTanpaKonsi: number };
+export type TokoTeratasBaris = { storeId: string; nama: string; pcs: number; pcsKonsi: number; nilai: number };
+export type BarangTeratasBaris = { itemId: string; nama: string; sku: string; pcs: number; pcsKonsi: number; nilai: number };
 
 export type RiwayatPenjualan = {
   daftarBulan: string[];
@@ -74,8 +74,8 @@ export async function jualKeTokoSebulan(salesmanId: string, bulan: string, hariI
       nilai: angka(d.total),
       pcs: d.lines.reduce((n, l) => n + (l.orderLine.isBonus ? 0 : l.qty), 0),
     })),
-    // Konsi = pcs LAKU di toko itu. Nilai sengaja 0: tidak pernah ditampilkan per toko di HP.
-    ...konsi.map((l) => ({ storeId: l.storeId, jenis: "konsi" as const, nilai: 0, pcs: l.pcs })),
+    // Konsi = pcs dan rupiah LAKU di toko itu (harga Elorae, P56).
+    ...konsi.map((l) => ({ storeId: l.storeId, jenis: "konsi" as const, nilai: l.nilai, pcs: l.pcs })),
     ...van.map((v) => ({
       storeId: v.storeId,
       jenis: "van" as const,
@@ -90,8 +90,7 @@ export async function riwayatPenjualan(salesmanId: string, bulanParam: unknown, 
   const bulan = pilihBulan(bulanParam, bulanList);
 
   const [baris, pcs, setelanTarget, perToko, rinci] = await Promise.all([
-    // Baris konsi dibuang di sini: setiap rupiah di halaman ini putus + van.
-    penjualanSalesman(salesmanId, awalBulanWib(bulanAwalBacaan(bulanList))).then(tanpaKonsi),
+    penjualanSalesman(salesmanId, awalBulanWib(bulanAwalBacaan(bulanList))),
     pcsKonsiSalesman(salesmanId, awalBulanWib(bulanList[0])),
     prisma.systemSetting.findUnique({ where: { key: KUNCI_TARGET }, select: { value: true } }),
     jualKeTokoSebulan(salesmanId, bulan, hariIni),
@@ -120,7 +119,7 @@ export async function riwayatPenjualan(salesmanId: string, bulanParam: unknown, 
     bulan,
     seri: seriHp(susunSeriBulanan(baris, bulanList, hariIni), pcs, hariIni),
     ringkas,
-    // Capaian atas putus + van: capaian dengan konsi × target − putus − van = konsi.
+    // Capaian atas omzet resmi (putus + konsi + van), sama dengan kantor.
     target: capaianTarget(bacaTargetBulan(setelanTarget?.value, salesmanId, bulan), ringkas.jumlah.total),
     toko: teratasToko.map((t) => ({ ...t, nama: namaToko.get(t.storeId) ?? "—" })),
     barang: teratasBarang.map((b) => ({

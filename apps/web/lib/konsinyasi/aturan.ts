@@ -138,3 +138,20 @@ export function stokTitipan(
   }
   return [...peta.values()];
 }
+
+/**
+ * Jatuh tempo tagihan siklus konsinyasi (P54, disetujui pemilik 2026-11-02 malam — "P52–P59:
+ * setuju" atas usulan: "Tanggal tagihannya … akhir bulan siklus, sama dengan tanggal jurnalnya.
+ * Jatuh temponya dihitung dari tanggal itu ditambah tempo bayar toko. Contoh: siklus Oktober dikunci
+ * 5 November, tempo 30 hari → jatuh tempo 30 November"). `tanggalTagihan` = tanggal tagihan siklus
+ * (`tanggalPeriode`: akhir bulan siklus, atau hari dikunci kalau dikunci sebelum bulannya habis);
+ * jatuh tempo = pukul 00:00 WIB hari itu ditambah tempo pembayaran toko (hari bulat, tidak pernah
+ * negatif). Siklus yang dikunci lebih lambat dari temponya lahir sudah lewat jatuh tempo — itu
+ * akibat aturan yang disetujui, bukan galat. WIB tanpa jam musim panas, jadi satu hari =
+ * 86.400.000 ms.
+ */
+export function jatuhTempoSiklus(tanggalTagihan: Date, tempoHari: number): Date {
+  const hari = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" }).format(tanggalTagihan);
+  const tempo = Number.isFinite(tempoHari) ? Math.max(0, Math.trunc(tempoHari)) : 0;
+  return new Date(new Date(`${hari}T00:00:00+07:00`).getTime() + tempo * 86_400_000);
+}

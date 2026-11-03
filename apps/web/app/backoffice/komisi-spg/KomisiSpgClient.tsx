@@ -38,7 +38,12 @@ import { formatIDR } from "@/lib/sales-orders/format";
 import { namaBulan } from "@/lib/salesman/komisi";
 import type { StatusKomisi } from "@/lib/spg/komisi";
 import type { DaftarKomisiKantor, KoreksiDiterapkanKantor, KonsiMenungguKunciKantor, MenungguCekKantor } from "@/lib/spg/komisi-queries";
-import { formatKoreksi, type AlasanTahanKoreksi, type RencanaBayarKomisi } from "@/lib/spg/koreksi";
+import { formatKoreksi, type RencanaBayarKomisi } from "@/lib/spg/koreksi";
+import { ringkasRincianGaji, type AlasanTahanBayar, type RincianGaji } from "@/lib/spg/gaji-pokok";
+import type { BarisJadwalBulanKantor } from "@/lib/spg/jadwal-bulan-queries";
+import type { BarisUtangSpgKantor } from "@/lib/spg/utang-queries";
+import { JadwalBulanKantorCard } from "./JadwalBulanKantorCard";
+import { UtangSpgCard } from "./UtangSpgCard";
 import { cn } from "@/lib/utils";
 
 export type LaporanPutusTampil = {
@@ -47,16 +52,16 @@ export type LaporanPutusTampil = {
   kode: string;
   aktif: boolean;
   bulanJual: string;
-  /** Null untuk komisi aturan lama yang ditetapkan tanpa tanda dicek. */
   dicek: { label: string; oleh: string | null } | null;
   potongToko: number;
   totalToko: number;
   potongTanpaTarif: number;
+  /** Orang yang mendapat baris saat "Tetapkan" (peserta gaji ∪ penjual) — 0 = `TANPA_PESERTA`. */
+  jumlahIkut: number;
   adaResmi: boolean;
   adaDibayar: boolean;
   semuaDibayar: boolean;
   berbeda: boolean;
-  aturanLama: boolean;
   /** Retur pembeli bulan itu yang masih menunggu persetujuan. */
   returMenunggu: number;
   baris: {
@@ -64,6 +69,8 @@ export type LaporanPutusTampil = {
     nama: string;
     ditugaskan: boolean;
     penerima: boolean;
+    /** Peserta gaji bulan itu (B19): ikut "Tetapkan" walau tidak menjual. */
+    peserta: boolean;
     potong: number;
     komisi: number;
     potongTanpaTarif: number;
@@ -74,11 +81,17 @@ export type LaporanPutusTampil = {
       /** Beban barang hilang yang dipotong saat ditetapkan. */
       deduction: number;
       unitsSold: number;
-      aturanLama: boolean;
+      baseSalary: number;
       ditetapkanLabel: string;
       dibayarLabel: string | null;
       note: string | null;
     } | null;
+    /** Gaji pokok: rincian tersimpan (dibayar) atau sekarang; null bila di baris lain atau ditahan. */
+    gaji: RincianGaji | null;
+    /** Seluruh pembayaran menunggu dasar gajinya (P60); `hariLabel` sudah diformat server. */
+    tahan: { alasan: AlasanTahanBayar; hariLabel: string[] } | null;
+    /** Check-in di luar radius toko (P70) — hanya tanda. */
+    luarRadius: number;
     /** Sisa beban barang hilang SPG ini yang belum terpotong. */
     bebanHilangSisa: number;
     /** Yang AKAN dibayarkan baris yang belum dibayar: komisi per SPG sekarang, koreksi yang ikut. */
@@ -109,9 +122,10 @@ export type KonsiTampil = {
   baris: {
     id: string;
     nama: string;
-    /** False = penjual dari toko lain: komisi saja, tanpa gaji pokok. */
-    bergaji: boolean;
     gajiPokok: number;
+    gaji: RincianGaji | null;
+    tahan: { alasan: AlasanTahanBayar; hariLabel: string[] } | null;
+    luarRadius: number;
     komisi: number;
     komisiHitung: number;
     total: number;
@@ -137,8 +151,9 @@ export type TunggakanTampil = {
   bayar: RencanaBayarKomisi | null;
   /** Retur pembeli toko × bulan penjualan itu yang masih menunggu persetujuan. */
   returMenunggu: number;
-  /** Menunggu keputusan pemilik: tidak bisa dibayar, tidak dihitung di Beranda. */
-  ditahan: AlasanTahanKoreksi | null;
+  /** Menunggu dasar gajinya (P60): tidak bisa dibayar, tidak dihitung di Beranda. */
+  ditahan: AlasanTahanBayar | null;
+  hariTahanLabel: string[];
 };
 
 type Props = {
@@ -152,15 +167,29 @@ type Props = {
   bolehBayar: boolean;
   /** Mengatur tarif per kategori — `spg_commission:manage`. */
   bolehAturTarif: boolean;
+  /** Menyetujui, menolak, membuka lagi jadwal bulanan SPG — `spg_schedules:approve`. */
+  bolehSetujuiJadwal: boolean;
+  /** Memeriksa penerimaan utang SPG — `payments:verify`. */
+  bolehVerifikasi: boolean;
+  /** Memasukkan catatan check-in toko — `spg_attendance:record`; memeriksanya — `spg_attendance:verify`. */
+  bolehCatatHadir: boolean;
+  /**
+   * Membuka siklus konsinyasi — `consignment:view` (`bolehMembukaKonsi`), gerbang halaman tujuannya.
+   * Tanpanya (mis. Keuangan, P28) tautan ke siklus tampil sebagai teks biasa, bukan tautan yang
+   * hanya mengembalikannya ke Beranda.
+   */
+  bolehBukaKonsi: boolean;
+  /** Pemegang `payments:verify` saja: hanya bagian #utang yang tampil. */
+  hanyaUtang: boolean;
+  jadwal: BarisJadwalBulanKantor[];
+  utang: BarisUtangSpgKantor[];
   putus: LaporanPutusTampil[];
   konsi: KonsiTampil[];
   menungguCek: MenungguCekKantor[];
   konsiMenungguKunci: KonsiMenungguKunciKantor[];
   tunggakan: TunggakanTampil[];
   tunggakanDitahan: TunggakanTampil[];
-  tunggakanLama: TunggakanTampil[];
   koreksiMenunggu: DaftarKomisiKantor["koreksiMenunggu"];
-  koreksiDitahan: DaftarKomisiKantor["koreksiDitahan"];
   ringkas: DaftarKomisiKantor["ringkas"];
 };
 
@@ -179,15 +208,20 @@ export function KomisiSpgClient({
   bolehKelola,
   bolehBayar,
   bolehAturTarif,
+  bolehSetujuiJadwal,
+  bolehVerifikasi,
+  bolehCatatHadir,
+  bolehBukaKonsi,
+  hanyaUtang,
+  jadwal,
+  utang,
   putus,
   konsi,
   menungguCek,
   konsiMenungguKunci,
   tunggakan,
   tunggakanDitahan,
-  tunggakanLama,
   koreksiMenunggu,
-  koreksiDitahan,
   ringkas,
 }: Props) {
   const t = useTranslations("komisiSpg");
@@ -196,6 +230,15 @@ export function KomisiSpgClient({
   const [pindah, mulaiPindah] = useTransition();
   const label = (b: string) => namaBulan(tBulan, b, "panjang");
   const kosong = putus.length === 0 && konsi.length === 0;
+
+  if (hanyaUtang) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title={t("judul")} />
+        <UtangSpgCard baris={utang} bolehBayar={bolehBayar} bolehVerifikasi={bolehVerifikasi} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -247,6 +290,7 @@ export function KomisiSpgClient({
         bulanIniLabel={label(bulanIni)}
         label={label}
         bolehKelola={bolehKelola}
+        bolehBukaKonsi={bolehBukaKonsi}
       />
 
       {kosong ? (
@@ -257,16 +301,28 @@ export function KomisiSpgClient({
         </Card>
       ) : null}
 
-      <KartuTunggakan tunggakan={tunggakan} ditahan={tunggakanDitahan} lama={tunggakanLama} label={label} bolehBayar={bolehBayar} />
+      {jadwal.length > 0 ? <JadwalBulanKantorCard baris={jadwal} bolehSetujui={bolehSetujuiJadwal} label={label} /> : null}
 
-      <KartuKoreksi koreksi={koreksiMenunggu} ditahan={koreksiDitahan} label={label} />
+      {bolehCatatHadir ? (
+        <p className="text-sm">
+          <Link href="/backoffice/komisi-spg/catatan-hadir" className="underline decoration-muted-foreground/50 underline-offset-2">
+            {t("catatanHadir.tautan")}
+          </Link>
+        </p>
+      ) : null}
+
+      <KartuTunggakan tunggakan={tunggakan} ditahan={tunggakanDitahan} label={label} bolehBayar={bolehBayar} bolehBukaKonsi={bolehBukaKonsi} />
+
+      <KartuKoreksi koreksi={koreksiMenunggu} label={label} />
+
+      <UtangSpgCard baris={utang} bolehBayar={bolehBayar} bolehVerifikasi={bolehVerifikasi} />
 
       {putus.map((l) => (
         <KartuPutus key={`${l.storeId}:${l.bulanJual}`} laporan={l} label={label} bolehKelola={bolehKelola} bolehBayar={bolehBayar} />
       ))}
 
       {konsi.map((k) => (
-        <KartuKonsi key={k.cycleId} siklus={k} label={label} bolehBayar={bolehBayar} />
+        <KartuKonsi key={k.cycleId} siklus={k} label={label} bolehBayar={bolehBayar} bolehBukaKonsi={bolehBukaKonsi} />
       ))}
     </div>
   );
@@ -278,12 +334,14 @@ function KartuMenunggu({
   bulanIniLabel,
   label,
   bolehKelola,
+  bolehBukaKonsi,
 }: {
   menungguCek: MenungguCekKantor[];
   konsiMenungguKunci: KonsiMenungguKunciKantor[];
   bulanIniLabel: string;
   label: (b: string) => string;
   bolehKelola: boolean;
+  bolehBukaKonsi: boolean;
 }) {
   const t = useTranslations("komisiSpg");
   const ada = menungguCek.length > 0 || konsiMenungguKunci.length > 0;
@@ -319,7 +377,7 @@ function KartuMenunggu({
                       <span className="block text-xs text-muted-foreground">
                         {m.kode} · {t("tunggu.penerima", { n: m.jumlahPenerima })}
                       </span>
-                      {m.adaResmiLama ? <span className="block text-xs text-amber-800 dark:text-amber-300">{t("tunggu.lama")}</span> : null}
+                      {m.jumlahPeserta > 0 ? <span className="block text-xs text-muted-foreground">{t("tunggu.peserta", { n: m.jumlahPeserta })}</span> : null}
                       {m.returMenunggu > 0 ? (
                         <span className="block text-xs text-amber-800 dark:text-amber-300">{t("returMenunggu", { n: m.returMenunggu })}</span>
                       ) : null}
@@ -340,6 +398,7 @@ function KartuMenunggu({
                           bulanIniLabel={bulanIniLabel}
                           label={label}
                           returMenunggu={m.returMenunggu}
+                          tanpaKategori={m.tanpaKategori}
                         />
                       ) : null}
                     </TableCell>
@@ -355,11 +414,14 @@ function KartuMenunggu({
                     <TableCell className="text-right">—</TableCell>
                     <TableCell className="text-right">—</TableCell>
                     <TableCell className="text-right">
-                      <Button asChild variant="outline" size="sm">
-                        <Link href={k.cycleId ? `/backoffice/konsinyasi/${k.cycleId}` : "/backoffice/konsinyasi"}>
-                          {k.cycleId ? t("konsiTunggu.buka") : t("konsiTunggu.bukaDaftar")}
-                        </Link>
-                      </Button>
+                      {/* Siklus dan daftarnya sama-sama digerbangi `consignment:view`: tanpa izin itu tidak ada tautan. */}
+                      {bolehBukaKonsi ? (
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={k.cycleId ? `/backoffice/konsinyasi/${k.cycleId}` : "/backoffice/konsinyasi"}>
+                            {k.cycleId ? t("konsiTunggu.buka") : t("konsiTunggu.bukaDaftar")}
+                          </Link>
+                        </Button>
+                      ) : null}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -380,6 +442,7 @@ function TombolDicek({
   bulanIniLabel,
   label,
   returMenunggu,
+  tanpaKategori,
 }: {
   storeId: string;
   nama: string;
@@ -388,6 +451,7 @@ function TombolDicek({
   bulanIniLabel: string;
   label: (b: string) => string;
   returMenunggu: number;
+  tanpaKategori: MenungguCekKantor["tanpaKategori"];
 }) {
   const t = useTranslations("komisiSpg");
   const td = dinamis(t);
@@ -400,11 +464,14 @@ function TombolDicek({
       const r = await tandaiLaporanDicekAction({ storeId, periode: bulanJual });
       if (!r.ok) {
         toast.error(td(`err.${r.code}`));
-        if (r.code === "SUDAH_DICEK" || r.code === "SUDAH_DIBAYAR") router.refresh();
+        if (r.code === "SUDAH_DICEK") router.refresh();
         return;
       }
       setBuka(false);
       toast.success(t("dicekBerhasil", { bulan: label(r.bulanBayar) }));
+      // Tidak menolak: potong tanpa kategori komisinya menyusul begitu kategorinya diisi (P69).
+      const sisa = r.tanpaKategori.reduce((n, x) => n + x.potong, 0);
+      if (sisa > 0) toast.warning(t("tanpaKategori.sesudah", { pcs: sisa }));
       router.refresh();
     });
 
@@ -420,6 +487,7 @@ function TombolDicek({
             <AlertDialogDescription>{t("dicekIsi", { total: formatIDR(total), bulanBayar: bulanIniLabel, bulan: label(bulanJual) })}</AlertDialogDescription>
           </AlertDialogHeader>
           {returMenunggu > 0 ? <CatatanRetur n={returMenunggu} /> : null}
+          <CatatanTanpaKategori baris={tanpaKategori} />
           <AlertDialogFooter>
             <AlertDialogCancel disabled={sibuk}>{t("batal")}</AlertDialogCancel>
             <AlertDialogAction
@@ -439,6 +507,23 @@ function TombolDicek({
   );
 }
 
+/** Potong yang terjual tanpa kategori barang (P69): komisinya menyusul begitu kategorinya diisi — tidak menahan apa pun. */
+function CatatanTanpaKategori({ baris }: { baris: { itemId: string; nama: string; potong: number }[] }) {
+  const t = useTranslations("komisiSpg");
+  const pcs = baris.reduce((n, b) => n + b.potong, 0);
+  if (pcs <= 0) return null;
+  return (
+    <div className="rounded-md bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200">
+      <p>{t("tanpaKategori.judul", { pcs })}</p>
+      <ul className="mt-1 list-disc pl-5 text-xs">
+        {baris.map((b) => (
+          <li key={b.itemId}>{t("tanpaKategori.baris", { nama: b.nama, pcs: b.potong })}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function KartuPutus({
   laporan,
   label,
@@ -455,16 +540,17 @@ function KartuPutus({
   const router = useRouter();
   const [sibuk, mulai] = useTransition();
   const [buka, setBuka] = useState(false);
-  const penerima = laporan.baris.filter((b) => b.penerima);
   const bulanLabel = label(laporan.bulanJual);
 
-  // Alasan pertama yang menahan tombol Tetapkan, menurut urutan yang paling menentukan.
+  // Alasan pertama yang menahan tombol Tetapkan, menurut urutan penulisnya (`rencanaTetapkan`):
+  // SPG yang bertugas tanpa penjualan tetap mendapat baris gaji pokok (B19/B20, P63), jadi yang
+  // menahan hanya laporan tanpa peserta gaji dan tanpa penjual (`TANPA_PESERTA`).
   const alasan = !laporan.dicek
     ? t("alasan.belumDicek")
     : laporan.adaDibayar
       ? t("alasan.sudahDibayar")
-      : penerima.length === 0
-        ? t("alasan.tanpaSpg")
+      : laporan.jumlahIkut === 0
+        ? t("err.TANPA_PESERTA")
         : null;
 
   const tetapkan = () =>
@@ -495,7 +581,7 @@ function KartuPutus({
               ? laporan.dicek.oleh
                 ? t("laporan.dicek", { tanggal: laporan.dicek.label, nama: laporan.dicek.oleh })
                 : t("laporan.dicekTanpaNama", { tanggal: laporan.dicek.label })
-              : t("laporan.lama")}
+              : t("laporan.belumDicek")}
           </span>
           <span className="block">{t("tokoRingkas", { pcs: laporan.potongToko, total: formatIDR(laporan.totalToko) })}</span>
         </CardDescription>
@@ -546,11 +632,25 @@ function KartuPutus({
               {laporan.baris.map((b) => {
                 const diganti = b.status === "DITETAPKAN" && b.bayar?.berubah === true && !b.bayar.ditahan;
                 return (
-                  <TableRow key={b.userId} className={cn(!b.penerima && "text-muted-foreground")}>
+                  <TableRow key={b.userId} className={cn(!b.penerima && !b.peserta && "text-muted-foreground")}>
                     <TableCell className="min-w-[10rem] whitespace-normal">
                       <span className="font-medium">{b.nama}</span>
                       {!b.ditugaskan ? <span className="block text-xs text-muted-foreground">{t("bukanSpgToko")}</span> : null}
-                      {!b.penerima ? <span className="block text-xs text-muted-foreground">{t("tidakMenerima")}</span> : null}
+                      {!b.penerima && b.peserta ? <span className="block text-xs text-muted-foreground">{t("gajiSaja")}</span> : null}
+                      {!b.penerima && !b.peserta ? <span className="block text-xs text-muted-foreground">{t("tidakMenerima")}</span> : null}
+                      {b.status !== "DIBAYAR" || b.gaji ? (
+                        <span className="block text-xs text-muted-foreground">
+                          {b.status !== "DIBAYAR" && b.tahan
+                            ? t("gaji.label", { jumlah: "—" })
+                            : t("gaji.label", {
+                                jumlah: formatIDR(
+                                  b.status !== "DIBAYAR" && b.bayar && !b.bayar.ditahan ? b.bayar.gajiPokok : b.resmi ? b.resmi.baseSalary : (b.gaji?.gajiPokok ?? 0),
+                                ),
+                              })}
+                        </span>
+                      ) : null}
+                      <RincianGajiSingkat gaji={b.status !== "DIBAYAR" && b.tahan ? null : (b.bayar?.gaji ?? b.gaji)} />
+                      <CatatanTahan tahan={b.status !== "DIBAYAR" ? b.tahan : null} luarRadius={b.luarRadius} />
                       {b.bebanHilangSisa > 0 && b.status !== "DIBAYAR" ? (
                         <span className="block text-xs text-amber-800 dark:text-amber-300">
                           {t("bebanHilangSisa", { jumlah: formatIDR(b.bebanHilangSisa) })}
@@ -565,7 +665,6 @@ function KartuPutus({
                           <span className={cn(diganti && "text-muted-foreground line-through")}>{formatIDR(b.resmi.commission)}</span>
                           <span className="block text-xs text-muted-foreground">
                             {t("resmiRincianBaru", { pcs: b.resmi.unitsSold })}
-                            {b.resmi.aturanLama ? ` · ${t("resmiAturanLama")}` : ""}
                           </span>
                           {diganti && b.bayar ? (
                             <span className="block max-w-[14rem] whitespace-normal text-xs text-amber-800 dark:text-amber-300">
@@ -639,7 +738,7 @@ function KartuPutus({
           <AlertDialogHeader>
             <AlertDialogTitle>{t("konfirmasiJudul", { toko: laporan.nama, bulan: bulanLabel })}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("konfirmasiIsi", { n: penerima.length, total: formatIDR(laporan.totalToko) })}
+              {t("konfirmasiIsi", { n: laporan.jumlahIkut, total: formatIDR(laporan.totalToko) })}
               {laporan.adaResmi ? ` ${t("konfirmasiUlang")}` : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -798,7 +897,17 @@ function TombolBatalDicek({ storeId, nama, bulanJual, bulanLabel }: { storeId: s
   );
 }
 
-function KartuKonsi({ siklus, label, bolehBayar }: { siklus: KonsiTampil; label: (b: string) => string; bolehBayar: boolean }) {
+function KartuKonsi({
+  siklus,
+  label,
+  bolehBayar,
+  bolehBukaKonsi,
+}: {
+  siklus: KonsiTampil;
+  label: (b: string) => string;
+  bolehBayar: boolean;
+  bolehBukaKonsi: boolean;
+}) {
   const t = useTranslations("komisiSpg");
   const td = dinamis(t);
   const bulanLabel = label(siklus.bulanJual);
@@ -815,11 +924,13 @@ function KartuKonsi({ siklus, label, bolehBayar }: { siklus: KonsiTampil; label:
           <span className="block">{t("konsi.dikunci", { tanggal: siklus.dikunciLabel })}</span>
           <span className="block">{t("konsi.bayarDiSiklus")}</span>
         </CardDescription>
-        <CardAction>
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/backoffice/konsinyasi/${siklus.cycleId}`}>{t("konsiTunggu.buka")}</Link>
-          </Button>
-        </CardAction>
+        {bolehBukaKonsi ? (
+          <CardAction>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/backoffice/konsinyasi/${siklus.cycleId}`}>{t("konsiTunggu.buka")}</Link>
+            </Button>
+          </CardAction>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-3 px-0">
         {siklus.berbeda ? (
@@ -862,9 +973,12 @@ function KartuKonsi({ siklus, label, bolehBayar }: { siklus: KonsiTampil; label:
                     <TableRow key={b.id}>
                       <TableCell className="min-w-[10rem] whitespace-normal">
                         <span className="font-medium">{b.nama}</span>
-                        {!b.bergaji ? <span className="block text-xs text-muted-foreground">{t("konsi.bukanPeserta")}</span> : null}
+                        <CatatanTahan tahan={belum ? b.tahan : null} luarRadius={b.luarRadius} />
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">{formatIDR(b.gajiPokok)}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {belum && b.tahan ? "—" : formatIDR(belum && b.bayar && !b.bayar.ditahan ? b.bayar.gajiPokok : b.gajiPokok)}
+                        <RincianGajiSingkat gaji={belum && b.tahan ? null : (b.bayar?.gaji ?? b.gaji)} />
+                      </TableCell>
                       <TableCell
                         className={cn(
                           "text-right tabular-nums",
@@ -945,15 +1059,15 @@ function KartuKonsi({ siklus, label, bolehBayar }: { siklus: KonsiTampil; label:
 function KartuTunggakan({
   tunggakan,
   ditahan,
-  lama,
   label,
   bolehBayar,
+  bolehBukaKonsi,
 }: {
   tunggakan: TunggakanTampil[];
   ditahan: TunggakanTampil[];
-  lama: TunggakanTampil[];
   label: (b: string) => string;
   bolehBayar: boolean;
+  bolehBukaKonsi: boolean;
 }) {
   const t = useTranslations("komisiSpg");
   const td = dinamis(t);
@@ -974,7 +1088,7 @@ function KartuTunggakan({
             <TableRow key={x.refId}>
               <TableCell className="min-w-[10rem] whitespace-normal font-medium">{x.nama}</TableCell>
               <TableCell className="min-w-[10rem] whitespace-normal">
-                {x.cycleId ? (
+                {x.cycleId && bolehBukaKonsi ? (
                   <Link href={`/backoffice/konsinyasi/${x.cycleId}`} className="underline decoration-muted-foreground/50 underline-offset-2">
                     {x.namaToko}
                   </Link>
@@ -992,6 +1106,7 @@ function KartuTunggakan({
                   {x.ditahan ? (
                     <span className="block max-w-[12rem] whitespace-normal text-right text-xs text-amber-800 dark:text-amber-300">
                       {td(`ditahan.${x.ditahan}`)}
+                      {x.hariTahanLabel.length > 0 ? ` (${x.hariTahanLabel.join(", ")})` : ""}
                     </span>
                   ) : x.bayar ? (
                     x.bayar.ditahan ? (
@@ -1019,9 +1134,9 @@ function KartuTunggakan({
         </CardTitle>
         <CardDescription>{t("tunggakan.isi")}</CardDescription>
       </CardHeader>
-      <CardContent className={tunggakan.length > 0 || ditahan.length > 0 || lama.length > 0 ? "space-y-4 px-0" : undefined}>
+      <CardContent className={tunggakan.length > 0 || ditahan.length > 0 ? "space-y-4 px-0" : undefined}>
         {tunggakan.length === 0 ? (
-          <p className={cn("text-sm text-muted-foreground", (ditahan.length > 0 || lama.length > 0) && "mx-6")}>{t("tunggakan.kosong")}</p>
+          <p className={cn("text-sm text-muted-foreground", ditahan.length > 0 && "mx-6")}>{t("tunggakan.kosong")}</p>
         ) : (
           baris(tunggakan)
         )}
@@ -1032,30 +1147,20 @@ function KartuTunggakan({
             {baris(ditahan)}
           </div>
         ) : null}
-        {lama.length > 0 ? (
-          <div className="space-y-2">
-            <p className="mx-6 text-sm font-medium">{t("tunggakan.lamaJudul")}</p>
-            <p className="mx-6 text-xs text-muted-foreground">{t("tunggakan.lamaIsi")}</p>
-            {baris(lama)}
-          </div>
-        ) : null}
       </CardContent>
     </Card>
   );
 }
 
-/** Koreksi yang menunggu pembayaran berikutnya setiap SPG, dan yang menunggu keputusan pemilik. */
+/** Koreksi yang menunggu pembayaran berikutnya setiap SPG (gaji pokok dan komisi). */
 function KartuKoreksi({
   koreksi,
-  ditahan,
   label,
 }: {
   koreksi: DaftarKomisiKantor["koreksiMenunggu"];
-  ditahan: DaftarKomisiKantor["koreksiDitahan"];
   label: (b: string) => string;
 }) {
   const t = useTranslations("komisiSpg");
-  const td = dinamis(t);
   return (
     <Card>
       <CardHeader>
@@ -1074,6 +1179,7 @@ function KartuKoreksi({
               {k.baris.map((b) => (
                 <li key={b.sumber} className="tabular-nums">
                   {t("koreksiBaris", { bulan: label(b.bulanJual), toko: b.namaToko, jumlah: formatKoreksi(b.selisih) })}
+                  {b.selisihGaji !== 0 ? <span className="text-muted-foreground"> {t("koreksi.bagianGaji", { jumlah: formatKoreksi(b.selisihGaji) })}</span> : null}
                 </li>
               ))}
             </ul>
@@ -1084,31 +1190,40 @@ function KartuKoreksi({
             </p>
           </div>
         ))}
-        {ditahan.length > 0 ? (
-          <div className="space-y-3 rounded-md bg-amber-500/10 px-3 py-2">
-            <p className="text-sm font-medium text-amber-900 dark:text-amber-200">{t("koreksi.ditahanJudul")}</p>
-            {ditahan.map((d) => (
-              <div key={d.userId} className="space-y-0.5 text-sm text-amber-900 dark:text-amber-200">
-                <p className="font-medium">{d.nama}</p>
-                <ul className="space-y-0.5">
-                  {d.baris.map((b) => (
-                    <li key={b.sumber}>
-                      {t("koreksi.ditahanBaris", {
-                        laporan: t("labelLaporan", { bulan: label(b.bulanJual), toko: b.namaToko }),
-                        alasan: td(`ditahan.${b.alasan}`),
-                        jumlah: formatKoreksi(b.selisih),
-                      })}
-                      {b.potongTanpaTarif > 0 ? ` ${t("tanpaTarifCatatan", { pcs: b.potongTanpaTarif })}` : ""}
-                      {b.belumDibayar ? ` ${t("koreksi.belumDibayarDitahan")}` : ""}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+/** Sebab pembayaran tertahan (P60) dan tanda check-in di luar radius (P70). */
+function CatatanTahan({ tahan, luarRadius }: { tahan: { alasan: AlasanTahanBayar; hariLabel: string[] } | null; luarRadius: number }) {
+  const t = useTranslations("komisiSpg");
+  const td = dinamis(t);
+  return (
+    <>
+      {tahan ? (
+        <span className="block max-w-[14rem] whitespace-normal text-xs text-amber-800 dark:text-amber-300">
+          {td(`ditahan.${tahan.alasan}`)}
+          {tahan.hariLabel.length > 0 ? ` (${tahan.hariLabel.join(", ")})` : ""}
+        </span>
+      ) : null}
+      {luarRadius > 0 ? <span className="block text-xs text-amber-800 dark:text-amber-300">{t("luarRadius", { n: luarRadius })}</span> : null}
+    </>
+  );
+}
+
+/** "3.500.000 ÷ 26 hari = 134.615/hari", lalu hari tidak masuk dan masuk di hari libur. */
+function RincianGajiSingkat({ gaji }: { gaji: RincianGaji | null }) {
+  const t = useTranslations("komisiSpg");
+  if (!gaji) return null;
+  const r = ringkasRincianGaji(gaji);
+  return (
+    <span className="block max-w-[14rem] whitespace-normal text-xs text-muted-foreground">
+      {t("gaji.rumus", { bulanan: formatIDR(gaji.gajiBulanan), pembagi: r.pembagi, harian: formatIDR(r.tarifHarian) })}
+      {r.dipotong > 0 ? <span className="block">{t("gaji.tidakMasuk", { n: gaji.hariTidakMasuk, jumlah: formatIDR(r.dipotong) })}</span> : null}
+      {r.tambahan > 0 ? <span className="block">{t("gaji.masukLibur", { n: gaji.hariMasukLibur, jumlah: formatIDR(r.tambahan) })}</span> : null}
+      {gaji.hariDariCatatan > 0 ? <span className="block">{t("gaji.dariCatatan", { n: gaji.hariDariCatatan })}</span> : null}
+    </span>
   );
 }
 
@@ -1167,6 +1282,7 @@ function TombolBayar({
           if (r.code === "SUDAH_DIBAYAR" || r.code === "LAPORAN_BELUM_DICEK" || r.code === "ANGKA_BERUBAH") router.refresh();
           return;
         }
+        if (r.utang > 0) toast.info(t("bayarJadiUtang", { jumlah: formatIDR(r.utang) }));
       } else {
         // Baris gaji & komisi konsinyasi: aksi dan izin yang sama dengan di siklusnya; pesannya dari namespace konsinyasi.
         const r = await bayarKomisiAction(id, catatan.trim() || undefined, bayar.dibayar);
@@ -1196,9 +1312,20 @@ function TombolBayar({
             <AlertDialogDescription>{t("bayarIsi", { jumlah: formatIDR(bayar.dibayar) })}</AlertDialogDescription>
           </AlertDialogHeader>
           <ul className="space-y-1 text-sm">
-            {jenis === "KONSI" ? <li>{t("bayarRincian.gaji", { jumlah: formatIDR(bayar.gajiPokok) })}</li> : null}
+            <li>
+              {t("bayarRincian.gaji", { jumlah: formatIDR(bayar.gajiPokok) })}
+              <RincianGajiSingkat gaji={bayar.gaji} />
+            </li>
             <li>{t("bayarRincian.komisi", { jumlah: formatIDR(bayar.komisiBaru) })}</li>
             {bayar.potonganHilang > 0 ? <li>{t("bayarRincian.potongan", { jumlah: formatIDR(bayar.potonganHilang) })}</li> : null}
+            {bayar.potonganRetur > 0 ? <li>{t("bayarRincian.potonganRetur", { jumlah: formatIDR(bayar.potonganRetur) })}</li> : null}
+            {bayar.potonganUtang > 0 ? <li>{t("bayarRincian.potonganUtang", { jumlah: formatIDR(bayar.potonganUtang) })}</li> : null}
+            {bayar.jumlahKembaliBeban > 0 ? <li>{t("bayarRincian.kembaliBeban", { jumlah: formatIDR(bayar.jumlahKembaliBeban) })}</li> : null}
+            {bayar.dariKomisi > 0 || bayar.dariGaji > 0 ? (
+              <li className="text-xs text-muted-foreground">
+                {t("bayarRincian.dariKantong", { komisi: formatIDR(bayar.dariKomisi), gaji: formatIDR(bayar.dariGaji) })}
+              </li>
+            ) : null}
             {koreksi.map((k, i) => (
               <li key={i}>
                 {k.diterapkan !== 0 ? t("koreksiBaris", { bulan: label(k.bulanJual), toko: k.namaToko, jumlah: formatKoreksi(k.diterapkan) }) : null}
@@ -1217,6 +1344,11 @@ function TombolBayar({
                 jumlah: formatKoreksi(bayar.koreksiDiBarisLain.jumlah),
                 laporan: t("labelLaporan", { bulan: label(bayar.koreksiDiBarisLain.bulanJual), toko: bayar.koreksiDiBarisLain.namaToko }),
               })}
+            </p>
+          ) : null}
+          {bayar.akhir ? (
+            <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+              {bayar.keUtang ? t("bayarAkhirUtang") : t("bayarAkhir")}
             </p>
           ) : null}
           {returMenunggu > 0 ? <CatatanRetur n={returMenunggu} /> : null}

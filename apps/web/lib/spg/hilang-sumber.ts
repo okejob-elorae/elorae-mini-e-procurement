@@ -1,11 +1,11 @@
-import { prisma } from "@elorae/db";
+import { prisma, type AdminNotification, type Prisma } from "@elorae/db";
 import { kalimatKurangPerjalanan } from "./antaran";
 import { muatInfoAntaran } from "./antaran-queries";
 import { kurangDariOpname, kurangDariTerima } from "./hilang";
 import type { JenisKiriman } from "./kiriman";
 import { hitungSelisihTerima } from "./selisih-terima";
 import { bacaAturanHilang } from "./hilang-db";
-import { bukaCatatanHilang, type HasilBukaHilang } from "./hilang-writer";
+import { bukaCatatanHilang, bukaCatatanHilangDalamTx, type HasilBukaHilang } from "./hilang-writer";
 
 /**
  * Pembuka catatan barang hilang dari dokumen sumbernya. Dipanggil SESUDAH
@@ -126,6 +126,52 @@ export async function bukaHilangDariPenerimaan(receiptId: string, userId: string
     idempotencyKey: `penerimaan:${r.id}`,
     keteranganAsal: kalimatKurangPerjalanan(hitungSelisihTerima(r.lines), antaran),
   });
+}
+
+/**
+ * `bukaHilangDariPenerimaan` di dalam transaksi PEMANGGIL — penerimaan toko atas kiriman
+ * gudang lewat pengiriman (nota putus, antaran konsinyasi) membuka catatannya di transaksi
+ * penerimaannya sendiri (R8): yang hilang di perjalanan = dikirim − tiba − ditolak, dinilai
+ * menurut pengaturan barang hilang (P42), dengan pengiriman asalnya dan nilai klaim ekspedisi
+ * yang dihitung penerimanya (nilai jual di nota / surat jalan; null bila bukan ekspedisi).
+ * Kunci `penerimaan:<receiptId>`, sama dengan jalur sesudah-commit sumber lama.
+ */
+export async function bukaHilangDariPenerimaanDalamTx(
+  tx: Prisma.TransactionClient,
+  input: { receiptId: string; userId: string; shipmentId: string | null; claimValueSen: number | null },
+  sesudah: { notif: AdminNotification | null },
+): Promise<HasilSumberHilang> {
+  const r = await tx.storeReceipt.findUnique({
+    where: { id: input.receiptId },
+    select: {
+      id: true,
+      storeId: true,
+      sourceType: true,
+      sourceId: true,
+      sourceDocNo: true,
+      lines: { select: { itemId: true, variantSku: true, productName: true, qtySent: true, qtyReceived: true } },
+    },
+  });
+  if (!r) return { ok: false, kode: "TIDAK_DITEMUKAN" };
+  if (r.sourceType === "MUTASI" || r.sourceType === "MUTASI_KEMBALI") return { ok: false, kode: "SUMBER_MUTASI" };
+  const antaran = await muatInfoAntaran(tx, r.storeId, r.sourceType as JenisKiriman, r.sourceId).catch(() => null);
+  return bukaCatatanHilangDalamTx(
+    tx,
+    {
+      storeId: r.storeId,
+      source: "PENERIMAAN",
+      sourceId: r.id,
+      sourceDocNo: r.sourceDocNo,
+      baris: kurangDariTerima(r.lines),
+      note: null,
+      createdById: input.userId,
+      idempotencyKey: `penerimaan:${r.id}`,
+      keteranganAsal: kalimatKurangPerjalanan(hitungSelisihTerima(r.lines), antaran),
+      shipmentId: input.shipmentId,
+      claimValueSen: input.claimValueSen,
+    },
+    sesudah,
+  );
 }
 
 async function aman(nama: string, id: string, jalan: () => Promise<unknown>): Promise<void> {

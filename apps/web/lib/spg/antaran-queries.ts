@@ -6,8 +6,8 @@ import type { JenisKiriman } from "./kiriman";
  * Pemuat antaran dan pesanan konsinyasi lama. Aturannya di `antaran.ts`.
  *
  * Barang konsinyasi diterima SPG PER ANTARAN (keputusan pemilik 2026-11-01):
- * satu tanda terima per `KonsiTransfer` yang dibuat saat pengiriman selesai
- * (`StoreReceipt.sourceType = "KONSI_TRANSFER"`). Pesanan yang disetujui tidak
+ * satu tanda terima per `KonsiTransfer` yang dibuat saat pengiriman DIBUAT dan
+ * masih di perjalanan (`StoreReceipt.sourceType = "KONSI_TRANSFER"`). Pesanan yang disetujui tidak
  * membuka apa pun untuk diterima — persetujuan hanya mencadangkan stok.
  *
  * PESANAN KONSI LAMA: disetujui dengan aturan lama, saat stok keluar gudang
@@ -98,6 +98,7 @@ const PILIH_PENGIRIMAN = {
   resiNumber: true,
   proofPhotoUrl: true,
   signatureUrl: true,
+  weightKg: true,
   carriedBy: { select: { name: true } },
 } as const;
 
@@ -109,6 +110,7 @@ type BarisPengiriman = {
   resiNumber: string | null;
   proofPhotoUrl: string | null;
   signatureUrl: string | null;
+  weightKg: Prisma.Decimal | number | null;
   carriedBy: { name: string | null } | null;
 };
 
@@ -122,6 +124,7 @@ function bentukPengiriman(s: BarisPengiriman | null): InfoAntaran["pengiriman"] 
     ekspedisi: s.carrierName?.trim() || null,
     resi: s.resiNumber?.trim() || null,
     adaBuktiSerahTerima: Boolean(s.proofPhotoUrl?.trim() || s.signatureUrl?.trim()),
+    beratKg: s.weightKg === null ? null : Number(s.weightKg),
   };
 }
 

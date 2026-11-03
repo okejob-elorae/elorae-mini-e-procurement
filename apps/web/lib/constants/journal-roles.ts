@@ -20,6 +20,10 @@ export const POSTING_ROLES = [
   "ADMIN_FEE_EXPENSE",
   "ROUNDING_EXPENSE",
   "PRODUCTION_SERVICE_COST",
+  // Selisih harga invoice pemasok/jasa (penerimaan barang atau langkah WO) yang DITERIMA, bagian atas barang
+  // yang sudah tidak ada di lokasi stok mana pun (terjual/hilang). Bagian yang masih di Gudang Utama, Gudang
+  // Toko konsinyasi atau van menaikkan nilai stok itu, bukan peran ini (P49).
+  "PURCHASE_PRICE_VARIANCE",
   "KOL_EXPENSE",
   "KOL_PAYABLE",
   "KOL_PREPAID",

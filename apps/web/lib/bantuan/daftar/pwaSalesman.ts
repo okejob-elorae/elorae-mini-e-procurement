@@ -6,8 +6,8 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "pwaSalesman",
     judul: "Katalog toko",
     isi: [
-      "Katalog barang untuk membuat pesanan toko. Isi jumlah di kartu barang (barang bervarian lewat Pilih varian), tekan Tinjau untuk memeriksa keranjang, lalu Kirim; pesanan menunggu persetujuan kantor. Pesanan hanya bisa dibuat saat Anda check-in di toko ini, kecuali pesanan jarak jauh (WhatsApp atau telepon) bila kantor mengizinkannya.",
-      "Di toko putus harga dihitung server dari harga toko, lalu promo, minimum pesan, dan batas kredit toko diterapkan. Bila toko meminta harga lain, tekan Ajukan Harga di layar tinjau dan tulis alasannya — kantor menetapkan harga akhirnya saat menyetujui. Di toko konsinyasi katalog tidak menampilkan harga; tombol Sarankan produk baru menambahkan barang tanpa varian yang belum pernah dikirim ke toko itu dan masih ada stoknya.",
+      "Katalog barang untuk membuat pesanan toko. Barang yang hanya dijual di marketplace tidak tampil. Batas kredit menghitung faktur yang belum lunas ditambah pesanan putus toko ini yang sudah disetujui tetapi belum masuk nota. Isi jumlah di kartu barang (barang bervarian lewat Pilih varian), tekan Tinjau untuk memeriksa keranjang, lalu Kirim; pesanan menunggu persetujuan kantor. Pesanan hanya bisa dibuat saat Anda check-in di toko ini, kecuali pesanan jarak jauh (WhatsApp atau telepon) bila kantor mengizinkannya.",
+      "Di toko putus harga dihitung server dari harga toko, lalu promo, minimum pesan, dan batas kredit toko diterapkan. Bila toko meminta harga lain, tekan Ajukan Harga di layar tinjau dan tulis alasannya — kantor menetapkan harga akhirnya saat menyetujui. Di toko konsinyasi tampil harga retail toko dan perkiraan nilai kiriman; nilai pastinya dihitung kantor saat menyetujui. Tombol Sarankan produk baru menambahkan barang tanpa varian yang belum pernah dikirim ke toko itu dan masih ada stoknya.",
       "Keranjang bisa terisi otomatis dari pesanan terakhir, permintaan SPG, rekomendasi yang diterima toko, atau pesanan yang sedang Anda ubah — periksa dulu sebelum mengirim. Barang yang stoknya habis atau sudah tidak dijual dilewati; di toko putus, barang yang belum punya harga juga tidak dimasukkan (namanya disebut) dan tidak bisa dipesan sampai kantor menetapkan harganya. Tanpa sinyal, pesanan disimpan di HP dan dikirim otomatis saat online.",
       "Jumlah bisa diketik langsung di kotak angka di antara tombol − dan +. Angka di atas stok tersedia diubah menjadi stok itu (di pre-order: batas pesanan); 0 atau kosong mengeluarkan barang dari keranjang. Di lembar varian, tombol +1 pack menambah setiap ukuran menurut rasio pack yang diatur kantor (Pengaturan → Rasio Pack), per warna bila barangnya punya beberapa warna; ukuran yang stoknya kurang diisi sebanyak stok yang ada dan disebut di bawah tombol. Tombol ini tidak muncul bila rasio pack belum diatur atau varian barangnya tidak bertanda ukuran.",
       "Keranjang yang belum terkirim tersimpan di HP ini selama aplikasi tidak ditutup, paling lama sehari sejak terakhir diubah, jadi tidak hilang saat Anda membuka layar lain lalu kembali ke katalog toko yang sama — keranjang dipulihkan dengan stok terbaru (jumlah yang melebihi stok sekarang dikurangi). Keranjang dari permintaan SPG, rekomendasi, atau pesanan yang sedang diubah tidak disimpan. Mengirim ulang keranjang yang sama (misalnya sesudah sinyal putus) tidak pernah membuat pesanan kedua. Keranjang dihapus sesudah pesanan terkirim atau masuk antrean, dan saat Anda keluar akun.",
@@ -174,7 +174,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "pwaPiutang.pageTitle" },
     isi: [
       "Toko yang tagihannya Anda pegang, dengan sisa piutang dan kalimat yang menyebut sebab faktur belum lunas serta langkah berikutnya. Buka toko untuk melihat fakturnya dan mencatat janji bayar; pembayaran yang diterima dilaporkan lewat BKM.",
-      "Yang tampil: faktur di toko yang Anda pegang (termasuk penjualan sales lain di toko itu), faktur penjualan Anda di toko yang belum punya pemegang, dan faktur dalam tugas tagih dari kantor. Faktur baru lunas setelah admin keuangan mencocokkan pembayarannya dengan mutasi rekening.",
+      "Yang tampil: faktur di toko yang Anda pegang (termasuk penjualan sales lain di toko itu), faktur penjualan Anda di toko yang belum punya pemegang, dan faktur dalam tugas tagih dari kantor. Tagihan toko konsinyasi yang Anda pegang ikut tampil dengan nilainya dan bertanda Tagihan konsinyasi; hanya sales pemegang toko yang melihatnya. Faktur baru lunas setelah admin keuangan mencocokkan pembayarannya dengan mutasi rekening.",
     ],
     kartu: [
       {
@@ -189,6 +189,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: "Tagihan toko",
     isi: [
       "Faktur toko ini yang ada di daftar Tagihan Anda: sisa, jatuh tempo, dan kalimat yang menjelaskan keadaan tiap faktur — sudah dilaporkan bayar, tertahan retur, janji bayar lewat, atau siap dikontrabon. Faktur yang sudah lunas tetap tercantum.",
+      "Faktur yang sebagian tertahan retur menyebut bagian yang ditahan dan sebabnya; bila bagian di luar tahanan sudah lewat jatuh tempo, bagian itu yang ditagih.",
       "Tombol Catat janji bayar muncul selama masih ada faktur bersisa yang belum masuk kontrabon berjalan.",
     ],
     kartu: [
@@ -225,7 +226,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "payments.newBody" },
       { kunci: "payments.claimNotSettled" },
-      "Yang bisa dipilih hanya piutang yang Anda tagih, sama dengan daftar Tagihan. Dibuka dari tombol Lapor pelunasan di halaman toko, toko itu langsung terpilih dan fakturnya tampil — kecuali toko itu tidak punya faktur terbuka yang Anda tagih; pilih tokonya sendiri bila belum terpilih. Tanpa sinyal, laporan dan fotonya disimpan di HP dan terkirim sendiri begitu sinyal kembali. Sesudah terkirim, Anda bisa mengirim tanda terima ke toko lewat WhatsApp.",
+      "Yang bisa dipilih hanya piutang yang Anda tagih, sama dengan daftar Tagihan. Tagihan konsinyasi tidak bisa dipotong retur — barang titipan yang kembali tidak pernah ditagih. Dibuka dari tombol Lapor pelunasan di halaman toko, toko itu langsung terpilih dan fakturnya tampil — kecuali toko itu tidak punya faktur terbuka yang Anda tagih; pilih tokonya sendiri bila belum terpilih. Tanpa sinyal, laporan dan fotonya disimpan di HP dan terkirim sendiri begitu sinyal kembali. Sesudah terkirim, Anda bisa mengirim tanda terima ke toko lewat WhatsApp.",
       { kunci: "pesanToko.tandaTerimaPetunjuk" },
     ],
     kartu: [
@@ -457,7 +458,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "pwaPenjualan.subtitle" },
       "Angka bulan berjalan sama dengan kartu \"Bulan ini\" di beranda. Pilih bulan dengan panah atau daftar bulan di atas.",
-      "Konsinyasi dihitung saat barangnya laku di toko yang Anda pegang (dicatat SPG, atau laporan laku bulanan untuk toko tanpa SPG), bukan saat dikirim — dan hanya dalam pcs.",
+      "Konsinyasi dihitung saat barangnya laku di toko yang Anda pegang (dicatat SPG, atau laporan laku bulanan untuk toko tanpa SPG), bukan saat dikirim, dengan nilai Elorae. Angka penjualan, insentif, target, dan peringkat menghitung pengiriman putus, konsinyasi yang laku, dan penjualan van — sama dengan angka kantor.",
     ],
     kartu: [
       {
@@ -551,9 +552,10 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "pwaSalesman",
     judul: { kunci: "pwa.deliveries.detailTitle" },
     isi: [
-      "Diisi di toko saat barang diserahkan: jumlah yang diterima toko di setiap baris (boleh kurang dari rencana, tidak boleh lebih), foto bukti barang, foto nota bertanda tangan (Surat Keluar untuk konsinyasi), dan nama penerima yang menandatanganinya.",
+      "Diisi di toko saat barang diserahkan: foto bukti barang, foto nota bertanda tangan (Surat Keluar untuk konsinyasi), dan nama penerima yang menandatanganinya.",
+      "Di toko yang punya SPG, Anda hanya mencatat jumlah yang Diserahkan per baris — SPG yang menerima dan menghitungnya dari HP-nya (tiba, rusak, atau ditolak). Di toko tanpa SPG, Anda mencatat penerimaan toko itu sendiri per baris: Diterima toko, Retur langsung (ditolak toko), dan Hilang di perjalanan, yang jumlahnya harus sama dengan yang direncanakan.",
       "Lokasi HP wajib, dan Anda harus berada dalam radius toko. Toko yang belum punya titik lokasi tidak bisa diselesaikan di sini — minta admin mengisinya.",
-      "Menyelesaikan pengiriman putus mencatat nota tagihan sebesar jumlah yang diterima toko. Pengiriman konsinyasi memindahkan barangnya ke stok konsinyasi toko tanpa tagihan.",
+      "Nota tagihan putus sudah terbit saat kantor membuat pengirimannya. Barang yang ditolak di pintu toko kembali ke gudang dan notanya dikoreksi sebesar yang ditagih; barang yang hilang di perjalanan dicatat sebagai barang hilang dan ditindaklanjuti kantor. Pengiriman konsinyasi sudah keluar dari gudang saat dibuat dan baru masuk stok titipan toko saat toko menerimanya.",
       "Tanpa sinyal, penyelesaian disimpan di HP dan dikirim otomatis saat online (lihat Pengiriman Tertunda). Pengiriman yang ditugaskan ke salesman lain tidak bisa dibuka.",
     ],
   },
@@ -564,6 +566,15 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Penyelesaian pengiriman yang dicatat tanpa sinyal dan belum sampai ke kantor. Semuanya dikirim otomatis saat HP online; Coba Lagi hanya mempercepatnya.",
       "Penyelesaian yang gagal menyebut alasannya dan bisa dihapus dari HP. Bila pengirimannya ternyata sudah tercatat dengan jumlah lain, salinan di HP selalu ditolak: hapus, lalu selesaikan lagi dari halaman pengirimannya.",
+    ],
+  },
+  {
+    rute: "/pwa/stores/[id]/terima/[jenis]/[docId]",
+    bagian: "pwaSalesman",
+    judul: "Catat penerimaan kiriman di toko",
+    isi: [
+      "Di toko yang SPG-nya sudah berhenti, kiriman yang sudah diserahkan ke toko dicatat sales pemegang saat berkunjung: jumlah tiba per barang, nama penanggung jawab toko, dan satu foto. Yang tidak tiba dicatat sebagai barang hilang.",
+      "Hanya pemegang toko yang bisa membukanya, selama sedang check-in di toko itu dan toko itu tidak punya SPG. Butuh sinyal.",
     ],
   },
   {

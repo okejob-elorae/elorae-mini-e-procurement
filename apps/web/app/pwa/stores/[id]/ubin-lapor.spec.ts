@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 /*
  * Ubin "Lapor pelunasan" dan "Lapor retur" di halaman toko salesman: alamatnya
  * membawa toko ini (`?toko=`) supaya formulirnya langsung memilih toko itu.
- * Pelunasan hanya toko PUTUS (konsinyasi tidak punya piutang); SPG tidak
- * mendapat keduanya. Juga dirender sungguhan: ubinnya benar-benar ada di kartu
+ * Pelunasan: toko PUTUS, dan toko KONSI hanya untuk pemegang tokonya (P31 —
+ * tagihan konsinyasi hanya sampai ke pemegang toko); SPG tidak mendapat keduanya. Juga dirender sungguhan: ubinnya benar-benar ada di kartu
  * Kunjungan berjalan (AksiKunjungan) dan di luar kunjungan (LaporDariToko), dan
  * kartu kehadiran SPG menulis keadaannya. Tanpa basis data.
  */
@@ -38,15 +38,29 @@ describe("ubin lapor dari halaman toko", () => {
     ]);
   });
 
-  it("toko KONSI: hanya retur — konsinyasi tidak pernah punya piutang", () => {
+  it("toko KONSI, bukan pemegang: hanya retur", () => {
     expect(ringkas(ubinLapor({ storeId: "toko-k", termsType: "KONSI", spg: false }))).toEqual([
+      ["laporRetur", "/pwa/retur/baru?toko=toko-k"],
+    ]);
+    expect(ringkas(ubinLapor({ storeId: "toko-k", termsType: "KONSI", spg: false, pemegang: false }))).toEqual([
       ["laporRetur", "/pwa/retur/baru?toko=toko-k"],
     ]);
   });
 
+  it("toko KONSI, pemegang toko: pelunasan dan retur (P31)", () => {
+    expect(ringkas(ubinLapor({ storeId: "toko-k", termsType: "KONSI", spg: false, pemegang: true }))).toEqual([
+      ["laporPelunasan", "/pwa/bkm/baru?toko=toko-k"],
+      ["laporRetur", "/pwa/retur/baru?toko=toko-k"],
+    ]);
+  });
+
+  it("toko PUTUS tidak berubah oleh tanda pemegang", () => {
+    expect(ubinLapor({ storeId: "t", termsType: "PUTUS", spg: false, pemegang: false })).toHaveLength(2);
+  });
+
   it("SPG tidak mendapat ubin lapor", () => {
     expect(ubinLapor({ storeId: "toko-1", termsType: "PUTUS", spg: true })).toEqual([]);
-    expect(ubinLapor({ storeId: "toko-k", termsType: "KONSI", spg: true })).toEqual([]);
+    expect(ubinLapor({ storeId: "toko-k", termsType: "KONSI", spg: true, pemegang: true })).toEqual([]);
   });
 
   it("id toko di-encode di alamat", () => {
@@ -83,6 +97,17 @@ describe("ubin lapor dirender di kartu kunjungan dan di luar kunjungan", () => {
     expect(putus).toEqual(["/pwa/bkm/baru?toko=toko-1", "/pwa/retur/baru?toko=toko-1"]);
     const konsi = tautan(renderToStaticMarkup(createElement(LaporDariToko, { storeId: "toko-1", termsType: "KONSI" })));
     expect(konsi).toEqual(["/pwa/retur/baru?toko=toko-1"]);
+    const konsiPemegang = tautan(
+      renderToStaticMarkup(createElement(LaporDariToko, { storeId: "toko-1", termsType: "KONSI", pemegang: true })),
+    );
+    expect(konsiPemegang).toEqual(["/pwa/bkm/baru?toko=toko-1", "/pwa/retur/baru?toko=toko-1"]);
+  });
+
+  it("kartu Kunjungan berjalan, toko KONSI, pemegang: kedua ubin lapor", () => {
+    const hrefs = tautan(
+      renderToStaticMarkup(createElement(AksiKunjungan, { storeId: "toko-1", termsType: "KONSI", pemegang: true })),
+    );
+    expect(hrefs).toEqual(expect.arrayContaining(["/pwa/bkm/baru?toko=toko-1", "/pwa/retur/baru?toko=toko-1"]));
   });
 });
 

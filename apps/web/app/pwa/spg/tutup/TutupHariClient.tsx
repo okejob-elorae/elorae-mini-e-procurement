@@ -228,9 +228,9 @@ export function TutupHariClient({
               </div>
             ) : null}
           </dl>
-          {/* Laporan barang kembali yang belum disetujui kantor belum mengurangi angka di atas. */}
-          {data.potongReturMenunggu > 0 ? (
-            <p className="mt-1 text-xs opacity-80">{t("returMenunggu", { pcs: data.potongReturMenunggu })}</p>
+          {/* Uang yang dikembalikan kasir hari ini untuk laporan yang belum/tidak disetujui kantor belum mengurangi angka di atas. */}
+          {data.potongUangKembaliBelumBerlaku > 0 ? (
+            <p className="mt-1 text-xs opacity-80">{t("uangKembaliBelumBerlaku", { pcs: data.potongUangKembaliBelumBerlaku })}</p>
           ) : null}
         </section>
 

@@ -14,8 +14,11 @@ import { describe, expect, it } from "vitest";
  *
  * Aturan per pemanggilan baca (`findMany`/`findFirst`/`findUnique`/`groupBy`/
  * `count`/`aggregate`, termasuk varian `OrThrow`): argumennya menyebut
- * `returPembeliBerlaku`, `RETUR_PEMBELI_BERLAKU`, atau `RETUR_PEMBELI_MENUNGGU`
- * (yang sengaja membaca yang menunggu); ATAU ia memilih `status` dan berkasnya
+ * `returPembeliBerlaku`, `RETUR_PEMBELI_BERLAKU`, atau salah satu saringan
+ * bernama yang sengaja membaca yang BELUM berlaku — `RETUR_PEMBELI_MENUNGGU`
+ * (yang menunggu), `RETUR_PEMBELI_UANG_KEMBALI_BELUM_BERLAKU` (penjelas selisih
+ * kasir di tutup hari), `RETUR_PEMBELI_DITAHAN_BEBAN` (potong yang ditahan
+ * beban SPG); ATAU ia memilih `status` dan berkasnya
  * memeriksa `returPembeliSudahBerlaku(...)` di memori (penulis nota retur).
  * Layar yang memang menampilkan SEMUA status ada di `DIIZINKAN`, dengan alasannya.
  *
@@ -36,10 +39,12 @@ const TES = /\.(test|spec)\.(ts|tsx)$/;
 const DIIZINKAN: Record<string, string> = {
   "lib/spg/retur-pembeli.ts": "penulis laporan: kunci kiriman, status, dan riwayat semua laporan per nota",
   "lib/spg/retur-pembeli-queries.ts": "antrean kantor dan daftar laporan SPG — menampilkan setiap status",
+  "app/pwa/api/upload/spg-sale-return-photo/route.ts": "membaca laporannya sendiri untuk mengikat foto bukti; tidak menghitung apa pun",
 };
 
 const BACA = /\.spgSaleReturn(?:Line)?\s*\.\s*(?:findMany|findFirst|findFirstOrThrow|findUnique|findUniqueOrThrow|groupBy|count|aggregate)\s*\(/g;
-const PENANDA = /\breturPembeliBerlaku\b|\bRETUR_PEMBELI_BERLAKU\b|\bRETUR_PEMBELI_MENUNGGU\b/;
+const PENANDA =
+  /\breturPembeliBerlaku\b|\bRETUR_PEMBELI_BERLAKU\b|\bRETUR_PEMBELI_MENUNGGU\b|\bRETUR_PEMBELI_UANG_KEMBALI_BELUM_BERLAKU\b|\bRETUR_PEMBELI_DITAHAN_BEBAN\b/;
 const RELASI_BARIS_NOTA = /\breturnLines\s*:\s*\{/g;
 
 function semuaBerkas(folder: string): string[] {

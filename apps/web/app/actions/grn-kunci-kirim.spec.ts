@@ -115,7 +115,7 @@ async function balapan<A, B>(pertama: () => Promise<A>, kedua: () => Promise<B>)
   }
 }
 
-const { createGRN, simpanGRN } = await import("./grn");
+const { createGRN, simpanGRN, putuskanGrnTanpaPoAction } = await import("./grn");
 const { tutupPurchaseOrder } = await import("@/lib/purchase-orders/tutup");
 
 /** `createGRN` yang diterima → GRN-nya; penolakan penerimaan berkode menggagalkan tes. */
@@ -182,10 +182,22 @@ d("kunci kiriman GRN (test bed only)", () => {
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
   });
 
+  /**
+   * Lonceng `GRN_NO_PO_PENDING` milik GRN uji ini. Metadata dicocokkan di JS — penyaringan jalur JSON
+   * tidak andal di adaptor ini — dan hanya baris yang menyebut GRN uji yang ikut.
+   */
+  async function loncengTanpaPo(grnIds: string[]) {
+    const milik = new Set(grnIds);
+    const semua = await prisma.adminNotification.findMany({ where: { category: "GRN_NO_PO_PENDING" }, select: { id: true, metadata: true } });
+    return semua.filter((n) => milik.has(String((n.metadata as { grnId?: unknown } | null)?.grnId ?? "")));
+  }
+
   afterAll(async () => {
     const grnIds = (
       await prisma.gRN.findMany({ where: { supplierId: seededId(supplierId) }, select: { id: true } })
     ).map((g) => g.id);
+    const lonceng = (await loncengTanpaPo(grnIds)).map((n) => n.id);
+    await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(lonceng) } } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.gRN.deleteMany({ where: { id: { in: seededIds(grnIds) } } });
     await prisma.pOStatusHistory.deleteMany({ where: { poId: { in: seededIds(poIds) } } });
@@ -348,13 +360,32 @@ d("kunci kiriman GRN (test bed only)", () => {
     expect(sesudah).toEqual({ jurnal: 1, push: 1 });
   });
 
-  it("GRN tanpa PO juga dilindungi kunci", async () => {
+  it("GRN tanpa PO juga dilindungi kunci: menunggu konfirmasi admin dengan satu lonceng, lalu dikonfirmasi → stok 6", async () => {
+    const stokUtama = async () =>
+      (await prisma.inventoryValue.findMany({ where: { itemId: seededId(itemId) }, select: { qtyOnHand: true } })).map((s) =>
+        Number(s.qtyOnHand),
+      );
     const kunci = kunciBaru("h");
     const a = await terimaGrn(isian(undefined, 6, kunci));
     const b = await terimaGrn(isian(undefined, 6, kunci));
-    expect(b).toMatchObject({ id: a.id, ulang: true });
-    const stok = await prisma.inventoryValue.findMany({ where: { itemId: seededId(itemId) }, select: { qtyOnHand: true } });
-    expect(stok.map((s) => Number(s.qtyOnHand))).toEqual([6]);
+    expect(a.menungguKonfirmasi).toBe(true);
+    expect(b).toMatchObject({ id: a.id, ulang: true, menungguKonfirmasi: true });
+    // P51a: sebelum dikonfirmasi tidak ada stok, kartu stok, jurnal, atau push stok — dan satu lonceng saja.
+    expect(await stokUtama()).toEqual([]);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: seededId(itemId) } })).toBe(0);
+    expect(sesudah).toEqual({ jurnal: 0, push: 0 });
+    expect(await loncengTanpaPo([a.id])).toHaveLength(1);
+
+    expect(await putuskanGrnTanpaPoAction(a.id, "KONFIRMASI")).toEqual({ ok: true, docNumber: a.docNumber });
+    expect(await stokUtama()).toEqual([6]);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: seededId(itemId) } })).toBe(1);
+    expect(sesudah).toEqual({ jurnal: 1, push: 1 });
+
+    // Konfirmasi kedua tidak memproses lagi; simpan ulang berkunci sama tetap GRN yang sama.
+    expect(await putuskanGrnTanpaPoAction(a.id, "KONFIRMASI")).toEqual({ ok: false, code: "SUDAH_DIPUTUSKAN" });
+    expect(await terimaGrn(isian(undefined, 6, kunci))).toMatchObject({ id: a.id, ulang: true, menungguKonfirmasi: false });
+    expect(await stokUtama()).toEqual([6]);
+    expect(sesudah).toEqual({ jurnal: 1, push: 1 });
   });
 
   it("kunci yang terlalu pendek ditolak validasi, tidak ada yang tercatat", async () => {

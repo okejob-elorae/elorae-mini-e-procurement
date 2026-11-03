@@ -1,5 +1,6 @@
 import { prisma } from "@elorae/db";
 import { formatDisplayDate } from "@/lib/date-only";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { bacaTabelUkuran, pilihTabelUkuran, SATUAN_UKURAN, type SatuanUkuran } from "@/lib/items/size-chart";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { bacaVarian } from "@/lib/salesman/analisa-toko";
@@ -51,9 +52,10 @@ function urutkanFoto<T extends { variantSku: string | null; sortOrder: number; u
 }
 
 /**
- * Daftar barang untuk layar Info produk: barang jadi yang aktif, ditambah
- * barang jadi yang pernah bergerak di buku stok toko ini (barang yang sudah
- * dinonaktifkan di master bisa masih di rak dan masih ditanyakan pembeli).
+ * Daftar barang untuk layar Info produk: barang jadi yang aktif dan dijual offline (bukan
+ * "Marketplace saja", pemilik P3a), ditambah barang jadi yang pernah bergerak di buku stok toko
+ * ini (barang yang sudah dinonaktifkan di master, atau dijadikan Marketplace saja, bisa masih di
+ * rak dan masih ditanyakan pembeli — P73).
  */
 export async function daftarProdukSpg(storeId: string): Promise<ProdukDaftar[]> {
   const [diBuku, syarat] = await Promise.all([
@@ -63,7 +65,7 @@ export async function daftarProdukSpg(storeId: string): Promise<ProdukDaftar[]> 
   const items = await prisma.item.findMany({
     where: {
       type: "FINISHED_GOOD",
-      OR: [{ isActive: true }, ...(diBuku.length ? [{ id: { in: diBuku.map((d) => d.itemId) } }] : [])],
+      OR: [{ isActive: true, ...syaratDijualOffline() }, ...(diBuku.length ? [{ id: { in: diBuku.map((d) => d.itemId) } }] : [])],
     },
     orderBy: { nameId: "asc" },
     select: { id: true, sku: true, nameId: true, sellingPrice: true, variants: true },
