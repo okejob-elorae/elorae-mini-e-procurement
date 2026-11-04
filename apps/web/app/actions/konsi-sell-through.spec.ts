@@ -163,7 +163,8 @@ d("konsi sell-through actions (test bed only)", () => {
       mode: "INVOICE",
       invoiceDate: parseDateOnly(today())!,
       salesmanId: state.salesmanId,
-      expectedTotal: await previewTotal(id),
+      // No expectedTotal: the DRAFT preview total retired with sell-through billing (it now reads
+      // null → 0), so passing it would trip the writer's price-drift check on every legacy invoice.
     });
   }
 

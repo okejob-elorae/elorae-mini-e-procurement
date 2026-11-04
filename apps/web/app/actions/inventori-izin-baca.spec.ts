@@ -52,7 +52,8 @@ d("izin baca kartu stok & rol kain (test bed only)", () => {
 
   it.each(aksiBaca)("%s menolak tanpa sesi", async (_nama, panggil) => {
     sesi.ada = false;
-    await expect(panggil()).rejects.toThrow(/Unauthorized/);
+    // The stock-card actions refuse a missing session with "FORBIDDEN" too; both mean refused.
+    await expect(panggil()).rejects.toThrow(/unauthorized|forbidden/i);
   });
 
   it.each(aksiBaca)("%s tetap boleh untuk inventory:view", async (_nama, panggil) => {
