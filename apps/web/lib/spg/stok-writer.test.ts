@@ -32,6 +32,8 @@ vi.mock("./kiriman", () => ({
 }));
 
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
+/* The shortfall notice reads the store and shipment through `prisma`, which is empty here. */
+vi.mock("./kabar-selisih-terima", () => ({ kabarkanSelisihTerima: vi.fn(async () => ({ penerima: null })) }));
 const kabar = vi.hoisted(() => ({ kirim: [] as { userId: string; jenis: string; judul: string }[] }));
 vi.mock("@/lib/notifications/kabar-pengguna", () => ({
   JENIS_KABAR: { PERMINTAAN_STOK_DIPROSES: "PERMINTAAN_STOK_DIPROSES", MUTASI_DITERIMA: "MUTASI_DITERIMA" },

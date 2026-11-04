@@ -287,8 +287,19 @@ d("GRN ke PO yang ditutup (test bed only)", () => {
       () => tutupPurchaseOrder({ poId, userId, alasan: "balapan GRN duluan" }),
       () => terima(poId, 3),
     );
-    expect(grn.status).toBe("fulfilled");
-    expect(tutup).toMatchObject({ status: "fulfilled", value: { ok: true, qtySisa: 3 } });
-    expect(await keadaan(poId)).toEqual({ status: "CLOSED", ditutupManual: true, diterima: [7], grn: 2, stok: [7] });
+    /*
+     * Either serial order is correct, and the database picks it: PostgreSQL lets the GRN commit
+     * first (the close then retries with sisa 3), while MariaDB's locking read under SERIALIZABLE
+     * keeps the paused close ahead (the GRN is then refused PO_DITUTUP). What may never happen is
+     * a GRN that fails for any other reason, or a state that mixes the two.
+     */
+    if (grn.status === "fulfilled") {
+      expect(tutup).toMatchObject({ status: "fulfilled", value: { ok: true, qtySisa: 3 } });
+      expect(await keadaan(poId)).toEqual({ status: "CLOSED", ditutupManual: true, diterima: [7], grn: 2, stok: [7] });
+    } else {
+      expect((grn as PromiseRejectedResult).reason).toMatchObject({ code: "PO_DITUTUP" });
+      expect(tutup).toMatchObject({ status: "fulfilled", value: { ok: true, qtySisa: 6 } });
+      expect(await keadaan(poId)).toEqual({ status: "CLOSED", ditutupManual: true, diterima: [4], grn: 1, stok: [4] });
+    }
   });
 });

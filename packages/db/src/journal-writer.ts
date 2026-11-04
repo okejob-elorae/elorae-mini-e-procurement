@@ -1,5 +1,5 @@
 import { Prisma, type PrismaClient } from "../generated/prisma/client";
-import { resolvePostingDate, PeriodClosedError, wibDayLabel, type ClosedPeriodMode } from "./period-lock";
+import { ensurePeriodRows, resolvePostingDate, PeriodClosedError, wibDayLabel, wibYearMonth, type ClosedPeriodMode } from "./period-lock";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -177,6 +177,15 @@ export async function postJournal(
    * caller's transaction (REPEATABLE READ) the re-read on that same tx reads the earlier snapshot
    * and will not see the winner, so `existing` is null and the P2002 is rethrown.
    */
+  /*
+   * The posting month's period row is created in its OWN statement first. Inside the transaction a
+   * row another poster inserted after our snapshot stays invisible to Prisma's update (it reads
+   * before it writes), so concurrent first posts in a new month failed with P2025 on MariaDB.
+   * A caller's own transaction is left alone: it must prepare the rows itself.
+   */
+  if (hasTx(client) && !Number.isNaN(input.date.getTime())) {
+    await ensurePeriodRows(client as unknown as Prisma.TransactionClient, [wibYearMonth(input.date)]);
+  }
   try {
     return await (hasTx(client) ? client.$transaction(run) : run(client as Prisma.TransactionClient));
   } catch (e) {

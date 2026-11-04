@@ -240,27 +240,41 @@ d("pembatalan perintah kerja (test bed only)", () => {
   });
 
   describe("balapan keluarkan bahan vs batal", () => {
-    it("keluarkan membaca WO lalu tertahan, batal commit duluan → keluarkan ditolak, WO tetap batal, stok bahan tetap 100", async () => {
+  /*
+   * Either serial order is correct and the database picks it: PostgreSQL lets the second racer
+   * commit first, MariaDB's locking read under SERIALIZABLE keeps the paused first racer ahead.
+   * Each test accepts exactly those two outcomes, with the loser refused by its own code and the
+   * state matching the winner — never a raw database error, never a mixed state.
+   */
+  const menangBatal = { status: "CANCELLED", alasanBatal: "uji balapan", pengeluaran: 0, stokBahan: [100] };
+  const menangKeluar = { status: "IN_PRODUCTION", alasanBatal: null, pengeluaran: 1, stokBahan: [90] };
+    async function periksa(keluar: PromiseSettledResult<unknown>, batal: PromiseSettledResult<unknown>) {
+      if (keluar.status === "fulfilled") {
+        expect(batal).toMatchObject({ status: "fulfilled", value: { ok: false, code: "WO_SUDAH_KELUAR_BAHAN", sisa: [{ qty: 10 }] } });
+        expect(await keadaan(woId)).toEqual(menangKeluar);
+      } else {
+        expect(keluar.reason).toMatchObject({ code: "BAHAN_WO_DIBATALKAN" });
+        expect(batal).toEqual({ status: "fulfilled", value: { ok: true } });
+        expect(await keadaan(woId)).toEqual(menangBatal);
+      }
+    }
+
+    it("keluarkan membaca WO lalu tertahan, batal berjalan → tepat satu menang, yang kalah ditolak dengan kodenya", async () => {
       woId = await buatWo("ISSUED");
       const [keluar, batal] = await balapan(
         () => keluarkan(woId),
         () => cancelWorkOrder(woId, userId, "uji balapan"),
       );
-      expect(batal).toEqual({ status: "fulfilled", value: { ok: true } });
-      expect(keluar.status).toBe("rejected");
-      expect((keluar as PromiseRejectedResult).reason).toMatchObject({ code: "BAHAN_WO_DIBATALKAN" });
-      expect(await keadaan(woId)).toEqual({ status: "CANCELLED", alasanBatal: "uji balapan", pengeluaran: 0, stokBahan: [100] });
+      await periksa(keluar, batal);
     });
 
-    it("batal membaca WO lalu tertahan, keluarkan commit duluan → batal ditolak (WO_SUDAH_KELUAR_BAHAN), stok bahan 90", async () => {
+    it("batal membaca WO lalu tertahan, keluarkan berjalan → tepat satu menang, yang kalah ditolak dengan kodenya", async () => {
       woId = await buatWo("ISSUED");
       const [batal, keluar] = await balapan(
         () => cancelWorkOrder(woId, userId, "uji balapan"),
         () => keluarkan(woId),
       );
-      expect(keluar.status).toBe("fulfilled");
-      expect(batal).toMatchObject({ status: "fulfilled", value: { ok: false, code: "WO_SUDAH_KELUAR_BAHAN", sisa: [{ qty: 10 }] } });
-      expect(await keadaan(woId)).toEqual({ status: "IN_PRODUCTION", alasanBatal: null, pengeluaran: 1, stokBahan: [90] });
+      await periksa(keluar, batal);
     });
   });
 
@@ -271,9 +285,12 @@ d("pembatalan perintah kerja (test bed only)", () => {
         () => cancelWorkOrder(woId, userId, "batal pertama"),
         () => cancelWorkOrder(woId, userId, "batal kedua"),
       );
-      expect(kedua).toEqual({ status: "fulfilled", value: { ok: true } });
-      expect(pertama).toEqual({ status: "fulfilled", value: { ok: false, code: "WO_SUDAH_DIBATALKAN" } });
-      expect(await keadaan(woId)).toEqual({ status: "CANCELLED", alasanBatal: "batal kedua", pengeluaran: 0, stokBahan: [100] });
+      // Either racer may win (see "balapan keluarkan bahan vs batal"); the reason is the winner's.
+      const menang = (kedua as PromiseFulfilledResult<{ ok: boolean }>).value?.ok ? "kedua" : "pertama";
+      const [pemenang, kalah] = menang === "kedua" ? [kedua, pertama] : [pertama, kedua];
+      expect(pemenang).toEqual({ status: "fulfilled", value: { ok: true } });
+      expect(kalah).toEqual({ status: "fulfilled", value: { ok: false, code: "WO_SUDAH_DIBATALKAN" } });
+      expect(await keadaan(woId)).toEqual({ status: "CANCELLED", alasanBatal: `batal ${menang}`, pengeluaran: 0, stokBahan: [100] });
     });
   });
 

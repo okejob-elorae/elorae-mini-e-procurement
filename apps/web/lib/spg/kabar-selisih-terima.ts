@@ -123,7 +123,8 @@ export async function kabarkanSelisihTerima(input: {
   try {
     const [pengirim, toko, antaran] = await Promise.all([
       pengirimKiriman(input.sourceType, input.sourceId, input.storeId),
-      prisma.store.findUnique({ where: { id: input.storeId }, select: { name: true } }),
+      // In a thunk: a synchronous throw here would leave pengirimKiriman's promise unhandled.
+      (async () => prisma.store.findUnique({ where: { id: input.storeId }, select: { name: true } }))(),
       // Rincian tambahan saja: kalau gagal dibaca, kabar kekurangannya tetap terkirim (tanpa kalimat antaran).
       input.selisih.kurang > 0
         ? muatInfoAntaran(prisma, input.storeId, input.sourceType, input.sourceId).catch((err) => {

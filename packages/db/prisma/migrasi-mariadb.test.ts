@@ -61,12 +61,29 @@ function bacaSkema(): { model: Map<string, Model>; enumNilai: Map<string, string
 }
 
 function pecahPernyataan(sql: string): string[] {
-  return sql
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/--[^\n]*/g, "")
-    .split(";")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const bersih = sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  // Split on `;` outside quotes only: a seed's description text may itself contain one.
+  const hasil: string[] = [];
+  let kini = "";
+  let kutip: string | null = null;
+  for (let i = 0; i < bersih.length; i++) {
+    const c = bersih[i];
+    if (kutip) {
+      kini += c;
+      if (c === "\\") kini += bersih[++i] ?? "";
+      else if (c === kutip) kutip = null;
+      continue;
+    }
+    if (c === "'" || c === "\"" || c === "`") kutip = c;
+    if (c === ";") {
+      hasil.push(kini);
+      kini = "";
+      continue;
+    }
+    kini += c;
+  }
+  hasil.push(kini);
+  return hasil.map((x) => x.trim()).filter(Boolean);
 }
 
 // Pisah pada koma tingkat teratas (koma di dalam ENUM(...)/DECIMAL(...) diabaikan).
@@ -151,7 +168,7 @@ function putarMigrasi(): Keadaan {
             indeksDari(t).delete(a[1]);
             continue;
           }
-          if (/^DROP\s+(FOREIGN|PRIMARY)\b/i.test(cl)) continue;
+          if (/^DROP\s+(FOREIGN|PRIMARY|CONSTRAINT)\b/i.test(cl)) continue;
           if ((a = cl.match(/^DROP\s+(?:COLUMN\s+)?(?:IF EXISTS\s+)?`(\w+)`/i))) {
             k.delete(a[1]);
             continue;

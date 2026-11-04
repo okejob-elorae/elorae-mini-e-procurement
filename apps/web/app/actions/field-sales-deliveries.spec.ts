@@ -937,7 +937,8 @@ describe("recordNotaTagihanPrinted", () => {
 
   it("names NOTIFY when the delivery lookup returns null after winning the CAS", async () => {
     mockUpdateMany.mockResolvedValue({ count: 1 });
-    mockFindDelivery.mockResolvedValue(null);
+    // First read is the cancelled-nota guard before the CAS; only the second, after it, misses.
+    mockFindDelivery.mockResolvedValueOnce({ voidedAt: null }).mockResolvedValueOnce(null);
     await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toEqual({ ok: false, failed: ["NOTIFY"] });
     expect(mockAdminNotificationCreate).not.toHaveBeenCalled();
     expect(mockFanOut).not.toHaveBeenCalled();

@@ -46,7 +46,8 @@ d("izin baca kartu stok & rol kain (test bed only)", () => {
 
   it.each(aksiBaca)("%s menolak pengguna tanpa inventory:view", async (_nama, panggil) => {
     sesi.permissions = ["pwa:access", "spg_sales:record"];
-    await expect(panggil()).rejects.toThrow(/Forbidden/);
+    // Case-insensitive: the stock-card actions throw "FORBIDDEN", the others "Forbidden".
+    await expect(panggil()).rejects.toThrow(/forbidden/i);
   });
 
   it.each(aksiBaca)("%s menolak tanpa sesi", async (_nama, panggil) => {

@@ -78,10 +78,11 @@ d("generateDocNumber reset periods", () => {
   });
 
   it("numbers a document issued at 00:30 WIB on the 1st in the new month", async () => {
-    await seedCounter("MONTHLY", 2026, 7, 10);
+    // A year no other spec numbers in: in the real current month another spec may already hold 0001.
+    await seedCounter("MONTHLY", 2031, 7, 10);
 
-    expect(await generateDocNumber("RECEIPT", undefined, new Date("2026-10-31T17:30:00.000Z"))).toBe(
-      "RCPT/2026/11/0001"
+    expect(await generateDocNumber("RECEIPT", undefined, new Date("2031-10-31T17:30:00.000Z"))).toBe(
+      "RCPT/2031/11/0001"
     );
   });
 });
