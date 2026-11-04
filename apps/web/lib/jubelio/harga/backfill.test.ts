@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { prisma, usePostgres } from "@elorae/db";
+import { prisma, usePostgres as pakaiPostgres } from "@elorae/db";
 import { daftarHargaMenunggu } from "./queries";
 import { buatFixtureHarga } from "./test-fixtures";
 
@@ -41,7 +41,7 @@ describe("teks isian awal migrasi konfirmasi harga Jubelio", () => {
 
 const url = process.env.DATABASE_URL ?? "";
 const prod = url.includes(":3307") || url.includes(":3306") || url.includes("api.elorae.cloud");
-const d = prod || usePostgres() ? describe.skip : describe;
+const d = prod || pakaiPostgres() ? describe.skip : describe;
 
 d("isian awal migrasi konfirmasi harga Jubelio (MariaDB, test bed only)", () => {
   const fx = buatFixtureHarga();

@@ -13,7 +13,7 @@ import {
   cancelDeliveryShipment,
 } from "@/lib/delivery/shipment-writer";
 import { listDeliveryShipments, getDeliveryShipment } from "@/lib/delivery/shipment-queries";
-import { mapError, type ShipmentActionReason, type ShipmentActionResult } from "@/lib/delivery/action-errors";
+import { mapError, type ShipmentActionResult } from "@/lib/delivery/action-errors";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";

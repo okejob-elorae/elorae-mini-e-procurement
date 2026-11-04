@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, seededIds } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { periksaAlokasiTerhadapSisa } from "@/lib/purchasing/pembayaran-aturan";
 import { bacaHutangPemasok, petaSisaDokumen } from "@/lib/purchasing/pembayaran-hutang-queries";
@@ -116,7 +116,7 @@ d("Vendor bill writer (test bed only)", () => {
         select: { id: true, metadata: true },
       });
       const milik = bells.filter((n) => billIds.has(String((n.metadata as { billId?: unknown } | null)?.billId ?? ""))).map((n) => seededId(n.id));
-      if (milik.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: milik } } });
+      if (milik.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(milik) } } });
       await prisma.supplierPayableCorrection.deleteMany({ where: { supplierId: { in: suppliers.map(seededId) } } });
       await prisma.vendorBillLine.deleteMany({ where: { bill: { supplierId: { in: suppliers.map(seededId) } } } });
       await prisma.vendorBill.deleteMany({ where: { supplierId: { in: suppliers.map(seededId) } } });

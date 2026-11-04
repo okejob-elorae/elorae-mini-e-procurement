@@ -73,7 +73,7 @@ d("pembayaran utang SPG (test bed only)", () => {
   afterEach(async () => {
     const bayar = await prisma.spgDebtPayment.findMany({ where: { spgUserId: seededId(spg) }, select: { id: true } });
     const ids = seededIds(bayar.map((b) => b.id));
-    await prisma.auditLog.deleteMany({ where: { entityType: ENTITAS_BAYAR_UTANG_SPG, entityId: { in: ids } } });
+    await prisma.auditLog.deleteMany({ where: { entityType: ENTITAS_BAYAR_UTANG_SPG, entityId: { in: seededIds(ids) } } });
     const notif = await prisma.adminNotification.findMany({
       where: { category: { in: [KATEGORI_NOTIF_UTANG_SPG.BAYAR_DIAJUKAN, KATEGORI_NOTIF_UTANG_SPG.BAYAR_DIKEMBALIKAN] } },
       select: { id: true, metadata: true },
@@ -82,7 +82,7 @@ d("pembayaran utang SPG (test bed only)", () => {
       where: { id: { in: seededIds(notif.filter((n) => (n.metadata as Record<string, unknown> | null)?.spgUserId === spg).map((n) => n.id)) } },
     });
     await prisma.spgDebtSettlement.deleteMany({ where: { debtId: { in: seededIds(utang) } } });
-    await prisma.spgDebtPayment.deleteMany({ where: { id: { in: ids } } });
+    await prisma.spgDebtPayment.deleteMany({ where: { id: { in: seededIds(ids) } } });
     await prisma.spgDebt.deleteMany({ where: { id: { in: seededIds(utang) } } });
     utang.length = 0;
   });

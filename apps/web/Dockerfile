@@ -31,8 +31,9 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json tsconfig*.json .
 COPY packages/db ./packages/db
 COPY apps/web ./apps/web
 ENV NEXT_TELEMETRY_DISABLED=1
-# Bump node heap for the Next.js build — default 2GB OOMs on the apps/web bundle.
-ENV NODE_OPTIONS=--max-old-space-size=4096
+# Bump node heap for the Next.js build — default 2GB OOMs on the apps/web bundle, and 4 GB stopped
+# being enough for its type-check once the Max features landed (ci.yml uses the same limit).
+ENV NODE_OPTIONS=--max-old-space-size=8192
 # NEXT_PUBLIC_* are inlined at BUILD time. Passed as build-args from CI (GHA
 # secrets); absent on a bare VPS build → default empty (matches prior behavior).
 ARG NEXT_PUBLIC_FIREBASE_API_KEY
