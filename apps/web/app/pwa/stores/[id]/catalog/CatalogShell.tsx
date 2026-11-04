@@ -698,7 +698,12 @@ export function CatalogShell({
     }
     let alive = true;
     setState("loading");
-    fetch(`/pwa/api/catalog?storeId=${encodeURIComponent(storeId)}`)
+    // Mengubah pesanan: rute katalog diberi tahu pesanan mana, supaya barang yang sudah ada di
+    // pesanan itu tetap tampil walau kini dijadikan "Marketplace saja" (P73, `tetapTampilkan`).
+    fetch(
+      `/pwa/api/catalog?storeId=${encodeURIComponent(storeId)}` +
+        (gantiUbah ? `&ganti=${encodeURIComponent(gantiUbah.id)}` : ""),
+    )
       .then((r) => {
         if (!r.ok) throw new Error(String(r.status));
         return r.json() as Promise<Payload>;

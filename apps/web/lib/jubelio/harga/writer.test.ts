@@ -38,7 +38,7 @@ d("penulis konfirmasi harga Jubelio (test bed only)", () => {
   describe("konfirmasiHargaJubelio", () => {
     it("perubahan harga: harga terkonfirmasi = harga ERP, satu jejak, satu kiriman, bersama", async () => {
       const id = await fx.barang({ terpetakan: true, sellingPrice: 120_000, jubelioConfirmedPrice: 100_000 });
-      const hasil = await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId });
+      const hasil = await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId });
 
       expect(hasil).toMatchObject({ hasil: "DIKONFIRMASI", jenis: "UBAH", outboxId: expect.any(String) });
       expect(await fx.baca(id)).toMatchObject({ harga: 120_000, dikonfirmasi: 120_000, dikonfirmasiOleh: fx.keadaan.userId, diajukanPada: null });
@@ -58,7 +58,7 @@ d("penulis konfirmasi harga Jubelio (test bed only)", () => {
 
     it("harga ERP berubah sejak halaman dibuka → HARGA_BERUBAH, tidak ada yang ditulis", async () => {
       const id = await fx.barang({ terpetakan: true, sellingPrice: 130_000, jubelioConfirmedPrice: 100_000 });
-      const hasil = await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId });
+      const hasil = await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId });
 
       expect(hasil).toEqual({ hasil: "HARGA_BERUBAH" });
       expect((await fx.baca(id)).dikonfirmasi).toBe(100_000);
@@ -68,7 +68,7 @@ d("penulis konfirmasi harga Jubelio (test bed only)", () => {
 
     it("produk baru: pengajuan ditutup, harga terkonfirmasi, kiriman pembuatnya diantrekan", async () => {
       const id = await fx.barang({ sellingPrice: 150_000, jubelioCreateRequestedAt: new Date(), jubelioCreateRequestedById: fx.keadaan.userLainId });
-      const hasil = await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "150000.00", olehUserId: fx.keadaan.userId });
+      const hasil = await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "150000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId });
 
       expect(hasil).toMatchObject({ hasil: "DIKONFIRMASI", jenis: "BARU" });
       expect(await fx.baca(id)).toMatchObject({ dikonfirmasi: 150_000, diajukanPada: null, diajukanOleh: null });
@@ -79,11 +79,11 @@ d("penulis konfirmasi harga Jubelio (test bed only)", () => {
 
     it("produk baru yang kategorinya belum dipetakan → KATEGORI_BELUM_DIPETAKAN (berlaku juga untuk perubahan harga)", async () => {
       const baru = await fx.barang({ kategori: "tidak", jubelioCreateRequestedAt: new Date() });
-      expect(await konfirmasiHargaJubelio({ itemId: baru, hargaErpDiharapkan: "100000.00", olehUserId: fx.keadaan.userId })).toEqual({
+      expect(await konfirmasiHargaJubelio({ itemId: baru, hargaErpDiharapkan: "100000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({
         hasil: "KATEGORI_BELUM_DIPETAKAN",
       });
       const ubah = await fx.barang({ kategori: "kosong", terpetakan: true, sellingPrice: 120_000, jubelioConfirmedPrice: 100_000 });
-      expect(await konfirmasiHargaJubelio({ itemId: ubah, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId })).toEqual({
+      expect(await konfirmasiHargaJubelio({ itemId: ubah, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({
         hasil: "KATEGORI_BELUM_DIPETAKAN",
       });
       expect(await kiriman(baru)).toBe(0);
@@ -95,21 +95,21 @@ d("penulis konfirmasi harga Jubelio (test bed only)", () => {
       ["0", 0, "0.00"],
     ])("harga ERP %s → HARGA_KOSONG", async (_label, harga, token) => {
       const id = await fx.barang({ terpetakan: true, sellingPrice: harga, jubelioConfirmedPrice: 100_000 });
-      expect(await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: token, olehUserId: fx.keadaan.userId })).toEqual({ hasil: "HARGA_KOSONG" });
+      expect(await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: token, berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({ hasil: "HARGA_KOSONG" });
       expect((await fx.baca(id)).dikonfirmasi).toBe(100_000);
       expect(await kiriman(id)).toBe(0);
     });
 
     it("baris yang sudah tidak menunggu → TIDAK_MENUNGGU", async () => {
       const id = await fx.barang({ terpetakan: true, sellingPrice: 100_000, jubelioConfirmedPrice: 100_000 });
-      expect(await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "100000.00", olehUserId: fx.keadaan.userId })).toEqual({
+      expect(await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "100000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({
         hasil: "TIDAK_MENUNGGU",
       });
       const kain = await fx.barang({ type: "FABRIC", terpetakan: true, sellingPrice: 5_000, jubelioConfirmedPrice: 4_000 });
-      expect(await konfirmasiHargaJubelio({ itemId: kain, hargaErpDiharapkan: "5000.00", olehUserId: fx.keadaan.userId })).toEqual({
+      expect(await konfirmasiHargaJubelio({ itemId: kain, hargaErpDiharapkan: "5000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({
         hasil: "BUKAN_BARANG_JADI",
       });
-      expect(await konfirmasiHargaJubelio({ itemId: "tidak-ada", hargaErpDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({
+      expect(await konfirmasiHargaJubelio({ itemId: "tidak-ada", hargaErpDiharapkan: null, berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({
         hasil: "TIDAK_DITEMUKAN",
       });
     });
@@ -118,7 +118,7 @@ d("penulis konfirmasi harga Jubelio (test bed only)", () => {
   describe("kembalikanHargaErp", () => {
     it("harga ERP kembali ke harga Jubelio, tercatat MANUAL_EDIT, beraudit, dan dikirim ulang", async () => {
       const id = await fx.barang({ terpetakan: true, sellingPrice: 120_000, jubelioConfirmedPrice: 100_000 });
-      const hasil = await kembalikanHargaErp({ itemId: id, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId });
+      const hasil = await kembalikanHargaErp({ itemId: id, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId });
 
       expect(hasil).toMatchObject({ hasil: "DIKEMBALIKAN", outboxId: expect.any(String) });
       expect(await fx.baca(id)).toMatchObject({ harga: 100_000, dikonfirmasi: 100_000 });
@@ -132,15 +132,15 @@ d("penulis konfirmasi harga Jubelio (test bed only)", () => {
 
     it("menolak barang tanpa harga Jubelio, harga yang berubah, dan harga yang sudah sama", async () => {
       const tanpa = await fx.barang({ terpetakan: true, sellingPrice: 120_000, jubelioConfirmedPrice: null });
-      expect(await kembalikanHargaErp({ itemId: tanpa, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId })).toEqual({
+      expect(await kembalikanHargaErp({ itemId: tanpa, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({
         hasil: "TIDAK_BISA_DIKEMBALIKAN",
       });
       const berubah = await fx.barang({ terpetakan: true, sellingPrice: 130_000, jubelioConfirmedPrice: 100_000 });
-      expect(await kembalikanHargaErp({ itemId: berubah, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId })).toEqual({
+      expect(await kembalikanHargaErp({ itemId: berubah, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({
         hasil: "HARGA_BERUBAH",
       });
       const sama = await fx.barang({ terpetakan: true, sellingPrice: 100_000, jubelioConfirmedPrice: 100_000 });
-      expect(await kembalikanHargaErp({ itemId: sama, hargaErpDiharapkan: "100000.00", olehUserId: fx.keadaan.userId })).toEqual({
+      expect(await kembalikanHargaErp({ itemId: sama, hargaErpDiharapkan: "100000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({
         hasil: "SUDAH_SAMA",
       });
       for (const id of [tanpa, berubah, sama]) expect(await kiriman(id)).toBe(0);
@@ -156,7 +156,7 @@ d("penulis konfirmasi harga Jubelio (test bed only)", () => {
   describe("balapan", () => {
     it.each([0, 5])("dua konfirmasi baris yang sama (jeda %i ms): tepat satu DIKONFIRMASI, satu jejak, satu kiriman", async (ms) => {
       const id = await fx.barang({ terpetakan: true, sellingPrice: 120_000, jubelioConfirmedPrice: 100_000 });
-      const isi = { itemId: id, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId };
+      const isi = { itemId: id, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId };
       const hasil = await Promise.all([konfirmasiHargaJubelio(isi), jeda(ms).then(() => konfirmasiHargaJubelio(isi))]);
 
       expect(hasil.map((h) => h.hasil).sort()).toEqual(["DIKONFIRMASI", "TIDAK_MENUNGGU"]);
@@ -167,8 +167,8 @@ d("penulis konfirmasi harga Jubelio (test bed only)", () => {
     it.each([0, 5])("konfirmasi lawan kembalikan (jeda %i ms): tepat satu berhasil", async (ms) => {
       const id = await fx.barang({ terpetakan: true, sellingPrice: 120_000, jubelioConfirmedPrice: 100_000 });
       const [konfirmasi, kembalikan] = await Promise.all([
-        konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId }),
-        jeda(ms).then(() => kembalikanHargaErp({ itemId: id, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId })),
+        konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId }),
+        jeda(ms).then(() => kembalikanHargaErp({ itemId: id, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })),
       ]);
 
       const menang = [konfirmasi.hasil === "DIKONFIRMASI", kembalikan.hasil === "DIKEMBALIKAN"].filter(Boolean);
@@ -191,7 +191,7 @@ d("penulis konfirmasi harga Jubelio (test bed only)", () => {
           ),
         );
       const [konfirmasi, ubah] = await Promise.allSettled([
-        konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId }),
+        konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId }),
         jeda(ms).then(ubahHarga),
       ]);
 
@@ -219,20 +219,20 @@ d("penulis konfirmasi harga Jubelio (test bed only)", () => {
 
     it("konfirmasi dan kembalikan mencap waktu keputusan", async () => {
       const ubah = await fx.barang({ terpetakan: true, sellingPrice: 120_000, jubelioConfirmedPrice: 100_000 });
-      await konfirmasiHargaJubelio({ itemId: ubah, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId });
+      await konfirmasiHargaJubelio({ itemId: ubah, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId });
       expect((await fx.baca(ubah)).diputuskanPada).toBeInstanceOf(Date);
 
       const balik = await fx.barang({ terpetakan: true, sellingPrice: 120_000, jubelioConfirmedPrice: 100_000 });
-      await kembalikanHargaErp({ itemId: balik, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId });
+      await kembalikanHargaErp({ itemId: balik, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId });
       expect((await fx.baca(balik)).diputuskanPada).toBeInstanceOf(Date);
     });
 
     it("Toko offline saja: konfirmasi → TIDAK_MENUNGGU, kembalikan → TIDAK_BISA_DIKEMBALIKAN", async () => {
       const id = await fx.barang({ salesChannel: "OFFLINE", terpetakan: true, sellingPrice: 120_000, jubelioConfirmedPrice: 100_000 });
-      expect(await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId })).toEqual({
+      expect(await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({
         hasil: "TIDAK_MENUNGGU",
       });
-      expect(await kembalikanHargaErp({ itemId: id, hargaErpDiharapkan: "120000.00", olehUserId: fx.keadaan.userId })).toEqual({
+      expect(await kembalikanHargaErp({ itemId: id, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({
         hasil: "TIDAK_BISA_DIKEMBALIKAN",
       });
       expect(await kiriman(id)).toBe(0);
@@ -324,6 +324,61 @@ d("penulis konfirmasi harga Jubelio (test bed only)", () => {
       await fx.kiriman(id, terakhir);
       const hasil = await kirimUlangHargaJubelio({ itemId: id, berubahPadaDiharapkan: tadi.toISOString(), olehUserId: fx.keadaan.userId });
       expect(hasil.hasil).toBe("DIKIRIM_ULANG");
+    });
+
+    /*
+     * P75 + R28: menyetujui dan mengembalikan juga menimpa harga di Jubelio, jadi keduanya hanya
+     * berlaku atas bacaan Jubelio yang dilihat orangnya. Bacaan yang berubah sesudah halaman dibuka
+     * ditolak sebelum apa pun ditulis: tanpa cap keputusan, tanpa jejak, tanpa kiriman.
+     */
+    it("konfirmasi: bacaan Jubelio berubah sesudah halaman dibuka → TERBACA_BERUBAH, tidak ada keputusan, jejak atau kiriman", async () => {
+      const id = await fx.barang({
+        terpetakan: true,
+        sellingPrice: 120_000,
+        jubelioConfirmedPrice: 100_000,
+        terbacaPada: tadi,
+        jubelioTertinggi: 130_000,
+        jubelioTerendah: 130_000,
+      });
+      const dilihat = "2026-11-02T23:00:00.000Z";
+      expect(
+        await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: dilihat, olehUserId: fx.keadaan.userId }),
+      ).toEqual({ hasil: "TERBACA_BERUBAH" });
+      expect(await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({
+        hasil: "TERBACA_BERUBAH",
+      });
+
+      expect(await fx.baca(id)).toMatchObject({ dikonfirmasi: 100_000, diputuskanPada: null });
+      expect(await jejak(id, JEJAK_HARGA_JUBELIO.DIKONFIRMASI)).toHaveLength(0);
+      expect(await kiriman(id)).toBe(0);
+
+      // Dengan bacaan yang memang ditampilkan halaman, keputusannya berlaku.
+      const hasil = await konfirmasiHargaJubelio({
+        itemId: id,
+        hargaErpDiharapkan: "120000.00",
+        berubahPadaDiharapkan: tadi.toISOString(),
+        olehUserId: fx.keadaan.userId,
+      });
+      expect(hasil.hasil).toBe("DIKONFIRMASI");
+    });
+
+    it("kembalikan: bacaan Jubelio berubah sesudah halaman dibuka → TERBACA_BERUBAH, harga jual tetap, tanpa riwayat, jejak atau kiriman", async () => {
+      const id = await fx.barang({
+        terpetakan: true,
+        sellingPrice: 120_000,
+        jubelioConfirmedPrice: 100_000,
+        terbacaPada: tadi,
+        jubelioTertinggi: 130_000,
+        jubelioTerendah: 130_000,
+      });
+      expect(await kembalikanHargaErp({ itemId: id, hargaErpDiharapkan: "120000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })).toEqual({
+        hasil: "TERBACA_BERUBAH",
+      });
+
+      expect(await fx.baca(id)).toMatchObject({ harga: 120_000, dikonfirmasi: 100_000, diputuskanPada: null });
+      expect(await prisma.itemPriceChangeLog.count({ where: { itemId: seededId(id) } })).toBe(0);
+      expect(await jejak(id, JEJAK_HARGA_JUBELIO.DIKEMBALIKAN)).toHaveLength(0);
+      expect(await kiriman(id)).toBe(0);
     });
 
     it.each([0, 5])("dua kirim ulang bersamaan (jeda %i ms): tepat satu DIKIRIM_ULANG dan satu kiriman", async (ms) => {

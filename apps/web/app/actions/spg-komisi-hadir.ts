@@ -6,6 +6,7 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { kunciHariWib } from "@/lib/dashboard/tren";
 import { uploadToR2 } from "@/lib/r2";
+import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import type { GalatBaris } from "@/lib/spg/absen-catatan-hadir";
 import { bacaBerkasCatatanHadir, templateCatatanHadir } from "@/lib/spg/absen-catatan-hadir-berkas";
@@ -93,12 +94,12 @@ export async function simpanCatatanHadirAction(form: FormData): Promise<HasilSim
   } catch {
     return { ok: false, code: "INPUT_TIDAK_SAH" };
   }
-  if (!userId || !bulanSahGaji(bulan) || versi === undefined) return { ok: false, code: "INPUT_TIDAK_SAH" };
+  if (!userId || !isSafeR2KeySegment(userId) || !bulanSahGaji(bulan) || versi === undefined) return { ok: false, code: "INPUT_TIDAK_SAH" };
   const isianFoto = form.get("foto");
   const foto = isianFoto instanceof File && isianFoto.size > 0 ? isianFoto : null;
   if (foto && (foto.size > MAKS_FOTO || !JENIS_FOTO[foto.type])) return { ok: false, code: "FOTO_TIDAK_SAH" };
   try {
-    const key = foto ? await unggahBerkas(`spg-catatan-hadir/${userId}/${bulan}/${randomUUID()}.${JENIS_FOTO[foto.type]}`, await foto.arrayBuffer(), foto.type) : null;
+    const key = foto ? await unggahBerkas(buildR2Key("spg-catatan-hadir", [userId, bulan, randomUUID()], JENIS_FOTO[foto.type]), await foto.arrayBuffer(), foto.type) : null;
     const r = await simpanCatatanHadir({ userId, bulan, hari, sumber: "MANUAL", berkasR2Key: key, versi, olehUserId });
     if (!r.ok) return { ok: false, code: r.kode, ...(r.galat ? { galat: r.galat } : {}) };
     segarkan();
@@ -122,7 +123,7 @@ export async function imporCatatanHadirAction(form: FormData): Promise<HasilSimp
   const versiTeks = teks(form.get("versi"));
   const versi = versiTeks === "" ? null : Number(versiTeks);
   const berkas = form.get("berkas");
-  if (!userId || !bulanSahGaji(bulan) || (versi !== null && (!Number.isInteger(versi) || versi < 0))) return { ok: false, code: "INPUT_TIDAK_SAH" };
+  if (!userId || !isSafeR2KeySegment(userId) || !bulanSahGaji(bulan) || (versi !== null && (!Number.isInteger(versi) || versi < 0))) return { ok: false, code: "INPUT_TIDAK_SAH" };
   if (!(berkas instanceof File) || berkas.size === 0 || berkas.size > MAKS_BERKAS || !JENIS_BERKAS.has(berkas.type)) return { ok: false, code: "BERKAS_TIDAK_SAH" };
   try {
     const u = await prisma.user.findUnique({ where: { id: userId }, select: { spgStartedOn: true, spgEndedOn: true } });
@@ -132,7 +133,7 @@ export async function imporCatatanHadirAction(form: FormData): Promise<HasilSimp
     if (!baca.ok) return { ok: false, code: baca.galat[0]?.kode ?? "BERKAS_TIDAK_SAH", galat: baca.galat };
     const csv = /\.csv$/i.test(berkas.name);
     const key = await unggahBerkas(
-      `spg-catatan-hadir/${userId}/${bulan}/${randomUUID()}.${csv ? "csv" : "xlsx"}`,
+      buildR2Key("spg-catatan-hadir", [userId, bulan, randomUUID()], csv ? "csv" : "xlsx"),
       isi,
       csv ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );

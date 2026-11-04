@@ -119,6 +119,27 @@ describe("nilaiIsiUlang — saran isi ulang dari target min/maks", () => {
     expect(r.baris).toHaveLength(1);
     expect(r.baris[0].saranQty).toBe(3);
   });
+
+  it("barang yang tidak dijual offline (Marketplace saja, P3a) tidak pernah disarankan; stok dan tandanya tetap", () => {
+    const r = nilaiIsiUlang({
+      stok: [stok({ itemId: "A", qty: 1 }), stok({ itemId: "B", qty: -1 })],
+      target: [
+        { itemId: "A", variantSku: "", minQty: 2, maxQty: 6 },
+        { itemId: "B", variantSku: "", minQty: 2, maxQty: 6 },
+        { itemId: "C", variantSku: "", minQty: 2, maxQty: 6 },
+      ],
+      tersediaGudang: gudang({ [kunciStok("A", "")]: 2, [kunciStok("B", "")]: 50, [kunciStok("C", "")]: 50 }),
+      tanpaSaran: new Set(["A", "B"]),
+      sekarang: SEKARANG,
+    });
+    const per = new Map(r.baris.map((b) => [b.itemId, b]));
+    expect(per.get("A")).toMatchObject({ qty: 1, saranQty: 0, kurangGudang: false });
+    expect(per.get("A")?.tanda).toContain("HAMPIR_HABIS");
+    expect(per.get("B")).toMatchObject({ qty: -1, saranQty: 0, kurangGudang: false });
+    expect(per.get("B")?.tanda).toContain("MINUS");
+    // Barang lain di toko yang sama tetap disarankan seperti biasa.
+    expect(r.pesanan).toEqual([{ itemId: "C", variantSku: "", qty: 6 }]);
+  });
 });
 
 describe("nilaiIsiUlang — tanda", () => {

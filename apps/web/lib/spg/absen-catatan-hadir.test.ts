@@ -142,6 +142,68 @@ describe("berkas catatan (raw: true)", () => {
     expect(bacaTanggalSel("3-11-2026")).toBe("2026-11-03");
   });
 
+  it("templat yang hanya sebagian diisi: hari tanpa Jadwal, Hadir, dan Catatan dilewati", () => {
+    const r = bacaBerkasCatatanHadir(
+      xlsx([
+        ["Tanggal", "Jadwal", "Hadir", "Catatan"],
+        ["2026-11-03", "KERJA", "YA", ""],
+        ["2026-11-04", "", "", ""],
+        ["2026-11-05", "LIBUR", "TIDAK", ""],
+      ]),
+      MASA,
+      HARI_INI,
+    );
+    expect(r).toEqual({
+      ok: true,
+      hari: [
+        { day: "2026-11-03", kind: "KERJA", present: true, note: null },
+        { day: "2026-11-05", kind: "LIBUR", present: false, note: null },
+      ],
+    });
+    // Hari yang membawa catatan tidak dilewati: tanpa Jadwal tetap ditolak, dengan nomor baris berkasnya.
+    const bercatatan = bacaBerkasCatatanHadir(
+      xlsx([
+        ["Tanggal", "Jadwal", "Hadir", "Catatan"],
+        ["2026-11-03", "KERJA", "YA", ""],
+        ["2026-11-04", "", "", "lupa"],
+        ["2026-11-05", "LIBUR", "TIDAK", ""],
+      ]),
+      MASA,
+      HARI_INI,
+    );
+    expect(bercatatan).toEqual({ ok: false, galat: [{ baris: 3, kode: "JADWAL_TIDAK_SAH" }] });
+    // Hanya Jadwal yang diisi: tetap ditolak (Hadir wajib).
+    expect(bacaBerkasCatatanHadir(xlsx([["Tanggal", "Jadwal", "Hadir", "Catatan"], ["2026-11-04", "KERJA", "", ""]]), MASA, HARI_INI)).toEqual({
+      ok: false,
+      galat: [{ baris: 2, kode: "HADIR_TIDAK_SAH" }],
+    });
+    // Templat yang tidak disentuh sama sekali tidak berisi hari apa pun.
+    expect(bacaBerkasCatatanHadir(templateCatatanHadir({ hariAwal: "2026-11-01", hariAkhir: "2026-11-03" }), MASA, HARI_INI)).toEqual({
+      ok: false,
+      galat: [{ baris: 0, kode: "HARI_TIDAK_SAH" }],
+    });
+  });
+
+  it("templat sebulan dengan tiga hari diisi dan sisanya hanya bertanggal: tiga hari yang masuk", () => {
+    const wb = XLSX.read(new Uint8Array(templateCatatanHadir(MASA)), { type: "array", raw: true });
+    const baris = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: "" });
+    const isi: Record<string, [string, string, string]> = {
+      "2026-11-02": ["KERJA", "YA", ""],
+      "2026-11-03": ["KERJA", "TIDAK", "sakit"],
+      "2026-11-08": ["LIBUR", "TIDAK", ""],
+    };
+    const diisi = baris.map((b, i) => (i > 0 && isi[String(b[0])] ? [b[0], ...isi[String(b[0])]] : b));
+    expect(diisi).toHaveLength(31);
+    expect(bacaBerkasCatatanHadir(xlsx(diisi), MASA, HARI_INI)).toEqual({
+      ok: true,
+      hari: [
+        { day: "2026-11-02", kind: "KERJA", present: true, note: null },
+        { day: "2026-11-03", kind: "KERJA", present: false, note: "sakit" },
+        { day: "2026-11-08", kind: "LIBUR", present: false, note: null },
+      ],
+    });
+  });
+
   it("templat berisi tepat hari masa kerjanya", () => {
     const wb = XLSX.read(new Uint8Array(templateCatatanHadir({ hariAwal: "2026-11-28", hariAkhir: "2026-11-30" })), { type: "array", raw: true });
     const baris = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: "" });

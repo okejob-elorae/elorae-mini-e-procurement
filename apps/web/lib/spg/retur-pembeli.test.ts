@@ -18,8 +18,10 @@ import { barangDisisihkan, returPembeliSaya, rincianReturPembeliKantor } from ".
 import { wibYearMonth } from "@/lib/spg-commission/month";
 import { catatBebanDipotong, catatPengembalianBebanDibayar, ubahBesarBebanSpg } from "./beban-spg-writer";
 import { folderFotoReturPembeli } from "./foto-retur-pembeli-kunci";
+import { urlFotoReturPembeli } from "./foto-retur-pembeli";
 import { JEJAK } from "@/lib/receivables/jejak";
 import { KATEGORI_NOTIF_RETUR_PEMBELI } from "./retur-pembeli-status";
+import { qtyDitahanBebanPerBaris, qtyMenungguPerBaris } from "./retur-pembeli-berlaku";
 
 describe("rapikanBarisReturPembeli", () => {
   it("merges the same sale line + condition and drops zero quantities", () => {
@@ -233,6 +235,11 @@ d("retur pembeli: lapor lalu putuskan (test bed only)", () => {
   const tarik = (returnId: string, alasan = "salah catat", userId = spgId, toko = storeId) => tarikReturPembeli({ returnId, userId, storeId: toko, alasan });
 
   const returnedQty = async (lineId: string) => (await prisma.spgSaleLine.findUniqueOrThrow({ where: { id: seededId(lineId) } })).returnedQty;
+  /** Potong baris nota yang sudah terhitung — kembali + menunggu + ditahan beban, lewat pembaca penulisnya sendiri. */
+  const potongTerhitung = async (lineId: string) => {
+    const [menunggu, ditahan] = await Promise.all([qtyMenungguPerBaris(prisma, [seededId(lineId)]), qtyDitahanBebanPerBaris(prisma, [seededId(lineId)])]);
+    return (await returnedQty(lineId)) + (menunggu.get(lineId) ?? 0) + (ditahan.get(lineId) ?? 0);
+  };
   const bukuRetur = () =>
     prisma.storeStockMovement.findMany({ where: { storeId: seededId(storeId), kind: "RETUR_PEMBELI" }, orderBy: { createdAt: "asc" } });
   const riwayat = async (docNo: string) => {
@@ -674,17 +681,164 @@ d("retur pembeli: lapor lalu putuskan (test bed only)", () => {
     expect([Number(c.computedAmount), Number(c.amount), c.amountReason]).toEqual([bulat2(await hargaPotong(n.lineId)), 12_345, "struk kasir"]);
   });
 
-  it("a refund reaching the server after the rejection is refused (TIDAK_DISETUJUI), even if the phone captured it earlier — no charge is made", async () => {
-    const n = await jual(2);
-    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 1 }], "o1"));
+  it("P13a: a refund captured on the phone BEFORE a no-refund rejection, arriving after it, becomes ONE charge — audited, belled, pieces held", async () => {
+    const n = await jual(3);
+    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 2, condition: "LAYAK" }], "o1"));
     const tangkap = new Date();
     await tunda(20);
     expect((await tolak(id)).ok).toBe(true);
-    expect(await uangKembali(id)).toEqual({ ok: false, alasan: "TIDAK_DISETUJUI" });
-    expect(await uangKembali(id, { waktuTangkap: tangkap })).toEqual({ ok: false, alasan: "TIDAK_DISETUJUI" });
-    expect((await laporan(id)).refundedAt).toBeNull();
+    const ditolak = await laporan(id);
+    expect(tangkap.getTime()).toBeLessThan(ditolak.decidedAt!.getTime());
+    expect(await bebanDari(id)).toBeNull();
+    // Kantor menolak tanpa uang: HP menawarkan pencatatan uangnya (P13) — tidak bisa ditarik lagi.
+    expect((await returPembeliSaya(spgId, storeId)).find((x) => x.id === id)).toMatchObject({ bisaCatatUangKembali: true, bisaDitarik: false });
+
+    expect(await uangKembali(id, { waktuTangkap: tangkap })).toEqual({ ok: true, returnId: id, spgSaleId: n.saleId, ulang: false });
+    const r = await laporan(id);
+    expect([r.status, r.refundedAt?.getTime(), r.refundSlipR2Key]).toEqual(["DITOLAK", tangkap.getTime(), await strukUntuk(id)]);
+    const c = (await bebanDari(id))!;
+    const harga = bulat2(2 * (await hargaPotong(n.lineId)));
+    expect([Number(c.computedAmount), Number(c.amount), c.amountReason, c.status, c.spgUserId, c.createdById]).toEqual([harga, harga, null, "TERBUKA", spgId, spgId]);
+    expect((await jejak(c.id)).map((x) => x.action)).toEqual([JEJAK.BEBAN_SPG_DIBUAT]);
+    const dicatat = (await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN);
+    expect(dicatat).toHaveLength(1);
+    expect(dicatat[0].metadata).toMatchObject({ status: "DITOLAK", luring: true, beban: { chargeId: c.id, jumlah: harga } });
+    expect((await lonceng(id)).map((x) => x.metadata)).toContainEqual(expect.objectContaining({ returnId: id, chargeId: c.id, uangSudahDikembalikan: true }));
+    // Potongnya kini ditahan beban: tidak bisa dilaporkan ulang, dan tampil disisihkan.
+    expect(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 2 }], "o1b")).toEqual({ ok: false, alasan: "MELEBIHI_SISA" });
+    expect((await barangDisisihkan(storeId)).map((b) => [b.qty, b.tanda])).toEqual([[2, "TUNGGU_KEPUTUSAN"]]);
+    expect((await returPembeliSaya(spgId, storeId)).find((x) => x.id === id)).toMatchObject({ uang: "DIBEBANKAN", beban: "TERBUKA", bisaCatatUangKembali: false });
+
+    // Ulangan dari antrean: sudah tercatat, tanpa beban kedua.
+    expect(await uangKembali(id, { waktuTangkap: tangkap })).toMatchObject({ ok: true, ulang: true });
+    expect(await prisma.spgCharge.count({ where: { source: "RETUR_PEMBELI", sourceId: seededId(id) } })).toBe(1);
+    // Ditolak lalu ditarik kembali lewat P82 tetap mungkin: bebannya belum dipotong.
+    expect((await batalkanPenolakanReturPembeli({ returnId: id, olehUserId: kantorB, alasan: "keliru" })).ok).toBe(true);
+  });
+
+  it("P13: a refund made AFTER the rejection is recorded at that time and charged to the SPG", async () => {
+    const n = await jual(2);
+    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 1 }], "o1c"));
+    expect((await tolak(id)).ok).toBe(true);
+    const ditolak = await laporan(id);
+    await tunda(20);
+    expect((await uangKembali(id)).ok).toBe(true);
+    const r = await laporan(id);
+    expect(r.status).toBe("DITOLAK");
+    expect(r.refundedAt!.getTime()).toBeGreaterThan(ditolak.decidedAt!.getTime());
+    expect(await jumlahBeban(id)).toBe(bulat2(await hargaPotong(n.lineId)));
+  });
+
+  it("a rejected report whose released pieces were reported again refuses the refund (POTONG_SUDAH_DILAPORKAN_ULANG), records nothing and bells the office", async () => {
+    const n = await jual(2);
+    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 2 }], "o1d"));
+    expect((await tolak(id)).ok).toBe(true);
+    // Potongnya lepas lagi (P83) dan dilaporkan di laporan baru.
+    idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 2 }], "o1e"));
+    expect((await returPembeliSaya(spgId, storeId)).find((x) => x.id === id)?.bisaCatatUangKembali).toBe(false);
+
+    expect(await uangKembali(id)).toEqual({ ok: false, alasan: "POTONG_SUDAH_DILAPORKAN_ULANG" });
+    const r = await laporan(id);
+    expect([r.status, r.refundedAt, r.refundSlipR2Key]).toEqual(["DITOLAK", null, null]);
     expect(await bebanDari(id)).toBeNull();
     expect((await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN)).toHaveLength(0);
+    expect((await lonceng(id)).map((x) => x.metadata)).toContainEqual(expect.objectContaining({ returnId: id, tidakTercatat: true }));
+    // Foto yang dirujuk lonceng itu terbuka di rincian kantor laporan ini — dan hanya di laporan ini.
+    const url = urlFotoReturPembeli({ storeId, key: await strukUntuk(id) }, "struk");
+    const rincian = (await rincianReturPembeliKantor(id))!;
+    expect([rincian.foto.struk, rincian.strukTidakTercatat.map((s) => s.url)]).toEqual([null, [url]]);
+    const lain = (await prisma.spgSaleReturn.findFirstOrThrow({ where: { idempotencyKey: `${tag}-o1e` }, select: { id: true } })).id;
+    expect((await rincianReturPembeliKantor(lain))!.strukTidakTercatat).toEqual([]);
+  });
+
+  it("P78-marked rejection: a queued slip is only attached — no second charge, refund day stays unknown", async () => {
+    const n = await jual(2);
+    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 1 }], "o1f"));
+    const tangkap = new Date();
+    expect(
+      (await tolakReturPembeli({ returnId: id, olehUserId: kantorA, alasan: "tidak sesuai", uangTernyataDikembalikan: true, alasanUangKembali: "toko melapor" })).ok,
+    ).toBe(true);
+    const c = (await bebanDari(id))!;
+    expect(await uangKembali(id, { waktuTangkap: tangkap })).toEqual({ ok: true, returnId: id, spgSaleId: n.saleId, ulang: false });
+    const r = await laporan(id);
+    expect([r.refundedAt, r.refundSlipR2Key, r.refundMarkedById]).toEqual([null, await strukUntuk(id), kantorA]);
+    expect(await prisma.spgCharge.count({ where: { source: "RETUR_PEMBELI", sourceId: seededId(id) } })).toBe(1);
+    expect((await bebanDari(id))!.amount.toString()).toBe(c.amount.toString());
+    const dicatat = (await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN);
+    expect(dicatat).toHaveLength(1);
+    expect(dicatat[0].metadata).toMatchObject({ status: "DITOLAK", ditandaiKantor: true });
+    // Ulangan: sama → ulang; foto lain → sudah dicatat.
+    expect(await uangKembali(id)).toMatchObject({ ok: true, ulang: true });
+    expect(await uangKembali(id, { key: `${folderFotoReturPembeli(storeId, await kunciLaporan(id))}/struk.png` })).toEqual({ ok: false, alasan: "SUDAH_DICATAT" });
+  });
+
+  it("P78: a queued refund captured BEFORE the SPG withdrew the report reopens it for the office; one captured after stays refused", async () => {
+    const n = await jual(3);
+    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 1 }], "o1g"));
+    const tangkap = new Date();
+    await tunda(20);
+    expect((await tarik(id)).ok).toBe(true);
+    // Ditangkap sesudah ditarik (atau langsung, tanpa jam tangkap): tetap ditolak, tidak ada yang
+    // berubah dan tidak ada beban — tetapi uangnya sudah keluar, jadi setiap penolakan membunyikan
+    // lonceng kantor dengan kunci foto struknya.
+    expect(await uangKembali(id, { waktuTangkap: new Date() })).toEqual({ ok: false, alasan: "TIDAK_DISETUJUI" });
+    expect(await uangKembali(id)).toEqual({ ok: false, alasan: "TIDAK_DISETUJUI" });
+    const ditarik = await laporan(id);
+    expect([ditarik.status, ditarik.refundedAt, ditarik.refundSlipR2Key]).toEqual(["DIBATALKAN", null, null]);
+    expect(await bebanDari(id)).toBeNull();
+    expect((await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN)).toHaveLength(0);
+    const tidakTercatat = (await lonceng(id)).map((x) => x.metadata as Record<string, unknown>).filter((m) => m.tidakTercatat === true);
+    expect(tidakTercatat).toHaveLength(2);
+    for (const m of tidakTercatat) expect(m).toMatchObject({ returnId: id, uangSudahDikembalikan: true, laporanDitarik: true, fotoStrukKey: await strukUntuk(id) });
+    // Foto yang dirujuk lonceng itu terbuka di rincian kantor (sekali per kunci), bukan sebagai struk laporan.
+    const sebelum = (await rincianReturPembeliKantor(id))!;
+    expect(sebelum.foto.struk).toBeNull();
+    expect(sebelum.strukTidakTercatat.map((s) => s.url)).toEqual([urlFotoReturPembeli({ storeId, key: await strukUntuk(id) }, "struk")]);
+
+    expect(await uangKembali(id, { waktuTangkap: tangkap })).toEqual({ ok: true, returnId: id, spgSaleId: n.saleId, ulang: false });
+    const r = await laporan(id);
+    expect([r.status, r.decidedById, r.decidedAt, r.rejectReason, r.refundedAt?.getTime()]).toEqual(["MENUNGGU", null, null, null, tangkap.getTime()]);
+    // Dua jejak di transaksi yang sama: uangnya dicatat, dan penarikannya dibatalkan — masing-masing dengan namanya.
+    const semua = await jejak(id);
+    const dicatat = semua.filter((x) => x.action === JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN);
+    expect(dicatat).toHaveLength(1);
+    expect(dicatat[0].changes).toEqual({
+      before: { refundedAt: null, refundSlipR2Key: null },
+      after: { refundedAt: tangkap.toISOString(), refundSlipR2Key: await strukUntuk(id) },
+    });
+    expect(dicatat[0].metadata).toMatchObject({ status: "DIBATALKAN", luring: true });
+    expect(dicatat[0].metadata).not.toHaveProperty("penarikanDibatalkan");
+    const batalTarik = semua.filter((x) => x.action === JEJAK.RETUR_PEMBELI_PENARIKAN_DIBATALKAN);
+    expect(batalTarik).toHaveLength(1);
+    expect(batalTarik[0].changes).toEqual({
+      before: { status: "DIBATALKAN", decidedById: spgId, decidedAt: ditarik.decidedAt!.toISOString(), rejectReason: "salah catat" },
+      after: { status: "MENUNGGU", decidedById: null, decidedAt: null, rejectReason: null },
+    });
+    expect(batalTarik[0].metadata).toEqual({ spgSaleId: n.saleId, docNo: n.docNo, storeId, luring: true });
+    expect((await rincianReturPembeliKantor(id))!.jejak.map((j) => j.action)).toContain(JEJAK.RETUR_PEMBELI_PENARIKAN_DIBATALKAN);
+    // Kunci yang sama kini struk laporannya sendiri — tidak lagi ditampilkan sebagai "tidak tercatat".
+    const sesudah = (await rincianReturPembeliKantor(id))!;
+    expect(sesudah.foto.struk).toBe(urlFotoReturPembeli({ storeId, key: await strukUntuk(id) }, "struk"));
+    expect(sesudah.strukTidakTercatat).toEqual([]);
+    expect((await lonceng(id)).map((x) => x.metadata)).toContainEqual(expect.objectContaining({ returnId: id, uangSudahDikembalikan: true }));
+    // Kantor yang memutuskan: SPG tidak bisa menarik lagi; menolaknya membuat beban.
+    expect(await tarik(id)).toEqual({ ok: false, alasan: "UANG_SUDAH_DIKEMBALIKAN" });
+    expect((await tolak(id)).ok).toBe(true);
+    expect(await jumlahBeban(id)).toBe(bulat2(await hargaPotong(n.lineId)));
+  });
+
+  it("a withdrawn report whose released pieces were reported again refuses the queued refund and bells the office", async () => {
+    const n = await jual(1);
+    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 1 }], "o1h"));
+    const tangkap = new Date();
+    await tunda(20);
+    expect((await tarik(id)).ok).toBe(true);
+    idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 1 }], "o1i"));
+    expect(await uangKembali(id, { waktuTangkap: tangkap })).toEqual({ ok: false, alasan: "POTONG_SUDAH_DILAPORKAN_ULANG" });
+    expect((await laporan(id)).status).toBe("DIBATALKAN");
+    expect((await lonceng(id)).map((x) => x.metadata)).toContainEqual(
+      expect.objectContaining({ returnId: id, tidakTercatat: true, laporanDitarik: true, fotoStrukKey: await strukUntuk(id) }),
+    );
   });
 
   it("a refund recorded while waiting, whose answer was lost, still replays ok after the rejection", async () => {
@@ -835,15 +989,129 @@ d("retur pembeli: lapor lalu putuskan (test bed only)", () => {
     expect((await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN)).toHaveLength(1);
   });
 
-  it("race: refund step vs rejection of a waiting report — a charge exists iff the refund committed first", async () => {
+  it("race: refund step vs rejection of a waiting report — in either order it ends rejected, refunded, with exactly one charge", async () => {
     const n = await jual(2);
     const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 1 }], "r2"));
     const [u, t] = await Promise.all([uangKembali(id), tunda(5).then(() => tolak(id, "dobel", kantorB))]);
-    expect(t.ok).toBe(true);
+    expect([u.ok, t.ok]).toEqual([true, true]);
     const r = await laporan(id);
-    const c = await bebanDari(id);
-    if (u.ok && r.refundedAt !== null) expect(c).not.toBeNull();
-    else expect(c).toBeNull();
+    expect(r.status).toBe("DITOLAK");
+    expect(r.refundedAt).not.toBeNull();
+    expect(await prisma.spgCharge.count({ where: { source: "RETUR_PEMBELI", sourceId: seededId(id) } })).toBe(1);
+    expect((await jejak((await bebanDari(id))!.id)).filter((x) => x.action === JEJAK.BEBAN_SPG_DIBUAT)).toHaveLength(1);
+    expect((await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN)).toHaveLength(1);
+  });
+
+  it("race: two queued refunds of a no-refund rejection — one records and charges, the other replays", async () => {
+    const n = await jual(2);
+    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 1 }], "r2b"));
+    expect((await tolak(id)).ok).toBe(true);
+    const [a, b] = await Promise.all([uangKembali(id), tunda(5).then(() => uangKembali(id))]);
+    expect([a.ok, b.ok]).toEqual([true, true]);
+    expect([a, b].filter((x) => x.ok && x.ulang)).toHaveLength(1);
+    expect(await prisma.spgCharge.count({ where: { source: "RETUR_PEMBELI", sourceId: seededId(id) } })).toBe(1);
+    expect((await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN)).toHaveLength(1);
+  });
+
+  it("race: refund step on a no-refund rejection vs the SPG reporting the same released pieces again — exactly one holds them, never both", async () => {
+    const n = await jual(2);
+    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 2 }], "r2e"));
+    expect((await tolak(id)).ok).toBe(true);
+    expect(await potongTerhitung(n.lineId)).toBe(0);
+    // Pelaporan ulang lebih pendek: mulainya digeser supaya kedua urutan benar-benar terjadi.
+    const [u, l] = await Promise.all([uangKembali(id), tunda(5).then(() => lapor(n.saleId, [{ saleLineId: n.lineId, qty: 2 }], "r2f"))]);
+    expect([u.ok, l.ok].filter(Boolean)).toHaveLength(1);
+    const r = await laporan(id);
+    const dicatat = (await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN);
+    if (u.ok) {
+      expect(l).toEqual({ ok: false, alasan: "MELEBIHI_SISA" });
+      expect([r.status, r.refundedAt !== null, r.refundSlipR2Key]).toEqual(["DITOLAK", true, await strukUntuk(id)]);
+      const c = (await bebanDari(id))!;
+      expect(await prisma.spgCharge.count({ where: { source: "RETUR_PEMBELI", sourceId: seededId(id) } })).toBe(1);
+      expect((await jejak(c.id)).filter((x) => x.action === JEJAK.BEBAN_SPG_DIBUAT)).toHaveLength(1);
+      expect(dicatat).toHaveLength(1);
+      expect((await lonceng(id)).map((x) => x.metadata)).toContainEqual(expect.objectContaining({ returnId: id, chargeId: c.id }));
+    } else {
+      expect(u).toEqual({ ok: false, alasan: "POTONG_SUDAH_DILAPORKAN_ULANG" });
+      expect([r.status, r.refundedAt, r.refundSlipR2Key]).toEqual(["DITOLAK", null, null]);
+      expect(await bebanDari(id)).toBeNull();
+      expect(dicatat).toHaveLength(0);
+      expect((await lonceng(id)).filter((x) => (x.metadata as Record<string, unknown>).tidakTercatat === true)).toHaveLength(1);
+      if (l.ok) expect((await laporan(l.returnId)).status).toBe("MENUNGGU");
+    }
+    // Potongnya terhitung sekali: ditahan beban laporan lama ATAU menunggu di laporan baru, tidak keduanya.
+    expect(await potongTerhitung(n.lineId)).toBe(2);
+  });
+
+  it("race: a queued refund captured BEFORE the withdrawal vs the SPG reporting the same released pieces again — exactly one holds them, never both", async () => {
+    const n = await jual(2);
+    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 2 }], "r2g"));
+    const key = await strukUntuk(id);
+    const tangkap = new Date();
+    await tunda(20);
+    expect((await tarik(id)).ok).toBe(true);
+    expect(await potongTerhitung(n.lineId)).toBe(0);
+    const [u, l] = await Promise.all([
+      uangKembali(id, { key, waktuTangkap: tangkap }),
+      tunda(5).then(() => lapor(n.saleId, [{ saleLineId: n.lineId, qty: 2 }], "r2h")),
+    ]);
+    expect([u.ok, l.ok].filter(Boolean)).toHaveLength(1);
+    const r = await laporan(id);
+    const dicatat = (await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN);
+    if (u.ok) {
+      // Penarikannya batal (P78): laporan lama menunggu kantor lagi, pelaporan ulang tidak muat.
+      expect(l).toEqual({ ok: false, alasan: "MELEBIHI_SISA" });
+      expect([r.status, r.decidedAt, r.refundSlipR2Key, r.refundedAt?.getTime()]).toEqual(["MENUNGGU", null, key, tangkap.getTime()]);
+      expect(dicatat).toHaveLength(1);
+      expect((await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_PENARIKAN_DIBATALKAN)).toHaveLength(1);
+    } else {
+      expect(u).toEqual({ ok: false, alasan: "POTONG_SUDAH_DILAPORKAN_ULANG" });
+      expect([r.status, r.refundedAt, r.refundSlipR2Key]).toEqual(["DIBATALKAN", null, null]);
+      expect(dicatat).toHaveLength(0);
+      const tidakTercatat = (await lonceng(id)).map((x) => x.metadata as Record<string, unknown>).filter((m) => m.tidakTercatat === true);
+      expect(tidakTercatat).toHaveLength(1);
+      expect(tidakTercatat[0]).toMatchObject({ laporanDitarik: true, fotoStrukKey: key });
+      if (l.ok) expect((await laporan(l.returnId)).status).toBe("MENUNGGU");
+    }
+    expect(await bebanDari(id)).toBeNull();
+    expect(await potongTerhitung(n.lineId)).toBe(2);
+  });
+
+  it("race: two queued slips of a P78-marked rejection — one attaches, the other replays; one audit row, still one charge", async () => {
+    const n = await jual(2);
+    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 1 }], "r2c"));
+    const tangkap = new Date();
+    expect(
+      (await tolakReturPembeli({ returnId: id, olehUserId: kantorA, alasan: "tidak sesuai", uangTernyataDikembalikan: true, alasanUangKembali: "toko melapor" })).ok,
+    ).toBe(true);
+    const c = (await bebanDari(id))!;
+    const key = await strukUntuk(id);
+    const [a, b] = await Promise.all([uangKembali(id, { key, waktuTangkap: tangkap }), tunda(5).then(() => uangKembali(id, { key, waktuTangkap: tangkap }))]);
+    expect([a.ok, b.ok]).toEqual([true, true]);
+    expect([a, b].filter((x) => x.ok && x.ulang)).toHaveLength(1);
+    const r = await laporan(id);
+    expect([r.status, r.refundedAt, r.refundSlipR2Key, r.refundMarkedById]).toEqual(["DITOLAK", null, key, kantorA]);
+    expect(await prisma.spgCharge.count({ where: { source: "RETUR_PEMBELI", sourceId: seededId(id) } })).toBe(1);
+    expect((await bebanDari(id))!.amount.toString()).toBe(c.amount.toString());
+    const dicatat = (await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN);
+    expect(dicatat).toHaveLength(1);
+    expect(dicatat[0].metadata).toMatchObject({ ditandaiKantor: true });
+  });
+
+  it("race: two DIFFERENT queued slips of a P78-marked rejection — exactly one is attached, the other is SUDAH_DICATAT", async () => {
+    const n = await jual(2);
+    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 1 }], "r2d"));
+    expect(
+      (await tolakReturPembeli({ returnId: id, olehUserId: kantorA, alasan: "tidak sesuai", uangTernyataDikembalikan: true, alasanUangKembali: "toko melapor" })).ok,
+    ).toBe(true);
+    const jpg = await strukUntuk(id);
+    const png = `${folderFotoReturPembeli(storeId, await kunciLaporan(id))}/struk.png`;
+    const [a, b] = await Promise.all([uangKembali(id, { key: jpg }), tunda(5).then(() => uangKembali(id, { key: png }))]);
+    expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
+    expect(a.ok ? b : a).toEqual({ ok: false, alasan: "SUDAH_DICATAT" });
+    expect((await laporan(id)).refundSlipR2Key).toBe(a.ok ? jpg : png);
+    expect((await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN)).toHaveLength(1);
+    expect(await prisma.spgCharge.count({ where: { source: "RETUR_PEMBELI", sourceId: seededId(id) } })).toBe(1);
   });
 
   it("race: approve vs reject of an early-refunded report — exactly one wins; a charge exists iff the rejection won", async () => {
@@ -876,6 +1144,27 @@ d("retur pembeli: lapor lalu putuskan (test bed only)", () => {
     }
   });
 
+  it("race: two P82 reversals of the same rejection — exactly one wins; the approval effects, the cancellation and their audit rows are written once", async () => {
+    const n = await jual(2);
+    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 1, condition: "LAYAK" }], "r9", spgId, storeId, { uangSudah: true }));
+    expect((await tolak(id)).ok).toBe(true);
+    const chargeId = (await bebanDari(id))!.id;
+    const [a, b] = await Promise.all([
+      batalkanPenolakanReturPembeli({ returnId: id, olehUserId: kantorA, alasan: "keliru" }),
+      tunda(5).then(() => batalkanPenolakanReturPembeli({ returnId: id, olehUserId: kantorB, alasan: "keliru juga" })),
+    ]);
+    expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
+    expect(a.ok ? b : a).toEqual({ ok: false, alasan: "BUKAN_DITOLAK" });
+    expect((await laporan(id)).status).toBe("DISETUJUI");
+    expect(await returnedQty(n.lineId)).toBe(1);
+    expect((await bukuRetur()).filter((x) => x.refId === id).map((x) => x.qty)).toEqual([1]);
+    expect(await riwayat(n.docNo)).toEqual([2, 1, 1]);
+    expect((await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_PENOLAKAN_DIBATALKAN)).toHaveLength(1);
+    const c = (await bebanDari(id))!;
+    expect(c.status).toBe("BATAL");
+    expect((await jejak(chargeId)).filter((x) => x.action === JEJAK.BEBAN_SPG_DIBATALKAN)).toHaveLength(1);
+  });
+
   it("race: two goods decisions — one wins", async () => {
     const n = await jual(2);
     const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 1 }], "r5", spgId, storeId, { uangSudah: true }));
@@ -887,6 +1176,23 @@ d("retur pembeli: lapor lalu putuskan (test bed only)", () => {
     ]);
     expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
     expect((await jejak((await bebanDari(id))!.id)).filter((x) => x.action === JEJAK.BEBAN_SPG_BARANG_DIPUTUSKAN)).toHaveLength(1);
+  });
+
+  it("race: withdrawal vs a QUEUED refund captured before it — in either order the report ends waiting with the refund recorded", async () => {
+    const n = await jual(2);
+    const id = idDari(await lapor(n.saleId, [{ saleLineId: n.lineId, qty: 1 }], "r6b"));
+    const key = await strukUntuk(id);
+    const tangkap = new Date();
+    await tunda(10);
+    const [u, w] = await Promise.all([uangKembali(id, { key, waktuTangkap: tangkap }), tunda(5).then(() => tarik(id))]);
+    expect(u.ok).toBe(true);
+    const r = await laporan(id);
+    expect([r.status, r.refundSlipR2Key, r.refundedAt?.getTime()]).toEqual(["MENUNGGU", key, tangkap.getTime()]);
+    if (!w.ok) expect(w).toEqual({ ok: false, alasan: "UANG_SUDAH_DIKEMBALIKAN" });
+    expect((await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN)).toHaveLength(1);
+    // Penarikan yang sempat menang dibatalkan dengan jejaknya sendiri; yang ditolak tidak meninggalkan apa-apa.
+    expect((await jejak(id)).filter((x) => x.action === JEJAK.RETUR_PEMBELI_PENARIKAN_DIBATALKAN)).toHaveLength(w.ok ? 1 : 0);
+    expect(await bebanDari(id)).toBeNull();
   });
 
   it("race: withdrawal vs the refund step on a waiting report — one wins; a refunded report never ends withdrawn", async () => {
@@ -906,6 +1212,8 @@ d("retur pembeli: lapor lalu putuskan (test bed only)", () => {
       expect([r.status, r.refundedAt]).toEqual(["DIBATALKAN", null]);
       expect(u).toEqual({ ok: false, alasan: "TIDAK_DISETUJUI" });
       expect(aksi).not.toContain(JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN);
+      // Uangnya sudah keluar: kantor tetap diberi tahu, sekali.
+      expect((await lonceng(id)).filter((x) => (x.metadata as Record<string, unknown>).tidakTercatat === true)).toHaveLength(1);
     }
   });
 

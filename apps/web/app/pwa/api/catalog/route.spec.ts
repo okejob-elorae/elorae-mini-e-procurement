@@ -5,7 +5,7 @@ vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/catalog/queries", () => ({ listCatalogForPwa: vi.fn() }));
 vi.mock("@/lib/pwa/peran", () => ({ ambilTokoTetap: vi.fn(), spgBerhentiPada: vi.fn() }));
 vi.mock("@/lib/salesman/queries", () => ({ tokoTerkunci: vi.fn() }));
-vi.mock("@elorae/db", () => ({ prisma: { store: { findUnique: vi.fn() } } }));
+vi.mock("@elorae/db", () => ({ prisma: { store: { findUnique: vi.fn() }, fieldSalesOrder: { findFirst: vi.fn() } } }));
 
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
@@ -20,6 +20,7 @@ const mockTokoTetap = ambilTokoTetap as unknown as ReturnType<typeof vi.fn>;
 const mockBerhenti = spgBerhentiPada as unknown as ReturnType<typeof vi.fn>;
 const mockTerkunci = tokoTerkunci as unknown as ReturnType<typeof vi.fn>;
 const mockToko = prisma.store.findUnique as unknown as ReturnType<typeof vi.fn>;
+const mockPesanan = prisma.fieldSalesOrder.findFirst as unknown as ReturnType<typeof vi.fn>;
 const minta = (q: string) => new NextRequest(`http://localhost/pwa/api/catalog${q}`);
 
 beforeEach(() => {
@@ -28,6 +29,7 @@ beforeEach(() => {
   mockBerhenti.mockResolvedValue(null);
   mockTerkunci.mockResolvedValue(false);
   mockToko.mockResolvedValue({ salesmanId: "u1" });
+  mockPesanan.mockResolvedValue(null);
 });
 
 describe("GET /pwa/api/catalog", () => {
@@ -108,6 +110,36 @@ describe("GET /pwa/api/catalog", () => {
     mockToko.mockResolvedValue(null);
     expect((await GET(minta("?storeId=hilang"))).status).toBe(404);
     expect(mockList).not.toHaveBeenCalled();
+  });
+
+  it("Ubah pesanan: barang pesanan PENDING milik salesman sendiri di toko ini tetap tampil (P73)", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["pwa:access"] } });
+    mockPesanan.mockResolvedValue({ lines: [{ itemId: "i1" }, { itemId: "i2" }, { itemId: "i1" }] });
+    mockList.mockResolvedValue({ store: { id: "s1", termsType: "PUTUS", markupPercent: null, priceDiscountPercent: null }, items: [] });
+    expect((await GET(minta("?storeId=s1&ganti=o1"))).status).toBe(200);
+    // Daftarnya dari server, dibatasi pesanan PENDING milik pemanggil di toko yang sama.
+    expect(mockPesanan).toHaveBeenCalledWith({
+      where: { id: "o1", storeId: "s1", salesmanId: "u1", status: "PENDING_APPROVAL" },
+      select: { lines: { select: { itemId: true } } },
+    });
+    expect(mockList).toHaveBeenCalledWith("s1", { stokRak: true, hargaKonsi: true, tetapTampilkan: ["i1", "i2"] });
+  });
+
+  it("Ubah pesanan dengan id pesanan orang lain, toko lain, atau yang sudah diputuskan tidak membuka barang apa pun", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["pwa:access"] } });
+    mockPesanan.mockResolvedValue(null);
+    mockList.mockResolvedValue({ store: { id: "s1", termsType: "PUTUS", markupPercent: null, priceDiscountPercent: null }, items: [] });
+    expect((await GET(minta("?storeId=s1&ganti=bukan-milik"))).status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith("s1", { stokRak: true, hargaKonsi: true });
+  });
+
+  it("SPG tidak pernah membawa daftar pesanan salesman, walau mengirim ?ganti", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "spg1", permissions: ["pwa:access"] } });
+    mockTokoTetap.mockResolvedValue("toko-spg");
+    mockList.mockResolvedValue({ store: { id: "toko-spg", termsType: "KONSI", markupPercent: 25, priceDiscountPercent: null }, items: [] });
+    expect((await GET(minta("?storeId=toko-spg&ganti=o1"))).status).toBe(200);
+    expect(mockPesanan).not.toHaveBeenCalled();
+    expect(mockList).toHaveBeenCalledWith("toko-spg", { stokRak: false, hargaKonsi: false });
   });
 
   it("tanpa sesi atau tanpa akses HP tidak memuat apa pun", async () => {

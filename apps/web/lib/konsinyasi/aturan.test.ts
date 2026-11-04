@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { tanggalPeriode } from "@/lib/finance/operasional/aturan";
 import {
   bandingkanLaporan,
   giliranTahap,
@@ -153,26 +152,28 @@ describe('stokTitipan', () => {
 });
 
 describe("jatuhTempoSiklus (P54)", () => {
-  // Tanggal tagihan seperti yang dipakai `kunciAngka`: akhir bulan siklus (tanggal jurnalnya).
-  const tagihan = (tahun: number, bulan: number, dikunci: string) => tanggalPeriode(tahun, bulan, new Date(dikunci));
+  // `kunciAngka` memanggilnya dengan SAAT dikunci; tanggal tagihannya tetap akhir bulan siklus.
+  const wib = (s: string) => new Date(`${s}+07:00`).toISOString();
 
-  it("contoh pemilik: siklus Oktober dikunci 5 November, tempo 30 hari → jatuh tempo 30 November (bukan 5 Desember)", () => {
-    const t = tagihan(2026, 10, "2026-11-05T10:00:00+07:00");
-    expect(t.toISOString()).toBe(new Date("2026-10-31T00:00:00+07:00").toISOString());
-    expect(jatuhTempoSiklus(t, 30).toISOString()).toBe(new Date("2026-11-30T00:00:00+07:00").toISOString());
+  it("contoh pemilik: siklus Oktober dikunci 5 November, tempo 30 hari → jatuh tempo 5 Desember", () => {
+    expect(jatuhTempoSiklus(new Date("2026-11-05T10:00:00+07:00"), 30).toISOString()).toBe(wib("2026-12-05T00:00:00"));
   });
 
-  it("tidak bergantung pada kapan dikunci: siklus September dikunci 3 atau 20 Oktober, tempo 14 → 14 Oktober", () => {
-    const harapan = new Date("2026-10-14T00:00:00+07:00").toISOString();
-    expect(jatuhTempoSiklus(tagihan(2026, 9, "2026-10-03T09:00:00+07:00"), 14).toISOString()).toBe(harapan);
-    expect(jatuhTempoSiklus(tagihan(2026, 9, "2026-10-20T09:00:00+07:00"), 14).toISOString()).toBe(harapan);
+  it("bergantung pada hari dikunci: siklus September dikunci 3 Oktober, tempo 14 → 17 Oktober; dikunci 20 Oktober → 3 November", () => {
+    expect(jatuhTempoSiklus(new Date("2026-10-03T09:00:00+07:00"), 14).toISOString()).toBe(wib("2026-10-17T00:00:00"));
+    expect(jatuhTempoSiklus(new Date("2026-10-20T09:00:00+07:00"), 14).toISOString()).toBe(wib("2026-11-03T00:00:00"));
   });
 
-  it("tempo kosong, negatif, atau bukan angka = jatuh tempo di hari tagihan itu", () => {
-    const t = tagihan(2026, 10, "2026-11-05T10:00:00+07:00");
-    const hariTagihan = new Date("2026-10-31T00:00:00+07:00").toISOString();
-    expect(jatuhTempoSiklus(t, 0).toISOString()).toBe(hariTagihan);
-    expect(jatuhTempoSiklus(t, -5).toISOString()).toBe(hariTagihan);
-    expect(jatuhTempoSiklus(t, Number.NaN).toISOString()).toBe(hariTagihan);
+  it("hari dikunci menurut WIB: 4 November 17:30 UTC sudah 5 November di Jakarta → 5 Desember", () => {
+    expect(jatuhTempoSiklus(new Date("2026-11-04T17:30:00Z"), 30).toISOString()).toBe(wib("2026-12-05T00:00:00"));
+  });
+
+  it("tempo kosong, negatif, atau bukan angka = jatuh tempo pukul 00:00 WIB hari dikunci", () => {
+    const kunci = new Date("2026-11-05T10:00:00+07:00");
+    const hariKunci = wib("2026-11-05T00:00:00");
+    expect(jatuhTempoSiklus(kunci, 0).toISOString()).toBe(hariKunci);
+    expect(jatuhTempoSiklus(kunci, -5).toISOString()).toBe(hariKunci);
+    expect(jatuhTempoSiklus(kunci, Number.NaN).toISOString()).toBe(hariKunci);
   });
 });
+

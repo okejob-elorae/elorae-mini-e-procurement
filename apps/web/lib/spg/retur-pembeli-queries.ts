@@ -5,10 +5,12 @@ import { wibYearMonth } from "@/lib/spg-commission/month";
 import { ENTITAS_BEBAN_SPG, nilaiBebanReturPembeli, nilaiBersihBarisRetur, type KeadaanBebanSpg } from "./beban-spg";
 import { bebanMenungguKeputusanBarang, bebanUntukRetur, bebanUntukReturBanyak, type BebanReturKantor, type BebanReturRingkas } from "./beban-spg-queries";
 import { urlFotoReturPembeli } from "./foto-retur-pembeli";
+import { kunciFotoReturPembeliSah } from "./foto-retur-pembeli-kunci";
 import type { KondisiRetur } from "./retur-pembeli";
-import { RETUR_PEMBELI_DITAHAN_BEBAN, RETUR_PEMBELI_MENUNGGU, qtyMenungguPerBaris } from "./retur-pembeli-berlaku";
+import { RETUR_PEMBELI_DITAHAN_BEBAN, RETUR_PEMBELI_MENUNGGU, qtyDitahanBebanPerBaris, qtyMenungguPerBaris } from "./retur-pembeli-berlaku";
 import {
   ENTITAS_RETUR_PEMBELI,
+  KATEGORI_NOTIF_RETUR_PEMBELI,
   STATUS_RETUR_PEMBELI,
   bacaStatusReturPembeli,
   keadaanUangRetur,
@@ -186,6 +188,12 @@ export type RincianReturPembeliKantor = {
   uang: { keadaan: KeadaanUangRetur; pada: Date | null; olehKantor: { oleh: string; alasan: string | null } | null };
   /** URL foto dari kunci tersimpannya — null bila tidak ada atau kuncinya tidak cocok. */
   foto: { barang: string | null; struk: string | null };
+  /**
+   * Foto struk yang dicatat SPG tetapi TIDAK tercatat di laporan ini — laporannya sudah ditarik,
+   * atau potongnya sudah dilaporkan lagi di laporan lain (`catatUangDikembalikan`). Kuncinya hanya
+   * ada di lonceng kantor yang membuka rincian ini; uangnya tidak menjadi beban apa pun.
+   */
+  strukTidakTercatat: { url: string; pada: Date }[];
   /** Beban yang lahir kalau laporan ini ditolak sekarang dengan uang dikembalikan (P81: harga bersih nota). */
   bebanJikaDitolak: number;
   /** Beban SPG laporan ini (sesudah ditolak), atau null. */
@@ -228,6 +236,45 @@ export type RincianReturPembeliKantor = {
   jejak: { action: string; entityType: string; oleh: string; pada: Date; reason: string | null }[];
 };
 
+/**
+ * Foto struk dari lonceng "uang retur pembeli tidak tercatat" laporan ini. Laporannya tidak
+ * berubah, jadi kunci foto itu hanya hidup di `AdminNotification.metadata.fotoStrukKey` — tanpa
+ * pembaca ini foto yang dirujuk lonceng tidak bisa dibuka. Metadata disaring di JS (penyaringan
+ * jalur JSON berbeda di MariaDB dan PostgreSQL); lonceng laporan ini tidak lebih tua dari
+ * notanya. Hanya kunci struk di folder laporan ini sendiri (aturan yang sama dengan penulisnya),
+ * satu baris per kunci (terlama dulu), dan bukan struk yang kemudian memang tercatat di laporan
+ * ini (`refundSlipR2Key`).
+ */
+async function strukTidakTercatatUntuk(r: {
+  id: string;
+  storeId: string;
+  idempotencyKey: string;
+  refundSlipR2Key: string | null;
+  sejak: Date;
+}): Promise<{ url: string; pada: Date }[]> {
+  const lonceng = await prisma.adminNotification.findMany({
+    where: { category: KATEGORI_NOTIF_RETUR_PEMBELI, createdAt: { gte: r.sejak } },
+    orderBy: { createdAt: "asc" },
+    select: { metadata: true, createdAt: true },
+  });
+  const terlihat = new Set<string>();
+  const hasil: { url: string; pada: Date }[] = [];
+  for (const n of lonceng) {
+    const m = n.metadata;
+    if (m === null || typeof m !== "object" || Array.isArray(m)) continue;
+    const isi = m as Record<string, unknown>;
+    if (isi.returnId !== r.id || isi.tidakTercatat !== true) continue;
+    const key = isi.fotoStrukKey;
+    if (!kunciFotoReturPembeliSah(key, { storeId: r.storeId, kunci: r.idempotencyKey, jenis: "struk" })) continue;
+    if (key === r.refundSlipR2Key || terlihat.has(key)) continue;
+    const url = urlFotoReturPembeli({ storeId: r.storeId, key }, "struk");
+    if (!url) continue;
+    terlihat.add(key);
+    hasil.push({ url, pada: n.createdAt });
+  }
+  return hasil;
+}
+
 export async function rincianReturPembeliKantor(id: string): Promise<RincianReturPembeliKantor | null> {
   if (!id) return null;
   const r = await prisma.spgSaleReturn.findUnique({
@@ -238,6 +285,7 @@ export async function rincianReturPembeliKantor(id: string): Promise<RincianRetu
       createdAt: true,
       createdById: true,
       storeId: true,
+      idempotencyKey: true,
       reason: true,
       decidedById: true,
       decidedAt: true,
@@ -276,7 +324,7 @@ export async function rincianReturPembeliKantor(id: string): Promise<RincianRetu
     });
   };
 
-  const [nama, toko, menungguLain, dicek, siklusKomisi, siklus, jejak, beban] = await Promise.all([
+  const [nama, toko, menungguLain, dicek, siklusKomisi, siklus, jejak, beban, strukTidakTercatat] = await Promise.all([
     namaPengguna([r.createdById, r.decidedById, r.refundMarkedById]),
     namaToko([r.storeId]),
     qtyMenungguPerBaris(
@@ -293,6 +341,13 @@ export async function rincianReturPembeliKantor(id: string): Promise<RincianRetu
       select: { action: true, entityType: true, userId: true, createdAt: true, reason: true },
     }),
     bebanUntukRetur(r.id),
+    strukTidakTercatatUntuk({
+      id: r.id,
+      storeId: r.storeId,
+      idempotencyKey: r.idempotencyKey,
+      refundSlipR2Key: r.refundSlipR2Key,
+      sejak: r.spgSale.createdAt,
+    }),
   ]);
   if (beban) {
     const jejakBeban = await prisma.auditLog.findMany({
@@ -333,6 +388,7 @@ export async function rincianReturPembeliKantor(id: string): Promise<RincianRetu
       barang: urlFotoReturPembeli({ storeId: r.storeId, key: r.goodsPhotoR2Key }, "barang"),
       struk: urlFotoReturPembeli({ storeId: r.storeId, key: r.refundSlipR2Key }, "struk"),
     },
+    strukTidakTercatat,
     bebanJikaDitolak: nilaiBebanReturPembeli(nilai),
     beban,
     baris: r.lines.map((l, i) => ({
@@ -383,7 +439,11 @@ export type ReturPembeliHp = {
   uang: KeadaanUangRetur;
   /** Keadaan beban (laporan ditolak yang uangnya sudah dikembalikan), tanpa angka — angkanya di "Beban saya". */
   beban: KeadaanBebanSpg | null;
-  /** Tombol "Uang sudah dikembalikan": menunggu atau disetujui, uang belum tercatat. */
+  /**
+   * Tombol "Uang sudah dikembalikan", uang belum tercatat: menunggu, disetujui, atau ditolak
+   * (uang yang terlanjur keluar menjadi beban Anda, P13/P13a) — yang ditolak hanya selama
+   * potongnya belum dilaporkan lagi di laporan lain, aturan yang sama dengan penulisnya.
+   */
   bisaCatatUangKembali: boolean;
   /** Tombol "Tarik": menunggu dan uang belum tercatat — sesudahnya kantor yang memutuskan. */
   bisaDitarik: boolean;
@@ -410,10 +470,39 @@ export async function returPembeliSaya(userId: string, storeId: string, opsi: { 
       refundMarkedById: true,
       spgSaleId: true,
       spgSale: { select: { docNo: true } },
-      lines: { orderBy: { id: "asc" }, select: { qty: true, condition: true, variantSku: true, saleLine: { select: { productName: true, variantSku: true } } } },
+      lines: {
+        orderBy: { id: "asc" },
+        select: {
+          qty: true,
+          condition: true,
+          variantSku: true,
+          spgSaleLineId: true,
+          saleLine: { select: { productName: true, variantSku: true, qty: true, returnedQty: true } },
+        },
+      },
     },
   });
   const beban = await bebanUntukReturBanyak(rows.filter((r) => r.status === "DITOLAK" || r.status === "DISETUJUI").map((r) => r.id));
+
+  // Ditolak tanpa uang: potongnya sudah lepas. Pengembalian uangnya hanya bisa dicatat selama
+  // potong itu masih muat — tidak dilaporkan lagi di laporan lain (`muatLagi` di penulisnya).
+  const ditolakTanpaUang = rows.filter((r) => r.status === "DITOLAK" && !uangReturTercatat(r));
+  const idBaris = [...new Set(ditolakTanpaUang.flatMap((r) => r.lines.map((l) => l.spgSaleLineId)))];
+  // Daftar kosong → peta kosong tanpa kueri.
+  const [menunggu, ditahan] = await Promise.all([qtyMenungguPerBaris(prisma, idBaris), qtyDitahanBebanPerBaris(prisma, idBaris)]);
+  const masihMuat = (r: (typeof rows)[number]): boolean => {
+    const minta = new Map<string, { n: number; qty: number; returnedQty: number }>();
+    for (const l of r.lines) {
+      const ada = minta.get(l.spgSaleLineId);
+      if (ada) ada.n += l.qty;
+      else minta.set(l.spgSaleLineId, { n: l.qty, qty: l.saleLine.qty, returnedQty: l.saleLine.returnedQty });
+    }
+    for (const [id, b] of minta) {
+      if (b.returnedQty + (menunggu.get(id) ?? 0) + (ditahan.get(id) ?? 0) + b.n > b.qty) return false;
+    }
+    return true;
+  };
+
   return rows.map((r) => {
     const status = bacaStatusReturPembeli(r.status) ?? "MENUNGGU";
     const tercatat = uangReturTercatat(r);
@@ -433,7 +522,7 @@ export async function returPembeliSaya(userId: string, storeId: string, opsi: { 
       })),
       uang: keadaanUangRetur({ status, uangTercatat: tercatat }),
       beban: beban.get(r.id)?.keadaan ?? null,
-      bisaCatatUangKembali: (status === "MENUNGGU" || status === "DISETUJUI") && !tercatat,
+      bisaCatatUangKembali: !tercatat && (status === "MENUNGGU" || status === "DISETUJUI" || (status === "DITOLAK" && masihMuat(r))),
       bisaDitarik: status === "MENUNGGU" && !tercatat,
     };
   });

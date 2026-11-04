@@ -514,4 +514,89 @@ d("recordPayment (test bed only)", () => {
     }).catch((e) => e);
     expect(err.code).toBe("WRONG_STORE");
   });
+
+  /*
+   * "Retur toko konsi tidak bisa jadi potongan BKM tagihan konsi", on the retur offset path: a
+   * KONSI store's retur, set up exactly as the offset picker would offer it (APPROVED, VALUED,
+   * AVAILABLE), drawn on that store's konsi bill. The refusal is the bill's, as in the BKM writer.
+   */
+  it("refuses a KONSI store's retur drawn on its konsi bill (KONSI_LEWAT_BKM) and writes no payment", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { termsType: "KONSI" } });
+    await prisma.fieldReturn.update({
+      where: { id: returnId },
+      data: {
+        status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE",
+        approvedAt: new Date(), approvedById: userId,
+      },
+    });
+    await prisma.receivable.update({ where: { id: receivableAId }, data: { isConsignment: true } });
+
+    const err = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 1000,
+      recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 1000 }],
+      fieldReturnId: returnId, idempotencyKey: `test-konsi-retur-${token}`,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("KONSI_LEWAT_BKM");
+    expect(await prisma.payment.count({ where: { storeId } })).toBe(0);
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: receivableAId } });
+    expect(Number(after.outstandingAmount)).toBe(500000);
+  });
+
+  /*
+   * The store's terms are not the rule: a retur of a store whose terms read KONSI today still
+   * draws on that store's putus invoice, as it did before the konsi refusals existed. No owner
+   * answer narrows this, so it pins today's behaviour; `offsettableReturnWhere` offers the same.
+   */
+  it("still accepts a retur offset on a putus invoice at a store whose terms read KONSI today", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { termsType: "KONSI" } });
+    await prisma.fieldReturn.update({
+      where: { id: returnId },
+      data: {
+        status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE",
+        approvedAt: new Date(), approvedById: userId,
+      },
+    });
+
+    const { paymentId } = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 1000,
+      recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 1000 }],
+      fieldReturnId: returnId, idempotencyKey: `test-konsi-store-retur-${token}`,
+    });
+    const row = await prisma.payment.findUnique({ where: { id: paymentId }, select: { fieldReturnId: true } });
+    expect(row?.fieldReturnId).toBe(returnId);
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: receivableAId } });
+    expect(Number(after.outstandingAmount)).toBe(499000);
+    expect(after.status).toBe("PARTIAL");
+  });
+
+  /* Owner decision 2026-10-29, "satu jalur bayar (BKM + cek)": a konsi bill is paid only through a BKM. */
+  it("refuses an office payment against a konsi bill (KONSI_LEWAT_BKM) and leaves its balance untouched", async () => {
+    await prisma.receivable.update({ where: { id: recA }, data: { isConsignment: true } });
+
+    const err = await recordPayment({
+      ...base(), amount: 1000, allocations: [{ receivableId: recA, amount: 1000 }],
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("KONSI_LEWAT_BKM");
+    expect(await prisma.payment.count({ where: { storeId } })).toBe(0);
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: recA } });
+    expect(Number(after.outstandingAmount)).toBe(1000);
+    expect(after.status).toBe("OUTSTANDING");
+  });
+
+  it("refuses a retur offset drawn on a konsi bill (KONSI_LEWAT_BKM), even from a putus store's retur", async () => {
+    await prisma.receivable.update({ where: { id: receivableAId }, data: { isConsignment: true } });
+
+    const err = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 1000,
+      recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 1000 }],
+      fieldReturnId: returnId, idempotencyKey: `test-konsi-bill-retur-${token}`,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("KONSI_LEWAT_BKM");
+    expect(await prisma.payment.count({ where: { storeId } })).toBe(0);
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: receivableAId } });
+    expect(Number(after.outstandingAmount)).toBe(500000);
+  });
 });

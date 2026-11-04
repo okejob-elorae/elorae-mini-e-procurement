@@ -25,8 +25,10 @@ type HasilTandai = { ok: true; nilai: number } | { ok: false; code: string };
 /**
  * Laporan komisi salesman: kantor menandai beban barang hilang (bagian SALES)
  * atau selisih retur yang dibebankan ke sales (P22) sudah dipotong dari komisi
- * bulan ini — atau, untuk selisih retur yang barangnya ketemu sesudah dipotong
- * (P87), kelebihannya sudah dikembalikan. Penggajian salesman belum ada di
+ * bulan ini — atau, untuk selisih retur yang barangnya ketemu sesudah dipotong,
+ * kelebihannya sudah dikembalikan (jalur ini MENUNGGU JAWABAN P87: dengan bawaan yang
+ * disetujui pemilik kelebihannya selalu nol, jadi tombolnya tidak pernah tampil —
+ * lihat `lib/receivables/potong-beban-retur.ts`). Penggajian salesman belum ada di
  * sistem, jadi uangnya berpindah di luar dan dicatat di sini. Satu kunci per
  * formulir (klik ganda aman). Beban barang hilang dibagikan ke beban terlama dulu.
  */

@@ -80,6 +80,7 @@ const KODE_GALAT = new Set([
   "ALASAN_DISKON_WAJIB",
   "PELANGGAN_TIDAK_VALID",
   "WAKTU_TIDAK_VALID",
+  "SPG_BERHENTI",
 ]);
 
 /** Galat mesin promo/isian yang ditampilkan tepat di bawah isian angka diskon. */

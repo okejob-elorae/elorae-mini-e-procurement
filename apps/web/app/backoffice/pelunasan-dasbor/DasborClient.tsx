@@ -9,7 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
 import type { Dasbor, TindakanHariIni } from '@/lib/receivables/dashboard-queries';
-import type { KalimatTertahan, KeadaanTampil } from '@/lib/receivables/jatuh-tempo';
+import type { BagianTertahan, KeadaanTampil } from '@/lib/receivables/jatuh-tempo';
 import { tautanPiutang, tautanRetur } from '@/lib/receivables/tindakan-dasbor';
 import { dinamis } from '@/lib/i18n/dinamis';
 
@@ -50,36 +50,38 @@ export function DasborClient({ data }: { data: Dasbor }) {
   const puncakSales = Math.max(1, ...data.perSales.map((s) => s.nilai));
 
   /**
-   * Kalimat baris "Tertahan retur" — tiga bagian yang sama dengan kalimat di Faktur & piutang (Q15):
-   * yang menunggu beserta sebabnya, yang tertahan tetap, lalu bagian bebas yang sudah lewat jatuh
-   * tempo. Bagian yang tidak ada dilewati; nama toko hanya di bagian pertama.
+   * Kalimat baris "Tertahan retur" (Q15/P46). Susunannya dari `bagianKalimatTertahan` — aturan yang
+   * sama dengan kalimat di Faktur & piutang dan di HP — di sini hanya kata untuk tiap bagian: yang
+   * menunggu beserta sebabnya, yang tertahan tetap, lalu bagian bebas yang sudah lewat jatuh tempo,
+   * atau — tanpa bagian lewat tempo — bagian tetap yang ditagih lewat BKM berikutnya. Nama toko hanya
+   * di bagian pertama.
    */
-  const kalimatTahanan = (toko: string, k: KalimatTertahan): string => {
-    const bagian: string[] = [];
-    if (k.tunggu) {
-      bagian.push(
-        td(
-          k.tunggu.sebab === 'BELUM_DIHITUNG'
-            ? 'why_tertahan_hitung'
-            : k.tunggu.sebab === 'CAMPURAN'
-              ? 'why_tertahan_campur'
-              : 'why_tertahan',
-          { toko, nilai: rupiah(k.tunggu.nilai) },
-        ),
-      );
-      if (k.tetap) bagian.push(td('why_tertahan_tetapJuga', { nilai: rupiah(k.tetap) }));
-    } else {
-      bagian.push(td('why_tertahan_tetap', { toko, nilai: rupiah(k.tetap ?? 0) }));
-    }
-    if (k.lewatTempo) {
-      bagian.push(
-        td(k.tunggu ? 'why_tertahan_lewatTempo' : 'why_tertahan_lewatTempoSemua', {
-          nilai: rupiah(k.lewatTempo.nilai),
-          hari: k.lewatTempo.hari,
-        }),
-      );
-    }
-    return bagian.join(' ');
+  const kalimatTahanan = (toko: string, bagian: BagianTertahan[]): string => {
+    const adaTunggu = bagian.some((x) => x.jenis === 'TUNGGU');
+    return bagian
+      .map((x) => {
+        switch (x.jenis) {
+          case 'TUNGGU':
+            return td(
+              x.sebab === 'BELUM_DIHITUNG' ? 'why_tertahan_hitung' : x.sebab === 'CAMPURAN' ? 'why_tertahan_campur' : 'why_tertahan',
+              { toko, nilai: rupiah(x.nilai) },
+            );
+          case 'TETAP':
+            return adaTunggu
+              ? td('why_tertahan_tetapJuga', { nilai: rupiah(x.nilai) })
+              : td('why_tertahan_tetap', { toko, nilai: rupiah(x.nilai) });
+          case 'LEWAT_TEMPO':
+            return td(x.adaTunggu ? 'why_tertahan_lewatTempo' : 'why_tertahan_lewatTempoSemua', {
+              nilai: rupiah(x.nilai),
+              hari: x.hari,
+            });
+          case 'TAGIH_BKM':
+            return td('why_tertahan_tagihBkm');
+          case 'UMUM':
+            return td('why_tertahan', { toko, nilai: rupiah(x.nilai) });
+        }
+      })
+      .join(' ');
   };
 
   return (
@@ -174,8 +176,8 @@ export function DasborClient({ data }: { data: Dasbor }) {
                   <span className="block text-xs text-muted-foreground">
                     {/* Kunci "hari ini" dipakai saat selisihnya nol — "0 hari
                         lalu" bukan bahasa Indonesia yang ditulis orang. */}
-                    {a.jenis === 'tertahan' && a.konteks.tahanan
-                      ? kalimatTahanan(a.konteks.toko ?? '—', a.konteks.tahanan)
+                    {a.jenis === 'tertahan' && a.konteks.bagianTahanan
+                      ? kalimatTahanan(a.konteks.toko ?? '—', a.konteks.bagianTahanan)
                       : td(a.konteks.hari === 0 ? `why_${kunciTindakan(a)}_today` : `why_${kunciTindakan(a)}`, {
                           toko: a.konteks.toko ?? '—',
                           hari: a.konteks.hari ?? 0,

@@ -59,7 +59,9 @@ const SEMUA = "__semua__";
  *
  * Baris yang juga "Harga di Jubelio berbeda dengan ERP" menyebut harga yang terbaca di Jubelio,
  * dan setiap dialog yang menimpanya (setujui, kembalikan) menyebut harga yang akan diganti —
- * penimpaan hanya lewat keputusan yang melihat angkanya (jawaban pemilik P75).
+ * penimpaan hanya lewat keputusan yang melihat angkanya (jawaban pemilik P75). Karena itu setiap
+ * baris membawa balik waktu bacaan Jubelio yang ditampilkan (`berubahPada`): bila Jubelio berubah
+ * sesudah halaman dibuka, keputusannya ditolak (`TERBACA_BERUBAH`) dan halaman dimuat ulang.
  */
 export function HargaJubelioClient({ baris, total, terpotong, beda, jumlahBeda, jenis, cari, tanpaHarga, bolehUbahBarang }: Props) {
   const t = useTranslations("jubelio.harga");
@@ -109,7 +111,7 @@ export function HargaJubelioClient({ baris, total, terpotong, beda, jumlahBeda, 
   };
 
   const setujui = () => {
-    const kirim = pilihan.map((b) => ({ itemId: b.itemId, hargaErp: b.hargaErp }));
+    const kirim = pilihan.map((b) => ({ itemId: b.itemId, hargaErp: b.hargaErp, berubahPada: b.berubahPada }));
     if (kirim.length === 0) return;
     startTransition(async () => {
       const jumlah = new Map<string, number>();
@@ -136,7 +138,7 @@ export function HargaJubelioClient({ baris, total, terpotong, beda, jumlahBeda, 
     const b = kembalikan;
     if (!b) return;
     startTransition(async () => {
-      const r = await kembalikanHargaErpAction({ itemId: b.itemId, hargaErp: b.hargaErp });
+      const r = await kembalikanHargaErpAction({ itemId: b.itemId, hargaErp: b.hargaErp, berubahPada: b.berubahPada });
       setKembalikan(null);
       if (!r.ok) {
         toast.error(pesanGalat(r));

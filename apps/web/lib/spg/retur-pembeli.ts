@@ -48,9 +48,11 @@ import {
  *      SPG, atau ditandai kantor saat menolak dengan alasan — P78) → satu beban
  *      SPG di transaksi yang sama (P13, P81), potongnya DITAHAN.
  * 3. UANG (`catatUangDikembalikan`): SPG mencatat uang sudah dikembalikan, foto
- *    struk wajib (P77) — selama menunggu (salahnya sendiri, P13) atau sesudah
- *    disetujui; laporan yang sudah ditolak atau ditarik tidak. Laporan yang
- *    uangnya sudah tercatat tidak bisa ditarik SPG.
+ *    struk wajib (P77) — sesudah disetujui; selama menunggu (salahnya sendiri,
+ *    P13); atau sesudah ditolak tanpa uang, dan uang itu langsung menjadi satu
+ *    beban SPG (P13, P13a). Laporan yang ditarik hanya oleh pencatatan antrean HP
+ *    yang ditangkap sebelum ditarik — laporan itu menunggu kantor lagi (P78).
+ *    Laporan yang uangnya sudah tercatat tidak bisa ditarik SPG.
  * 4. SESUDAH DITOLAK dengan beban, hanya dua jalan keluar: penolakan keliru
  *    dibatalkan (`batalkanPenolakanReturPembeli`, P82) selama bebannya belum
  *    dipotong sama sekali, atau sesudah SPG mengganti penuh kantor memilih barangnya
@@ -371,6 +373,7 @@ const PILIH_LAPORAN = {
   createdById: true,
   createdAt: true,
   idempotencyKey: true,
+  decidedById: true,
   decidedAt: true,
   rejectReason: true,
   refundedAt: true,
@@ -822,7 +825,13 @@ export async function tarikReturPembeli(input: {
 
 /* -------------------------------------------------------- uang dikembalikan */
 
-export type AlasanTolakUangKembali = "TIDAK_DITEMUKAN" | "BUKAN_MILIK" | "TIDAK_DISETUJUI" | "SUDAH_DICATAT" | "FOTO_STRUK_WAJIB";
+export type AlasanTolakUangKembali =
+  | "TIDAK_DITEMUKAN"
+  | "BUKAN_MILIK"
+  | "TIDAK_DISETUJUI"
+  | "SUDAH_DICATAT"
+  | "FOTO_STRUK_WAJIB"
+  | "POTONG_SUDAH_DILAPORKAN_ULANG";
 
 export type HasilUangKembali =
   | { ok: true; returnId: string; spgSaleId: string; ulang: boolean }
@@ -832,16 +841,38 @@ const jepit = (t: Date, bawah: Date, atas: Date) => new Date(Math.min(Math.max(t
 
 /**
  * SPG mencatat kasir sudah mengembalikan uang pembeli, dengan foto struk (P77).
- * Hanya pelapornya di toko tetapnya. Boleh selama MENUNGGU (uang dikembalikan
- * sebelum disetujui — salahnya sendiri, P13; kantor diberi tahu) atau sesudah
- * DISETUJUI (jalan yang benar, P13a), selama uangnya belum tercatat atau
- * ditandai kantor. Laporan DITOLAK atau DIBATALKAN → `TIDAK_DISETUJUI` — juga
- * pencatatan tanpa sinyal yang baru sampai sesudah kantor menolak: belum ada
- * jawaban pemilik untuk uang yang keluar sesudah HP menyuruh "jangan kembalikan
- * uang" (pertanyaan terbuka), jadi tidak ada beban yang dibuat diam-diam. Foto
- * struk harus di folder laporan ini, bernama `struk`. Sudah tercatat: kunci
+ * Hanya pelapornya di tokonya (`storeId` dari server). Menurut status laporan:
+ *
+ * - DISETUJUI: jalan yang benar (P13a).
+ * - MENUNGGU: uang dikembalikan sebelum disetujui — salahnya sendiri (P13);
+ *   kantor diberi tahu, dan SPG tidak bisa lagi menarik laporannya (P78).
+ * - DITOLAK tanpa uang tercatat: uang yang sudah keluar menjadi beban SPG
+ *   (P13a "kalau ditolak padahal uang sudah dikembalikan → beban SPG"; P13 untuk
+ *   uang yang keluar sesudah penolakan). Dalam transaksi yang sama: SATU beban
+ *   sebesar harga bersih nota (`buatBebanReturPembeliTx`, kantor boleh
+ *   mengubahnya ke angka struk, P81), jejaknya, dan lonceng kantor; kabar ke SPG
+ *   sesudah komit. Potongnya lalu DITAHAN seperti laporan ditolak yang uangnya
+ *   sudah dicatat sebelum ditolak. Penolakan tanpa uang melepas potongnya; kalau
+ *   potong itu sudah dilaporkan lagi di laporan lain, pencatatan ditolak
+ *   (`POTONG_SUDAH_DILAPORKAN_ULANG`) dan kantor diberi tahu — tidak ada potong
+ *   yang dihitung dua kali.
+ * - DITOLAK yang ditandai kantor "uang ternyata sudah dikembalikan" (P78): beban
+ *   sudah ada; foto struknya saja yang dilampirkan.
+ * - DIBATALKAN (ditarik SPG): hanya pencatatan antrean HP yang DITANGKAP sebelum
+ *   laporannya ditarik. Begitu uangnya tercatat, SPG tidak bisa menarik
+ *   laporannya sendiri (P78), jadi penarikannya batal dan laporan itu menunggu
+ *   keputusan kantor lagi, dengan lonceng — potongnya diperiksa ulang seperti di
+ *   atas. Selain itu (ditangkap sesudah ditarik, atau dicatat langsung)
+ *   `TIDAK_DISETUJUI`: tidak ada yang berubah dan tidak ada beban — P13 menjadikan
+ *   uang itu salah SPG, tetapi pemilik belum menjawab CARANYA (laporan dibuka lagi
+ *   untuk kantor, atau beban langsung) — dan kantor diberi tahu, dengan kunci foto
+ *   struknya, karena uangnya sudah keluar. Foto itu dibuka di rincian kantor
+ *   laporan ini (`strukTidakTercatat`); tindak lanjutnya dengan SPG di luar sistem.
+ *
+ * Foto struk harus di folder laporan ini, bernama `struk`. Sudah tercatat: kunci
  * yang sama → ok (`ulang`, juga sesudah laporannya diputuskan), lain →
- * `SUDAH_DICATAT`.
+ * `SUDAH_DICATAT`. Laporan disetujui yang uangnya ditandai kantor (penolakan
+ * bertanda dibatalkan, P82) → `SUDAH_DICATAT`.
  *
  * Tanpa sinyal: `waktuTangkap` = saat dicatat di HP (sudah dijepit pemanggil
  * ke batas antrean), dijepit lagi ke [dilaporkan — atau disetujui — ; sekarang].
@@ -858,31 +889,120 @@ export async function catatUangDikembalikan(i: {
   if (!spgSaleId) return { ok: false, alasan: "TIDAK_DITEMUKAN" };
   const sekarang = i.sekarang ?? new Date();
 
-  type Hasil = { ok: true; ulang: boolean; notifikasi: AdminNotification | null } | { ok: false; alasan: AlasanTolakUangKembali };
+  type Hasil =
+    | { ok: true; ulang: boolean; notifikasi: AdminNotification | null; beban: { chargeId: string; jumlah: number; docNo: string } | null }
+    | { ok: false; alasan: AlasanTolakUangKembali; notifikasi: AdminNotification | null };
+  const tolak = (alasan: AlasanTolakUangKembali): Hasil => ({ ok: false, alasan, notifikasi: null });
+  const ulang: Hasil = { ok: true, ulang: true, notifikasi: null, beban: null };
 
   const hasil = await runSerializable(async (tx): Promise<Hasil> => {
     const r = await bacaLaporanTerkunci(tx, i.returnId, spgSaleId);
-    if (!r) return { ok: false, alasan: "TIDAK_DITEMUKAN" };
-    if (r.createdById !== i.userId || r.storeId !== i.storeId) return { ok: false, alasan: "BUKAN_MILIK" };
+    if (!r) return tolak("TIDAK_DITEMUKAN");
+    if (r.createdById !== i.userId || r.storeId !== i.storeId) return tolak("BUKAN_MILIK");
     if (!kunciFotoReturPembeliSah(i.fotoStrukKey, { storeId: r.storeId, kunci: r.idempotencyKey, jenis: "struk" })) {
-      return { ok: false, alasan: "FOTO_STRUK_WAJIB" };
+      return tolak("FOTO_STRUK_WAJIB");
     }
     // Ulangan kiriman yang jawabannya hilang: kunci yang sama sudah tercatat.
-    if (r.refundedAt !== null) {
-      return r.refundSlipR2Key === i.fotoStrukKey ? { ok: true, ulang: true, notifikasi: null } : { ok: false, alasan: "SUDAH_DICATAT" };
-    }
-    if (r.status !== "MENUNGGU" && r.status !== "DISETUJUI") return { ok: false, alasan: "TIDAK_DISETUJUI" };
-    // Ditandai kantor saat menolak (P78) lalu penolakannya dibatalkan: uangnya sudah terhitung kembali.
-    if (r.refundMarkedById !== null) return { ok: false, alasan: "SUDAH_DICATAT" };
-
+    if (r.refundedAt !== null) return r.refundSlipR2Key === i.fotoStrukKey ? ulang : tolak("SUDAH_DICATAT");
     const tangkap = i.waktuTangkap ?? null;
-    const waktu = jepit(tangkap ?? sekarang, r.status === "DISETUJUI" ? (r.decidedAt ?? r.createdAt) : r.createdAt, sekarang);
+    const luring = tangkap !== null;
 
+    if (r.refundMarkedById !== null) {
+      // Ditandai kantor saat menolak (P78), lalu penolakannya dibatalkan: uangnya sudah terhitung kembali.
+      if (r.status !== "DITOLAK") return tolak("SUDAH_DICATAT");
+      // Masih ditolak dengan tanda kantor: bebannya sudah dibuat saat menolak, jadi foto struknya
+      // saja yang dilampirkan (sekali). Hari uangnya tetap tidak diketahui — `refundedAt` kosong.
+      if (r.refundSlipR2Key !== null) return r.refundSlipR2Key === i.fotoStrukKey ? ulang : tolak("SUDAH_DICATAT");
+      const lampir = await tx.spgSaleReturn.updateMany({
+        where: { id: r.id, status: "DITOLAK", refundedAt: null, refundSlipR2Key: null, refundMarkedById: { not: null } },
+        data: { refundSlipR2Key: i.fotoStrukKey },
+      });
+      if (lampir.count !== 1) ulangi("laporan berubah");
+      await catatJejak(tx, {
+        userId: i.userId,
+        action: JEJAK.RETUR_PEMBELI_UANG_DIKEMBALIKAN,
+        entityType: ENTITAS_RETUR_PEMBELI,
+        entityId: r.id,
+        changes: { before: { refundSlipR2Key: null }, after: { refundSlipR2Key: i.fotoStrukKey } },
+        metadata: { status: r.status, ditandaiKantor: true, spgSaleId: r.spgSaleId, docNo: r.spgSale.docNo, storeId: r.storeId, luring },
+      });
+      return { ok: true, ulang: false, notifikasi: null, beban: null };
+    }
+
+    // Ditarik sesudah uangnya dicatat di HP: penarikan itu tidak boleh terjadi (P78), kantor yang memutuskan.
+    const dibukaLagi = r.status === "DIBATALKAN" && tangkap !== null && r.decidedAt !== null && tangkap.getTime() < r.decidedAt.getTime();
+
+    const toko = await tx.store.findUnique({ where: { id: r.storeId }, select: { name: true, termsType: true } });
+    const namaToko = toko?.name ?? "toko";
+    // Uang sudah keluar dari kasir tetapi tidak tercatat di laporan ini: kantor tetap diberi tahu, dengan
+    // foto struknya. Kunci foto itu hanya ada di metadata lonceng ini; rincian kantor laporannya membacanya
+    // dari sini (`strukTidakTercatat` di `retur-pembeli-queries.ts`). Pesannya muat 191 huruf tanpa terpotong.
+    const tidakTercatat = (sebab: string) =>
+      tx.adminNotification.create({
+        data: {
+          category: KATEGORI_NOTIF_RETUR_PEMBELI,
+          severity: "WARNING",
+          title: capNotificationText(`Uang retur pembeli tidak tercatat — ${namaToko}`),
+          message: capNotificationText(
+            `Nota ${r.spgSale.docNo}: SPG mencatat uang pembeli sudah dikembalikan kasir, tetapi ${sebab}. ` +
+              "Tidak menjadi beban. Foto struknya di rincian; periksa dengan SPG.",
+          ),
+          metadata: {
+            returnId: r.id,
+            spgSaleId: r.spgSaleId,
+            storeId: r.storeId,
+            uangSudahDikembalikan: true,
+            tidakTercatat: true,
+            fotoStrukKey: i.fotoStrukKey,
+            ...(r.status === "DIBATALKAN" ? { laporanDitarik: true } : {}),
+          },
+        },
+      });
+
+    // Ditarik SPG sebelum uangnya dicatat (atau dicatat langsung, tanpa jam tangkap): P13 menjadikannya
+    // salah SPG, tetapi caranya belum dijawab pemilik, jadi tidak ada yang berubah — kantor diberi tahu.
+    if (r.status === "DIBATALKAN" && !dibukaLagi) {
+      const notifikasi = await tidakTercatat("laporannya sudah ditarik lebih dulu");
+      return { ok: false, alasan: "TIDAK_DISETUJUI", notifikasi };
+    }
+
+    // Potong laporan yang ditolak tanpa uang, atau yang ditarik, sudah lepas — mungkin sudah dilaporkan lagi.
+    if ((r.status === "DITOLAK" || r.status === "DIBATALKAN") && !(await muatLagi(tx, r))) {
+      const notifikasi = await tidakTercatat("potongnya sudah masuk laporan lain");
+      return { ok: false, alasan: "POTONG_SUDAH_DILAPORKAN_ULANG", notifikasi };
+    }
+
+    const waktu = jepit(tangkap ?? sekarang, r.status === "DISETUJUI" ? (r.decidedAt ?? r.createdAt) : r.createdAt, sekarang);
     const ubah = await tx.spgSaleReturn.updateMany({
-      where: { id: r.id, status: { in: ["MENUNGGU", "DISETUJUI"] }, refundedAt: null, refundMarkedById: null },
-      data: { refundedAt: waktu, refundSlipR2Key: i.fotoStrukKey },
+      where: { id: r.id, status: r.status, refundedAt: null, refundMarkedById: null },
+      data: dibukaLagi
+        ? { refundedAt: waktu, refundSlipR2Key: i.fotoStrukKey, status: "MENUNGGU", decidedById: null, decidedAt: null, rejectReason: null }
+        : { refundedAt: waktu, refundSlipR2Key: i.fotoStrukKey },
     });
     if (ubah.count !== 1) ulangi("laporan berubah");
+
+    let beban: { chargeId: string; jumlah: number; docNo: string } | null = null;
+    if (r.status === "DITOLAK") {
+      const ada = await tx.spgCharge.findUnique({ where: { source_sourceId: { source: "RETUR_PEMBELI", sourceId: r.id } }, select: { id: true } });
+      if (!ada) {
+        const dihitung = dihitungDariLaporan(r);
+        const c = await buatBebanReturPembeliTx(tx, {
+          returnId: r.id,
+          spgUserId: r.createdById,
+          storeId: r.storeId,
+          jenisToko: bacaJenisTokoBeban(toko?.termsType),
+          docNo: r.spgSale.docNo,
+          spgSaleId: r.spgSaleId,
+          dilaporkanPada: r.createdAt,
+          dihitung,
+          besar: dihitung,
+          alasanBesar: null,
+          olehUserId: i.userId,
+          waktu: sekarang,
+        });
+        beban = { chargeId: c.chargeId, jumlah: dihitung, docNo: r.spgSale.docNo };
+      }
+    }
 
     await catatJejak(tx, {
       userId: i.userId,
@@ -893,28 +1013,87 @@ export async function catatUangDikembalikan(i: {
         before: { refundedAt: null, refundSlipR2Key: null },
         after: { refundedAt: waktu.toISOString(), refundSlipR2Key: i.fotoStrukKey },
       },
-      metadata: { status: r.status, spgSaleId: r.spgSaleId, docNo: r.spgSale.docNo, storeId: r.storeId, luring: tangkap !== null },
+      metadata: {
+        status: r.status,
+        spgSaleId: r.spgSaleId,
+        docNo: r.spgSale.docNo,
+        storeId: r.storeId,
+        luring,
+        ...(beban ? { beban: { chargeId: beban.chargeId, jumlah: beban.jumlah } } : {}),
+      },
     });
+    // Penarikannya batal (P78) — keputusan tersendiri dengan namanya sendiri, supaya riwayat kantor
+    // menunjukkan laporan itu kembali menunggu, bukan hanya bahwa uangnya dicatat.
+    if (dibukaLagi) {
+      await catatJejak(tx, {
+        userId: i.userId,
+        action: JEJAK.RETUR_PEMBELI_PENARIKAN_DIBATALKAN,
+        entityType: ENTITAS_RETUR_PEMBELI,
+        entityId: r.id,
+        changes: {
+          before: { status: "DIBATALKAN", decidedById: r.decidedById, decidedAt: r.decidedAt?.toISOString() ?? null, rejectReason: r.rejectReason },
+          after: { status: "MENUNGGU", decidedById: null, decidedAt: null, rejectReason: null },
+        },
+        metadata: { spgSaleId: r.spgSaleId, docNo: r.spgSale.docNo, storeId: r.storeId, luring },
+      });
+    }
 
     let notifikasi: AdminNotification | null = null;
     if (r.status === "MENUNGGU") {
-      const toko = await tx.store.findUnique({ where: { id: r.storeId }, select: { name: true } });
       notifikasi = await tx.adminNotification.create({
         data: {
           category: KATEGORI_NOTIF_RETUR_PEMBELI,
           severity: "WARNING",
-          title: capNotificationText(`Uang retur pembeli sudah dikembalikan — ${toko?.name ?? "toko"}`),
+          title: capNotificationText(`Uang retur pembeli sudah dikembalikan — ${namaToko}`),
           message: capNotificationText(`Uang pembeli nota ${r.spgSale.docNo} sudah dikembalikan kasir sebelum disetujui — kalau ditolak, menjadi beban SPG.`),
           metadata: { returnId: r.id, spgSaleId: r.spgSaleId, storeId: r.storeId, uangSudahDikembalikan: true },
         },
       });
+    } else if (dibukaLagi) {
+      notifikasi = await tx.adminNotification.create({
+        data: {
+          category: KATEGORI_NOTIF_RETUR_PEMBELI,
+          severity: "WARNING",
+          title: capNotificationText(`Retur pembeli menunggu persetujuan lagi — ${namaToko}`),
+          message: capNotificationText(
+            `Nota ${r.spgSale.docNo}: uang pembeli sudah dikembalikan kasir sebelum laporannya ditarik SPG, jadi laporan itu menunggu keputusan Anda lagi. ` +
+              "Kalau ditolak, menjadi beban SPG.",
+          ),
+          metadata: { returnId: r.id, spgSaleId: r.spgSaleId, storeId: r.storeId, uangSudahDikembalikan: true },
+        },
+      });
+    } else if (beban) {
+      notifikasi = await tx.adminNotification.create({
+        data: {
+          category: KATEGORI_NOTIF_RETUR_PEMBELI,
+          severity: "WARNING",
+          title: capNotificationText(`Uang retur pembeli dikembalikan padahal ditolak — ${namaToko}`),
+          message: capNotificationText(
+            `SPG mencatat uang pembeli nota ${r.spgSale.docNo} sudah dikembalikan kasir, padahal laporannya ditolak. ` +
+              `Beban SPG ${formatRupiah(beban.jumlah)} dibuat; ubah ke angka struk bila berbeda di SPG → Retur pembeli.`,
+          ),
+          metadata: { returnId: r.id, spgSaleId: r.spgSaleId, storeId: r.storeId, uangSudahDikembalikan: true, chargeId: beban.chargeId },
+        },
+      });
     }
-    return { ok: true, ulang: false, notifikasi };
+    return { ok: true, ulang: false, notifikasi, beban };
   });
 
-  if (!hasil.ok) return hasil;
   // Hanya baris dari percobaan yang KOMIT: `notifikasi` dibuat ulang di setiap percobaan.
   if (hasil.notifikasi) void fanOutAdminNotification(hasil.notifikasi);
+  if (!hasil.ok) return { ok: false, alasan: hasil.alasan };
+  if (hasil.beban) {
+    void kabariPengguna(i.userId, {
+      jenis: JENIS_KABAR.RETUR_PEMBELI_DITOLAK,
+      judul: "Uang retur pembeli menjadi beban Anda",
+      isi: kabar([
+        `Nota ${hasil.beban.docNo} ditolak kantor.`,
+        `Uang yang sudah dikembalikan (${formatRupiah(hasil.beban.jumlah)}) menjadi beban Anda, dipotong dari komisi lalu gaji.`,
+        "Barangnya tetap disisihkan sampai kantor memutuskan.",
+      ]),
+      data: { returnId: i.returnId, spgSaleId, chargeId: hasil.beban.chargeId },
+    });
+  }
   return { ok: true, returnId: i.returnId, spgSaleId, ulang: hasil.ulang };
 }
 

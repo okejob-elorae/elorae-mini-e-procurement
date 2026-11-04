@@ -37,7 +37,12 @@ export default async function PwaLayout({ children }: { children: React.ReactNod
   /*
    * SPG yang sudah ditandai berhenti (P66): tokonya dilepas, jadi ia tidak lagi terbaca sebagai
    * SPG — tetapi juga bukan salesman keliling. Ia hanya mendapat layar berhenti; penyinkron latar
-   * tetap dipasang supaya penjualan dan check-in yang ditangkap sampai hari terakhirnya terkirim.
+   * tetap dipasang. Apa yang terjadi pada catatan SPG yang masih di antrean ditentukan aksi
+   * antreannya, bukan layout ini: aksi yang membaca toko lewat `tokoSpgUntukAntrean` mencatat
+   * pekerjaan yang ditangkap sampai akhir hari terakhirnya ke toko yang dilepasnya, aksi yang
+   * membaca toko tetap (`assignedStoreId`, sudah dilepas) menolaknya. Aturan "sampai hari
+   * terakhir" belum punya jawaban pemilik (pertanyaan pemilik: apakah pekerjaan sampai hari
+   * terakhir tetap dicatat).
    */
   const berhenti = !spg && session.user.id ? await spgBerhentiPada(session.user.id) : null;
   if (berhenti) {

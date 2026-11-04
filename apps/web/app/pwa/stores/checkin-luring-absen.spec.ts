@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, seededIds } from "@elorae/db";
 import { PENGATURAN_ABSENSI_BAWAAN, type PengaturanAbsensi } from "@/lib/salesman/absensi";
 import { hariWib } from "@/lib/spg/beranda-spg";
 
@@ -37,11 +37,16 @@ const jamHari = (n: number, hhmm: string) => new Date(`${hariWib(Date.now() - n 
 d("absen SPG dari check-in/out tanpa sinyal yang terlambat (test bed only)", () => {
   let spg = "";
   let toko = "";
+  let tokoLain = "";
   let ke = 0;
   const id = () => `${tag}-${ke++}`;
 
   beforeAll(async () => {
+    spg = "";
+    toko = "";
+    tokoLain = "";
     toko = (await prisma.store.create({ data: { code: `${tag}-T`, name: `Toko ${tag}`, address: "uji", termsType: "KONSI" } })).id;
+    tokoLain = (await prisma.store.create({ data: { code: `${tag}-L`, name: `Toko lain ${tag}`, address: "uji", termsType: "KONSI" } })).id;
     spg = (await prisma.user.create({ data: { email: `${tag}-spg@test.local`.toLowerCase(), name: `SPG ${tag}`, assignedStoreId: toko } })).id;
   });
 
@@ -53,15 +58,23 @@ d("absen SPG dari check-in/out tanpa sinyal yang terlambat (test bed only)", () 
   afterEach(async () => {
     await prisma.attendance.deleteMany({ where: { userId: seededId(spg) } });
     await prisma.storeVisit.deleteMany({ where: { userId: seededId(spg) } });
+    // Kasus "SPG berhenti" mengubah penggunanya; kembalikan ke SPG aktif di tokonya.
+    await prisma.user.updateMany({ where: { id: seededId(spg) }, data: { assignedStoreId: toko, spgEndedOn: null, spgEndedStoreId: null } });
   });
 
   afterAll(async () => {
     await prisma.user.deleteMany({ where: { id: seededId(spg) } });
-    await prisma.store.deleteMany({ where: { id: seededId(toko) } });
+    await prisma.store.deleteMany({ where: { id: { in: seededIds([toko, tokoLain].filter(Boolean)) } } });
   });
 
-  const masuk = (clientId: string, waktu: Date) =>
-    checkInLuringAction({ clientId, storeId: toko, lat: -7.78, lng: 110.37, accuracy: 10, waktu: waktu.toISOString() });
+  const masuk = (clientId: string, waktu: Date, storeId = toko) =>
+    checkInLuringAction({ clientId, storeId, lat: -7.78, lng: 110.37, accuracy: 10, waktu: waktu.toISOString() });
+  /** Kantor menandai SPG ini berhenti (P66) dengan hari terakhir `n` hari yang lalu (WIB). */
+  const tandaiBerhenti = (n: number) =>
+    prisma.user.update({
+      where: { id: seededId(spg) },
+      data: { assignedStoreId: null, spgEndedOn: hariWib(jamHari(n, "12:00")), spgEndedStoreId: toko },
+    });
   const keluar = (clientId: string, waktu: Date) => checkOutLuringAction({ visitClientId: clientId, waktu: waktu.toISOString(), lat: -7.79, lng: 110.38 });
   const bukaOnline = (checkinAt: Date) => prisma.storeVisit.create({ data: { storeId: toko, userId: spg, checkinAt, checkinLat: 1, checkinLng: 1 } });
   const absen = (n: number) => prisma.attendance.findUnique({ where: { userId_dayKey: { userId: spg, dayKey: hariWib(jamHari(n, "12:00")) } } });
@@ -137,5 +150,33 @@ d("absen SPG dari check-in/out tanpa sinyal yang terlambat (test bed only)", () 
     expect(hasil.every((x) => x.ok)).toBe(true);
     expect(await prisma.attendance.count({ where: { userId: spg } })).toBe(1);
     expect(await absen(2)).toMatchObject({ clockInAt: jamHari(2, "09:00") });
+  });
+
+  it("SPG berhenti (P66): check-in antrean yang ditangkap di hari terakhirnya dicatat sebagai kunjungan SPG dan absen; check-out-nya tanpa alasan kunjungan", async () => {
+    await tandaiBerhenti(2);
+    const c = id();
+    const r = await masuk(c, jamHari(2, "08:05"));
+    if (!r.ok) throw new Error(r.code);
+    expect(r.storeId).toBe(toko);
+    expect(await absen(2)).toMatchObject({ clockInAt: jamHari(2, "08:05"), clockOutAt: null });
+
+    // SPG tidak pernah ditanya alasan kunjungan (`HASIL_WAJIB` hanya untuk salesman).
+    expect(await keluar(c, jamHari(2, "17:00"))).toMatchObject({ ok: true, sudahTertutup: false });
+    const v = await prisma.storeVisit.findUniqueOrThrow({ where: { id: r.visitId } });
+    expect(v).toMatchObject({ checkoutAt: jamHari(2, "17:00"), outcome: null });
+    expect(await absen(2)).toMatchObject({ clockInAt: jamHari(2, "08:05"), clockOutAt: jamHari(2, "17:00") });
+  });
+
+  it("SPG berhenti (P66): check-in yang ditangkap sesudah hari terakhirnya ditolak SPG_BERHENTI, tanpa kunjungan dan absen", async () => {
+    await tandaiBerhenti(2);
+    expect(await masuk(id(), jamHari(1, "08:00"))).toEqual({ ok: false, code: "SPG_BERHENTI" });
+    expect(await prisma.storeVisit.count({ where: { userId: seededId(spg) } })).toBe(0);
+    expect(await prisma.attendance.count({ where: { userId: seededId(spg) } })).toBe(0);
+  });
+
+  it("SPG berhenti (P66): check-in di toko selain yang dilepasnya ditolak STORE_NOT_ASSIGNED", async () => {
+    await tandaiBerhenti(2);
+    expect(await masuk(id(), jamHari(2, "08:00"), tokoLain)).toEqual({ ok: false, code: "STORE_NOT_ASSIGNED" });
+    expect(await prisma.storeVisit.count({ where: { userId: seededId(spg) } })).toBe(0);
   });
 });

@@ -158,10 +158,17 @@ export function tempelStokRak(items: CatalogItem[], saldo: SaldoRak[]): CatalogI
  * Barang "Marketplace saja" tidak pernah ada di katalog ini (P3a) — katalog
  * salesman, portal toko dan kirim katalog WA sekaligus. Katalog retur di bawah
  * tidak disaring: barang yang sudah ada di toko tetap bisa diretur.
+ *
+ * `tetapTampilkan`: id barang yang sudah ada di dokumen yang sedang diubah —
+ * hanya rute katalog HP salesman saat "Ubah pesanan" (`?ganti=`), dengan barang
+ * pesanan PENDING miliknya sendiri. Barang itu tetap tampil walau sudah dijadikan
+ * "Marketplace saja", karena pesanan yang sudah dibuat dihormati (P73); tanpa
+ * itu barisnya hilang diam-diam saat pesanan disusun ulang. Tetap hanya barang
+ * jadi yang aktif. Keranjang baru tidak pernah memberikannya (P3a).
  */
 export async function listCatalogForPwa(
   storeId: string,
-  opsi: { stokRak?: boolean; hargaKonsi?: boolean } = {},
+  opsi: { stokRak?: boolean; hargaKonsi?: boolean; tetapTampilkan?: string[] } = {},
 ): Promise<CatalogPayload | null> {
   const store = await prisma.store.findUnique({
     where: { id: storeId },
@@ -181,8 +188,12 @@ export async function listCatalogForPwa(
   const g = await prisma.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
   const globalMin = g ? Number(g.value) : 6;
 
+  const tetap = [...new Set((opsi.tetapTampilkan ?? []).filter((id) => typeof id === "string" && id !== ""))];
   const rows = await prisma.item.findMany({
-    where: { isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() },
+    where: {
+      type: "FINISHED_GOOD",
+      OR: [{ isActive: true, ...syaratDijualOffline() }, ...(tetap.length ? [{ id: { in: tetap }, isActive: true }] : [])],
+    },
     orderBy: { nameId: "asc" },
     select: {
       id: true,

@@ -1,5 +1,6 @@
 import { prisma } from "@elorae/db";
 import { formatDisplayDate } from "@/lib/date-only";
+import { bacaSaluranJual, dijualOffline } from "@/lib/items/saluran-jual";
 import { parseItemVariants, variantDetailForSku } from "@/lib/items/variants";
 import { kirimanMenunggu } from "@/lib/spg/kiriman";
 import { bacaPesananKonsiLama } from "@/lib/spg/antaran-queries";
@@ -639,12 +640,15 @@ export async function nilaiStokToko(storeIds: string[], sekarang = new Date()): 
   ]);
   const sumber = new Map([...stok].map(([id, s]) => [id, s.source]));
   const semuaItem = [...new Set([...[...stok.values()].flatMap((s) => s.baris.map((b) => b.itemId)), ...target.map((t) => t.itemId)])];
-  const [gudang, dalamProses, barang] = await Promise.all([
+  const [gudang, dalamProses, barang, saluran] = await Promise.all([
     muatTersediaGudang(semuaItem),
     muatDalamProses(storeIds, sumber, sekarang),
     // Nama untuk barang yang hanya punya target (belum pernah ada di toko).
     muatBarang(target.map((t) => t.itemId)),
+    prisma.item.findMany({ where: { id: { in: semuaItem } }, select: { id: true, salesChannel: true } }),
   ]);
+  // Barang "Marketplace saja" tidak pernah ditawarkan ke toko offline (P3a); stoknya di rak tetap tampil (P73).
+  const tanpaSaran = new Set(saluran.filter((i) => !dijualOffline(bacaSaluranJual(i.salesChannel))).map((i) => i.id));
 
   for (const id of storeIds) {
     const s = stok.get(id) ?? { source: "TITIPAN" as const, baris: [] };
@@ -653,6 +657,7 @@ export async function nilaiStokToko(storeIds: string[], sekarang = new Date()): 
       target: target.filter((t) => t.storeId === id),
       tersediaGudang: gudang,
       dalamProses: dalamProses.get(id),
+      tanpaSaran,
       sekarang,
     });
     const baris: BarisTokoDinilai[] = n.baris
@@ -694,9 +699,11 @@ export async function nilaiStokToko(storeIds: string[], sekarang = new Date()): 
 // ---------------------------------------------------------------------------
 
 /**
- * Bentuk kartu "Stok di toko ini" di HP salesman — hanya jumlah, TIDAK PERNAH
- * harga atau nilai (konsinyasi tidak menunjukkan harga ke salesman). Tanggal
- * sudah diformat di server supaya Node dan Safari tidak berbeda.
+ * Bentuk kartu "Stok di toko ini" di HP salesman — baris stok hanya jumlah
+ * (pcs). Harga retail toko untuk lembar isi ulang dibaca halaman toko
+ * (`hargaKonsiHp`, hanya HP salesman, P18) dan diteruskan ke StokDiToko sebagai
+ * `hargaKonsi`; HP SPG tidak pernah mendapat harga konsi (P18a). Tanggal sudah
+ * diformat di server supaya Node dan Safari tidak berbeda.
  */
 export type KartuStokDiToko = {
   source: SumberStokToko;

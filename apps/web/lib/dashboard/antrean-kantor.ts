@@ -63,6 +63,7 @@ export const KUNCI_ANTREAN = [
   "stockRequestsUnheld",
   "spgCommissionsUnset",
   "spgCommissionsUnpaidPast",
+  "spgSalariesUnset",
   "spgDebtsOpen",
   "spgDebtPaymentsToCheck",
   "receiptsWithoutInvoice",
@@ -303,6 +304,16 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
     bolehBuka: bolehMembukaKomisiSpg,
     bolehBertindak: izinTunggal(PERMISSIONS.SPG_COMMISSION_PAY),
   },
+  // Pembayaran yang DITAHAN karena gaji pokok bulanan SPG-nya belum diatur — satu definisi dengan
+  // baris tahan `GAJI_POKOK_BELUM_DIATUR` di kartu #tunggakan (`daftarTunggakanKomisi`). Mengatur gaji
+  // pokok = spg_commission:manage (`app/actions/settings/spg-commission.ts`). Tautannya ke kartu
+  // #tunggakan, bukan ke Pengaturan: halaman gaji pokok di Pengaturan bukan anak menu (menu.test),
+  // dan kartu itu menyebut SPG × bulan yang tertahan.
+  spgSalariesUnset: {
+    href: "/backoffice/komisi-spg#tunggakan",
+    bolehBuka: bolehMembukaKomisiSpg,
+    bolehBertindak: izinTunggal(PERMISSIONS.SPG_COMMISSION_MANAGE),
+  },
   // Utang SPG yang sudah berhenti (pembayaran terakhir tidak menutup potongannya): terbuka, sisa
   // yang belum dicatat, atau tambahan sesudah pembayaran terakhir. Mencatat = spg_commission:pay.
   // Pembayaran utang yang dicatat menunggu cek mutasi bank oleh orang lain (keputusan 11) =
@@ -521,6 +532,8 @@ const HITUNG_ANTREAN: Readonly<Record<KunciAntrean, () => Promise<number>>> = {
   spgCommissionsUnset: async () => (await import("@/lib/spg/komisi-queries")).jumlahKomisiPutusBelumDitetapkan(),
   // Bagian pertama kartu #tunggakan Komisi SPG: baris yang boleh dibayar sekarang, di jendela koreksi.
   spgCommissionsUnpaidPast: async () => (await import("@/lib/spg/koreksi-queries")).jumlahKomisiSpgTertunggak(),
+  // Bagian ditahan kartu #tunggakan yang alasannya gaji pokok belum diatur.
+  spgSalariesUnset: async () => (await import("@/lib/spg/koreksi-queries")).jumlahGajiSpgBelumDiatur(),
   spgDebtsOpen: async () => (await import("@/lib/spg/utang-queries")).jumlahUtangSpgTerbuka(),
   spgDebtPaymentsToCheck: async () => (await import("@/lib/spg/utang-queries")).jumlahBayarUtangSpgMenungguCek(),
   // Satu definisi dengan saringan halaman tujuannya (`belum-ditagih`, `selisih-harga`).

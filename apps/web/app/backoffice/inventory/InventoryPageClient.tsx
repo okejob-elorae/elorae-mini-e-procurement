@@ -196,6 +196,8 @@ export function InventoryPageClient({
   const [grnLoading, setGrnLoading] = useState(false);
   const grnPermintaanRef = useRef(0);
   const lewatiMuatGrnAwal = useRef(true);
+  /** Dinaikkan sesudah keputusan pemilik atas GRN terima-lebih, supaya daftar GRN dimuat ulang. */
+  const [grnMuatUlang, setGrnMuatUlang] = useState(0);
   const [adjustmentSearchQuery, setAdjustmentSearchQuery] = useState('');
 
   const [expandedAdjustmentId, setExpandedAdjustmentId] = useState<string | null>(null);
@@ -375,7 +377,7 @@ export function InventoryPageClient({
       .finally(() => {
         if (nomor === grnPermintaanRef.current) setGrnLoading(false);
       });
-  }, [grnPage, grnPageSize, grnSearchDebounced, grnKonfirmasi, tToasts]);
+  }, [grnPage, grnPageSize, grnSearchDebounced, grnKonfirmasi, grnMuatUlang, tToasts]);
 
   useEffect(() => {
     const k = grnSearchQuery.trim();
@@ -796,7 +798,14 @@ export function InventoryPageClient({
                                 </Badge>
                                 {/* Pemilik = admin sistem (izin `*`), sama dengan penjaga server. */}
                                 {session?.user?.permissions?.includes('*') && (
-                                  <KeputusanPemilikGrn grnId={grn.id} docNumber={grn.docNumber} onSelesai={fetchData} />
+                                  <KeputusanPemilikGrn
+                                    grnId={grn.id}
+                                    docNumber={grn.docNumber}
+                                    onSelesai={async () => {
+                                      setGrnMuatUlang((n) => n + 1);
+                                      await fetchData();
+                                    }}
+                                  />
                                 )}
                               </div>
                             ) : grn.ownerApprovedAt ? (

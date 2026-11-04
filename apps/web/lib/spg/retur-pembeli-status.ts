@@ -8,19 +8,24 @@
  * Selama menunggu barangnya DISISIHKAN (P12): tidak ke rak, tidak dijual, tidak
  * dihitung opname.
  *
- *   MENUNGGU → DISETUJUI | DITOLAK | DIBATALKAN (ditarik SPG pelapornya)
- *   DITOLAK  → DISETUJUI, hanya lewat dua jalan: penolakan keliru dibatalkan
- *              kantor (P82) selama belum ada yang diambil dari SPG, atau
- *              sesudah SPG mengganti uangnya kantor memilih "kembalikan uang
- *              SPG — barang masuk stok" (P79). Selain itu final.
+ *   MENUNGGU   → DISETUJUI | DITOLAK | DIBATALKAN (ditarik SPG pelapornya)
+ *   DITOLAK    → DISETUJUI, hanya lewat dua jalan: penolakan keliru dibatalkan
+ *                kantor (P82) selama belum ada yang diambil dari SPG, atau
+ *                sesudah SPG mengganti uangnya kantor memilih "kembalikan uang
+ *                SPG — barang masuk stok" (P79). Selain itu final.
+ *   DIBATALKAN → MENUNGGU, hanya bila pengembalian uang yang dicatat di HP SEBELUM
+ *                laporannya ditarik baru sampai sesudahnya (P78: begitu uangnya
+ *                tercatat, SPG tidak bisa menarik laporannya — kantor yang
+ *                memutuskan). Selain itu final.
  *
  * Uangnya (P13, P13a): kasir mengembalikan uang pembeli HANYA sesudah kantor
  * menyetujui — HP yang menyuruhnya. Ditolak tanpa uang dikembalikan → barang
  * dikembalikan ke pembeli (P83). Ditolak padahal uangnya sudah dikembalikan
- * (dicatat SPG dengan foto struk, atau ditandai kantor saat menolak — P78) →
- * satu beban SPG (`SpgCharge`, `./beban-spg`), dipotong dari komisi lalu gaji.
- * Tanpa kredit apa pun ke toko (P80). Laporan yang uangnya sudah tercatat
- * dikembalikan tidak bisa lagi ditarik SPG sendiri — kantor yang memutuskan.
+ * (dicatat SPG dengan foto struk — sebelum ditolak, atau sesudahnya karena
+ * uangnya terlanjur keluar — atau ditandai kantor saat menolak, P78) → satu beban
+ * SPG (`SpgCharge`, `./beban-spg`), dipotong dari komisi lalu gaji. Tanpa kredit
+ * apa pun ke toko (P80). Laporan yang uangnya sudah tercatat dikembalikan tidak
+ * bisa lagi ditarik SPG sendiri — kantor yang memutuskan.
  *
  * Satu-satunya arti "retur pembeli yang berlaku" untuk pembaca basis data ada
  * di `./retur-pembeli-berlaku` (`returPembeliBerlaku`); di memori,

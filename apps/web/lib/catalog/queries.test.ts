@@ -354,33 +354,38 @@ d("listCatalogForPwa — sales channel and konsi price (test bed only)", () => {
   let marketplaceId = "";
   let offlineId = "";
   let keduanyaId = "";
+  let marketplaceNonaktifId = "";
   let konsiId = "";
   let putusId = "";
 
   beforeEach(async () => {
-    uomId = ""; marketplaceId = ""; offlineId = ""; keduanyaId = ""; konsiId = ""; putusId = "";
+    uomId = ""; marketplaceId = ""; offlineId = ""; keduanyaId = ""; marketplaceNonaktifId = ""; konsiId = ""; putusId = "";
     uomId = (await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } })).id;
-    const barang = async (akhiran: string, salesChannel: "MARKETPLACE" | "OFFLINE" | "BOTH") =>
+    const barang = async (akhiran: string, salesChannel: "MARKETPLACE" | "OFFLINE" | "BOTH", isActive = true) =>
       (
         await prisma.item.create({
-          data: { sku: `${sku}-${akhiran}`, nameId: `Saluran ${akhiran}`, nameEn: `Channel ${akhiran}`, type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 100_000, salesChannel },
+          data: { sku: `${sku}-${akhiran}`, nameId: `Saluran ${akhiran}`, nameEn: `Channel ${akhiran}`, type: "FINISHED_GOOD", uomId, isActive, sellingPrice: 100_000, salesChannel },
         })
       ).id;
     marketplaceId = await barang("MP", "MARKETPLACE");
     offlineId = await barang("OFF", "OFFLINE");
     keduanyaId = await barang("BOTH", "BOTH");
+    marketplaceNonaktifId = await barang("MPX", "MARKETPLACE", false);
     konsiId = (await prisma.store.create({ data: { code: `S-${sku}-K`, name: "Toko Konsi Saluran", address: "T", termsType: "KONSI", markupPercent: 20, isActive: true } })).id;
     putusId = (await prisma.store.create({ data: { code: `S-${sku}-P`, name: "Toko Putus Saluran", address: "T", termsType: "PUTUS", isActive: true } })).id;
   });
 
   afterEach(async () => {
-    await prisma.item.deleteMany({ where: { id: { in: [marketplaceId, offlineId, keduanyaId].map(seededId) } } });
+    await prisma.item.deleteMany({ where: { id: { in: [marketplaceId, offlineId, keduanyaId, marketplaceNonaktifId].map(seededId) } } });
     await prisma.store.deleteMany({ where: { id: { in: [konsiId, putusId].map(seededId) } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   const milikUji = (items: { itemId: string }[]) =>
-    items.map((i) => i.itemId).filter((id) => [marketplaceId, offlineId, keduanyaId].includes(id)).sort();
+    items
+      .map((i) => i.itemId)
+      .filter((id) => [marketplaceId, offlineId, keduanyaId, marketplaceNonaktifId].includes(id))
+      .sort();
 
   it("leaves a Marketplace saja item out and keeps Toko offline saja and Keduanya", async () => {
     const payload = await listCatalogForPwa(putusId);
@@ -388,10 +393,34 @@ d("listCatalogForPwa — sales channel and konsi price (test bed only)", () => {
     expect(milikUji(payload!.items)).toEqual([offlineId, keduanyaId].sort());
   });
 
+  /*
+   * P73: an order already made is honoured. "Ubah pesanan" rebuilds the cart from this catalog,
+   * so the edit route passes the items of the salesman's own PENDING order (`tetapTampilkan`);
+   * without them a line whose item became "Marketplace saja" is dropped from the rebuilt order.
+   */
+  it("an edit keeps the Marketplace saja line of the order being edited, priced like any other row", async () => {
+    const payload = await listCatalogForPwa(putusId, { tetapTampilkan: [marketplaceId] });
+    expect(milikUji(payload!.items)).toEqual([marketplaceId, offlineId, keduanyaId].sort());
+    expect(payload!.items.find((i) => i.itemId === marketplaceId)?.price).toBe(100_000);
+  });
+
+  it("a fresh cart does not offer the Marketplace saja item (P3a)", async () => {
+    for (const opsi of [undefined, {}, { tetapTampilkan: [] }, { tetapTampilkan: [""] }]) {
+      const payload = await listCatalogForPwa(putusId, opsi);
+      expect(milikUji(payload!.items)).not.toContain(marketplaceId);
+    }
+  });
+
+  it("tetapTampilkan still never lists an inactive item", async () => {
+    const payload = await listCatalogForPwa(putusId, { tetapTampilkan: [marketplaceNonaktifId, marketplaceNonaktifId] });
+    expect(milikUji(payload!.items)).toEqual([offlineId, keduanyaId].sort());
+  });
+
   it("the retur catalog still lists the Marketplace saja item", async () => {
     const retur = await listReturCatalogForPwa(putusId);
     expect(retur).not.toBeNull();
-    expect(milikUji(retur!.items)).toEqual([marketplaceId, offlineId, keduanyaId].sort());
+    // The retur catalog also keeps discontinued items, the inactive one included.
+    expect(milikUji(retur!.items)).toEqual([marketplaceId, offlineId, keduanyaId, marketplaceNonaktifId].sort());
   });
 
   it("a putus store's catalog is always priced", async () => {

@@ -386,7 +386,7 @@ describe("JubelioCatalogSyncService.syncCatalog observed Jubelio price", () => {
     expect(mapped).toEqual([1]);
     const rows = tx.inventoryValue.createMany.mock.calls.flatMap((c: any[]) => c[0].data.map((d: { variantSku: string }) => d.variantSku));
     expect(rows).toEqual(["27000015P-L"]);
-    expect(result.summary.warnings.some((w) => /1 Jubelio variant\(s\) the ERP does not list left unmapped/.test(w))).toBe(true);
+    expect(result.summary.warnings.some((w) => /1 Jubelio variant\(s\) the ERP does not list left unmapped .*reserves no ERP stock/.test(w))).toBe(true);
   });
 
   it("an item whose ERP edits do reach Jubelio still merges and maps every Jubelio variant", async () => {

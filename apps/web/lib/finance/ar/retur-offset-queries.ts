@@ -13,6 +13,12 @@ export type OffsettableReturnRow = {
 
 const OFFSETTABLE_PAGE_SIZE = 25;
 
+/**
+ * The store's terms are deliberately not a condition, matching `recordPayment`: a konsi bill is
+ * refused by the bill (`KONSI_LEWAT_BKM`, `isKonsiBill`), never by the retur's store, so a retur
+ * of a store whose terms read KONSI today stays offerable against that store's putus invoices,
+ * as before. No owner answer narrows it; the picker must offer exactly what the writer accepts.
+ */
 function offsettableReturnWhere(storeId?: string): Prisma.FieldReturnWhereInput {
   return {
     status: "APPROVED",

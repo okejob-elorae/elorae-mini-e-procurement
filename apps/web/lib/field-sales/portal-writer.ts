@@ -15,6 +15,8 @@ import { JarakJauhDitolakError, SALURAN_PORTAL } from "./jarak-jauh";
 import { BarangTanpaHargaError, hargaSah } from "./harga-wajib";
 import { tahapPengirimanPesanan } from "@/lib/delivery/tahap-pesanan";
 import { keadaanPesanan, type KeadaanPesanan } from "./pwa-queries";
+import { perkiraanPesananKonsi } from "./perkiraan-konsi-queries";
+import type { PerkiraanKonsi } from "./perkiraan-konsi";
 import { capTautanDipakai, type AksesPortal } from "./portal-toko";
 import { batasPesanPortal, emberBarang, emberKetersediaan, emberPortal, type Ketersediaan } from "./portal-toko-aturan";
 import { BatasHarianPortalError } from "./portal-toko-batas";
@@ -366,7 +368,13 @@ export async function hitungPesananPortalHariIni(storeId: string, sekarang: Date
   });
 }
 
-/** Kabar ke salesman pemegang toko. KONSI tanpa nilai uang — aturan tetap aplikasi salesman. */
+/**
+ * Kabar ke salesman pemegang toko. Kabar ini sampai ke HP SALESMAN, yang menampilkan konsi lengkap
+ * (pemilik P18 "berikan selengkapnya saja"): permintaan KONSI membawa PERKIRAAN nilai retailnya —
+ * angka yang sama dengan daftar dan rincian pesanan di HP (`perkiraanPesananKonsi`), karena harga
+ * konsi baru dibekukan kantor saat menyetujui. Tanpa perkiraan (tidak satu barang pun berharga)
+ * angkanya tidak disebut. Jawaban portal ke TOKO tetap tanpa harga konsi (P18a).
+ */
 export function kabarPesananPortal(k: {
   orderId: string;
   orderNo: string;
@@ -374,10 +382,17 @@ export function kabarPesananPortal(k: {
   jenis: "PUTUS" | "KONSI";
   total: number | null;
   jumlahPcs: number;
+  /** Hanya KONSI: perkiraan nilai retail pesanan yang menunggu persetujuan. */
+  perkiraan?: PerkiraanKonsi | null;
 }): Kabar {
   const isi =
     k.jenis === "KONSI"
-      ? `${k.namaToko} memesan sendiri lewat portal · permintaan konsinyasi ${k.jumlahPcs} pcs. Menunggu persetujuan kantor.`
+      ? `${k.namaToko} memesan sendiri lewat portal · permintaan konsinyasi ${k.jumlahPcs} pcs` +
+        (k.perkiraan
+          ? `, perkiraan nilai retail ${formatIDR(k.perkiraan.nilai)} (nilai pasti dihitung kantor saat menyetujui)` +
+            (k.perkiraan.lengkap ? "" : ". Sebagian barang belum punya harga, jadi belum ikut dalam perkiraan ini")
+          : "") +
+        ". Menunggu persetujuan kantor."
       : `${k.namaToko} memesan sendiri lewat portal · ${k.jumlahPcs} pcs, total ${formatIDR(k.total ?? 0)}. Menunggu persetujuan kantor.`;
   return {
     jenis: JENIS_KABAR.PESANAN_PORTAL,
@@ -463,6 +478,14 @@ export async function kirimPesananPortal(akses: AksesPortal, input: unknown, sek
   const jenis = akses.toko.termsType;
   const order = await prisma.fieldSalesOrder.findUnique({ where: { id: hasil.orderId }, select: { total: true } });
   const total = jenis === "KONSI" ? null : Number(order?.total ?? 0);
+  // Perkiraan untuk kabar ke HP salesman saja; pesanannya sudah tercatat, jadi pembacaan yang gagal
+  // hanya membuat kabarnya tanpa angka — jawaban ke toko tidak terpengaruh.
+  const perkiraan =
+    jenis === "KONSI"
+      ? await perkiraanPesananKonsi([hasil.orderId])
+          .then((m) => m.get(hasil.orderId) ?? null)
+          .catch(() => null)
+      : null;
   void kabariPengguna(
     akses.toko.salesmanId,
     kabarPesananPortal({
@@ -472,6 +495,7 @@ export async function kirimPesananPortal(akses: AksesPortal, input: unknown, sek
       jenis,
       total,
       jumlahPcs: cek.baris.reduce((n, b) => n + b.qty, 0),
+      perkiraan,
     }),
   );
   return jenis === "KONSI"

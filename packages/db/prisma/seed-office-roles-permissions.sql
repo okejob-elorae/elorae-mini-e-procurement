@@ -38,9 +38,15 @@
 --                     penjualan.
 --   ADMIN_PAJAK     — nomor faktur pajak: antrean nota tagihan dan siklus konsinyasi.
 --
--- Idempoten — aman dijalankan ulang. Menjalankan ulang tidak mencabut izin yang ditambahkan pemilik
--- di layar, dan juga tidak mencabut tautan yang ditulis versi lama berkas ini (versi Max memberi
--- ADMIN_PENJUALAN beberapa persetujuan): pemeriksaan terakhir menampilkannya untuk dicabut di layar.
+-- Idempoten — aman dijalankan ulang. Tautan bawaan tiap peran hanya ditulis pada run yang MEMBUAT
+-- peran itu (penandanya ditangkap sebelum INSERT, seperti di seed-owner-2026-11-02b-permissions.sql),
+-- jadi menjalankan ulang tidak pernah mengembalikan izin yang sudah dicabut pemilik di Peran & izin
+-- (keputusan pemilik 2026-11-01 (8): pemilik mengatur izin sendiri). Peran yang SUDAH ADA menerima
+-- kode baru hanya lewat berkas seed bertanggal yang membuat kode itu — tautan bawaan baru untuk peran
+-- kantor ditulis juga DI SANA (pola 2b), bukan hanya dengan menambah daftar di sini.
+-- Menjalankan ulang juga tidak mencabut izin yang ditambahkan pemilik di layar, dan tidak mencabut
+-- tautan yang ditulis versi lama berkas ini (versi Max memberi ADMIN_PENJUALAN beberapa persetujuan):
+-- pemeriksaan terakhir menampilkannya untuk dicabut di layar.
 -- Keterangan peran sama persis dengan DESKRIPSI_PERAN_BAWAAN (apps/web/lib/rbac/penjelasan-izin.ts)
 -- supaya layar menerjemahkannya; daftar izinnya sama dengan seed.ts
 -- (apps/web/lib/rbac/peran-kantor.test.ts membandingkan keduanya).
@@ -65,6 +71,11 @@ SELECT IF(
 
 START TRANSACTION;
 
+-- Ditangkap SEBELUM perannya dibuat: tautan bawaan tiap peran hanya ditulis pada run yang membuatnya.
+SET @keuangan_is_new = (SELECT COUNT(*) FROM RoleDefinition WHERE name = 'KEUANGAN') = 0;
+SET @admin_penjualan_is_new = (SELECT COUNT(*) FROM RoleDefinition WHERE name = 'ADMIN_PENJUALAN') = 0;
+SET @admin_pajak_is_new = (SELECT COUNT(*) FROM RoleDefinition WHERE name = 'ADMIN_PAJAK') = 0;
+
 INSERT INTO RoleDefinition (id, name, description, isSystem, permissionsVersion, createdAt, updatedAt)
 SELECT REPLACE(UUID(), '-', ''), 'KEUANGAN', 'Finance — verifies payments against the bank statement, journals and financial reports', 0, 1, NOW(3), NOW(3)
 FROM DUAL
@@ -76,6 +87,7 @@ FROM RoleDefinition r
 CROSS JOIN Permission p
 WHERE r.name = 'KEUANGAN'
   AND p.code IN ('dashboard:view', 'journals:view', 'journals:manage', 'coa:view', 'finance_reports:view', 'payments:verify', 'receivables:view', 'receivables:overdue_reminder', 'tax_invoices:view', 'supplier_payments:view', 'supplier_payments:create', 'supplier_payments:edit', 'purchase_orders:view', 'consignment:view', 'sales_orders:view', 'spg_commission:pay', 'spg_attendance:verify')
+  AND @keuangan_is_new = 1
   AND NOT EXISTS (
     SELECT 1 FROM RolePermission rp
     WHERE rp.roleId = r.id AND rp.permissionId = p.id
@@ -92,6 +104,7 @@ FROM RoleDefinition r
 CROSS JOIN Permission p
 WHERE r.name = 'ADMIN_PENJUALAN'
   AND p.code IN ('dashboard:view', 'consignment:view', 'consignment:note_number', 'field_sales_orders:view', 'stores:view', 'promos:view', 'spg_sales:view', 'sales_orders:view', 'sales_returns:view', 'items:view', 'spg_returns:approve', 'deliveries:cancel_nota', 'spg_attendance:record')
+  AND @admin_penjualan_is_new = 1
   AND NOT EXISTS (
     SELECT 1 FROM RolePermission rp
     WHERE rp.roleId = r.id AND rp.permissionId = p.id
@@ -108,15 +121,19 @@ FROM RoleDefinition r
 CROSS JOIN Permission p
 WHERE r.name = 'ADMIN_PAJAK'
   AND p.code IN ('dashboard:view', 'tax_invoices:view', 'tax_invoices:manage', 'consignment:view', 'consignment:tax_number')
+  AND @admin_pajak_is_new = 1
   AND NOT EXISTS (
     SELECT 1 FROM RolePermission rp
     WHERE rp.roleId = r.id AND rp.permissionId = p.id
   );
 
--- Pengguna yang sudah masuk dengan salah satu peran ini langsung mendapat izin barunya.
+-- Versi izin naik hanya untuk peran yang mendapat tautan pada run ini — yang baru dibuat — seperti
+-- seed-owner-2026-11-02b-permissions.sql. Run ulang tidak menulis tautan, jadi tidak menaikkan apa pun.
 UPDATE RoleDefinition
 SET permissionsVersion = permissionsVersion + 1
-WHERE name IN ('KEUANGAN', 'ADMIN_PENJUALAN', 'ADMIN_PAJAK');
+WHERE (name = 'KEUANGAN' AND @keuangan_is_new = 1)
+   OR (name = 'ADMIN_PENJUALAN' AND @admin_penjualan_is_new = 1)
+   OR (name = 'ADMIN_PAJAK' AND @admin_pajak_is_new = 1);
 
 COMMIT;
 

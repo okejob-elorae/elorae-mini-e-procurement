@@ -19,8 +19,6 @@ import {
 } from "./koreksi-utang-aturan";
 import { postKoreksiUtangJournal, postKoreksiUtangReversalJournal } from "./koreksi-utang-journal";
 import { bacaRincianKoreksi, SUMBER_KOREKSI } from "./koreksi-utang-queries";
-import { grnLineKey, grnLineSource } from "./bill-paid-rule";
-import { invoicedReturnedQtyByGrnLine } from "./billable";
 import { susunKabarSelisihHarga, VENDOR_BILL_PRICE_DIFFERENCE, type NotifikasiKantor } from "./kabar-pemasok";
 import { bacaSebaranLapisan, bacaSisaSejakEntri } from "./sisa-lapisan-queries";
 import { bagiNilaiPerLokasi } from "./sisa-lapisan";
@@ -54,7 +52,6 @@ export type KodeGalatKoreksi =
   | "PENERIMAAN_BELUM_BERJURNAL"
   | "KOREKSI_TIDAK_BOLEH_NAIK"
   | "ADA_CMT_LAMA"
-  | "ADA_RETUR"
   | "UNMAPPED_ROLE"
   | "JURNAL_GAGAL";
 
@@ -170,7 +167,14 @@ function peranLokasi(jenis: "MAIN" | "STORE" | "VAN", tipeBarang: string | null)
   return peranPersediaan(tipeBarang);
 }
 
-/** Stok tersisa dari tiap baris rincian dinilai ulang (dikunci dulu); bagian yang sudah keluar dikembalikan. */
+/**
+ * Stok tersisa dari tiap baris rincian dinilai ulang (dikunci dulu); bagian yang sudah keluar dikembalikan.
+ * SEMENTARA, bagian di Gudang Toko konsinyasi ikut "keluar": barang konsinyasi yang laku, kembali, atau
+ * hilang dikredit dari `INVENTORY_CONSIGNMENT` sebesar `biayaSatuanKonsi` (rata-rata kiriman), yang belum
+ * membawa penilaian ulang di toko — menaikkannya di sini akan menyisakan nilai yang tidak pernah keluar
+ * dari akun itu. Dihapus begitu biaya konsinyasi membawanya (P49 + Q1: stok di toko ikut naik). Van tetap
+ * dinilai ulang: penjualan dan rekonsiliasi van berbiaya `VanStock.avgCost`.
+ */
 async function terapkanKeStok(tx: Tx, k: { id: string }, rincian: RincianSelisih[], nomor: (r: RincianSelisih) => string, olehUserId: string): Promise<BarisTerapan[]> {
   const hasil: BarisTerapan[] = [];
   for (const r of rincian) {
@@ -192,10 +196,11 @@ async function terapkanKeStok(tx: Tx, k: { id: string }, rincian: RincianSelisih
     for (let i = 0; i < sebaran.tujuan.length; i++) {
       const t = sebaran.tujuan[i];
       const bagian = bagi.lokasi[i + 1];
-      const d =
-        t.jenis === "STORE"
-          ? await nilaiUlangStokToko(tx, t.lokasiId, { ...umum, selisihSen: bagian })
-          : await nilaiUlangStokVan(tx, t.lokasiId, { ...umum, selisihSen: bagian });
+      if (t.jenis === "STORE") {
+        keluarSen += bagian;
+        continue;
+      }
+      const d = await nilaiUlangStokVan(tx, t.lokasiId, { ...umum, selisihSen: bagian });
       keluarSen += bagian - d.diterapkanSen;
       if (d.diterapkanSen !== 0) lokasi.push({ jenis: t.jenis, lokasiId: t.lokasiId, nilai: rp(d.diterapkanSen) });
     }
@@ -212,10 +217,13 @@ export type HasilPutuskanSelisih = { ok: true; billId: string } | { ok: false; k
 
 /**
  * Putuskan satu selisih harga. TERIMA: utang dikoreksi lewat jurnal `SUPPLIER_PAYABLE_CORRECTION`, sisa
- * stok penerimaan itu dinilai ulang (Gudang Utama, Gudang Toko konsinyasi, van), bagian yang sudah
- * keluar menjadi `PURCHASE_PRICE_VARIANCE` (P49). KOREKSI_INVOICE: baris invoice dan totalnya turun ke
- * harga penerimaan; tanpa jurnal dan tanpa stok. TERIMA ditolak `ADA_RETUR` kalau barang yang sudah
- * ditagih pada kunci GRN itu kemudian diretur ke pemasok (`invoicedReturnedQtyByGrnLine`).
+ * stok penerimaan itu dinilai ulang di Gudang Utama dan di van, bagian yang sudah keluar (terjual, terpakai
+ * produksi, masih dalam perjalanan ke toko) menjadi `PURCHASE_PRICE_VARIANCE` (P49). Bagian di Gudang Toko
+ * konsinyasi SEMENTARA ikut ke `PURCHASE_PRICE_VARIANCE` sampai biaya konsinyasi membawanya (lihat
+ * `terapkanKeStok`), walau barangnya masih milik Elorae (Q1). KOREKSI_INVOICE:
+ * baris invoice dan totalnya turun ke harga penerimaan; tanpa jurnal dan tanpa stok. Barang yang sudah
+ * ditagih lalu diretur ke pemasok tidak menolak TERIMA (P27/P53); barisnya diberi peringatan
+ * `barangDiretur` di layar.
  */
 export async function putuskanSelisihHarga(i: { koreksiId: string; keputusan: unknown; catatan?: unknown; olehUserId: string }): Promise<HasilPutuskanSelisih> {
   if (typeof i.keputusan !== "string" || !(KEPUTUSAN_SELISIH as readonly string[]).includes(i.keputusan)) return { ok: false, kode: "KEPUTUSAN_TIDAK_SAH" };
@@ -248,13 +256,6 @@ export async function putuskanSelisihHarga(i: { koreksiId: string; keputusan: un
           if (dokumen.length === 0) return { ok: false, kode: "PENERIMAAN_BELUM_BERJURNAL" };
           const berjurnal = await tx.journal.count({ where: { status: "POSTED", OR: dokumen } });
           if (berjurnal < dokumen.length) return { ok: false, kode: "PENERIMAAN_BELUM_BERJURNAL" };
-          // Barang yang sudah ditagih invoice lalu diretur ke pemasok: kredit returnya hanya sebesar harga
-          // PO, jadi menerima selisih atas qty invoice itu menagih selisih untuk barang yang sudah kembali.
-          // Ditolak; tagihannya dibatalkan lalu dicatat ulang tanpa barang yang diretur (Q17).
-          if (k.sourceType === SUMBER_KOREKSI.GRN && k.itemId) {
-            const diretur = await invoicedReturnedQtyByGrnLine(tx, [k.sourceId]);
-            if (diretur.has(grnLineSource(k.sourceId, grnLineKey(k.itemId, k.variantSku)))) return { ok: false, kode: "ADA_RETUR" };
-          }
         }
 
         const kini = new Date();

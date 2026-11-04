@@ -213,14 +213,13 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
   const salesmanId = session.user.id;
   const [active, jual, pesanan, toko, atur] = await Promise.all([
     getActiveVisit(salesmanId),
-    // "Bulan ini" + grafik 60 hari untuk HP: rupiah putus + van, konsinyasi
-    // hanya pcs. Rupiah konsi tidak pernah dikirim ke HP (aturan mutlak pemilik).
+    // "Bulan ini" + grafik 60 hari untuk HP: rupiah putus + konsinyasi + van, dan
+    // pcs konsinyasi — konsi lengkap di HP salesman (P18/P56).
     berandaPenjualanHp(salesmanId, hariIni),
     pesananSaya(salesmanId, hariIni),
     // Toko menurun dinilai atas "toko saya" yang sama dengan rencana kunjungan,
     // jadi menunggu daftar itu — tetap sejalan dengan kueri lainnya. Bentuk HP:
-    // tanpa rupiah; rasionya hanya untuk toko tanpa nilai konsinyasi (rasio total yang
-    // memuat konsi membukanya begitu jendela lain berisi rupiah yang salesman tahu).
+    // rasio "turun X%" untuk setiap toko, konsinyasi juga (P56), tanpa total rupiahnya.
     tokoSaya(salesmanId, hariIni).then(async (t) => ({
       ...t,
       menurun: await tokoMenurunHp(t.rencana.map((r) => ({ storeId: r.storeId, nama: r.nama })), hariIni),

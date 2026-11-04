@@ -432,11 +432,13 @@ describe("giliranRetur — keputusan selisih menurut hasil cek sales", () => {
   });
 });
 
-describe("bolehDibebankanKeSales — P88, 14 hari kalender WIB", () => {
+// P88 masih terbuka: jumlah harinya BELUM dijawab pemilik, dan tidak ada penulis yang memakai
+// pembantu ini (kantor boleh membebankan kapan saja). Tes ini hanya mengunci bentuk rancangannya.
+describe("bolehDibebankanKeSales — rancangan, BELUM DIPUTUSKAN pemilik (P88)", () => {
   // Selisih lahir 1 Okt 10.00 WIB (03.00Z).
   const lahir = new Date("2026-10-01T03:00:00Z");
 
-  it("batasnya dipatok 14 hari", async () => {
+  it("angka sementara rancangan 14 hari (bukan jawaban pemilik)", async () => {
     const { BATAS_HARI_LAPOR_SELISIH } = await import("./rules");
     expect(BATAS_HARI_LAPOR_SELISIH).toBe(14);
   });

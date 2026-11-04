@@ -32,10 +32,15 @@ export async function getSpgStorePricing(storeId: string): Promise<SpgStorePrici
  * "Keduanya", owner P3a — a "Marketplace saja" item never appears in a salesman/SPG catalog).
  * Every variant defined on the item is offered.
  *
- * Kept on the list whatever its channel or active flag: an item already in this store's stock book
- * (P73 "setuju" — goods still on the shelf are sold out; the SPG records every sale, Q7), and any
- * id the caller passes in `opsi.tetapTampilkan` (the stock screens keep the rows of items already
- * in the book, so their barcode and variant label still resolve).
+ * Kept on the list whatever its channel, but only while ACTIVE: an item already in this store's
+ * stock book (P73 "setuju" — goods still on the shelf are sold out; the SPG records every sale,
+ * Q7), and any id the caller passes in `opsi.tetapTampilkan` (the stock screens keep the rows of
+ * items already in the book, so their barcode and variant label still resolve).
+ *
+ * An item deactivated in the master is never listed, for any caller — the counter or the stock
+ * screens — exactly as before P73: P73 widened the channel only, and no owner answer covers
+ * deactivation. The stock screens still show the rows of a deactivated item the store holds, from
+ * the store's own balance (`pilihanBarang`), without a catalog barcode.
  *
  * With `storeId`, each row is priced through spgUnitPrice over the same store columns
  * recordSpgSale reads, so each row's price is exactly what the writer charges: a KONSI store at
@@ -71,7 +76,10 @@ export async function getSellableCatalogForSpg(
   const rows = await prisma.item.findMany({
     where: {
       type: "FINISHED_GOOD",
-      OR: [{ isActive: true, ...syaratDijualOffline() }, ...(tetap.length > 0 ? [{ id: { in: tetap } }] : [])],
+      OR: [
+        { isActive: true, ...syaratDijualOffline() },
+        ...(tetap.length > 0 ? [{ isActive: true, id: { in: tetap } }] : []),
+      ],
     },
     orderBy: { nameId: "asc" },
     select: { id: true, sku: true, nameId: true, sellingPrice: true, variants: true, categoryId: true },

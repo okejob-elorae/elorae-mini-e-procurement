@@ -7,7 +7,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { rentangBulanWib } from "@/lib/salesman/komisi";
 import { laporanKomisiBulan } from "@/lib/salesman/komisi-queries";
 import { potonganHilangSalesBulan } from "@/lib/spg/hilang-queries";
-import { potonganReturSalesBulan } from "./potongan-retur-queries";
+import { potonganReturSalesBulan } from "@/lib/receivables/return-queries";
 
 /**
  * Ekspor laporan komisi salesman ke Excel.

@@ -163,6 +163,9 @@ export function ReturTokoClient({
   const [siklusTerkunci, setSiklusTerkunci] = useState<string[] | null>(null);
   const [setujuSiklus, setSetujuSiklus] = useState(false);
   const [pasanganId, setPasanganId] = useState('');
+  // Penerimaan tanpa toko yang dijodohkan mendapat toko notanya: bulan terimanya bisa sudah dikunci.
+  const [siklusJodoh, setSiklusJodoh] = useState<string[] | null>(null);
+  const [setujuSiklusJodoh, setSetujuSiklusJodoh] = useState(false);
 
   const label = (k: LangkahRetur) => t(`step${k.charAt(0).toUpperCase()}${k.slice(1)}` as never);
 
@@ -469,6 +472,8 @@ export function ReturTokoClient({
                               onClick={() => {
                                 setJodohBaris(b);
                                 setPasanganId('');
+                                setSiklusJodoh(null);
+                                setSetujuSiklusJodoh(false);
                               }}
                             >
                               <Link2 className="mr-1.5 h-3.5 w-3.5" />
@@ -871,7 +876,15 @@ export function ReturTokoClient({
           ) : (
             <div className="space-y-2">
               <Label htmlFor="jodoh-nrt">{t('pairPick')}</Label>
-              <Select value={pasanganId} onValueChange={setPasanganId}>
+              <Select
+                value={pasanganId}
+                onValueChange={(v) => {
+                  // Nota lain bisa milik toko lain: konfirmasi siklusnya diminta ulang.
+                  setPasanganId(v);
+                  setSiklusJodoh(null);
+                  setSetujuSiklusJodoh(false);
+                }}
+              >
                 <SelectTrigger id="jodoh-nrt">
                   <SelectValue placeholder={t('pairPlaceholder')} />
                 </SelectTrigger>
@@ -884,18 +897,38 @@ export function ReturTokoClient({
                   ))}
                 </SelectContent>
               </Select>
+              {siklusJodoh && (
+                <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                  <p>{t('pairLockedCycleBody', { cycles: siklusJodoh.join(', ') })}</p>
+                  <label className="flex items-start gap-2">
+                    <Checkbox checked={setujuSiklusJodoh} onCheckedChange={(v) => setSetujuSiklusJodoh(v === true)} />
+                    <span>{t('pairLockedCycleConfirm')}</span>
+                  </label>
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>
             <Button
-              disabled={pending || !pasanganId}
+              disabled={pending || !pasanganId || (siklusJodoh !== null && !setujuSiklusJodoh)}
               onClick={() =>
                 jodohBaris &&
-                jalankan(
-                  () => jodohkanReturAction(jodohBaris.id, pasanganId),
-                  t('okPaired'),
-                  () => setJodohBaris(null),
-                )
+                startTransition(async () => {
+                  const hasil = await jodohkanReturAction(jodohBaris.id, pasanganId, setujuSiklusJodoh);
+                  if (hasil.ok) {
+                    toast.success(t('okPaired'));
+                    setJodohBaris(null);
+                    setSiklusJodoh(null);
+                    setSetujuSiklusJodoh(false);
+                    router.refresh();
+                    return;
+                  }
+                  if (hasil.kode === 'SIKLUS_TERKUNCI' && hasil.noKonsi) {
+                    setSiklusJodoh(hasil.noKonsi);
+                    return;
+                  }
+                  toast.error(t(`err${hasil.kode}` as never, { noNrt: hasil.noNrt ?? '' } as never));
+                })
               }
             >
               {t('savePair')}

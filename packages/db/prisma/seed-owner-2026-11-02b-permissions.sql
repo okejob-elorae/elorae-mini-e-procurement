@@ -14,12 +14,16 @@
 --                                    receivables:decide_bearer (P22), yang kini hanya barang hilang
 --                                    (di toko SPG maupun di perjalanan pengiriman).
 --   vendor_bills:decide_price      — memutuskan selisih harga invoice pemasok vs utang tercatat (P27, P53).
---   goods_receipts:confirm_no_po   — mengonfirmasi atau menolak penerimaan barang tanpa PO (P51a).
+--   goods_receipts:confirm_no_po   — mengonfirmasi penerimaan barang tanpa PO (P51a).
 --   spg_schedules:approve          — menyetujui, menolak, atau membuka lagi jadwal bulanan SPG (P7c).
 -- Izin kerja kantor dengan peran bawaan yang diputuskan pemilik:
 --   deliveries:cancel_nota         — tidak jadi dikirim untuk pengiriman putus yang sudah bernota;
 --                                    bawaannya ADMIN_PENJUALAN (P41a, tanpa persetujuan orang kedua).
 --   receivables:overdue_reminder   — MENERIMA pengingat jatuh tempo kantor; bawaannya KEUANGAN (P48).
+--                                    Sebelumnya pengingat itu sampai ke pemegang collections:manage;
+--                                    izin baru ini TIDAK diberikan otomatis kepada mereka (P48: izin
+--                                    terpisah). Pemeriksaan terakhir menampilkan peran yang karena itu
+--                                    tidak lagi menerima pengingatnya, untuk diberikan pemilik di layar.
 --   spg_attendance:record          — memasukkan catatan check-in toko SPG; bawaannya ADMIN_PENJUALAN (P7e).
 --   spg_attendance:verify          — memeriksa catatan itu; bawaannya KEUANGAN (P61a).
 -- Dan satu tautan izin LAMA: KEUANGAN → spg_commission:pay (Q9; Keuangan membuka halaman Komisi SPG
@@ -35,9 +39,9 @@
 --
 -- Idempoten: setiap INSERT dijaga NOT EXISTS. Setiap tautan bawaan untuk peran yang SUDAH ADA (dan
 -- pewarisan selisih retur) hanya ditulis pada run yang MEMBUAT baris izinnya — penandanya ditangkap
--- sebelum INSERT, seperti pewarisan payments:verify — jadi menjalankan ulang berkas ini tidak pernah
+-- sebelum INSERT, seperti pewarisan payments:verify — jadi menjalankan ulang BERKAS INI tidak pernah
 -- mengembalikan izin yang sudah dicabut pemilik. Kalau KEUANGAN atau ADMIN_PENJUALAN belum ada saat
--- itu, seed-office-roles-permissions.sql yang memberikannya saat membuat peran itu.
+-- itu, seed-office-roles-permissions.sql yang memberikannya, hanya pada run yang MEMBUAT peran itu.
 --
 -- Pewarisan (P22, "setiap pemegang izin lama tetap memegang keduanya"): setiap peran yang memegang
 -- receivables:decide_bearer pada run yang membuat store_returns:decide_shortfall ikut mendapat izin
@@ -79,7 +83,7 @@ WHERE NOT EXISTS (SELECT 1 FROM `Permission` WHERE `code` = 'vendor_bills:decide
 
 INSERT INTO `Permission` (`id`, `code`, `module`, `action`, `description`)
 SELECT REPLACE(UUID(), '-', ''), 'goods_receipts:confirm_no_po', 'goods_receipts', 'confirm_no_po',
-       'Confirm or decline a goods receipt recorded without a PO before it is processed (manager decision)'
+       'Confirm a goods receipt recorded without a PO before it is processed (manager decision)'
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM `Permission` WHERE `code` = 'goods_receipts:confirm_no_po');
 
@@ -169,6 +173,9 @@ WHERE r.`name` = 'KEUANGAN'
 
 -- Bawaan pemilik, SEKALI (Q9 + P28): KEUANGAN yang sudah ada menandai gaji & komisi SPG dibayar. Izinnya
 -- sudah ada sejak 2026-11-01, jadi penandanya run yang membuat spg_schedules:approve (berkas ini).
+-- Catatan: seed-office-roles-permissions.sql juga menautkan izin ini ke KEUANGAN, tetapi hanya pada run
+-- yang MEMBUAT peran itu, jadi tautan yang dicabut di Peran & izin tidak kembali bila salah satu dari
+-- kedua berkas dijalankan ulang.
 INSERT INTO `RolePermission` (`id`, `roleId`, `permissionId`)
 SELECT REPLACE(UUID(), '-', ''), r.`id`, p.`id`
 FROM `RoleDefinition` r
@@ -200,6 +207,13 @@ UPDATE `Permission`
 SET `description` = 'Decide, change or cancel who bears lost goods, at an SPG store or in transit (manager decision)'
 WHERE `code` = 'receivables:decide_bearer'
   AND `description` = 'Decide, reassign or cancel who bears a store-return shortfall or lost SPG goods (manager decision)';
+
+-- Keterangan goods_receipts:confirm_no_po hanya konfirmasi (P51a: "konfirmasi dari admin saja"; menolak
+-- tidak dibangun) — hanya bila baris itu dibuat versi lama berkas ini yang masih menjanjikan menolak.
+UPDATE `Permission`
+SET `description` = 'Confirm a goods receipt recorded without a PO before it is processed (manager decision)'
+WHERE `code` = 'goods_receipts:confirm_no_po'
+  AND `description` = 'Confirm or decline a goods receipt recorded without a PO before it is processed (manager decision)';
 
 -- Pengguna yang sudah masuk dengan peran yang mendapat tautan baru menerima izinnya tanpa keluar
 -- (lib/auth.ts membandingkan versinya).
@@ -249,4 +263,22 @@ WHERE NOT EXISTS (
   JOIN `Permission` p2 ON p2.`id` = rp2.`permissionId` AND p2.`code` = 'store_returns:decide_shortfall'
   WHERE rp2.`roleId` = r.`id`
 )
+ORDER BY r.`name`;
+
+-- Cek: peran bukan sistem yang memegang collections:manage tetapi BELUM memegang
+-- receivables:overdue_reminder. Pengingat jatuh tempo kantor (lonceng AR_OVERDUE) dulu sampai ke
+-- pemegang collections:manage; kini hanya ke pemegang receivables:overdue_reminder (P48), jadi peran
+-- yang muncul di sini TIDAK LAGI menerimanya sampai pemilik memberikan izin itu di Pengaturan → Peran &
+-- izin. Sengaja tidak diberikan otomatis: P48 menjadikannya izin terpisah. Admin sistem tidak tercantum
+-- karena tetap menerima semuanya.
+SELECT r.`name` AS `role`
+FROM `RoleDefinition` r
+JOIN `RolePermission` rp ON rp.`roleId` = r.`id`
+JOIN `Permission` p ON p.`id` = rp.`permissionId` AND p.`code` = 'collections:manage'
+WHERE r.`isSystem` = 0
+  AND NOT EXISTS (
+    SELECT 1 FROM `RolePermission` rp2
+    JOIN `Permission` p2 ON p2.`id` = rp2.`permissionId` AND p2.`code` = 'receivables:overdue_reminder'
+    WHERE rp2.`roleId` = r.`id`
+  )
 ORDER BY r.`name`;

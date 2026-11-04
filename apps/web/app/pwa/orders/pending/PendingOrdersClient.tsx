@@ -19,6 +19,7 @@ import {
   hapusReturTertahan,
   ulangJanjiTertahan,
   ulangKlaimTertahan,
+  ulangReturSebagaiReturLain,
   ulangReturTertahan,
 } from "@/lib/pwa/offline/laporan-queue";
 import { PERISTIWA_ANTREAN } from "@/lib/pwa/offline/hitung";
@@ -49,6 +50,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
+import { bisaDikirimSebagaiReturLain, nilaiTeksReturTertahan } from "./retur-lain";
 
 function errorLabel(code: string | undefined, t: (key: string) => string): string {
   switch (code) {
@@ -214,11 +216,14 @@ export function PendingOrdersClient({ kunjungan }: { kunjungan: Record<string, N
     }
   };
 
-  /** Alasan laporan ditolak: penolakan unggah di `foto`, selebihnya di ruang nama laporannya. */
-  const alasanLaporan = (kode: string | undefined, tJenis: typeof tPay) => {
+  /**
+   * Alasan laporan ditolak: penolakan unggah di `foto`, selebihnya di ruang nama laporannya.
+   * `nilai` mengisi tempat kosong teks laporannya (nota retur: `{noNrt}`).
+   */
+  const alasanLaporan = (kode: string | undefined, tJenis: typeof tPay, nilai?: Record<string, string>) => {
     if (!kode) return t("errGeneric");
     const letak = letakAlasanLaporan(kode);
-    return letak.ruang === "foto" ? tFoto(letak.kunci) : tJenis(letak.kunci);
+    return letak.ruang === "foto" ? tFoto(letak.kunci) : tJenis(letak.kunci, nilai);
   };
 
   async function jalankan(id: string, kerja: () => Promise<void>) {
@@ -394,11 +399,25 @@ export function PendingOrdersClient({ kunjungan }: { kunjungan: Record<string, N
               }
               keadaan={r.syncState}
               disimpan={waktu(r.capturedAt)}
-              galat={r.syncState === "failed" ? alasanLaporan(r.error, tRetur) : null}
+              galat={r.syncState === "failed" ? alasanLaporan(r.error, tRetur, nilaiTeksReturTertahan(r)) : null}
               sibuk={busyId === r.localId}
               isiHapus={t("deleteReturnBody", { store: r.storeName, nrt: r.payload.noNrt })}
               onUlang={() => ulangLaporan(r.localId, ulangReturTertahan)}
               onHapus={() => jalankan(r.localId, () => hapusReturTertahan(r.localId))}
+              aksiLain={
+                // Barangnya cocok dengan barang selisih nota lain yang sedang dikirim balik. "Coba lagi"
+                // mengirim ulang apa adanya dan ditolak lagi; formulir daring meminta pelapor mencentang
+                // "ini retur lain" — di antrean pernyataan yang sama lewat konfirmasi ini.
+                bisaDikirimSebagaiReturLain(r)
+                  ? {
+                      label: tRetur("antreanReturLain"),
+                      judul: tRetur("antreanReturLainJudul"),
+                      isi: tRetur("antreanReturLainIsi", nilaiTeksReturTertahan(r)),
+                      kirim: tRetur("antreanReturLainKirim"),
+                      onKlik: () => ulangLaporan(r.localId, ulangReturSebagaiReturLain),
+                    }
+                  : undefined
+              }
             />
           ))}
         </Bagian>
@@ -469,6 +488,7 @@ function Kiriman({
   isiHapus,
   onUlang,
   onHapus,
+  aksiLain,
 }: {
   judul: string;
   rincian: string;
@@ -481,9 +501,12 @@ function Kiriman({
   isiHapus: string;
   onUlang: () => void;
   onHapus: () => void;
+  /** Kiriman ulang dengan pernyataan pelapor, dikonfirmasi lebih dulu (nota retur: "ini retur lain"). */
+  aksiLain?: { label: string; judul: string; isi: string; kirim: string; onKlik: () => void };
 }) {
   const t = useTranslations("pwa.offline");
   const [yakin, setYakin] = useState(false);
+  const [yakinLain, setYakinLain] = useState(false);
   return (
     <li>
       <Card className="py-0">
@@ -530,8 +553,36 @@ function Kiriman({
               {t("delete")}
             </Button>
           </div>
+
+          {aksiLain ? (
+            <Button type="button" variant="outline" disabled={sibuk} onClick={() => setYakinLain(true)} className="w-full">
+              {aksiLain.label}
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
+
+      {aksiLain ? (
+        <AlertDialog open={yakinLain} onOpenChange={setYakinLain}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{aksiLain.judul}</AlertDialogTitle>
+              <AlertDialogDescription>{aksiLain.isi}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("deleteCancel")}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setYakinLain(false);
+                  aksiLain.onKlik();
+                }}
+              >
+                {aksiLain.kirim}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
 
       {/* Yang dihapus di sini hanya ada di HP ini — sekali hilang, kantor tidak pernah menerimanya. */}
       <AlertDialog open={yakin} onOpenChange={setYakin}>

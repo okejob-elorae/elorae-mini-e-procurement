@@ -18,13 +18,16 @@ import {
  */
 export type HasilKategori =
   | { ok: true }
-  | { ok: false; code: 'DUPLICATE_CODE' | 'IN_USE' | 'HAS_COMMISSION_RATES' | 'FAILED'; count?: number };
+  | { ok: false; code: 'DUPLICATE_CODE' | 'IN_USE' | 'HAS_COMMISSION_RATES' | "HAS_SALE_LINES" | 'FAILED'; count?: number };
 
 function keHasil(e: unknown): HasilKategori {
   if (e instanceof ItemCategoryError) return { ok: false, code: e.code, count: e.count };
-  // Masih dipakai barang, atau masih punya tarif komisi SPG.
+  // Masih dipakai barang, masih punya tarif komisi SPG, atau sudah tercatat di baris nota SPG
+  // (kategori saat terjual, P69) — masing-masing dengan pesannya sendiri.
   if (e instanceof ItemCategoryDeleteError) {
-    return { ok: false, code: e.code === 'HAS_ITEMS' ? 'IN_USE' : 'HAS_COMMISSION_RATES' };
+    if (e.code === "HAS_ITEMS") return { ok: false, code: 'IN_USE' };
+    if (e.code === "HAS_SALE_LINES") return { ok: false, code: "HAS_SALE_LINES" };
+    return { ok: false, code: 'HAS_COMMISSION_RATES' };
   }
   // Kode kategori unik di basis data.
   if (typeof e === 'object' && e !== null && (e as { code?: unknown }).code === 'P2002') {

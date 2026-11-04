@@ -16,6 +16,7 @@ import { daftarkanMemberDiTx } from "./member-writer";
 import { ENTITAS_TITIP, JEJAK_TITIP, STATUS_TITIP_TERBUKA } from "./titip";
 import { kunciBaris } from "./stok";
 import { terhitungSesudah } from "./stok-writer";
+import { jejakKategoriSesudah, kategoriSaatJual, type JejakKategori } from "./kategori-saat-jual";
 
 export type SpgSaleLineInput = { itemId: string; variantSku: string | null; qty: number };
 
@@ -44,7 +45,9 @@ export type KodeGagalJualSpg =
   | "DISKON_MANUAL_TIDAK_VALID"
   | "ALASAN_DISKON_WAJIB"
   | "PELANGGAN_TIDAK_VALID"
-  | "WAKTU_TIDAK_VALID";
+  | "WAKTU_TIDAK_VALID"
+  /** SPG ditandai berhenti (P66) dan notanya bukan dari tokonya sampai akhir hari terakhirnya. */
+  | "SPG_BERHENTI";
 
 export type RecordSpgSaleResult =
   | {
@@ -166,6 +169,25 @@ export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: Input
     }
   }
 
+  /*
+   * SPG yang ditandai berhenti (P66) DI ANTARA pemeriksaan aksi dan transaksi ini: penanda itu
+   * melepas `assignedStoreId`, jadi aksinya sudah lolos dengan toko lama. Dibaca ulang di sini,
+   * di transaksi yang sama dengan notanya (`runSerializable` — penanda dan nota tidak bisa saling
+   * melewati): nota hanya dicatat ke toko yang dilepasnya dan hanya bila waktu jualnya paling
+   * lambat akhir hari terakhirnya (WIB) — aturan `tokoSpgUntukAntrean`. Pengguna tanpa penanda
+   * berhenti tidak tersentuh.
+   */
+  const penjual = await tx.user.findUnique({
+    where: { id: input.salesmanId },
+    select: { assignedStoreId: true, spgEndedOn: true, spgEndedStoreId: true },
+  });
+  if (penjual && !penjual.assignedStoreId && penjual.spgEndedOn) {
+    const akhirHariTerakhir = new Date(`${penjual.spgEndedOn}T23:59:59.999+07:00`);
+    if (penjual.spgEndedStoreId !== input.storeId || waktu.getTime() > akhirHariTerakhir.getTime()) {
+      return { ok: false, code: "SPG_BERHENTI" };
+    }
+  }
+
   const store = await tx.store.findUnique({ where: { id: input.storeId }, select: SPG_STORE_PRICING_SELECT });
   if (!store) return { ok: false, code: "STORE_NOT_FOUND" };
   const pricing = spgStorePricingFrom(store);
@@ -260,6 +282,20 @@ export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: Input
   }
   const hasilBaris = new Map(promo.baris.map((b) => [b.key, b]));
 
+  /*
+   * Kategori yang BERLAKU saat barang terjual (pemilik P8). Nota konter dibaca sekarang, jadi
+   * kategori master = kategori saat terjual. Nota dari antrean HP bisa sampai berhari-hari
+   * kemudian: kalau kategori barangnya diubah SESUDAH waktu jualnya, kategori saat itu dibaca
+   * dari jejak perubahan kategori barang (`JEJAK_KATEGORI_BARANG`, `kategori-saat-jual.ts`).
+   */
+  const jejakKategori = input.luring ? await jejakKategoriSesudah(tx, itemIds, waktu) : new Map<string, JejakKategori[]>();
+  const kategoriBaris = new Map(
+    priced.map((p) => [
+      p.key,
+      kategoriSaatJual({ sekarangId: p.item.categoryId ?? null, jejak: jejakKategori.get(p.item.id), waktu, dibaca: sekarang }),
+    ]),
+  );
+
   const displayName = (p: Priced) => {
     const label = variantDetailForSku(p.item.variants, p.line.variantSku);
     return label ? `${p.item.nameId} — ${label}` : p.item.nameId;
@@ -341,15 +377,13 @@ export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: Input
              * kategori tetap mendapat tanggal; kategorinya diisi sekali begitu barang itu diberi
              * kategori (`isiKategoriPenjualanSpg`, P69), dan baris itu ditandai diisi kemudian.
              *
-             * `categoryAt` = saat kategori itu DIBACA (`sekarang`), bukan `waktu`: kategorinya
-             * dibaca dari master barang di transaksi ini, jadi nota dari antrean HP yang baru
-             * sampai berhari-hari kemudian menyimpan kategori hari sampainya — tanggal itulah
-             * yang benar untuknya. Waktu jualnya sendiri tetap di `SpgSale.createdAt`. Sama
-             * dengan isi kemudian, yang mencatat saat kategorinya diisi (tinjauan rancangan B1).
+             * Kategori yang tidak berubah sejak waktu jual: `categoryAt` = saat kategori itu
+             * DIBACA (`sekarang`), seperti sebelumnya. Nota antrean HP yang kategori barangnya
+             * diubah sesudah waktu jualnya menyimpan kategori yang berlaku saat itu dengan
+             * `categoryAt` = waktu jual (`kategoriSaatJual`). Waktu jualnya tetap di
+             * `SpgSale.createdAt`.
              */
-            categoryId: p.item.categoryId ?? null,
-            categoryAt: sekarang,
-            categoryFilledLater: false,
+            ...kategoriBaris.get(p.key)!,
           };
         }),
       },

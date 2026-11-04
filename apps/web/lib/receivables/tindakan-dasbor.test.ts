@@ -221,12 +221,16 @@ describe("faktur tertahan — Q15 (bagian menunggu, tetap, dan lewat tempo)", ()
     expect(t.nilai).toBe(400_000);
     expect(t.risiko).toBeCloseTo(850 + 300 + Math.log10(400_000));
     expect(t.konteks.tahanan?.tunggu?.sebab).toBe("BELUM_DIHITUNG");
+    // Bagian kalimatnya dari aturan yang sama dengan Faktur & piutang dan HP (`bagianKalimatTertahan`).
+    expect(t.konteks.bagianTahanan?.[0]).toMatchObject({ jenis: "TUNGGU", sebab: "BELUM_DIHITUNG" });
   });
 
   it("tahanan tetap saja dan belum lewat tempo: nilai = yang tetap", () => {
     const [t] = susunTindakan(bahan({ piutang: [tertahan({ nilaiTertahan: 250_000 })] }));
     expect(t.nilai).toBe(250_000);
     expect(t.risiko).toBeCloseTo(800 + Math.log10(250_000));
+    // Tanpa bagian lewat tempo, yang tetap ditagih lewat BKM berikutnya — kalimat yang sama di setiap layar.
+    expect(t.konteks.bagianTahanan?.map((b) => b.jenis)).toEqual(["TETAP", "TAGIH_BKM"]);
   });
 
   it("menunggu beban tanpa lewat tempo: nilai = yang menunggu", () => {

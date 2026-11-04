@@ -304,7 +304,15 @@ export function HppPageClient({
                       <TableCell>
                         {t.has(`categoryLabel.${line.category}`) ? t(`categoryLabel.${line.category}`) : line.category}
                       </TableCell>
-                      <TableCell className="whitespace-normal min-w-[160px]">{line.itemName}</TableCell>
+                      <TableCell className="whitespace-normal min-w-[160px]">
+                        <div>{line.itemName}</div>
+                        {/* Selisih harga invoice yang DITERIMA pemilik (P49): angka yang berubah dan sebabnya. */}
+                        {line.koreksi ? (
+                          <div className="text-xs text-muted-foreground">
+                            {t("dikoreksiDari", { dari: formatRupiah(line.koreksi.dari), nomor: line.koreksi.invoiceNo.join(", ") })}
+                          </div>
+                        ) : null}
+                      </TableCell>
                       <TableCell className="text-right tabular-nums">{fmtUang(line.unitCost)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatQty(line.qtyPerPcs)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtUang(line.costPerPcs)}</TableCell>

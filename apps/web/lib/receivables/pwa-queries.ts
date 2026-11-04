@@ -2,7 +2,7 @@ import { prisma } from '@elorae/db';
 import { daftarPiutang, type BarisPiutang } from './queries';
 import type { CekSelisih, StatusKlaim } from './rules';
 import { kurangPerBarang } from "./selisih-retur";
-import { daftarKerjaRetur } from './return-queries';
+import { adaSusulanSesudahLapor, daftarKerjaRetur, waktuDijodohkan } from './return-queries';
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -432,13 +432,14 @@ export async function selisihReturSaya(userId: string): Promise<SelisihReturSaya
           },
           followUps: {
             where: { status: 'FINAL' },
-            select: { receivedAt: true, items: { select: { itemId: true, variantSku: true, itemName: true, qty: true } } },
+            select: { id: true, createdAt: true, items: { select: { itemId: true, variantSku: true, itemName: true, qty: true } } },
           },
         },
       },
     },
   });
   const tokoIds = [...new Set(rows.flatMap((r) => (r.storeReturn ? [r.storeReturn.storeId] : [])))];
+  const dijodohkan = await waktuDijodohkan(rows.flatMap((r) => r.storeReturn?.followUps.map((f) => f.id) ?? []));
   const spg = tokoIds.length
     ? await prisma.user.findMany({ where: { assignedStoreId: { in: tokoIds } }, select: { name: true, email: true, assignedStoreId: true } })
     : [];
@@ -455,8 +456,13 @@ export async function selisihReturSaya(userId: string): Promise<SelisihReturSaya
       ...n.followUps.flatMap((f) => f.items),
     ];
     const cek = r.checkStatus as CekSelisih;
-    const susulanSesudahLapor =
-      r.checkedAt !== null && n.followUps.some((f) => f.receivedAt.getTime() > (r.checkedAt as Date).getTime());
+    // Satu aturan dengan daftar kerja kantor (`adaSusulanSesudahLapor`): saat susulan DICATAT gudang
+    // atau DIJADIKAN susulan nota ini, mana yang lebih akhir — bukan `receivedAt`, tanggal datang
+    // ketikan orang yang bisa lebih awal dari laporan sales walau barangnya baru dicatat sesudahnya.
+    const susulanSesudahLapor = adaSusulanSesudahLapor(
+      n.followUps.map((f) => ({ createdAt: f.createdAt, dijodohkanAt: dijodohkan.get(f.id) ?? null })),
+      r.checkedAt,
+    );
     return [
       {
         chargeId: r.id,
@@ -570,6 +576,9 @@ export async function menungguSusulanGudang(): Promise<MenungguSusulan[]> {
     where: {
       status: { in: ['TERBUKA', 'DITETAPKAN'] },
       amount: { gt: 0 },
+      // Begitu sebagian beban dipotong, penulisnya menolak susulan (`SUDAH_DIPOTONG`, P87 bawaan
+      // yang disetujui) — beban itu tidak ditawarkan ke gudang lagi.
+      settledAmount: 0,
       storeReturn: { status: { not: 'BATAL' } },
     },
     orderBy: [{ createdAt: 'asc' }],

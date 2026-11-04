@@ -258,6 +258,12 @@ export async function utangBebanSudahDiputuskan(tx: Tx, debtIds: readonly string
  * Uang beban yang dikembalikan ke SPG (KEMBALI_STOK) dibayarkan PENUH di
  * pembayarannya (`paidRefType`/`paidRefId`), sebagai baris plus. Compare-and-
  * swap pada `paybackPaidAt` kosong dan jumlah yang direncanakan.
+ *
+ * JALAN uangnya (baris plus di gaji/komisi berikutnya) bukan jawaban pemilik:
+ * P79 hanya menjawab "kita mengembalikan uang SPG"; caranya (bersama bayaran,
+ * tunai, atau transfer yang ikut cek mutasi bank) masih pertanyaan terbuka dan
+ * harus dijawab sebelum gaji SPG pertama dibayar sungguhan. Sampai itu, jalan
+ * ini dibiarkan seperti sekarang.
  */
 export async function catatPengembalianBebanDibayar(
   tx: Tx,
@@ -286,12 +292,23 @@ export async function catatPengembalianBebanDibayar(
 export type AlasanTidakBisaBatal = "TANPA_BEBAN" | "SUDAH_DIPOTONG" | "SUDAH_DIUTANGKAN" | "BARANG_SUDAH_DIPUTUSKAN";
 
 /**
- * Bolehkah beban laporan ini dibatalkan (P82: penolakan keliru dibetulkan
- * selama beban SPG belum dipotong)? Hanya selama belum ada SATU pun potongan
+ * Bolehkah beban laporan ini dibatalkan (P82 "setuju": penolakan keliru boleh
+ * dibetulkan menjadi disetujui sehingga beban SPG batal — jawabannya tanpa
+ * syarat)? Kode sekarang hanya membolehkannya selama belum ada SATU pun potongan
  * atas beban itu: tidak dari bayaran (`SUDAH_DIPOTONG`) dan tidak dipindah ke
- * utang SPG di pembayaran terakhirnya (`SUDAH_DIUTANGKAN` — utang SPG belum
- * punya jalan pembatalan, jadi beban yang sudah menjadi utang tidak dibatalkan
- * dari sini). Beban Rp 0 (lahir LUNAS tanpa potongan) juga boleh.
+ * utang SPG di pembayaran terakhirnya (`SUDAH_DIUTANGKAN`). Beban Rp 0 (lahir
+ * LUNAS tanpa potongan) juga boleh.
+ *
+ * Dua batas itu belum mengikuti jawaban pemilik sepenuhnya:
+ * - `SUDAH_DIUTANGKAN` juga menolak beban yang dipindah ke utang tanpa satu
+ *   rupiah pun diambil dari SPG (potongan ke utang Rp 0 dari komisi dan gaji,
+ *   utangnya belum dibayar dan tidak ada pembayaran menunggu cek) — kasus yang
+ *   dibolehkan P82. Utang SPG belum punya jalan pembatalan (penulisnya milik
+ *   `lib/spg/utang-writer.ts`), jadi kasus itu belum bisa dibalik dan layar
+ *   kantor menyebutnya belum bisa.
+ * - `SUDAH_DIPOTONG` (beban yang sebagian sudah dipotong dari bayaran) adalah
+ *   batas kode, bukan jawaban pemilik — pertanyaan terbuka; penolakannya
+ *   dipertahankan sampai pemilik menjawab.
  */
 export async function bisaBatalkanBebanTx(
   tx: Tx,
@@ -438,6 +455,11 @@ export type AlasanTolakUbahBeban =
  * diputuskan). Bebannya dicari dari laporannya (`source`+`sourceId` unik). SPG
  * yang dibebani tidak mengubah bebannya sendiri. Jejak di transaksi yang sama;
  * kabar ke SPG sesudah komit.
+ *
+ * Batas "belum ada yang dipotong" (`SUDAH_DIPOTONG`) adalah batas kode, bukan
+ * jawaban pemilik — P81 "setuju" tanpa batas waktu. Penolakannya dipertahankan
+ * sampai pemilik menjawab apakah beban yang sebagian sudah dipotong boleh
+ * diturunkan, dan bagaimana kelebihan yang sudah dipotong dikembalikan.
  */
 export async function ubahBesarBebanSpg(i: {
   returnId: string;

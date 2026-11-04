@@ -28,4 +28,19 @@ describe("layar opname gudang buta", () => {
     expect(sumber).toContain("masihMenghitung(String(opname.status))");
     expect(sumber).not.toMatch(/snapshotQty|snapshotLength|variance/);
   });
+
+  // GRN tanpa PO yang menunggu konfirmasi (P51a): barangnya di rak tetapi belum masuk stok, jadi
+  // penghitung dan penyetuju sama-sama diperingatkan sebelum menghitungnya sebagai surplus.
+  it("both the counting and the approval screen warn about receipts without a PO awaiting confirmation", () => {
+    const hitung = baca("count", "StockOpnameCountPageClient.tsx");
+    expect(hitung).toContain("getGrnTanpaPoMenungguUntukOpname()");
+    expect(hitung).toContain("<KartuGrnTanpaPoMenunggu grn={grnMenunggu} />");
+
+    const rincian = baca("StockOpnameDetailClient.tsx");
+    expect(rincian).toContain("getGrnTanpaPoMenungguUntukOpname()");
+    expect(rincian).toContain("peringatanGrnTanpaPoTampil(status) && <KartuGrnTanpaPoMenunggu grn={grnMenunggu} />");
+
+    // Kartunya tidak membawa angka sistem: hanya nomor GRN, pemasok, barang, dan jumlah diterima.
+    expect(baca("KartuGrnTanpaPoMenunggu.tsx")).not.toMatch(/snapshot|variance/i);
+  });
 });

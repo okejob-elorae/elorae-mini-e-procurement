@@ -15,6 +15,7 @@ import { ambilTokoTetap } from '@/lib/pwa/peran';
 import { tokoTerkunci } from '@/lib/salesman/queries';
 import { daftarPiutang } from '@/lib/receivables/queries';
 import { bacaTautanPotongan, kaitKlaimBerubah } from '@/lib/finance/lapangan/kait';
+import { kabarBebanTokoDariKlaim } from '@/lib/receivables/kabar-beban-toko';
 import {
   buatKlaimPembayaran,
   type AlasanGagalKlaim,
@@ -167,6 +168,9 @@ export async function verifikasiKlaimAction(
     revalidatePath('/backoffice/pelunasan/giro');
     revalidatePath('/backoffice/piutang');
     void kabarKeputusanKlaim(paymentClaimId, keputusan, catatan, session.user.id);
+    // P84 (keputusan 1): selisih retur yang ditanggung TOKO kini dipotong di BKM yang sah —
+    // pemegang tokonya dikabari untuk menagih.
+    if (keputusan === 'TERVERIFIKASI') void kabarBebanTokoDariKlaim(paymentClaimId, session.user.id);
     return { ok: true };
   } catch (err) {
     console.error('verifikasiKlaim gagal:', err);
@@ -209,6 +213,8 @@ export async function putuskanGiroAction(
     revalidatePath('/backoffice/piutang');
     revalidatePath('/pwa/bkm');
     void kabarGiro(paymentClaimId, hasil, catatan, session.user.id);
+    // Giro cair = BKM terverifikasi lewat pintu yang sama — kabar beban toko yang sama (P84).
+    if (hasil === 'CAIR') void kabarBebanTokoDariKlaim(paymentClaimId, session.user.id);
     return { ok: true };
   } catch (err) {
     console.error('putuskanGiro gagal:', err);
@@ -352,6 +358,10 @@ export async function buatKlaimAction(input: {
     revalidatePath('/backoffice/pelunasan/giro');
     revalidatePath('/backoffice/piutang');
     revalidatePath('/pwa/bkm');
+    // P84 (keputusan 1): BKM ini memotong nota retur yang selisihnya ditanggung TOKO — bagian itu
+    // tidak dikreditkan, jadi pemegang tokonya dikabari untuk menagih (dilewati bila ia pelapornya).
+    // Kiriman ulang antrean HP (`diulang`) sudah dikabarkan saat pertama kali tercatat.
+    if (!hasil.diulang) void kabarBebanTokoDariKlaim(hasil.id, session.user.id);
     return { ok: true, docNo: hasil.docNo };
   } catch (err) {
     console.error('buatKlaim gagal:', err);

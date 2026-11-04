@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { prisma, seededId, seededIds } from "@elorae/db";
+import { moveMainStock, moveStoreStock, moveVanStock, prisma, seededId, seededIds } from "@elorae/db";
 import { createVendorBill, voidVendorBill } from "./bill-writer";
 import { putuskanSelisihHarga } from "./koreksi-utang-writer";
 import { koreksiTagihan } from "./koreksi-utang-queries";
@@ -12,9 +12,10 @@ import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../fina
 
 /*
  * Selisih harga invoice yang DITERIMA menaikkan HPP penerimaannya (keputusan pemilik 2026-11-02, P49):
- * sisa stok di Gudang Utama dinilai ulang lewat `moveMainStock` qty 0, bagian yang sudah terjual menjadi
- * `PURCHASE_PRICE_VARIANCE`, utang dikoreksi lewat jurnal `SUPPLIER_PAYABLE_CORRECTION`. Basis data uji;
- * pemetaan akun dipulihkan lewat fixture terjaga.
+ * sisa stok di Gudang Utama dan yang dimuat ke van (masih milik Elorae, Q1) dinilai ulang lewat mover qty 0,
+ * bagian yang sudah terjual — dan SEMENTARA bagian di Gudang Toko konsinyasi — menjadi `PURCHASE_PRICE_VARIANCE`,
+ * utang dikoreksi lewat jurnal `SUPPLIER_PAYABLE_CORRECTION`. Basis data uji; pemetaan akun dipulihkan
+ * lewat fixture terjaga.
  *
  * Skenario P49: stok 100 @ 7.000, lalu GRN 100 @ 8.000 (rata-rata 7.500), lalu 50 terjual → 150 tersisa,
  * 75 di antaranya dari GRN itu. Invoice 100 @ 8.500 diterima: stok naik 37.500, 12.500 HPP periode itu.
@@ -23,18 +24,19 @@ import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../fina
 const url = process.env.DATABASE_URL ?? "";
 const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.skip : describe;
 
-const ROLES = ["AP", "INVENTORY_FG", "PURCHASE_PRICE_VARIANCE", "PPN_MASUKAN", "BANK"] as const;
+const ROLES = ["AP", "INVENTORY_FG", "INVENTORY_CONSIGNMENT", "INVENTORY_VAN", "PURCHASE_PRICE_VARIANCE", "PPN_MASUKAN", "BANK"] as const;
 /** Tanggal pembayaran uji (WIB), dikirim juga sebagai "hari ini" supaya tidak bergantung jam mesin. */
 const HARI = "2026-11-04";
 
 d("putuskanSelisihHarga (test bed only)", () => {
   let tag = "";
-  const ids = { user: "", supplierType: "", supplier: "", uom: "", item: "", grn: "", iv: "" };
+  const ids = { user: "", supplierType: "", supplier: "", uom: "", item: "", grn: "", iv: "", store: "", van: "" };
   const akun: Record<string, string> = {};
   let snapshot: MappingSnapshot = {};
   let mulai = new Date();
 
   beforeEach(async () => {
+    Object.keys(ids).forEach((k) => (ids[k as keyof typeof ids] = ""));
     tag = `KUW${Math.floor(Math.random() * 10_000_000)}`;
     mulai = new Date();
     snapshot = await snapshotMappings([...ROLES] as never);
@@ -109,8 +111,12 @@ d("putuskanSelisihHarga (test bed only)", () => {
     }
     if (ids.item) {
       await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(ids.item) } });
+      await prisma.storeStock.deleteMany({ where: { itemId: seededId(ids.item) } });
+      await prisma.vanStock.deleteMany({ where: { itemId: seededId(ids.item) } });
       await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(ids.item) } });
     }
+    if (ids.store) await prisma.store.deleteMany({ where: { id: seededId(ids.store) } });
+    if (ids.van) await prisma.user.deleteMany({ where: { id: seededId(ids.van) } });
     if (ids.grn) await prisma.gRN.deleteMany({ where: { id: seededId(ids.grn) } });
     if (ids.user) await prisma.auditLog.deleteMany({ where: { userId: seededId(ids.user) } });
     const akunIds = Object.values(akun).filter(Boolean);
@@ -271,25 +277,116 @@ d("putuskanSelisihHarga (test bed only)", () => {
   });
 
   /*
+   * Barang di Gudang Toko konsinyasi dan di van masih milik Elorae (keputusan pemilik 2026-11-01 Q1), jadi
+   * "stok tersisa ikut naik" (P49) berlaku juga di sana. Van dinilai ulang di lokasinya: penjualan dan
+   * rekonsiliasi van berbiaya `VanStock.avgCost`, jadi buku besar dan stok van bergerak bersama. Bagian di
+   * Gudang Toko konsinyasi SEMENTARA ikut `PURCHASE_PRICE_VARIANCE`: biaya konsinyasi (`biayaSatuanKonsi`)
+   * belum membawa penilaian ulang di toko, jadi menaikkannya akan menyisakan nilai di
+   * `INVENTORY_CONSIGNMENT` yang tidak pernah keluar.
+   * Dari 150 di Gudang Utama: 40 dikirim ke toko konsinyasi, 20 dimuat ke van → bagian GRN 0,45 di Gudang
+   * Utama, 0,2 di toko, 0,1 di van, 0,25 terjual. Selisih 50.000: 22.500 + 5.000 ke stok, 10.000 (toko) +
+   * 12.500 (terjual) HPP.
+   */
+  it("TERIMA revalues the share at Gudang Utama and on a van; the konsi-store share goes to PURCHASE_PRICE_VARIANCE for now; void reverses each location", async () => {
+    ids.store = (await prisma.store.create({ data: { code: `TK-${tag}`, name: `Toko konsi ${tag}`, address: "Jl. Uji", termsType: "KONSI" }, select: { id: true } })).id;
+    ids.van = (await prisma.user.create({ data: { email: `${tag}-van@test.local`, name: "Uji Kanvas" }, select: { id: true } })).id;
+    await prisma.$transaction(async (tx) => {
+      const umum = { itemId: ids.item, variantSku: null, unitCost: 7_500, createdById: ids.user };
+      await moveMainStock(tx, { ...umum, qtyDelta: -40, inventoryValueId: ids.iv, totalValue: 825_000, totalCost: -300_000, balanceValue: 825_000, refType: "KonsiTransfer", refId: `kirim-${tag}` });
+      await moveStoreStock(tx, { ...umum, storeId: ids.store, qtyDelta: 40, avgCost: 7_500, totalCost: 300_000, balanceValue: 300_000, refType: "KonsiTransfer", refId: `kirim-${tag}` });
+      await moveMainStock(tx, { ...umum, qtyDelta: -20, inventoryValueId: ids.iv, totalValue: 675_000, totalCost: -150_000, balanceValue: 675_000, refType: "VanLoad", refId: `muat-${tag}` });
+      await moveVanStock(tx, { ...umum, userId: ids.van, qtyDelta: 20, avgCost: 7_500, totalCost: 150_000, balanceValue: 150_000, refType: "VanLoad", refId: `muat-${tag}` });
+    });
+    const tokoKey = { storeId_itemId_variantSku: { storeId: ids.store, itemId: ids.item, variantSku: "" } };
+    const vanKey = { userId_itemId_variantSku: { userId: ids.van, itemId: ids.item, variantSku: "" } };
+    const stokLokasi = async () => {
+      const iv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: ids.iv } });
+      const toko = await prisma.storeStock.findUniqueOrThrow({ where: tokoKey });
+      const van = await prisma.vanStock.findUniqueOrThrow({ where: vanKey });
+      return [Number(iv.qtyOnHand), Number(iv.totalValue), Number(toko.qty), Number(toko.avgCost), Number(van.qty), Number(van.avgCost)];
+    };
+    /** Nilai buku van seperti rekonsiliasi persediaan membacanya (qty × harga rata-rata), dalam sen. */
+    const bukuVanSen = async () => {
+      const van = await prisma.vanStock.findUniqueOrThrow({ where: vanKey });
+      return Math.round(Number(van.qty) * Number(van.avgCost) * 100);
+    };
+    /** Gerak bersih (debit − kredit) satu peran pada jurnal koreksi dan pembaliknya, dalam sen. */
+    const bersihPeranSen = async (koreksiId: string, role: string) => {
+      const jurnal = await prisma.journal.findMany({
+        where: { sourceId: koreksiId, sourceType: { in: ["SUPPLIER_PAYABLE_CORRECTION", "SUPPLIER_PAYABLE_CORRECTION_REVERSAL"] } },
+        include: { lines: true },
+      });
+      return jurnal
+        .flatMap((j) => j.lines)
+        .filter((l) => l.chartAccountId === akun[role])
+        .reduce((t, l) => t + Math.round(Number(l.debit) * 100) - Math.round(Number(l.credit) * 100), 0);
+    };
+    expect(await stokLokasi()).toEqual([90, 675_000, 40, 7_500, 20, 7_500]);
+    const vanAwalSen = await bukuVanSen();
+
+    const bill = await tagih("K", 8_500);
+    const k = await koreksiOf(bill.id);
+    expect((await putuskanSelisihHarga({ koreksiId: k.id, keputusan: "TERIMA", olehUserId: ids.user })).ok).toBe(true);
+    const after = await koreksiOf(bill.id);
+    expect([after.status, Number(after.stockAmount), Number(after.soldAmount)]).toEqual(["DITERIMA", 27_500, 22_500]);
+    expect(Number(after.soldAmount)).toBe(Number(after.inventoryAmount) - Number(after.stockAmount));
+    // Harga rata-rata toko konsinyasi tidak bergerak; van naik.
+    expect(await stokLokasi()).toEqual([90, 697_500, 40, 7_500, 20, 7_750]);
+    const entri = await prisma.stockLedgerEntry.findMany({ where: { refType: "SupplierPayableCorrection", refId: k.id }, select: { locationType: true, locationId: true, qty: true, totalCost: true } });
+    expect(entri.map((e) => [e.locationType, e.locationId, Number(e.qty), Number(e.totalCost)]).sort()).toEqual(
+      [
+        ["MAIN", "", 0, 22_500],
+        ["VAN", ids.van, 0, 5_000],
+      ].sort(),
+    );
+    expect(await prisma.stockLedgerEntry.count({ where: { refType: "SupplierPayableCorrection", refId: k.id, locationType: "STORE" } })).toBe(0);
+    expect(await garis(k.id)).toEqual(
+      [
+        ["AP", 0, 50_000],
+        ["INVENTORY_FG", 22_500, 0],
+        ["INVENTORY_VAN", 5_000, 0],
+        ["PURCHASE_PRICE_VARIANCE", 22_500, 0],
+      ].sort(),
+    );
+    // Kedua sisi rekonsiliasi bergerak bersama: buku besar van = stok van, konsinyasi tidak tersentuh.
+    expect(await bersihPeranSen(k.id, "INVENTORY_VAN")).toBe((await bukuVanSen()) - vanAwalSen);
+    expect(await bersihPeranSen(k.id, "INVENTORY_CONSIGNMENT")).toBe(0);
+    expect([await hutangGrnSen(), await apBukuBesarSen()]).toEqual([85_000_000, 85_000_000]);
+
+    await voidVendorBill(bill.id, "invoice salah", ids.user);
+    expect((await koreksiOf(bill.id)).status).toBe("DIBATALKAN");
+    expect(await stokLokasi()).toEqual([90, 675_000, 40, 7_500, 20, 7_500]);
+    expect(await garis(k.id, "SUPPLIER_PAYABLE_CORRECTION_REVERSAL")).toEqual(
+      [
+        ["AP", 50_000, 0],
+        ["INVENTORY_FG", 0, 22_500],
+        ["INVENTORY_VAN", 0, 5_000],
+        ["PURCHASE_PRICE_VARIANCE", 0, 22_500],
+      ].sort(),
+    );
+    expect(await bersihPeranSen(k.id, "INVENTORY_VAN")).toBe((await bukuVanSen()) - vanAwalSen);
+    expect(await bersihPeranSen(k.id, "INVENTORY_CONSIGNMENT")).toBe(0);
+    expect([await hutangGrnSen(), await apBukuBesarSen()]).toEqual([80_000_000, 80_000_000]);
+  });
+
+  /*
    * Retur ke pemasok × selisih harga. Batas tagihan mengurangi retur selesai SEBELUM invoice boleh
    * menagih, jadi retur keluar dari pcs yang belum ditagih lebih dulu. Retur yang selesai SESUDAH
-   * invoice menagih pcs-nya hanya mengkredit harga PO (`kredit-retur-writer.ts`, tidak diubah); menerima
-   * selisih atas qty invoice itu menagih selisih untuk barang yang sudah kembali, jadi ditolak
-   * (`ADA_RETUR`), dan tagihannya dibatalkan lalu dicatat ulang tanpa barang yang diretur.
+   * invoice menagih pcs-nya hanya mengkredit harga PO (`kredit-retur-writer.ts`, tidak diubah). Selisihnya
+   * tetap boleh diterima (P27/P53) — barisnya diberi tanda `barangDiretur` — dan utangnya ikut menghitung
+   * selisih atas barang yang diretur; angka yang tepat didapat dengan membatalkan tagihan lalu mencatat
+   * ulang tanpa barang yang diretur.
    */
-  it("ADA_RETUR: billed, then returned — TERIMA refused before any write; void and re-record bills the kept pieces", async () => {
+  it("billed, then returned — TERIMA is allowed and the row is flagged; void and re-record gives the exact figure", async () => {
     const bill = await tagih("H", 8_500);
     const k = await koreksiOf(bill.id);
     await retur(20);
     expect((await koreksiTagihan(bill.id)).map((x) => x.barangDiretur)).toEqual([20]);
-    expect(await putuskanSelisihHarga({ koreksiId: k.id, keputusan: "TERIMA", olehUserId: ids.user })).toEqual({ ok: false, kode: "ADA_RETUR" });
-    const tetap = await koreksiOf(bill.id);
-    expect([tetap.status, tetap.decidedAt, tetap.stockAmount]).toEqual(["MENUNGGU", null, null]);
-    expect(await garis(k.id)).toBeNull();
-    expect(await prisma.stockLedgerEntry.count({ where: { refType: "SupplierPayableCorrection", refId: k.id } })).toBe(0);
-    expect(Number((await prisma.inventoryValue.findUniqueOrThrow({ where: { id: ids.iv } })).totalValue)).toBe(1_125_000);
-    expect(await prisma.auditLog.count({ where: { entityId: k.id, action: "SUPPLIER_PAYABLE_CORRECTION_ACCEPTED" } })).toBe(0);
-    expect([await hutangGrnSen(), await apBukuBesarSen()]).toEqual([80_000_000, 80_000_000]);
+    expect(await putuskanSelisihHarga({ koreksiId: k.id, keputusan: "TERIMA", olehUserId: ids.user })).toEqual({ ok: true, billId: bill.id });
+    const [baris] = await koreksiTagihan(bill.id);
+    expect([baris.status, baris.barangDiretur]).toEqual(["DITERIMA", 20]);
+    // GRN uji tanpa PO: retur tidak mengkredit PO mana pun, jadi utangnya 800.000 + 100 × 500.
+    expect([await hutangGrnSen(), await apBukuBesarSen()]).toEqual([85_000_000, 85_000_000]);
     // Selama ada pcs tertagih yang sudah kembali, tidak ada sisa untuk ditagih lagi.
     await expect(tagih("H2", 8_500, 1)).rejects.toThrow();
 

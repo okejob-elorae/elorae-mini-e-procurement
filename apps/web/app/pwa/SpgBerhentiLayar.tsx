@@ -9,10 +9,13 @@ import { TombolKeluar } from "./TombolKeluar";
 
 /**
  * Layar HP untuk SPG yang sudah ditandai berhenti (pemilik P66): layar SPG ditutup, tetapi
- * antrean HP tetap dikirim — penjualan dan check-in yang ditangkap sampai hari terakhirnya
- * dicatat ke tokonya (`tokoSpgUntukAntrean`). Penyinkron latar tetap dipasang layout, jadi layar
- * ini hanya menunjukkan berapa yang masih menunggu sinyal, supaya ia tidak keluar akun lebih dulu.
- * Tanggal dan nama toko sudah diformat di server.
+ * penyinkron latar tetap dipasang layout. Aksi antrean membaca tokonya lewat
+ * `tokoSpgUntukAntrean` (`lib/pwa/peran.ts`): pekerjaan yang ditangkap di HP paling lambat akhir
+ * hari terakhirnya (WIB) dicatat ke toko yang dilepasnya, yang ditangkap sesudahnya ditolak.
+ * Aturan "sampai hari terakhir" itu belum punya jawaban pemilik (pertanyaan terbuka yang dicatat
+ * di `tokoSpgUntukAntrean`). Layar ini hanya menunjukkan berapa yang masih menunggu sinyal, supaya
+ * ia tidak keluar akun (yang menghapusnya) sebelum semuanya terkirim. Tanggal dan nama toko sudah
+ * diformat di server.
  */
 export function SpgBerhentiLayar({
   namaToko,

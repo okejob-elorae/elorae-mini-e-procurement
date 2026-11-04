@@ -19,14 +19,19 @@
 --   spg_schedules:approve          — jadwal bulanan SPG (P7c).
 -- Izin kerja kantor dengan peran bawaan yang diputuskan pemilik:
 --   deliveries:cancel_nota         — ADMIN_PENJUALAN (P41a).
---   receivables:overdue_reminder   — KEUANGAN (P48).
+--   receivables:overdue_reminder   — KEUANGAN (P48). Sebelumnya pengingat itu sampai ke pemegang
+--                                    collections:manage; izin ini tidak diberikan otomatis kepada mereka
+--                                    (pemeriksaan terakhir menampilkannya).
 --   spg_attendance:record          — ADMIN_PENJUALAN (P7e).
 --   spg_attendance:verify          — KEUANGAN (P61a).
 -- Dan KEUANGAN → spg_commission:pay (Q9; halaman Komisi SPG saja, tanpa spg_sales:view, P28).
+-- postgres/seed-office-roles-permissions.sql juga menautkannya ke KEUANGAN, tetapi hanya pada run yang
+-- MEMBUAT peran itu, jadi tautan yang dicabut di Peran & izin tidak kembali bila berkas itu dijalankan
+-- ulang.
 --
 -- Idempoten. Tautan bawaan untuk peran yang sudah ada dan pewarisan receivables:decide_bearer →
 -- store_returns:decide_shortfall hanya ditulis pada run yang MEMBUAT baris izinnya, jadi menjalankan
--- ulang tidak pernah mengembalikan izin yang sudah dicabut pemilik di Peran & izin.
+-- ulang BERKAS INI tidak pernah mengembalikan izin yang sudah dicabut pemilik di Peran & izin.
 
 BEGIN;
 
@@ -62,7 +67,7 @@ WHERE NOT EXISTS (SELECT 1 FROM "Permission" WHERE code = 'vendor_bills:decide_p
 
 INSERT INTO "Permission" (id, code, module, action, description)
 SELECT gen_random_uuid()::text, 'goods_receipts:confirm_no_po', 'goods_receipts', 'confirm_no_po',
-       'Confirm or decline a goods receipt recorded without a PO before it is processed (manager decision)'
+       'Confirm a goods receipt recorded without a PO before it is processed (manager decision)'
 WHERE NOT EXISTS (SELECT 1 FROM "Permission" WHERE code = 'goods_receipts:confirm_no_po');
 
 INSERT INTO "Permission" (id, code, module, action, description)
@@ -141,7 +146,9 @@ WHERE r.name = 'KEUANGAN'
     SELECT 1 FROM "RolePermission" rp WHERE rp."roleId" = r.id AND rp."permissionId" = p.id
   );
 
--- Bawaan pemilik, SEKALI (Q9 + P28); penandanya run yang membuat spg_schedules:approve.
+-- Bawaan pemilik, SEKALI (Q9 + P28); penandanya run yang membuat spg_schedules:approve. Catatan:
+-- postgres/seed-office-roles-permissions.sql juga menautkannya ke KEUANGAN, hanya pada run yang membuat
+-- peran itu, jadi tautan yang dicabut tidak kembali bila salah satu dari kedua berkas dijalankan ulang.
 INSERT INTO "RolePermission" (id, "roleId", "permissionId")
 SELECT gen_random_uuid()::text, r.id, p.id
 FROM "RoleDefinition" r
@@ -170,6 +177,13 @@ UPDATE "Permission"
 SET description = 'Decide, change or cancel who bears lost goods, at an SPG store or in transit (manager decision)'
 WHERE code = 'receivables:decide_bearer'
   AND description = 'Decide, reassign or cancel who bears a store-return shortfall or lost SPG goods (manager decision)';
+
+-- Keterangan goods_receipts:confirm_no_po hanya konfirmasi (P51a; menolak tidak dibangun) — hanya bila
+-- baris itu dibuat versi lama berkas ini yang masih menjanjikan menolak.
+UPDATE "Permission"
+SET description = 'Confirm a goods receipt recorded without a PO before it is processed (manager decision)'
+WHERE code = 'goods_receipts:confirm_no_po'
+  AND description = 'Confirm or decline a goods receipt recorded without a PO before it is processed (manager decision)';
 
 -- Pengguna yang sudah masuk dengan peran yang mendapat tautan baru langsung mendapat izinnya.
 UPDATE "RoleDefinition"
@@ -214,4 +228,19 @@ WHERE NOT EXISTS (
   JOIN "Permission" p2 ON p2.id = rp2."permissionId" AND p2.code = 'store_returns:decide_shortfall'
   WHERE rp2."roleId" = r.id
 )
+ORDER BY r.name;
+
+-- Cek: peran bukan sistem yang memegang collections:manage tetapi belum memegang
+-- receivables:overdue_reminder — tidak lagi menerima pengingat jatuh tempo kantor (AR_OVERDUE, P48)
+-- sampai pemilik memberikan izin itu di Peran & izin. Sengaja tidak diberikan otomatis.
+SELECT r.name AS peran
+FROM "RoleDefinition" r
+JOIN "RolePermission" rp ON rp."roleId" = r.id
+JOIN "Permission" p ON p.id = rp."permissionId" AND p.code = 'collections:manage'
+WHERE NOT r."isSystem"
+  AND NOT EXISTS (
+    SELECT 1 FROM "RolePermission" rp2
+    JOIN "Permission" p2 ON p2.id = rp2."permissionId" AND p2.code = 'receivables:overdue_reminder'
+    WHERE rp2."roleId" = r.id
+  )
 ORDER BY r.name;

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
+import { formatIDR } from "@/lib/sales-orders/format";
 import { bacaAturanMinimum } from "./minimum-pesanan";
 
 /*
@@ -308,12 +309,17 @@ d("portal toko — alur publik (test bed only)", () => {
       expect(mockKabar).toHaveBeenCalledTimes(1);
     });
 
-    it("KONSI success carries no total", async () => {
+    it("KONSI success carries no total to the store; the holder's notice carries the retail estimate (P18, P18a)", async () => {
       const r = await kirimPesananPortal(await akses(tokenKonsi), { lines: kaos(3), idempotencyKey: kunci() });
       expect(r).toMatchObject({ ok: true, jenis: "KONSI", ulang: false });
       expect(Object.keys(r)).not.toContain("total");
-      const kabar = mockKabar.mock.calls[0][1] as { isi: string };
-      expect(kabar.isi).not.toMatch(/Rp/);
+      expect(JSON.stringify(r)).not.toMatch(/Rp/);
+      // Kabar ke HP salesman pemegang: 3 × 35.000 × (1 + 30%) = 136.500, angka perkiraan yang sama
+      // dengan daftar pesanan di HP.
+      const [penerima, kabar] = mockKabar.mock.calls[0] as [string, { isi: string }];
+      expect(penerima).toBe(salesmanId);
+      expect(kabar.isi).toContain(`perkiraan nilai retail ${formatIDR(136_500)}`);
+      expect(kabar.isi).toContain("nilai pasti dihitung kantor saat menyetujui");
     });
 
     it("refuses stock beyond what is available, sold-out and unknown variants, unknown items and unpriced items — by name, no numbers", async () => {
@@ -412,11 +418,39 @@ describe("portal toko — murni", () => {
     expect(awalHariWib(new Date("2026-10-01T17:00:00Z")).toISOString()).toBe("2026-10-01T17:00:00.000Z");
   });
 
-  it("the holder's notification shows money only for PUTUS", () => {
+  it("the holder's notification: PUTUS shows its total, KONSI its retail estimate (P18 — the salesman phone shows konsi completely)", () => {
     const putus = kabarPesananPortal({ orderId: "o1", orderNo: "PUTUS/1", namaToko: "Toko A", jenis: "PUTUS", total: 70000, jumlahPcs: 2 });
     expect(putus).toMatchObject({ jenis: "PESANAN_PORTAL", data: { orderId: "o1" } });
     expect(putus.isi).toMatch(/Rp/);
-    const konsi = kabarPesananPortal({ orderId: "o2", orderNo: "KONSI/1", namaToko: "Toko B", jenis: "KONSI", total: 999, jumlahPcs: 3 });
-    expect(konsi.isi).not.toMatch(/Rp|999/);
+    const konsi = kabarPesananPortal({
+      orderId: "o2",
+      orderNo: "KONSI/1",
+      namaToko: "Toko B",
+      jenis: "KONSI",
+      total: null,
+      jumlahPcs: 12,
+      perkiraan: { nilai: 780_000, lengkap: true },
+    });
+    expect(konsi).toMatchObject({ jenis: "PESANAN_PORTAL", data: { orderId: "o2" } });
+    expect(konsi.isi).toBe(
+      `Toko B memesan sendiri lewat portal · permintaan konsinyasi 12 pcs, perkiraan nilai retail ${formatIDR(780_000)} ` +
+        "(nilai pasti dihitung kantor saat menyetujui). Menunggu persetujuan kantor.",
+    );
+  });
+
+  it("a KONSI estimate with unpriced goods says so; without any estimate the notice names no amount", () => {
+    const sebagian = kabarPesananPortal({
+      orderId: "o3",
+      orderNo: "KONSI/2",
+      namaToko: "Toko B",
+      jenis: "KONSI",
+      total: null,
+      jumlahPcs: 4,
+      perkiraan: { nilai: 90_000, lengkap: false },
+    });
+    expect(sebagian.isi).toContain(`perkiraan nilai retail ${formatIDR(90_000)}`);
+    expect(sebagian.isi).toContain("Sebagian barang belum punya harga");
+    const tanpa = kabarPesananPortal({ orderId: "o4", orderNo: "KONSI/3", namaToko: "Toko B", jenis: "KONSI", total: 999, jumlahPcs: 3, perkiraan: null });
+    expect(tanpa.isi).toBe("Toko B memesan sendiri lewat portal · permintaan konsinyasi 3 pcs. Menunggu persetujuan kantor.");
   });
 });

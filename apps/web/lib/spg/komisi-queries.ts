@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from "@elorae/db";
+import { sebelumSiklusPertama } from "@/lib/konsinyasi/siklus-pertama-aturan";
 import { bulanWib } from "@/lib/salesman/pengaturan";
 import type { CommissionRate } from "@/lib/spg-commission/compute";
 import {
@@ -15,7 +16,7 @@ import { REF_KOMISI_KONSI, REF_KOMISI_SPG_PUTUS } from "./hilang";
 import { bagianHilangTerbukaSpg, sisaBebanHilangPerOrang } from "./hilang-db";
 import { dibayarkanTersimpan } from "./komisi-hp";
 import { bacaDetailGaji, type AlasanTahanBayar, type HasilGaji, type RincianGaji } from "./gaji-pokok";
-import { kunciGaji, kunciTokoBulan, muatGajiPokok, muatPesertaGaji } from "./gaji-pokok-queries";
+import { kunciGaji, kunciTokoBulan, lantaiBulanKonsi, muatGajiPokok, muatPesertaGaji } from "./gaji-pokok-queries";
 import {
   barisSasaranKoreksi,
   rencanaBayarSemua,
@@ -731,7 +732,9 @@ function bulanSelesaiTerakhir(bulanIni: string, n: number): string[] {
 
 /**
  * Toko × bulan penjualan yang sudah selesai dan punya nota SPG ATAU peserta gaji (jadwal bulan itu,
- * catatan check-in, atau SPG yang bertugas di sana), per jenis toko.
+ * catatan check-in, atau SPG yang bertugas di sana), per jenis toko. Toko konsinyasi: bulan sebelum
+ * siklus pertama tidak ikut (P59, `lantaiBulanKonsi`) — bulan itu di luar sistem dan tidak pernah
+ * bisa dikunci, jadi tidak pernah menjadi antrean "menunggu kunci".
  */
 async function tokoBerjualan(db: Klien, bulan: readonly string[]): Promise<{ storeId: string; periode: string; termsType: "PUTUS" | "KONSI" }[]> {
   const per = await Promise.all(
@@ -762,10 +765,14 @@ async function tokoBerjualan(db: Klien, bulan: readonly string[]): Promise<{ sto
   }
   const unik = [...new Map(pasangan.map((p) => [kunciPasangan(p.storeId, p.periode), p])).values()];
   if (unik.length === 0) return [];
-  const toko = await db.store.findMany({ where: { id: { in: [...new Set(unik.map((p) => p.storeId))] } }, select: { id: true, termsType: true } });
+  const [toko, lantaiKonsi] = await Promise.all([
+    db.store.findMany({ where: { id: { in: [...new Set(unik.map((p) => p.storeId))] } }, select: { id: true, termsType: true } }),
+    lantaiBulanKonsi(db, "KONSI"),
+  ]);
   const syarat = new Map(toko.map((t) => [t.id, t.termsType]));
   return unik.flatMap((p) => {
     const t = syarat.get(p.storeId);
+    if (t === "KONSI" && lantaiKonsi && sebelumSiklusPertama(p.periode, lantaiKonsi)) return [];
     return t === "PUTUS" || t === "KONSI" ? [{ ...p, termsType: t }] : [];
   });
 }

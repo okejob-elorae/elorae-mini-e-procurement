@@ -21,7 +21,12 @@ export default async function FakturTokoPage({
   if (await ambilTokoTetap(session.user.id)) redirect("/pwa");
 
   const { storeId } = await params;
-  const [data, janji] = await Promise.all([fakturToko(session.user.id, storeId), janjiBerjalanDiToko(storeId)]);
+  // Penontonnya disebut: kontrabon yang memegang tagihan konsinyasi hanya terbaca oleh pemegang
+  // toko sekarang (P31, Q13) — tanpa penonton kueri itu menyembunyikan semuanya.
+  const [data, janji] = await Promise.all([
+    fakturToko(session.user.id, storeId),
+    janjiBerjalanDiToko(storeId, session.user.id),
+  ]);
   if (!data) notFound();
 
   // Sama dengan saringan formulirnya: faktur yang masih bersisa dan belum

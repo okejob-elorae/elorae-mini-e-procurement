@@ -103,8 +103,8 @@ export async function returnedQtyByGrnLine(db: Db, grnIds: string[]): Promise<Ma
 /**
  * Invoiced pieces later sent back, per GRN key (`grnLineSource`; keys at zero are absent) — see
  * `invoicedReturnedQty`. The vendor return credits the PO at the PO price only (`kredit-retur-writer.ts`,
- * unchanged), so an invoice price difference on such a key cannot be accepted (`ADA_RETUR`), and one
- * already accepted still counts the returned pieces until its bill is voided and recorded again.
+ * unchanged), so an invoice price difference accepted on such a key still counts the returned pieces
+ * until its bill is voided and recorded again; the decision screens flag it (`barangDiretur`).
  */
 export async function invoicedReturnedQtyByGrnLine(db: Db, grnIds: string[]): Promise<Map<string, number>> {
   const out = new Map<string, number>();

@@ -5,6 +5,9 @@
  * Tiga hal dinilai per barang/ukuran:
  *   1. Saran isi ulang dari target min/maks (`StoreStockTarget`) — kalau stok
  *      sudah menyentuh atau di bawah MIN, pesan sampai MAKS, dibatasi stok gudang.
+ *      Barang yang tidak dijual di toko offline ("Marketplace saja", P3a) tidak
+ *      pernah disarankan; baris stok dan tandanya tetap ada (stok di rak tetap
+ *      dihormati, P73).
  *   2. Tanda: MINUS, HAMPIR_HABIS, TIDAK_LAKU.
  *   3. Saran pindah barang tidak laku ke toko lain se-area yang menjualnya.
  */
@@ -63,6 +66,8 @@ export function nilaiIsiUlang<T extends BarisStokNilai>(input: {
   target: TargetStok[];
   tersediaGudang: Map<string, number>;
   dalamProses?: Map<string, number>;
+  /** `itemId` yang tidak dijual di toko offline (P3a): saranQty 0, tanpa tanda kurang gudang. */
+  tanpaSaran?: ReadonlySet<string>;
   sekarang: Date;
 }): { baris: BarisDinilai<T>[]; pesanan: BarisPesananIsiUlang[] } {
   const batasLaku = input.sekarang.getTime() - HARI_TIDAK_LAKU * HARI_MS;
@@ -111,7 +116,7 @@ export function nilaiIsiUlang<T extends BarisStokNilai>(input: {
 
     let saranQty = 0;
     let kurangGudang = false;
-    if (target && target.maxQty > 0) {
+    if (target && target.maxQty > 0 && !input.tanpaSaran?.has(itemId)) {
       // Stok minus diperlakukan sebagai nol: barang fisik tidak bisa kurang dari
       // nol. Tandanya (MINUS) tetap ada supaya tokonya dihitung.
       const efektif = Math.max(qty, 0) + dalamProses;

@@ -18,7 +18,10 @@ export default async function RincianBarangHilangPage({ params }: { params: Prom
   // receivables:manage; memutuskan, mengubah, membatalkan keputusan, dan mengubah nilai klaim
   // ekspedisi = receivables:decide_bearer; memeriksa pembayaran klaim ke mutasi rekening =
   // payments:verify (keputusan 11, 29 Okt). Halaman ini tetap hanya untuk ketiga izin pertama di
-  // bawah — Keuangan "hanya halaman Komisi SPG" (P28).
+  // bawah — Keuangan "hanya halaman Komisi SPG" (P28). Jadi sampai pemilik menjawab di mana
+  // Keuangan memeriksa uang klaim ekspedisi, pemeriksanya hanya admin (izin `*`), atau peran yang
+  // diberi salah satu izin halaman ini sekaligus payments:verify — jangan longgarkan penjaga ini
+  // tanpa jawaban itu.
   const bolehKelola = bolehMengelola(izin);
   const bolehPutus = bolehMemutuskanBeban(izin);
   const bolehPeriksa = bolehMemverifikasi(izin);

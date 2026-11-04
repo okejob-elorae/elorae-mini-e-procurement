@@ -117,6 +117,10 @@ vi.mock("@/lib/spg/koreksi-queries", () => ({
     catatan.dipanggil.push("komisiTertunggak");
     return 8;
   }),
+  jumlahGajiSpgBelumDiatur: vi.fn(async () => {
+    catatan.dipanggil.push("gajiBelumDiatur");
+    return 24;
+  }),
 }));
 vi.mock("@/lib/spg/retur-pembeli-queries", () => ({
   jumlahReturPembeliMenunggu: vi.fn(async () => {
@@ -191,6 +195,7 @@ describe("getAntreanKantor", () => {
     expect(hasil.shiftSwapsPending).toBe(5);
     expect(hasil.jubelioPricesPending).toBe(7);
     expect(hasil.spgCommissionsUnpaidPast).toBe(8);
+    expect(hasil.spgSalariesUnset).toBe(24);
     expect(hasil.spgReturnsPending).toBe(9);
     expect(hasil.jubelioPricesDiffer).toBe(10);
     expect(hasil.klaimEkspedisiMenunggu).toBe(11);
@@ -216,6 +221,7 @@ describe("getAntreanKantor", () => {
     expect(hasil).toEqual({});
     expect(catatan.dipanggil).not.toContain("returPembeli");
     expect(catatan.dipanggil).not.toContain("komisiTertunggak");
+    expect(catatan.dipanggil).not.toContain("gajiBelumDiatur");
   });
 
   it("pemegang konfirmasi harga Jubelio saja: hanya hitungan harga yang berjalan", async () => {

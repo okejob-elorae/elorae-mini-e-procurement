@@ -63,6 +63,9 @@ const IZIN_TERKECIL: Record<KunciAntrean, string[]> = {
   // Sama halamannya; menandai dibayar = spg_commission:pay (spg-komisi.ts, konsinyasi.ts bayarKomisiAction),
   // yang sendirian sudah membuka halamannya.
   spgCommissionsUnpaidPast: ["spg_commission:pay"],
+  // Sama halamannya (kartu #tunggakan, bagian ditahan); mengatur gaji pokok = spg_commission:manage
+  // (settings/spg-commission.ts), yang tidak membuka halamannya sendiri — butuh spg_sales:view.
+  spgSalariesUnset: ["spg_sales:view", "spg_commission:manage"],
   // Kartu #utang: mencatat = spg_commission:pay; memeriksa pembayaran utang = payments:verify, yang
   // membuka halaman ini untuk kartu #utang saja.
   spgDebtsOpen: ["spg_commission:pay"],
@@ -121,6 +124,8 @@ const SARINGAN: Record<KunciAntrean, Record<string, string>> = {
   spgCommissionsUnset: { bulan: "lalu" },
   // Jangkar #tunggakan, bukan saringan: kartunya tidak bergantung pada bulan yang dibuka.
   spgCommissionsUnpaidPast: {},
+  // Jangkar #tunggakan juga: bagian ditahan kartu yang sama.
+  spgSalariesUnset: {},
   // Jangkar #utang: kartu utang SPG tidak bergantung pada bulan yang dibuka.
   spgDebtsOpen: {},
   spgDebtPaymentsToCheck: {},
@@ -276,6 +281,15 @@ describe("ANTREAN_KANTOR — baris jawaban pemilik 2026-11-02 (putaran kedua)", 
     expect(bolehLihatAntrean("spgDebtPaymentsToCheck", keuangan)).toBe(true);
     // Menetapkan komisi tetap receivables:manage.
     expect(bolehLihatAntrean("spgCommissionsUnset", keuangan)).toBe(false);
+    // Mengatur gaji pokok bukan izin membayar.
+    expect(bolehLihatAntrean("spgSalariesUnset", keuangan)).toBe(false);
+  });
+
+  it("gaji pokok SPG belum diatur: membayar tidak mengatur gaji, mengatur gaji tidak membuka halamannya sendiri", () => {
+    expect(bolehLihatAntrean("spgSalariesUnset", ["dashboard:view", "spg_sales:view", "spg_commission:pay"])).toBe(false);
+    expect(bolehLihatAntrean("spgSalariesUnset", ["dashboard:view", "spg_commission:manage"])).toBe(false);
+    expect(bolehLihatAntrean("spgSalariesUnset", ["dashboard:view", "spg_commission:pay", "spg_commission:manage"])).toBe(true);
+    expect(jalurTautan(ANTREAN_KANTOR.spgSalariesUnset.href)).toBe("/backoffice/komisi-spg");
   });
 
   it("pemeriksa pembayaran saja melihat kartu #utang, tetapi tidak mencatat utangnya", () => {
@@ -358,6 +372,7 @@ const TANPA_SARINGAN: Record<string, string> = {
   jubelioPricesPending: "daftar konfirmasi harga tanpa saringan = seluruh hitungannya",
   // Kartu #tunggakan dihitung dari hari ini, bukan dari bulan yang dibuka; tautannya membawa jangkar.
   spgCommissionsUnpaidPast: "kartu tunggakan tidak bergantung pada saringan bulan; tautannya berjangkar #tunggakan",
+  spgSalariesUnset: "bagian ditahan kartu tunggakan tidak bergantung pada saringan bulan; tautannya berjangkar #tunggakan",
   // Kartu #utang dihitung dari hari ini, bukan dari bulan yang dibuka.
   spgDebtsOpen: "kartu utang SPG tidak bergantung pada saringan bulan; tautannya berjangkar #utang",
   spgDebtPaymentsToCheck: "kartu utang SPG tidak bergantung pada saringan bulan; tautannya berjangkar #utang",

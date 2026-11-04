@@ -16,6 +16,8 @@ const h = vi.hoisted(() => ({
     storeChangeRequest: { findUnique: vi.fn() },
     fieldSalesDelivery: { findUnique: vi.fn() },
     fieldSalesOrder: { findUnique: vi.fn() },
+    // Kabar beban toko dari BKM terverifikasi (`kabarBebanTokoDariKlaim`): tanpa potongan retur.
+    paymentClaimDeduction: { findMany: vi.fn(async () => []) },
   },
   putuskanKlaim: vi.fn(),
   batalkanKlaim: vi.fn(),
@@ -23,6 +25,7 @@ const h = vi.hoisted(() => ({
   jodohkanRetur: vi.fn(),
   putuskanBeban: vi.fn(),
   alihkanBeban: vi.fn(),
+  bebanTokoDiNota: vi.fn(),
   approveStore: vi.fn(),
   rejectStore: vi.fn(),
   closeRemainder: vi.fn(),
@@ -44,6 +47,8 @@ vi.mock("@/lib/notifications/kabar-pengguna", async () => {
       "PELUNASAN_DIBATALKAN",
       "RETUR_DIHITUNG",
       "RETUR_DIBEBANKAN",
+      "RETUR_SELISIH_CEK",
+      "RETUR_DITANGGUNG_TOKO",
       "PERUBAHAN_TOKO_DISETUJUI",
       "PERUBAHAN_TOKO_DITOLAK",
     ].map((k) => [k, k]),
@@ -65,10 +70,29 @@ vi.mock("@/lib/receivables/return-writer", () => ({
   jodohkanRetur: h.jodohkanRetur,
   putuskanBeban: h.putuskanBeban,
   alihkanBeban: h.alihkanBeban,
+  bebanTokoDiNota: h.bebanTokoDiNota,
+  catatHitunganSusulan: vi.fn(),
+  laporHasilCekSelisih: vi.fn(),
+  jadikanSusulan: vi.fn(),
+  lepasSusulan: vi.fn(),
   catatReturToko: vi.fn(),
   lepasPasangan: vi.fn(),
   tandaiBebanLunas: vi.fn(),
   batalkanRetur: vi.fn(),
+}));
+// Jurnal sesudah commit punya tesnya sendiri; di sini cukup selesai tanpa menyentuh basis data.
+vi.mock("@/lib/finance/lapangan/kait", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/finance/lapangan/kait")>()),
+  kaitReturBerubah: vi.fn(async () => undefined),
+  kaitKlaimBerubah: vi.fn(async () => undefined),
+}));
+vi.mock("@/lib/finance/operasional/kait", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/finance/operasional/kait")>()),
+  kaitPotongSalesRetur: vi.fn(async () => undefined),
+}));
+vi.mock("@/lib/receivables/potong-beban-retur", () => ({
+  tandaiBebanReturDipotong: vi.fn(),
+  tandaiKelebihanReturDikembalikan: vi.fn(),
 }));
 vi.mock("@/lib/store-changes/writer", () => ({
   approveStoreChangeRequest: h.approveStore,
@@ -211,9 +235,45 @@ describe("kabar retur", () => {
     });
   });
 
-  it("beban ke toko atau perusahaan tidak mengabari siapa pun", async () => {
+  it("beban ke TOKO dikabarkan ke salesman pemegang tokonya untuk ditagih (keputusan 1, P84)", async () => {
     h.putuskanBeban.mockResolvedValue({ ok: true, piutangDihitungUlang: 0 });
+    // Toko belum memotong nota retur ini di BKM: kabarnya tanpa angka tagihan, dengan selisihnya.
+    h.bebanTokoDiNota.mockResolvedValue({ tertahan: 0, sisaFaktur: 0, tampil: 0 });
+    h.db.storeReturn.findUnique.mockResolvedValueOnce({
+      noNrt: "NRT-4471",
+      storeId: "toko-1",
+      store: { name: "Toko Maju", salesmanId: "pemegang-1" },
+      charges: [{ id: "beban-1", amount: 200_000 }],
+    });
+    expect(await putuskanBebanAction("beban-1", "TOKO", "Toko setuju", "sales-2")).toEqual({ ok: true });
+    await tuntas();
+    expect(h.kabari).toHaveBeenCalledTimes(1);
+    const [penerima, kabar] = h.kabari.mock.calls[0];
+    expect(penerima).toBe("pemegang-1");
+    expect(kabar).toMatchObject({
+      jenis: "RETUR_DITANGGUNG_TOKO",
+      judul: "Selisih retur NRT-4471 ditanggung Toko Maju",
+      data: { chargeId: "beban-1", returnId: "nrt-1", storeId: "toko-1" },
+    });
+  });
+
+  it("beban ke TOKO yang diputuskan pemegang tokonya sendiri tidak mengabari dirinya", async () => {
+    h.putuskanBeban.mockResolvedValue({ ok: true, piutangDihitungUlang: 0 });
+    h.bebanTokoDiNota.mockResolvedValue({ tertahan: 0, sisaFaktur: 0, tampil: 0 });
+    h.db.storeReturn.findUnique.mockResolvedValueOnce({
+      noNrt: "NRT-4471",
+      storeId: "toko-1",
+      store: { name: "Toko Maju", salesmanId: ADMIN },
+      charges: [{ id: "beban-1", amount: 200_000 }],
+    });
     await putuskanBebanAction("beban-1", "TOKO", "Toko setuju", "sales-2");
+    await tuntas();
+    expect(h.kabari).not.toHaveBeenCalled();
+  });
+
+  it("beban ke perusahaan tidak mengabari siapa pun", async () => {
+    h.putuskanBeban.mockResolvedValue({ ok: true, piutangDihitungUlang: 0 });
+    expect(await putuskanBebanAction("beban-1", "PERUSAHAAN", "Ditanggung perusahaan", "sales-2")).toEqual({ ok: true });
     await tuntas();
     expect(h.kabari).not.toHaveBeenCalled();
   });

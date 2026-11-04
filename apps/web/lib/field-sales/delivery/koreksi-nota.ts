@@ -1,4 +1,4 @@
-import { reopenFieldSalesLineStock, type AdminNotification, type Prisma } from "@elorae/db";
+import { reopenFieldSalesLineStock, type AdminNotification, type Prisma, type StockAdjustmentSource } from "@elorae/db";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { generateDocNumber } from "@/lib/docNumber";
 import { DeliveryShipmentError } from "@/lib/delivery/errors";
@@ -376,7 +376,7 @@ async function ubahNota(
           prevAvgCost: balik.prevAvgCost,
           newAvgCost: balik.newAvgCost,
           createdById: input.olehUserId,
-          source: "FIELD_SALES_CONSUME_RETURN",
+          source: "FIELD_SALES_CONSUME_RETURN" satisfies StockAdjustmentSource,
           idempotencyKey: kunciKembaliNota(nota.id, l.orderLineId, input.refKembali),
           externalRef: `fieldsales:${nota.order.orderNo}`,
         },

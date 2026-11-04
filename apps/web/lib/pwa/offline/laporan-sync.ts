@@ -92,10 +92,14 @@ export async function flushLaporanTertahan(): Promise<{ terkirim: number; gagal:
       await pwaDb.pendingReturns.update(r.localId, { syncState: "syncing" });
       let nasib: NasibKiriman;
       let alasan = "";
+      // Nota yang barang selisihnya cocok dengan laporan ini (`ADA_SELISIH_DITEMUKAN`) — disimpan
+      // di baris antrean supaya layar "Belum terkirim" bisa menyebutnya.
+      let noNrtSelisih: string | undefined;
       try {
         const photoUrl = await pastikanUrl(r.foto, (f) =>
           pwaDb.pendingReturns.update(r.localId, { foto: f }).then(() => undefined),
         );
+        // `r.payload` membawa `returLain` bila pelapor sudah menyatakan ini retur lain.
         const hasil = await catatReturTokoAction({
           storeId: r.storeId,
           ...r.payload,
@@ -103,7 +107,10 @@ export async function flushLaporanTertahan(): Promise<{ terkirim: number; gagal:
           idempotencyKey: r.localId,
         });
         nasib = nasibLaporan(hasil);
-        if (!hasil.ok) alasan = hasil.kode;
+        if (!hasil.ok) {
+          alasan = hasil.kode;
+          if (hasil.kode === "ADA_SELISIH_DITEMUKAN") noNrtSelisih = hasil.noNrt;
+        }
       } catch (err) {
         nasib = err instanceof GagalUnggah ? err.nasib : "retry";
         if (err instanceof GagalUnggah) alasan = `${AWALAN_UNGGAH_LAPORAN}${err.kode}`;
@@ -115,6 +122,7 @@ export async function flushLaporanTertahan(): Promise<{ terkirim: number; gagal:
         await pwaDb.pendingReturns.update(r.localId, {
           syncState: nasib === "terminal" ? "failed" : "pending",
           error: alasan || undefined,
+          noNrtSelisih,
           attempts: r.attempts + 1,
         });
         if (nasib === "terminal") gagal += 1;

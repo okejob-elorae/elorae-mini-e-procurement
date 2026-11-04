@@ -22,6 +22,10 @@ let r2Id = "";
 let tugasId = "";
 let klaimId = "";
 let penggunaId = "";
+// Retur yang dipotong di BKM (hanya kasus beban TOKO di bawah yang mengisinya).
+let nrtId = "";
+let nriId = "";
+let bebanId = "";
 
 const HARI_INI = new Date("2026-10-01T03:00:00Z");
 
@@ -32,6 +36,9 @@ beforeEach(async () => {
   tugasId = "";
   klaimId = "";
   penggunaId = "";
+  nrtId = "";
+  nriId = "";
+  bebanId = "";
 
   const pengguna = await prisma.user.findFirst({ select: { id: true } });
   if (!pengguna) throw new Error("Basis data uji tidak punya pengguna sama sekali");
@@ -89,6 +96,10 @@ beforeEach(async () => {
 afterEach(async () => {
   // Tautan klaim–piutang ikut terhapus (onDelete Cascade).
   if (klaimId) await prisma.paymentClaim.delete({ where: { id: seededId(klaimId) } });
+  // Potongan BKM ikut terhapus bersama klaimnya; beban → hitungan gudang → nota retur.
+  if (bebanId) await prisma.returnCharge.delete({ where: { id: seededId(bebanId) } });
+  if (nriId) await prisma.warehouseReturn.delete({ where: { id: seededId(nriId) } });
+  if (nrtId) await prisma.storeReturn.delete({ where: { id: seededId(nrtId) } });
   if (tugasId) await prisma.collectionTask.delete({ where: { id: seededId(tugasId) } });
   await prisma.receivable.deleteMany({ where: { id: { in: [r1Id, r2Id].filter(Boolean).map(seededId) } } });
   if (tokoId) await prisma.store.delete({ where: { id: seededId(tokoId) } });
@@ -143,5 +154,56 @@ describe("tautanPesanKlaim (basis data)", () => {
     expect((await tautanPesanKlaim([klaimId], { pemilik: "bukan-orang-ini" })).size).toBe(0);
     await prisma.paymentClaim.update({ where: { id: seededId(klaimId) }, data: { status: "DITOLAK" } });
     expect((await tautanPesanKlaim([klaimId])).size).toBe(0);
+  });
+
+  it("selisih retur yang DITETAPKAN ditanggung TOKO tidak disebut menunggu pemeriksaan gudang (P84)", async () => {
+    // Nota retur 100.000, gudang menghitung 60.000 → selisih 40.000. Selama belum diputuskan,
+    // konfirmasi menyebut potongan itu "masih menunggu pemeriksaan barang di gudang". Begitu
+    // ditetapkan ditanggung toko, selisihnya sudah diputuskan dan tetap utang toko — kalimat itu
+    // tidak benar lagi untuknya.
+    nrtId = (
+      await prisma.storeReturn.create({
+        data: { noNrt: `${tag}-NRT`, storeId: tokoId, claimDate: new Date("2026-09-20T00:00:00+07:00"), claimedAmount: 100_000, status: "SELISIH" },
+      })
+    ).id;
+    nriId = (
+      await prisma.warehouseReturn.create({
+        data: {
+          noNri: `${tag}-NRI`,
+          storeId: tokoId,
+          storeReturnId: nrtId,
+          warehouseUserId: penggunaId,
+          receivedAt: new Date("2026-09-22T00:00:00+07:00"),
+          physicalAmount: 60_000,
+          claimedAmount: 100_000,
+          status: "FINAL",
+        },
+      })
+    ).id;
+    bebanId = (
+      await prisma.returnCharge.create({
+        data: { storeReturnId: nrtId, warehouseReturnId: nriId, storeId: tokoId, amount: 40_000, status: "TERBUKA" },
+      })
+    ).id;
+    await prisma.paymentClaim.update({
+      where: { id: seededId(klaimId) },
+      data: {
+        status: "TERVERIFIKASI",
+        deductions: { create: [{ name: "Retur", amount: 100_000, storeReturnId: nrtId }] },
+      },
+    });
+    const pesan = async () => {
+      const t = (await tautanPesanKlaim([klaimId])).get(klaimId);
+      expect(t?.jenis).toBe("KONFIRMASI");
+      return decodeURIComponent(t!.url.split("?text=")[1]);
+    };
+
+    expect(await pesan()).toContain("masih menunggu pemeriksaan barang di gudang");
+
+    await prisma.returnCharge.update({
+      where: { id: seededId(bebanId) },
+      data: { status: "DITETAPKAN", bearer: "TOKO", decidedById: penggunaId, decidedAt: new Date() },
+    });
+    expect(await pesan()).not.toContain("menunggu pemeriksaan");
   });
 });

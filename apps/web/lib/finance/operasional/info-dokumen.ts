@@ -43,7 +43,7 @@ export async function infoDokumenOperasional(pasangan: readonly Pasangan[]): Pro
   const isi = (jenis: SumberOperasional, id: string, info: InfoDokumenOperasional) => hasil.push({ jenis, id, info });
   const S = SUMBER_OPERASIONAL;
 
-  const [kirim, pesanan, pindah, nri, returLapangan, siklus, gaji, bayarSpg, hilang, potong, potongRetur, rusak, stok, retur] = await Promise.all([
+  const [kirim, pesanan, pindah, nri, returLapangan, siklus, gaji, bayarSpg, hilang, potong, potongRetur, rusak, stok, retur, bayarUtangSpg, bayarTambahanSpg] = await Promise.all([
     aman("ConsignmentShipment", ids(S.KIRIM_KONSI), () =>
       prisma.consignmentShipment.findMany({ where: { id: { in: ids(S.KIRIM_KONSI) } }, select: { id: true, noKirim: true, cycleId: true } }),
     ),
@@ -91,6 +91,13 @@ export async function infoDokumenOperasional(pasangan: readonly Pasangan[]): Pro
     ),
     aman("VendorReturn", ids(S.RETUR_PEMASOK), () =>
       prisma.vendorReturn.findMany({ where: { id: { in: ids(S.RETUR_PEMASOK) } }, select: { id: true, docNumber: true } }),
+    ),
+    // Pembayaran utang SPG dan pembayaran tambahan SPG (P67/P68): tanpa relasi ke `User`, namanya dibaca di bawah.
+    aman("SpgDebtPayment", ids(S.BAYAR_UTANG_SPG), () =>
+      prisma.spgDebtPayment.findMany({ where: { id: { in: ids(S.BAYAR_UTANG_SPG) } }, select: { id: true, spgUserId: true } }),
+    ),
+    aman("SpgExtraPayout", ids(S.BAYAR_TAMBAHAN_SPG), () =>
+      prisma.spgExtraPayout.findMany({ where: { id: { in: ids(S.BAYAR_TAMBAHAN_SPG) } }, select: { id: true, spgUserId: true } }),
     ),
   ]);
 
@@ -147,7 +154,7 @@ export async function infoDokumenOperasional(pasangan: readonly Pasangan[]): Pro
   const klaim = await aman("ExpenseClaim", klaimIds, () =>
     prisma.expenseClaim.findMany({ where: { id: { in: klaimIds } }, select: { id: true, userId: true, category: true } }),
   );
-  const orangIds = [...new Set(klaim.map((k) => k.userId))];
+  const orangIds = [...new Set([...klaim.map((k) => k.userId), ...bayarUtangSpg.map((r) => r.spgUserId), ...bayarTambahanSpg.map((r) => r.spgUserId)])];
   const orang = new Map(
     (await aman("User", orangIds, () => prisma.user.findMany({ where: { id: { in: orangIds } }, select: { id: true, name: true } }))).map((u) => [u.id, u.name]),
   );
@@ -158,5 +165,7 @@ export async function infoDokumenOperasional(pasangan: readonly Pasangan[]): Pro
     if (idBiaya.has(k.id)) isi(S.BIAYA_PERJALANAN, k.id, { nomor });
     if (idBayarBiaya.has(k.id)) isi(S.BAYAR_BIAYA_PERJALANAN, k.id, { nomor });
   }
+  for (const r of bayarUtangSpg) isi(S.BAYAR_UTANG_SPG, r.id, { nomor: `Pembayaran utang SPG · ${orang.get(r.spgUserId) ?? "SPG"}` });
+  for (const r of bayarTambahanSpg) isi(S.BAYAR_TAMBAHAN_SPG, r.id, { nomor: `Pembayaran tambahan SPG · ${orang.get(r.spgUserId) ?? "SPG"}` });
   return hasil;
 }

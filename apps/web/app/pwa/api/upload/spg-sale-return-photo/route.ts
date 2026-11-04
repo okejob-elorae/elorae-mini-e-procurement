@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { ambilTokoTetap } from "@/lib/pwa/peran";
+import { ambilTokoTetap, spgBerhentiPada } from "@/lib/pwa/peran";
 import { uploadToR2, isConfigured } from "@/lib/r2";
 import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
 import { exceedsDeclaredLength } from "@/lib/uploads/content-length";
@@ -20,7 +20,11 @@ const tolak = (error: string, status: number) => NextResponse.json({ error }, { 
  * saat uang pembeli dikembalikan. Kuncinya PASTI —
  * `spg-sale-returns/<storeId>/<kunci laporan>/<barang|struk>.<ext>` — jadi
  * unggah ulang (langsung atau dari antrean HP) menimpa objek yang sama.
- * `storeId` selalu toko tetap SPG (`User.assignedStoreId`), tidak pernah dari HP.
+ * `storeId` selalu dari server, tidak pernah dari HP: toko tetap SPG
+ * (`User.assignedStoreId`), atau — untuk SPG yang sudah ditandai berhenti —
+ * toko yang dilepasnya (`spgBerhentiPada`), supaya foto pekerjaan antreannya
+ * tetap naik. Apakah pekerjaan itu masih dicatat diputuskan aksinya menurut saat
+ * ditangkap di HP (`tokoSpgUntukAntrean`).
  *
  * Dua cara:
  * - `kunci` (sebelum laporannya ada; kunci formulir = `idempotencyKey`
@@ -28,10 +32,16 @@ const tolak = (error: string, status: number) => NextResponse.json({ error }, { 
  *   yang sudah menyimpan foto jenis itu → kembalikan kunci TERSIMPAN tanpa
  *   menulis (jawaban yang hilang lalu dikirim ulang). Selain itu 409.
  * - `returnId` (langkah "Uang sudah dikembalikan", hanya `struk`): laporan SPG
- *   ini di tokonya yang uangnya belum tercatat → tulis. Uangnya sudah tercatat →
- *   kembalikan kunci struk yang tersimpan. Laporan orang lain atau yang tidak ada
- *   → 404 yang sama. Selain itu 409 — termasuk laporan DITOLAK atau DIBATALKAN,
- *   sama dengan penulisnya (`TIDAK_DISETUJUI`).
+ *   ini di tokonya. Uangnya sudah tercatat → kembalikan kunci struk yang
+ *   tersimpan. Belum tercatat → tulis, apa pun statusnya: penulisnya
+ *   (`catatUangDikembalikan`) yang memutuskan — MENUNGGU/DISETUJUI dicatat,
+ *   DITOLAK menjadi beban SPG, DIBATALKAN dibuka lagi atau diberitahukan ke
+ *   kantor dengan foto struknya. Ditandai kantor "uang ternyata sudah
+ *   dikembalikan" saat menolak (P78) dan masih DITOLAK: belum ada struk → tulis
+ *   (struknya dilampirkan), sudah ada → kunci tersimpan. Bertanda kantor tetapi
+ *   tidak lagi DITOLAK (penolakannya dibatalkan, P82) → 409, sama dengan
+ *   penulisnya (`SUDAH_DICATAT`). Laporan orang lain atau yang tidak ada → 404
+ *   yang sama.
  *
  * Foto ditampilkan hanya dari kunci tersimpannya (`urlFotoReturPembeli`).
  */
@@ -39,7 +49,7 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return tolak("TANPA_AKSES", 401);
   if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.SPG_SALES_RECORD)) return tolak("TANPA_AKSES", 403);
-  const storeId = await ambilTokoTetap(session.user.id);
+  const storeId = (await ambilTokoTetap(session.user.id)) ?? (await spgBerhentiPada(session.user.id))?.storeId ?? null;
   if (!storeId || !isSafeR2KeySegment(storeId)) return tolak("TANPA_AKSES", 403);
   if (!isConfigured()) return tolak("GAGAL", 503);
   if (exceedsDeclaredLength(req, MAX_FILE_SIZE)) return tolak("TERLALU_BESAR", 413);
@@ -82,7 +92,11 @@ export async function POST(req: NextRequest) {
     if (r.refundedAt !== null) {
       return r.refundSlipR2Key ? NextResponse.json({ key: r.refundSlipR2Key }) : tolak("KEADAAN", 409);
     }
-    const bolehTulis = (r.status === "MENUNGGU" || r.status === "DISETUJUI") && r.refundMarkedById === null;
+    const tandaKantor = r.refundMarkedById !== null;
+    if (tandaKantor && r.status === "DITOLAK" && r.refundSlipR2Key) return NextResponse.json({ key: r.refundSlipR2Key });
+    const bolehTulis = tandaKantor
+      ? r.status === "DITOLAK"
+      : r.status === "MENUNGGU" || r.status === "DISETUJUI" || r.status === "DITOLAK" || r.status === "DIBATALKAN";
     if (!bolehTulis || !isSafeR2KeySegment(r.idempotencyKey)) return tolak("KEADAAN", 409);
     folderKunci = r.idempotencyKey;
   }

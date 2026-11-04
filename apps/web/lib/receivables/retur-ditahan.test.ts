@@ -4,6 +4,7 @@ import { buatKlaimPembayaran } from "./claim-writer";
 import { alihkanBeban, batalkanRetur, catatHitunganGudang, catatHitunganSusulan, jadikanSusulan, putuskanBeban } from "./return-writer";
 import { bacaSisaDanTahanan, putuskanKlaim } from "./writer";
 import { daftarPiutang } from "./queries";
+import { bagianKalimatTertahan } from "./jatuh-tempo";
 
 /**
  * KEPUTUSAN SEMENTARA PEMILIK 2026-10-06 — BKM kedua tidak boleh melunasi
@@ -291,6 +292,18 @@ describe("selisih yang ditanggung TOKO tetap terbuka di nota asal (P84, keputusa
     ).toBe(true);
     // Tidak dikreditkan ke toko, tapi bukan lagi tahanan yang lepas sendiri: tokonya berutang.
     expect(await bacaSisaDanTahanan(prisma, piutangId)).toEqual({ sisa: 200_000, tertahan: 0 });
+    // Di layar piutang bagian itu TETAP (utang toko, ditagih lewat BKM berikutnya), tidak pernah
+    // "menunggu" (P84). Jatuh temponya dipindah ke depan supaya bagian keduanya `TAGIH_BKM`, bukan
+    // `LEWAT_TEMPO` (P46).
+    await prisma.receivable.update({
+      where: { id: seededId(piutangId) },
+      data: { dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+    });
+    const [r] = await daftarPiutang({ receivableIds: [piutangId] });
+    expect(r.keadaan).toBe("tertahan");
+    expect(r.alasan.nilaiTertahan).toBe(200_000);
+    expect(r.alasan.ditahanRetur ?? 0).toBe(0);
+    expect(bagianKalimatTertahan(r.alasan)).toEqual([{ jenis: "TETAP", nilai: 200_000 }, { jenis: "TAGIH_BKM" }]);
     // Tidak ada faktur BEBAN/<NRT> — satu-satunya faktur toko ini tetap faktur asalnya.
     expect(await prisma.receivable.count({ where: { storeId: seededId(tokoId) } })).toBe(1);
 

@@ -11,7 +11,7 @@ import { DeliveryError, KonsiTransferReservationMismatchError } from "@/lib/fiel
 import { IndenBelumRilisError } from "@/lib/field-sales/inden";
 import { nextDeliveryStatus } from "@/lib/field-sales/delivery/plan";
 import { isR2KeyInFolder } from "@/lib/r2-key";
-import { jumlahSpgToko } from "@/lib/spg/kiriman";
+import { penerimaPod } from "@/lib/spg/kiriman";
 import { sesudahTerimaKosong, terimaKirimanDalamTx, type SesudahTerima } from "@/lib/spg/stok-writer";
 import { DeliveryShipmentError } from "./errors";
 import { isSameActorReplay } from "./pod-completion-guard";
@@ -473,17 +473,24 @@ export type HasilSelesaikanPengiriman = {
  * Completion = the expedition/courier confirmation (owner putus answer 2026-11-02). Nothing about
  * stock or the nota moves here unless the POD is also the store's receipt:
  *
- * - `RECEIPT_AT_POD` — the store has NO SPG at the POD (`jumlahSpgToko` = 0) and no receipt exists yet
- *   (decision 2026-10-29 tambahan #3): each line must account for every planned piece as diterima
- *   (`deliveredQty`), retur langsung (`returnedQty`, refused at the door) or hilang (`lostQty`),
- *   else LINE_UNACCOUNTED, and the store receipt is written in the same transaction
- *   (`terimaKirimanDalamTx`, which corrects the putus nota, returns refused goods to the main
- *   warehouse and opens the StockLoss). Any refusal it returns rolls the completion back
- *   (TERIMA_GAGAL).
- * - `INFO_ONLY` — otherwise (a store with an SPG, P40, absent or not, P26): each line carries only
- *   what was handed to the store. Refused or lost pieces are DICATAT_SPG (the SPG's receipt records
- *   them — or, if she leaves before receiving, the holder salesman's, P45a); nothing handed over is
- *   POD_KOSONG unless the receipt already exists.
+ * - `RECEIPT_AT_POD` — no receipt exists yet and either the courier receives for the store
+ *   (`penerimaPod` = KURIR: no SPG at the POD and none stopped while these goods were on the road,
+ *   or no holder to record the PIC's receipt — decision 2026-10-29 tambahan #3), or the store's SPG
+ *   stopped while they were on the road (`PEMEGANG`, P45a) AND the courier records a door refusal
+ *   or hands nothing over at all. Who records a refusal in that case is still an open owner
+ *   question and the holder's form records only arrivals, so the confirmation keeps doing it as
+ *   before; and with nothing handed over there is nothing for the PIC to receive, while the holder
+ *   can only record a shipment that was handed over — without this it could never close. Each line
+ *   must account for every planned piece as diterima (`deliveredQty`), retur langsung
+ *   (`returnedQty`, refused at the door) or hilang (`lostQty`), else LINE_UNACCOUNTED, and the store
+ *   receipt is written in the same transaction (`terimaKirimanDalamTx`, which corrects the putus
+ *   nota, returns refused goods to the main warehouse and opens the StockLoss). Any refusal it
+ *   returns rolls the completion back (TERIMA_GAGAL).
+ * - `INFO_ONLY` — otherwise (a store with an SPG, P40, absent or not, P26; or `PEMEGANG` with
+ *   something handed over and nothing refused, P45a: the holder salesman later records what the PIC
+ *   got, and whatever did not arrive is lost): each line carries only what was handed to the store.
+ *   Refused or lost pieces are DICATAT_SPG (recorded at the store's receipt); nothing handed over
+ *   is POD_KOSONG unless the receipt already exists.
  *
  * The same-actor replay guard returns `ulang: true` so the action re-runs its idempotent post-commit
  * tail; the StockLoss of a receipt is already written in-tx.
@@ -777,15 +784,25 @@ export async function completeDeliveryShipment(input: {
       select: { id: true },
     });
     /*
-     * R6: the POD is the store's receipt when the store has no SPG NOW (`jumlahSpgToko`, the same
-     * rule as the SPG notices) and nobody received it yet. An SPG who is merely absent stays
-     * assigned (P26: the goods wait for her); one who LEFT while the goods were on the road no
-     * longer counts, so the courier's confirmation records diterima / retur langsung / hilang
-     * (decision 2026-10-29 tambahan #3) — a door refusal stays recordable. The holder salesman's
-     * receipt (P45a) is for goods handed over while the SPG was still assigned.
+     * R6: who receives for the store (`penerimaPod`). An SPG who is merely absent stays assigned
+     * (P26: the goods wait for her) → INFO_ONLY. One who stopped on or after the day this shipment
+     * was created, at an active store with a holder, leaves the receipt to the store's PIC,
+     * recorded by the holder salesman during a visit with the PIC's name and a photo (P45/P45a,
+     * "benar") → INFO_ONLY, unless the courier records a door refusal or hands nothing over. The
+     * holder's form records only arrivals and who records a refusal there is still an owner
+     * question, so until he answers the confirmation stays the store's receipt as before and the
+     * refused goods go back to the main warehouse instead of being booked as lost; and a shipment
+     * with nothing handed over has nothing for the PIC to receive and could never reach the
+     * holder's form (it needs DELIVERED/PARTIALLY_DELIVERED). Otherwise — no SPG when the shipment
+     * was created, or nobody who could record the PIC's receipt — the courier's confirmation is the
+     * receipt (decision 2026-10-29 tambahan #3).
      */
-    const punyaSpg = (await jumlahSpgToko(tx, shipment.order.storeId)) > 0;
-    mode = !punyaSpg && !sudahDiterima ? "RECEIPT_AT_POD" : "INFO_ONLY";
+    const penerima = await penerimaPod(tx, shipment.order.storeId, shipment.createdAt);
+    const kurirMencatat =
+      penerima === "KURIR" ||
+      (penerima === "PEMEGANG" &&
+        (input.lines.some((l) => (l.returnedQty ?? 0) > 0) || input.lines.every((l) => l.deliveredQty === 0)));
+    mode = !sudahDiterima && kurirMencatat ? "RECEIPT_AT_POD" : "INFO_ONLY";
 
     if (mode === "INFO_ONLY") {
       if (input.lines.some((l) => (l.returnedQty ?? 0) > 0 || (l.lostQty ?? 0) > 0)) {

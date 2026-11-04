@@ -77,6 +77,7 @@ const KODE_GALAT = new Set([
   "KUNCI_DIPAKAI",
   "TANPA_AKSES",
   "ISIAN_TIDAK_VALID",
+  "CATATAN_STOK_TIDAK_COCOK",
 ]);
 
 /** Penolakan yang membuat formulir ini tidak ada gunanya lagi — kembali ke halaman toko. */

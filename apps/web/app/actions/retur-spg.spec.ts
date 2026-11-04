@@ -12,6 +12,9 @@ type Panggilan = Record<string, unknown>;
 const state = {
   sesi: null as { user: { id: string; permissions: string[] } } | null,
   tokoTetap: "s1" as string | null,
+  /** SPG yang sudah berhenti: toko yang dilepasnya dan akhir hari terakhirnya. */
+  berhenti: null as { storeId: string; akhir: Date } | null,
+  tanyaAntrean: [] as Date[],
   panggil: {} as Record<string, Panggilan[]>,
   disegarkan: [] as string[],
   tolakanPenulis: null as string | null,
@@ -31,7 +34,16 @@ vi.mock("next/cache", () => ({
     state.disegarkan.push(path);
   },
 }));
-vi.mock("@/lib/pwa/peran", () => ({ ambilTokoTetap: vi.fn(async () => state.tokoTetap) }));
+vi.mock("@/lib/pwa/peran", () => ({
+  ambilTokoTetap: vi.fn(async () => state.tokoTetap),
+  // Tiruan aturan `tokoSpgUntukAntrean`: toko tetap; atau toko yang dilepas SPG berhenti, selama
+  // pekerjaannya ditangkap paling lambat di akhir hari terakhirnya.
+  tokoSpgUntukAntrean: vi.fn(async (_userId: string, waktu: Date) => {
+    state.tanyaAntrean.push(waktu);
+    if (state.tokoTetap) return state.tokoTetap;
+    return state.berhenti && waktu.getTime() <= state.berhenti.akhir.getTime() ? state.berhenti.storeId : null;
+  }),
+}));
 vi.mock("@/lib/spg/retur-pembeli", () => ({
   catatReturPembeli: vi.fn(async (i: Panggilan) => catat("lapor", i) ?? { ok: true, returnId: "r1" }),
   setujuiReturPembeli: vi.fn(async (i: Panggilan) => catat("setujui", i) ?? { ok: true, returnId: i.returnId, spgSaleId: "sale1", status: "DISETUJUI" }),
@@ -73,6 +85,8 @@ async function diam<T>(jalan: () => Promise<T>): Promise<T> {
 beforeEach(() => {
   state.sesi = SPG;
   state.tokoTetap = "s1";
+  state.berhenti = null;
+  state.tanyaAntrean = [];
   state.panggil = {};
   state.disegarkan = [];
   state.tolakanPenulis = null;
@@ -116,12 +130,62 @@ describe("catatReturPembeliAction", () => {
     expect(await aksi.catatReturPembeliAction({ ...LAPOR, luring: true, waktuTangkap: "2020-01-01T00:00:00.000Z" })).toEqual({ ok: false, kode: "WAKTU_TIDAK_VALID" });
   });
 
+  it("a reason within the limit counted in code points passes, even with emoji; one over the limit is unreadable input", async () => {
+    // 500 emoji = 500 titik kode (tepat di batas) tetapi 1000 satuan UTF-16 — `.max` zod dulu menolaknya.
+    const emoji = "\u{1F600}";
+    expect(await aksi.catatReturPembeliAction({ ...LAPOR, alasan: emoji.repeat(500) })).toEqual({ ok: true, returnId: "r1" });
+    expect(state.panggil.lapor[0]).toMatchObject({ alasan: emoji.repeat(500) });
+    expect(await aksi.catatReturPembeliAction({ ...LAPOR, alasan: emoji.repeat(501) })).toEqual({ ok: false, kode: "ISIAN_TIDAK_VALID" });
+    expect(state.panggil.lapor).toHaveLength(1);
+  });
+
   it("passes refusals through and maps a throw to GAGAL", async () => {
     state.tolakanPenulis = "FOTO_BARANG_WAJIB";
     expect(await aksi.catatReturPembeliAction(LAPOR)).toEqual({ ok: false, kode: "FOTO_BARANG_WAJIB" });
     state.tolakanPenulis = null;
     state.penulisMelempar = true;
     expect(await diam(() => aksi.catatReturPembeliAction(LAPOR))).toEqual({ ok: false, kode: "GAGAL" });
+  });
+});
+
+describe("queued steps of an SPG who has stopped: the store follows the capture time (tokoSpgUntukAntrean)", () => {
+  const ISI_UANG = { returnId: "r1", fotoStrukKey: "spg-sale-returns/s9/k/struk.jpg" };
+  const kemarin = () => new Date(Date.now() - 86_400_000);
+
+  beforeEach(() => {
+    state.tokoTetap = null;
+    // Hari terakhirnya berakhir satu jam yang lalu.
+    state.berhenti = { storeId: "s9", akhir: new Date(Date.now() - 3_600_000) };
+  });
+
+  const kasus: [string, (i: unknown) => Promise<unknown>, Panggilan, string, unknown][] = [
+    ["catatReturPembeliAction", aksi.catatReturPembeliAction, LAPOR, "lapor", { ok: true, returnId: "r1" }],
+    ["catatUangDikembalikanAction", aksi.catatUangDikembalikanAction, ISI_UANG, "uang", { ok: true }],
+  ];
+
+  it.each(kasus)("%s: a capture on or before her last day is recorded at the store she left, at that capture time", async (_n, fn, isi, kunci, ok) => {
+    const tangkap = kemarin().toISOString();
+    expect(await fn({ ...isi, luring: true, waktuTangkap: tangkap })).toEqual(ok);
+    expect(state.panggil[kunci][0]).toMatchObject({ storeId: "s9", userId: "spg1" });
+    expect((state.panggil[kunci][0].waktuTangkap as Date).toISOString()).toBe(tangkap);
+    expect(state.tanyaAntrean.map((w) => w.toISOString())).toEqual([tangkap]);
+  });
+
+  it.each(kasus)("%s: a capture after her last day is refused TANPA_TOKO and reaches no writer", async (_n, fn, isi, kunci) => {
+    expect(await fn({ ...isi, luring: true, waktuTangkap: new Date().toISOString() })).toEqual({ ok: false, kode: "TANPA_TOKO" });
+    expect(state.panggil[kunci]).toBeUndefined();
+  });
+
+  it.each(kasus)("%s: an online step (no capture time) uses the fixed store only, so it is refused TANPA_TOKO", async (_n, fn, isi, kunci) => {
+    expect(await fn(isi)).toEqual({ ok: false, kode: "TANPA_TOKO" });
+    expect(state.tanyaAntrean).toEqual([]);
+    expect(state.panggil[kunci]).toBeUndefined();
+  });
+
+  it.each(kasus)("%s: a capture older than the queue limit is refused WAKTU_TIDAK_VALID before any store lookup", async (_n, fn, isi, kunci) => {
+    expect(await fn({ ...isi, luring: true, waktuTangkap: "2020-01-01T00:00:00.000Z" })).toEqual({ ok: false, kode: "WAKTU_TIDAK_VALID" });
+    expect(state.tanyaAntrean).toEqual([]);
+    expect(state.panggil[kunci]).toBeUndefined();
   });
 });
 

@@ -136,8 +136,9 @@ const ISIAN: Record<KodeIzin, Isian> = {
   [P.FIELD_SALES_ORDERS_DELIVER]: { grup: "pesananLapangan", butuh: P.FIELD_SALES_ORDERS_VIEW },
   // Tidak jadi dikirim untuk pengiriman putus yang sudah bernota: Admin Penjualan menekannya
   // sendiri, alasan wajib, Keuangan langsung dikabari (keputusan pemilik 2026-11-02, P41a). Bukan
-  // persetujuan. Halaman Pengiriman membukanya sendiri; di rincian pesanan lapangan tombolnya
-  // tampil bagi pembaca pesanan yang memegang izin ini.
+  // persetujuan. Tombolnya hanya ada di register /backoffice/deliveries (dan dialognya), dengan
+  // aturan `bolehBatal` yang sama dengan `cancelShipmentAction`; rincian pengiriman hanya baca, dan
+  // rincian pesanan lapangan tidak punya tombol ini.
   [P.DELIVERIES_CANCEL_NOTA]: { grup: "pesananLapangan", halaman: ["/backoffice/deliveries"] },
   [P.FIELD_SALES_ORDERS_CREDIT_OVERRIDE]: { grup: "pesananLapangan", butuh: P.FIELD_SALES_ORDERS_APPROVE, persetujuan: true },
   [P.STORES_VIEW]: {

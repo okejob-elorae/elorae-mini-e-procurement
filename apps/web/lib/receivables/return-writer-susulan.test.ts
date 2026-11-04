@@ -43,6 +43,7 @@ let tokoLainIds: string[] = [];
 let nrtIds: string[] = [];
 let nriYatimIds: string[] = [];
 let penggunaDibuatIds: string[] = [];
+let siklusIds: string[] = [];
 let uomId = "";
 let itemId = "";
 let urut = 0;
@@ -57,6 +58,7 @@ beforeEach(async () => {
   nrtIds = [];
   nriYatimIds = [];
   penggunaDibuatIds = [];
+  siklusIds = [];
   uomId = "";
   itemId = "";
 
@@ -138,6 +140,7 @@ afterEach(async () => {
     await prisma.item.delete({ where: { id: seededId(itemId) } });
   }
   if (uomId) await prisma.uOM.delete({ where: { id: seededId(uomId) } });
+  if (siklusIds.length) await prisma.consignmentCycle.deleteMany({ where: { id: { in: seededIds(siklusIds) } } });
   if (semuaToko.length) await prisma.store.deleteMany({ where: { id: { in: seededIds(semuaToko) } } });
   if (penggunaDibuatIds.length) await prisma.user.deleteMany({ where: { id: { in: seededIds(penggunaDibuatIds) } } });
 });
@@ -167,10 +170,10 @@ async function notaBelumDihitung(): Promise<string> {
   return n.id;
 }
 
-/** Penerimaan gudang tanpa nota di toko ini (atau toko lain). */
-async function yatim(nilai: number, opsi: { storeId?: string; olehId?: string } = {}) {
+/** Penerimaan gudang tanpa nota di toko ini (atau toko lain, atau tanpa toko: `storeId: null`). */
+async function yatim(nilai: number, opsi: { storeId?: string | null; olehId?: string } = {}) {
   const h = await catatHitunganGudang({
-    storeId: opsi.storeId ?? tokoId,
+    storeId: opsi.storeId === undefined ? tokoId : opsi.storeId,
     warehouseUserId: opsi.olehId ?? gudangId,
     receivedAt: wib("2026-10-27"),
     deliveryMethod: "EKSPEDISI",
@@ -385,6 +388,52 @@ describe("jadikanSusulan / lepasSusulan", () => {
       alasan: "PENGHITUNG_SAMA_PELAPOR",
     });
     expect(Number((await bebanNota(nrtId))?.amount)).toBe(200_000);
+  });
+
+  it("penerimaan TANPA toko di bulan yang siklus konsinyasi toko notanya terkunci: ditolak SIKLUS_TERKUNCI sampai dikonfirmasi", async () => {
+    const { nrtId } = await notaBerselisih();
+    const nriId = await yatim(80_000, { storeId: null });
+    // Penjaganya membaca siklus terkunci toko itu pada bulan terima (Oktober WIB), seperti `pindahkanNriKeToko`.
+    urut += 1;
+    const siklus = await prisma.consignmentCycle.create({
+      data: { noKonsi: `${tag}-K-${urut}`, storeId: tokoId, periodYear: 2026, periodMonth: 10, lockedAt: new Date(), lockedById: lainId },
+    });
+    siklusIds.push(siklus.id);
+
+    expect(await jadikanSusulan({ warehouseReturnId: nriId, storeReturnId: nrtId, olehUserId: keuanganId })).toEqual({
+      ok: false,
+      alasan: "SIKLUS_TERKUNCI",
+      noKonsi: [siklus.noKonsi],
+    });
+    // Tidak ada yang ditulis: penerimaannya tetap yatim tanpa toko, bebannya tetap.
+    expect(
+      await prisma.warehouseReturn.findUniqueOrThrow({
+        where: { id: seededId(nriId) },
+        select: { followUpOfStoreReturnId: true, storeId: true },
+      }),
+    ).toEqual({ followUpOfStoreReturnId: null, storeId: null });
+    expect(Number((await bebanNota(nrtId))?.amount)).toBe(200_000);
+
+    expect(
+      await jadikanSusulan({ warehouseReturnId: nriId, storeReturnId: nrtId, olehUserId: keuanganId, setujuSiklusTerkunci: true }),
+    ).toMatchObject({ ok: true });
+    expect(Number((await bebanNota(nrtId))?.amount)).toBe(120_000);
+    const jejak = await prisma.auditLog.findFirst({
+      where: { action: JEJAK.RETUR_SUSULAN_DIJODOHKAN, entityId: seededId(nriId) },
+      select: { metadata: true },
+    });
+    expect(jejak?.metadata).toMatchObject({ storeReturnId: nrtId, siklusTerkunci: [siklus.noKonsi] });
+  });
+
+  it("penerimaan yang SUDAH bertoko nota itu tidak berpindah toko: siklus terkunci tidak ditanyakan", async () => {
+    const { nrtId } = await notaBerselisih();
+    const nriId = await yatim(80_000);
+    urut += 1;
+    const siklus = await prisma.consignmentCycle.create({
+      data: { noKonsi: `${tag}-K-${urut}`, storeId: tokoId, periodYear: 2026, periodMonth: 10, lockedAt: new Date(), lockedById: lainId },
+    });
+    siklusIds.push(siklus.id);
+    expect(await jadikanSusulan({ warehouseReturnId: nriId, storeReturnId: nrtId, olehUserId: keuanganId })).toMatchObject({ ok: true });
   });
 
   it("nota yang belum dihitung gudang ditolak BELUM_DIHITUNG", async () => {

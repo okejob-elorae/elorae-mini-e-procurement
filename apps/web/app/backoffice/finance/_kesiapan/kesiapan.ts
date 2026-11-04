@@ -65,6 +65,9 @@ export const PERAN_OPSIONAL: readonly PostingRole[] = [
   "OTHER_INCOME",
   "PREPAID_EXPENSE",
   "ACCRUED_EXPENSE",
+  // Selisih harga invoice yang DITERIMA atas barang yang sudah tidak ada di stok (P49): hanya
+  // dibutuhkan begitu keputusan itu dipakai — dipetakan sebelum dipakai pertama kali.
+  "PURCHASE_PRICE_VARIANCE",
 ];
 
 /** Peran cadangan: dipakai rincian biaya marketplace yang belum dipetakan. */

@@ -30,7 +30,16 @@ import {
  * mencap `Item.jubelioPriceDecidedAt` di transaksinya sendiri bersama baris kirimannya. Selama harga
  * di Jubelio berbeda dengan ERP, apps/api hanya mengirim kalau ada keputusan yang diambil sesudah
  * bacaan Jubelio itu berubah; suntingan di Jubelio yang terbaca SESUDAH keputusan membatalkannya.
+ * Karena itu ketiganya juga compare-and-swap pada `jubelioObservedChangedAt` yang ditampilkan
+ * halaman (`berubahPadaDiharapkan`): bacaan Jubelio yang berubah sesudah halaman dibuka ditolak
+ * `TERBACA_BERUBAH` sebelum apa pun ditulis — keputusan hanya atas angka yang dilihat orangnya
+ * (P75 "saya tidak setuju jika harga bisa tertimpa"; R28 yang menyetujui harus melihat yang ditimpa).
  */
+
+/** ISO `jubelioObservedChangedAt` barang, dalam bentuk yang ditampilkan halaman (null = belum pernah berubah). */
+function waktuBerubah(barang: { jubelioObservedChangedAt: Date | null }): string | null {
+  return barang.jubelioObservedChangedAt?.toISOString() ?? null;
+}
 
 const KOLOM_BARANG = {
   id: true,
@@ -51,7 +60,15 @@ const KOLOM_BARANG = {
 
 export type HasilKonfirmasiHarga =
   | { hasil: "DIKONFIRMASI"; jenis: JenisMenunggu; outboxId: string }
-  | { hasil: "TIDAK_MENUNGGU" | "HARGA_BERUBAH" | AlasanTidakBisaDikirim | "TIDAK_DITEMUKAN" | "BUKAN_BARANG_JADI" };
+  | {
+      hasil:
+        | "TIDAK_MENUNGGU"
+        | "HARGA_BERUBAH"
+        | "TERBACA_BERUBAH"
+        | AlasanTidakBisaDikirim
+        | "TIDAK_DITEMUKAN"
+        | "BUKAN_BARANG_JADI";
+    };
 
 /**
  * Menyetujui harga ERP sebagai harga Jubelio dan mengirimnya. Untuk produk baru (BARU),
@@ -60,6 +77,8 @@ export type HasilKonfirmasiHarga =
 export async function konfirmasiHargaJubelio(input: {
   itemId: string;
   hargaErpDiharapkan: string | null;
+  /** ISO `jubelioObservedChangedAt` yang ditampilkan halaman; null bila halaman tidak punya waktunya. */
+  berubahPadaDiharapkan: string | null;
   olehUserId: string;
   sekarang?: Date;
 }): Promise<HasilKonfirmasiHarga> {
@@ -85,6 +104,7 @@ export async function konfirmasiHargaJubelio(input: {
     );
     if (!jenis) return { hasil: "TIDAK_MENUNGGU" };
     if (!hargaSama(hargaErp, input.hargaErpDiharapkan)) return { hasil: "HARGA_BERUBAH" };
+    if (waktuBerubah(barang) !== input.berubahPadaDiharapkan) return { hasil: "TERBACA_BERUBAH" };
 
     const kategoriTerpetakan = barang.categoryId
       ? (await tx.jubelioCategoryMapping.count({ where: { itemCategoryId: barang.categoryId } })) > 0
@@ -132,7 +152,7 @@ export async function konfirmasiHargaJubelio(input: {
 
 export type HasilKembalikanHarga =
   | { hasil: "DIKEMBALIKAN"; outboxId: string }
-  | { hasil: "HARGA_BERUBAH" | "SUDAH_SAMA" | "TIDAK_BISA_DIKEMBALIKAN" | "TIDAK_DITEMUKAN" };
+  | { hasil: "HARGA_BERUBAH" | "TERBACA_BERUBAH" | "SUDAH_SAMA" | "TIDAK_BISA_DIKEMBALIKAN" | "TIDAK_DITEMUKAN" };
 
 /**
  * Perubahan harga yang tidak jadi: harga jual ERP dikembalikan ke harga Jubelio terkonfirmasi,
@@ -143,6 +163,8 @@ export type HasilKembalikanHarga =
 export async function kembalikanHargaErp(input: {
   itemId: string;
   hargaErpDiharapkan: string | null;
+  /** ISO `jubelioObservedChangedAt` yang ditampilkan halaman; null bila halaman tidak punya waktunya. */
+  berubahPadaDiharapkan: string | null;
   olehUserId: string;
   sekarang?: Date;
 }): Promise<HasilKembalikanHarga> {
@@ -163,6 +185,7 @@ export async function kembalikanHargaErp(input: {
     }
     const hargaErp = hargaKeTeks(barang.sellingPrice);
     if (!hargaSama(hargaErp, input.hargaErpDiharapkan)) return { hasil: "HARGA_BERUBAH" };
+    if (waktuBerubah(barang) !== input.berubahPadaDiharapkan) return { hasil: "TERBACA_BERUBAH" };
     if (hargaSama(hargaBerlaku(hargaErp), hargaJubelio)) return { hasil: "SUDAH_SAMA" };
 
     await tx.item.update({
@@ -254,7 +277,7 @@ export async function kirimUlangHargaJubelio(input: {
       sedangDikirim: jumlahDikirim > 0,
     });
     if (!beda) return { hasil: "TIDAK_BEDA" };
-    const berubahPada = barang.jubelioObservedChangedAt?.toISOString() ?? null;
+    const berubahPada = waktuBerubah(barang);
     if (berubahPada !== input.berubahPadaDiharapkan) return { hasil: "TERBACA_BERUBAH" };
 
     const kategoriTerpetakan = barang.categoryId

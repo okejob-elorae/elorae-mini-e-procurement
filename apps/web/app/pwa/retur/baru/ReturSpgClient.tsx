@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Copy, Minus, PackageX, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -124,6 +125,10 @@ export function ReturSpgClient({
   const [nilai, setNilai] = useState(awal?.nilai ? String(awal.nilai) : "");
   const [foto, setFoto] = useState<NilaiFoto>(awal?.foto ?? null);
   const [catatan, setCatatan] = useState("");
+  // Barangnya cocok dengan kekurangan retur lain yang sedang dikirim balik (`ADA_SELISIH_DITEMUKAN`):
+  // pelapor menyatakan ini memang retur lain, lalu mengirim ulang — sama dengan formulir kantor.
+  const [bentrokSelisih, setBentrokSelisih] = useState<string | null>(null);
+  const [returLain, setReturLain] = useState(false);
 
   // Tanpa kata kunci: barang yang ada di rak (saldo buku > 0). Dengan kata
   // kunci: semua yang cocok — barang bisa kembali walau bukunya belum mencatat.
@@ -217,6 +222,8 @@ export function ReturSpgClient({
             spgSaleReturnLineId: b.spgSaleReturnLineId,
           })),
         ],
+        // Ikut tersimpan di antrean HP, jadi kiriman ulangnya membawa pernyataan yang sama.
+        ...(bentrokSelisih !== null && returLain ? { returLain: true } : {}),
       };
 
       // Tanpa sinyal: simpan di HP, terkirim sendiri begitu sinyal kembali.
@@ -251,7 +258,11 @@ export function ReturSpgClient({
         return antrekan();
       }
       if (!hasil.ok) {
-        toast.error(td(`err${hasil.kode}`));
+        if (hasil.kode === "ADA_SELISIH_DITEMUKAN") {
+          setBentrokSelisih(hasil.noNrt ?? "");
+          setReturLain(false);
+        }
+        toast.error(td(`err${hasil.kode}`, { noNrt: hasil.noNrt ?? "" }));
         return;
       }
       toast.success(tr("okCreated"));
@@ -529,6 +540,18 @@ export function ReturSpgClient({
             <Label htmlFor="rs-catatan">{adaLebih ? t("catatanWajib") : tr("noteLabel")}</Label>
             <Textarea id="rs-catatan" value={catatan} onChange={(e) => setCatatan(e.target.value)} rows={2} />
           </div>
+
+          {bentrokSelisih !== null && (
+            <label className="flex min-h-11 items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+              <Checkbox
+                className="mt-0.5"
+                checked={returLain}
+                onCheckedChange={(v) => setReturLain(v === true)}
+                disabled={pending}
+              />
+              <span>{tr("returLainKonfirmasi", { noNrt: bentrokSelisih })}</span>
+            </label>
+          )}
         </CardContent>
       </Card>
 

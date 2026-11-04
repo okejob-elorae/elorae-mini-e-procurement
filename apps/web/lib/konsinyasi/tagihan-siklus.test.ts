@@ -42,9 +42,9 @@ d("tagihan siklus konsinyasi saat kunci dibuka (test bed only)", () => {
         data: {
           storeId: toko,
           invoiceNo: c.noKonsi,
-          // Seperti `kunciAngka` (P54): bertanggal akhir bulan siklus, jatuh tempo tanggal itu + tempo toko 30 hari.
+          // Seperti `kunciAngka`: bertanggal akhir bulan siklus; jatuh tempo = hari dikunci (5 Oktober) + tempo toko 30 hari (P54).
           invoiceDate: new Date("2026-09-30T00:00:00+07:00"),
-          dueDate: new Date("2026-10-30T00:00:00+07:00"),
+          dueDate: new Date("2026-11-04T00:00:00+07:00"),
           originalAmount: 1_000_000,
           outstandingAmount: 1_000_000,
           amount: 1_000_000,

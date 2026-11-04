@@ -31,6 +31,14 @@ type Line = { id: string; orderLineId: string; productName: string; plannedQty: 
 type Jumlah = { diterima: string; kembali: string; hilang: string };
 
 /**
+ * Who records the store's receipt (`penerimaPod`, read with the shipment): `PENERIMAAN` — this
+ * confirmation is the receipt; `PEMEGANG` — the store's SPG stopped while the goods were on the road
+ * and the holder salesman records the PIC's receipt (P45a), unless a door refusal is recorded or
+ * nothing is handed over; `SERAH_TERIMA` — the handover only (an SPG receives, or the receipt exists).
+ */
+type JenisPod = "PENERIMAAN" | "PEMEGANG" | "SERAH_TERIMA";
+
+/**
  * `loading` and `error` never show the form: with no lines loaded, an empty form reads as "this
  * shipment has no lines". `notFound` is the action's `null` (no permission, or the row is gone)
  * and is not retryable.
@@ -43,10 +51,14 @@ const angka = (v: string | undefined) => (v === undefined || v.trim() === "" ? 0
  * The expedition's confirmation (owner putus answer 2026-11-02). The nota (putus) and the transfer
  * (konsi) were written when the shipment was created, so no date is asked here.
  *
- * - A store WITH an SPG (when the goods left): one figure per line, "Diserahkan" — the SPG records
- *   refused and lost pieces on her receive form (P40).
+ * - A store WITH an SPG: one figure per line, "Diserahkan" — the SPG records refused and lost
+ *   pieces on her receive form (P40).
  * - A store WITHOUT one: this confirmation IS the store's receipt — every planned piece is diterima
  *   toko, retur langsung (refused at the door) or hilang di perjalanan, and they must add up.
+ * - A store whose SPG stopped while the goods were on the road (P45a): "Diserahkan" plus "Retur
+ *   langsung"; the holder salesman records what the PIC got. A door refusal, or nothing handed over,
+ *   turns this confirmation into the receipt as before (the writer's rule), so the lost column
+ *   appears and the figures must add up.
  */
 export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone }: Props) {
   const t = useTranslations("deliveryShipments");
@@ -56,8 +68,7 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
   const [proofPhotoUrl, setProofPhotoUrl] = useState("");
   const [proofPhotoR2Key, setProofPhotoR2Key] = useState("");
   const [isKonsi, setIsKonsi] = useState(false);
-  /* The POD is the store's receipt: no SPG when the goods left, and no receipt recorded yet. */
-  const [penerimaan, setPenerimaan] = useState(false);
+  const [jenis, setJenis] = useState<JenisPod>("SERAH_TERIMA");
   /** The store already recorded its receipt (e.g. the SPG refused every piece before the courier confirmed): handing over nothing is valid. */
   const [sudahDiterima, setSudahDiterima] = useState(false);
   const [beratKg, setBeratKg] = useState<number | null>(null);
@@ -94,7 +105,15 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
         setLines(nextLines);
         setJumlah(Object.fromEntries(nextLines.map((l) => [l.id, { diterima: String(l.plannedQty), kembali: "0", hilang: "0" }])));
         setIsKonsi(detail.orderType === "KONSI");
-        setPenerimaan(!detail.tokoPunyaSpg && !detail.sudahDiterimaToko);
+        setJenis(
+          detail.sudahDiterimaToko
+            ? "SERAH_TERIMA"
+            : detail.penerimaPod === "KURIR"
+              ? "PENERIMAAN"
+              : detail.penerimaPod === "PEMEGANG"
+                ? "PEMEGANG"
+                : "SERAH_TERIMA",
+        );
         setSudahDiterima(detail.sudahDiterimaToko);
         setBeratKg(detail.weightKg);
         setResi(detail.resiNumber ?? "");
@@ -129,10 +148,15 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
     }
   }
 
+  /* PEMEGANG: a door refusal, or nothing handed over, makes this confirmation the store's receipt (the writer's rule). */
+  const adaTolak = lines.some((l) => angka(jumlah[l.id]?.kembali) > 0);
+  const tanpaSerah = lines.length > 0 && lines.every((l) => angka(jumlah[l.id]?.diterima) === 0);
+  const penerimaan = jenis === "PENERIMAAN" || (jenis === "PEMEGANG" && (adaTolak || tanpaSerah));
+  const kolomTolak = penerimaan || jenis === "PEMEGANG";
   const barisSah = (line: Line) => {
     const j = jumlah[line.id];
     if (!j) return false;
-    const nilai = [angka(j.diterima), angka(j.kembali), angka(j.hilang)];
+    const nilai = [angka(j.diterima), kolomTolak ? angka(j.kembali) : 0, penerimaan ? angka(j.hilang) : 0];
     if (nilai.some((n) => !Number.isInteger(n) || n < 0)) return false;
     if (!penerimaan) return nilai[0] <= line.plannedQty;
     return nilai[0] + nilai[1] + nilai[2] === line.plannedQty;
@@ -183,7 +207,13 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("completeTitle")}</DialogTitle>
-          <DialogDescription>{penerimaan ? t("completeReceiptDescription") : t("completeDescription")}</DialogDescription>
+          <DialogDescription>
+            {jenis === "PEMEGANG"
+              ? t("completePemegangDescription")
+              : penerimaan
+                ? t("completeReceiptDescription")
+                : t("completeDescription")}
+          </DialogDescription>
         </DialogHeader>
         {loadState.status === "loading" && (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
@@ -255,19 +285,19 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
                     <span className="truncate text-sm">{line.productName}</span>
                     <span className="text-xs text-muted-foreground">{t("plannedQtyOf", { qty: line.plannedQty })}</span>
                   </div>
-                  <div className={penerimaan ? "grid grid-cols-3 gap-2" : "flex justify-end"}>
+                  <div className={penerimaan ? "grid grid-cols-3 gap-2" : kolomTolak ? "grid grid-cols-2 gap-2" : "flex justify-end"}>
                     <div className="space-y-0.5">
                       <Label className="text-xs text-muted-foreground">{penerimaan ? t("podDiterima") : t("podDiserahkan")}</Label>
                       <Input
                         type="number"
                         min={0}
                         max={line.plannedQty}
-                        className={penerimaan ? "" : "w-24"}
+                        className={kolomTolak ? "" : "w-24"}
                         value={jumlah[line.id]?.diterima ?? ""}
                         onChange={(e) => ubah(line.id, "diterima", e.target.value)}
                       />
                     </div>
-                    {penerimaan && (
+                    {kolomTolak && (
                       <div className="space-y-0.5">
                         <Label className="text-xs text-muted-foreground">{t("podReturLangsung")}</Label>
                         <Input

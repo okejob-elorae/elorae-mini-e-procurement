@@ -150,11 +150,21 @@ export interface PendingReturn {
      * tanpa kolom ini tetap terkirim sebagai nota salesman.
      */
     barisSpg?: { itemId: string; variantSku?: string | null; qty: number; condition?: "LAYAK" | "RUSAK" | "EXPIRED" }[];
+    /**
+     * Pelapor menyatakan barangnya retur LAIN, bukan barang selisih nota lain yang sedang
+     * dikirim balik (penolakan `ADA_SELISIH_DITEMUKAN`). Tak berindeks — tanpa versi Dexie baru.
+     */
+    returLain?: boolean;
   };
   foto: FotoTertunda | null;
   capturedAt: number;
   syncState: KeadaanAntre;
   error?: string;
+  /**
+   * Nomor NRT yang barang selisihnya cocok dengan laporan ini, dari penolakan
+   * `ADA_SELISIH_DITEMUKAN` — supaya layar "Belum terkirim" bisa menyebutnya. Tak berindeks.
+   */
+  noNrtSelisih?: string;
   attempts: number;
 }
 

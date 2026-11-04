@@ -37,14 +37,15 @@ d("kiriman titipan konsinyasi memindahkan stok gudang ke toko", () => {
     siklusId = "";
     kirimIds = [];
     nriIds = [];
-    tokoId = (await prisma.store.create({ data: { code: `${tag}-S`, name: `${tag} Toko`, address: "uji", termsType: "KONSI", isActive: true } })).id;
+    // Toko konsi selalu punya salesman pemegang (P47/P55) — kunciAngka menolak TOKO_TANPA_PEMEGANG.
+    adminId = (await prisma.user.create({ data: { email: `${tag}@uji.local`.toLowerCase(), name: `${tag} Admin`, passwordHash: "x" } })).id;
+    tokoId = (await prisma.store.create({ data: { code: `${tag}-S`, name: `${tag} Toko`, address: "uji", termsType: "KONSI", isActive: true, salesmanId: adminId } })).id;
     uomId = (await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } })).id;
     barangId = (
       await prisma.item.create({
         data: { sku: `${tag}-I`, nameId: `${tag} Blus`, nameEn: `${tag} Blouse`, type: "FINISHED_GOOD", uomId, isActive: true },
       })
     ).id;
-    adminId = (await prisma.user.create({ data: { email: `${tag}@uji.local`.toLowerCase(), name: `${tag} Admin`, passwordHash: "x" } })).id;
   });
 
   afterEach(async () => {
@@ -55,6 +56,8 @@ d("kiriman titipan konsinyasi memindahkan stok gudang ke toko", () => {
     await prisma.consignmentReport.deleteMany({ where: { cycleId: seededId(siklusId) } });
     await prisma.consignmentSold.deleteMany({ where: { cycleId: seededId(siklusId) } });
     await prisma.consignmentCommission.deleteMany({ where: { cycleId: seededId(siklusId) } });
+    // Mengunci menerbitkan tagihan siklus (keputusan 2026-10-29); Receivable menahan siklus, toko, dan pemegangnya.
+    await prisma.receivable.deleteMany({ where: { consignmentCycleId: seededId(siklusId) } });
     await prisma.consignmentCycle.deleteMany({ where: { id: seededId(siklusId) } });
     await prisma.consignmentShipmentItem.deleteMany({ where: { shipmentId: { in: seededIds(kirimIds) } } });
     await prisma.consignmentShipment.deleteMany({ where: { id: { in: seededIds(kirimIds) } } });
@@ -63,9 +66,10 @@ d("kiriman titipan konsinyasi memindahkan stok gudang ke toko", () => {
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(barangId) } });
     await prisma.item.deleteMany({ where: { id: seededId(barangId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
-    await prisma.user.deleteMany({ where: { id: seededId(adminId) } });
+    // Toko dulu: pemegangnya (adminId) baru bisa dihapus sesudah tokonya.
     await prisma.store.deleteMany({ where: { id: seededId(tokoId) } });
     if (tokoPutusId) await prisma.store.delete({ where: { id: tokoPutusId } });
+    await prisma.user.deleteMany({ where: { id: seededId(adminId) } });
   });
 
   const stokAwal = async (rows: Array<{ variantSku: string | null; qty: number }>) => {

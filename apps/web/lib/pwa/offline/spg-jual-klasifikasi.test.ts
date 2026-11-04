@@ -20,6 +20,8 @@ describe("nasibNotaSpg", () => {
 describe("kunciAlasanNotaSpg", () => {
   it("uses the code's own reason when it has one and a generic one otherwise", () => {
     expect(kunciAlasanNotaSpg("WAKTU_TIDAK_VALID")).toBe("WAKTU_TIDAK_VALID");
+    // A note sold after the SPG's last day (P66) keeps its own reason, not the generic one.
+    expect(kunciAlasanNotaSpg("SPG_BERHENTI")).toBe("SPG_BERHENTI");
     expect(kunciAlasanNotaSpg("KODE_BARU_DARI_SERVER")).toBe("UMUM");
     expect(kunciAlasanNotaSpg(undefined)).toBe("UMUM");
   });

@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from "@elorae/db";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { bacaPesananKonsiLama } from "./antaran-queries";
 
 /**
@@ -367,9 +368,43 @@ export async function jumlahSpgToko(klien: Klien, storeId: string): Promise<numb
 }
 
 /**
+ * Siapa yang mencatat penerimaan toko atas sebuah pengiriman gudang, dilihat saat ekspedisi/kurir
+ * mengonfirmasinya. Satu aturan untuk penulis konfirmasi dan layarnya:
+ *
+ * - `SPG` — toko punya SPG sekarang (P40; yang hanya tidak masuk tetap terhitung, P26): konfirmasi
+ *   kurir hanya serah terima, SPG yang menerima dan mencatat yang ditolak atau hilang.
+ * - `PEMEGANG` — toko kini tanpa SPG, SPG toko ini berhenti sementara barangnya di jalan (hari
+ *   terakhirnya, `spgEndedOn` hari WIB, tidak sebelum hari pengiriman itu dibuat), dan toko aktif
+ *   ini punya salesman pemegang: penanggung jawab toko yang menerima, pemegang mencatatnya saat
+ *   berkunjung dengan nama penanggung jawab + foto (P45/P45a, "benar"). Toko tanpa pemegang (P47
+ *   hanya mewajibkan pemegang di toko konsi) atau yang nonaktif tidak masuk sini: tidak ada yang
+ *   bisa mencatat penerimaan itu (`terimaKirimanPemegang` butuh pemegang yang check-in).
+ * - `KURIR` — selain itu: konfirmasi kurir sekaligus penerimaan toko (keputusan 2026-10-29
+ *   tambahan #3), termasuk toko yang SPG-nya berhenti sebelum pengiriman itu dibuat.
+ *
+ * Barang yang DITOLAK di pintu pada kasus `PEMEGANG` belum dijawab pemilik (formulir pemegang hanya
+ * mencatat yang tiba); sampai dijawab, konfirmasi kurir yang mencatat penolakan tetap menjadi
+ * penerimaan toko seperti sebelumnya. Begitu juga konfirmasi yang tidak menyerahkan apa pun: tidak
+ * ada yang diterima penanggung jawab, dan pemegang hanya bisa mencatat kiriman yang sudah
+ * diserahkan — lihat `completeDeliveryShipment`.
+ */
+export type PenerimaPod = "SPG" | "PEMEGANG" | "KURIR";
+
+export async function penerimaPod(klien: Klien, storeId: string, pengirimanDibuat: Date): Promise<PenerimaPod> {
+  if ((await jumlahSpgToko(klien, storeId)) > 0) return "SPG";
+  const toko = await klien.store.findUnique({ where: { id: storeId }, select: { salesmanId: true, isActive: true } });
+  if (!toko?.salesmanId || !toko.isActive) return "KURIR";
+  const berhentiDiJalan = await klien.user.count({
+    where: { spgEndedStoreId: storeId, spgEndedOn: { gte: formatDateOnlyJakarta(pengirimanDibuat) } },
+  });
+  return berhentiDiJalan > 0 ? "PEMEGANG" : "KURIR";
+}
+
+/**
  * Kiriman gudang yang menunggu diterima di toko-toko yang DIPEGANG salesman ini dan kini TANPA SPG
  * (SPG-nya berhenti, P45a): barangnya sudah DISERAHKAN ke toko (pengiriman DELIVERED/PARTIALLY_DELIVERED
- * — yang masih di jalan diterima lewat konfirmasi ekspedisi/kurir, R6/R12), toko belum menerimanya.
+ * — yang masih di jalan menunggu konfirmasi ekspedisi/kurir dulu, R12; bila SPG-nya berhenti saat
+ * barang itu di jalan, konfirmasi itu hanya serah terima, `penerimaPod` = PEMEGANG), toko belum menerimanya.
  * Bahan tugas di HP pemegang — tanpa ini barangnya bisa tertahan "dalam perjalanan" tanpa ada yang
  * tahu. Toko yang SPG-nya hanya tidak masuk tetap punya SPG dan TIDAK masuk sini (P26: menunggu SPG-nya).
  */

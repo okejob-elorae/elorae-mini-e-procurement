@@ -359,7 +359,11 @@ export class JubelioCatalogSyncService {
          * does not list is exactly what the next push DELETEs in Jubelio (its `removed` block), and
          * that next push is the release, a Kirim ulang, a confirmation or the P72 (de)activation —
          * a variant someone added in Jubelio would be deleted there. It is left unmapped instead,
-         * and merged by the first ingest after the item's pushes resume. What Jubelio shows is
+         * and merged by the first ingest after the item's pushes resume. The cost, named in the
+         * warning: meanwhile a marketplace order for that variant reserves no ERP stock, and the
+         * salesorder handler says so (`JUBELIO_UNMAPPED_LINES`); a variant deleted from a live
+         * listing cannot be brought back from the ERP. Whether such a variant should be added to
+         * the ERP item instead is an open owner question. What Jubelio shows is
          * recorded over ALL its variants either way, the same reading the observer and the push
          * take (`summarizeGroupsPrice`).
          */
@@ -373,7 +377,7 @@ export class JubelioCatalogSyncService {
           const unmapped = draft.sourceVariants.length - kept.sourceVariants.length;
           if (unmapped > 0) {
             warnings.push(
-              `Item ${draft.itemSku}: ${unmapped} Jubelio variant(s) the ERP does not list left unmapped until its pushes resume`,
+              `Item ${draft.itemSku}: ${unmapped} Jubelio variant(s) the ERP does not list left unmapped until its pushes resume; a marketplace order for them reserves no ERP stock`,
             );
           }
         } else {

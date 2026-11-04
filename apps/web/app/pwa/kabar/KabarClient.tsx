@@ -99,6 +99,7 @@ const IKON: Record<string, LucideIcon> = {
   KIRIMAN_RUSAK_DIPUTUSKAN: PackageX,
   KIRIMAN_DIBATALKAN: PackageX,
   RETUR_SELISIH_CEK: PackageSearch,
+  RETUR_DITANGGUNG_TOKO: Store,
   PERMINTAAN_SPG_MASUK: Inbox,
   REKOMENDASI_MASUK: Lightbulb,
   REKOMENDASI_DIJAWAB: Lightbulb,

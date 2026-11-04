@@ -589,6 +589,31 @@ describe("ProductPushHandler", () => {
       expect(http.post).not.toHaveBeenCalled();
     });
 
+    /*
+     * P75: an observer (or ingest) read that began at 01:50, BEFORE the admin's decision at 02:00,
+     * recorded a new Jubelio edit after it. `recordJubelioObservedPrice` stamps that change 1 ms
+     * after the decision (the read time stays 01:50), so the decision no longer covers it and the
+     * push is held instead of overwriting a price the admin never saw.
+     */
+    it("HOLDS when a reading that began before the decision recorded a change after it", async () => {
+      prisma.item.findUnique.mockResolvedValue({
+        ...baseItem,
+        jubelioConfirmedPrice: 150000,
+        jubelioObservedAt: t("2026-11-03T01:50:00Z"),
+        jubelioObservedChangedAt: t("2026-11-03T02:00:00.001Z"),
+        jubelioObservedPriceMax: 180000,
+        jubelioObservedPriceMin: 180000,
+        jubelioPriceDecidedAt: t("2026-11-03T02:00:00Z"),
+      });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue(mapped);
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "skipped", reason: OUTBOX_SKIP_REASONS.PRICE_DIFFERS_HELD });
+      expect(imageUpload.ensureUploaded).not.toHaveBeenCalled();
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
     it("reads Jubelio BEFORE writing and records what it shows, so an edit made since the last reading holds the push", async () => {
       jubelioShows([175000, 175000]);
       const fresh = {

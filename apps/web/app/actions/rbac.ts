@@ -335,7 +335,14 @@ export type AssignUserRoleResult =
   | { ok: true }
   | {
       ok: false;
-      code: KodeAkunSistem | "PERAN_SENDIRI" | "TIDAK_DITEMUKAN" | "PERAN_TIDAK_DITEMUKAN" | "TOKO_WAJIB" | "SPG_GUNAKAN_BERHENTI";
+      code:
+        | KodeAkunSistem
+        | "PERAN_SENDIRI"
+        | "TIDAK_DITEMUKAN"
+        | "PERAN_TIDAK_DITEMUKAN"
+        | "TOKO_WAJIB"
+        | "MULAI_WAJIB"
+        | "SPG_GUNAKAN_BERHENTI";
     };
 
 /**
@@ -367,6 +374,13 @@ export type AssignUserRoleResult =
  * (`SPG_GUNAKAN_BERHENTI` — pakai "SPG berhenti" di Pengaturan → Pengguna), dan
  * SPG yang sudah berhenti tidak wajib punya toko tetap — aturan yang sama dengan
  * formulir Pengguna (`tolakPerubahanSpg`).
+ *
+ * Tanggal mulai bekerja SPG (P62, perbaikan peserta gaji B20): peran SPG dengan toko
+ * tetap butuh `spgStartedOn` — tanpa tanggal itu SPG tidak masuk peserta gaji mana pun,
+ * jadi tidak ada yang menahan atau mengingatkan pembayarannya. Aksi ini tidak punya
+ * isian tanggal, jadi akun tanpa tanggal ditolak `MULAI_WAJIB` sebelum apa pun ditulis —
+ * tanggalnya diisi di Pengaturan → Pengguna, sama dengan formulir itu. SPG yang sudah
+ * berhenti tidak membutuhkannya.
  */
 export async function assignUserRole(userId: string, roleId: string): Promise<AssignUserRoleResult> {
   const session = await auth();
@@ -387,6 +401,7 @@ export async function assignUserRole(userId: string, roleId: string): Promise<As
           roleId: true,
           assignedStoreId: true,
           spgEndedOn: true,
+          spgStartedOn: true,
           roleDefinition: { select: { isSystem: true, permissions: { select: { permission: { select: { code: true } } } } } },
         },
       }),
@@ -415,6 +430,7 @@ export async function assignUserRole(userId: string, roleId: string): Promise<As
         ? await tx.store.count({ where: { id: target.assignedStoreId, isActive: true } })
         : 0;
       if (!tokoAktif) return { ok: false, code: 'TOKO_WAJIB' };
+      if (target.spgStartedOn === null) return { ok: false, code: "MULAI_WAJIB" };
       tokoBaru = target.assignedStoreId;
     }
     const spgLama = perannyaSpg(kodeIzin(target.roleDefinition?.permissions ?? []), target.roleDefinition?.isSystem === true);

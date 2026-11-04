@@ -32,11 +32,18 @@ type Props = {
   effectiveRadiusMeters: number;
   isKonsi: boolean;
   /**
-   * The store has no SPG now and no receipt exists: this POD IS the store's receipt, so every
-   * planned piece is diterima, retur langsung or hilang (they must add up). At a store with an SPG
-   * only what was handed over is recorded — the SPG receives (P40).
+   * The courier receives for the store (`penerimaPod` = KURIR) and no receipt exists: this POD IS
+   * the store's receipt, so every planned piece is diterima, retur langsung or hilang (they must
+   * add up). At a store with an SPG only what was handed over is recorded — the SPG receives (P40).
    */
   penerimaan: boolean;
+  /**
+   * The store's SPG stopped while these goods were on the road and no receipt exists (P45a): the
+   * holder salesman records what the store's PIC got, so this POD records the handover plus any
+   * door refusal. A refusal, or nothing handed over, makes it the store's receipt as before (the
+   * writer's rule): the lost column then appears and the figures must add up.
+   */
+  pemegang: boolean;
   /**
    * The store's receipt already exists (the SPG refused every piece at the door before this
    * confirmation, P40): recording nothing handed over is valid, the server lets it through.
@@ -64,7 +71,7 @@ function fileCheckPasses(file: File): { ok: true } | { ok: false; reasonKey: str
 }
 
 export function CompletePodSheet({
-  shipmentId, storeName, docNo, storeLat, storeLng, effectiveRadiusMeters, isKonsi, penerimaan, sudahDiterima, lines,
+  shipmentId, storeName, docNo, storeLat, storeLng, effectiveRadiusMeters, isKonsi, penerimaan: tanpaSpg, pemegang, sudahDiterima, lines,
 }: Props) {
   const t = useTranslations("pwa.deliveries");
   const tErr = useTranslations("deliveryShipments");
@@ -99,6 +106,11 @@ export function CompletePodSheet({
     () => Object.fromEntries(lines.map((l) => [l.id, "0"])),
   );
   const angka = (v: string | undefined) => (v === undefined || v.trim() === "" ? 0 : Number(v));
+  /* Same rule as the writer: at a PEMEGANG store a door refusal, or nothing handed over, makes this POD the receipt. */
+  const adaTolak = lines.some((l) => angka(kembaliInputs[l.id]) > 0);
+  const tanpaSerah = lines.length > 0 && lines.every((l) => angka(qtyInputs[l.id]) === 0);
+  const penerimaan = tanpaSpg || (pemegang && (adaTolak || tanpaSerah));
+  const kolomTolak = penerimaan || pemegang;
   const barisKirim = () =>
     lines.map((l) =>
       penerimaan
@@ -186,7 +198,7 @@ export function CompletePodSheet({
     if (outOfRadius) return { ok: false, reasonKey: "err.GPS_OUT_OF_RADIUS" };
     for (const line of lines) {
       const qty = angka(qtyInputs[line.id]);
-      const kembali = penerimaan ? angka(kembaliInputs[line.id]) : 0;
+      const kembali = kolomTolak ? angka(kembaliInputs[line.id]) : 0;
       const hilang = penerimaan ? angka(hilangInputs[line.id]) : 0;
       if ([qty, kembali, hilang].some((n) => !Number.isInteger(n) || n < 0)) {
         return { ok: false, reasonKey: "err.INVALID_QTY" };
@@ -449,7 +461,9 @@ export function CompletePodSheet({
         </Alert>
       )}
 
-      <p className="text-xs text-muted-foreground">{penerimaan ? t("penerimaanHint") : t("diserahkanHint")}</p>
+      <p className="text-xs text-muted-foreground">
+        {pemegang ? t("pemegangHint") : penerimaan ? t("penerimaanHint") : t("diserahkanHint")}
+      </p>
       <div className="space-y-3">
         {lines.map((line) => (
           <div key={line.id} className="space-y-2">
@@ -458,7 +472,7 @@ export function CompletePodSheet({
                 <p className="truncate text-sm">{line.productName}</p>
                 <p className="text-xs text-muted-foreground">{t("plannedLabel")}: {line.plannedQty}</p>
               </div>
-              {!penerimaan && (
+              {!kolomTolak && (
                 <Input
                   type="number"
                   min={0}
@@ -471,10 +485,10 @@ export function CompletePodSheet({
                 />
               )}
             </div>
-            {penerimaan && (
-              <div className="grid grid-cols-3 gap-2">
+            {kolomTolak && (
+              <div className={penerimaan ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">{t("diterimaLabel")}</Label>
+                  <Label className="text-xs text-muted-foreground">{penerimaan ? t("diterimaLabel") : t("diserahkanLabel")}</Label>
                   <Input
                     type="number"
                     min={0}
@@ -497,18 +511,20 @@ export function CompletePodSheet({
                     onChange={(e) => setKembaliInputs((prev) => ({ ...prev, [line.id]: e.target.value }))}
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">{t("hilangLabel")}</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={line.plannedQty}
-                    className="h-10"
-                    value={hilangInputs[line.id] ?? ""}
-                    disabled={isPending}
-                    onChange={(e) => setHilangInputs((prev) => ({ ...prev, [line.id]: e.target.value }))}
-                  />
-                </div>
+                {penerimaan && (
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">{t("hilangLabel")}</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={line.plannedQty}
+                      className="h-10"
+                      value={hilangInputs[line.id] ?? ""}
+                      disabled={isPending}
+                      onChange={(e) => setHilangInputs((prev) => ({ ...prev, [line.id]: e.target.value }))}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>

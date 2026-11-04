@@ -30,7 +30,14 @@ const state = {
   lingkup: [] as Record<string, unknown>[],
   /** Tagihan konsinyasi: id faktur → pemegang toko sekarang. */
   konsi: new Map<string, string | null>(),
+  /** Penolakan penulis BKM (null = tercatat). */
+  tulisGagal: null as string | null,
+  /** Hasil `putuskanKlaim` (verifikasi / giro). */
+  putusan: { ok: true } as { ok: true } | { ok: false; alasan: string },
 };
+
+/** Kabar beban toko (P84) — dipalsukan; yang diuji hanya KAPAN aksi memanggilnya. */
+const kabarBeban = vi.hoisted(() => ({ dariKlaim: vi.fn(async (_id: string, _pelaku: string) => {}) }));
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => state.sesi) }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -45,10 +52,17 @@ vi.mock("@/lib/receivables/queries", () => ({
 vi.mock("@/lib/notifications/kabar-pengguna", () => ({ JENIS_KABAR: {}, kabariPengguna: vi.fn() }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 vi.mock("@/lib/receivables/koreksi", () => ({}));
-vi.mock("@/lib/receivables/writer", () => ({}));
+vi.mock("@/lib/receivables/writer", () => ({ putuskanKlaim: vi.fn(async () => state.putusan) }));
+vi.mock("@/lib/finance/lapangan/kait", () => ({ kaitKlaimBerubah: vi.fn(async () => {}), bacaTautanPotongan: vi.fn() }));
+// Modul aslinya menarik penulis retur (dan `tx-retry`, yang membaca `Prisma` dari tiruan di bawah).
+vi.mock("@/lib/receivables/kabar-beban-toko", () => ({ kabarBebanTokoDariKlaim: kabarBeban.dariKlaim }));
 vi.mock("@/lib/receivables/claim-writer", () => ({
   buatKlaimPembayaran: vi.fn(async (input: Record<string, unknown>) => {
     state.dicatat.push(input);
+    if (state.tulisGagal) return { ok: false, alasan: state.tulisGagal };
+    // Kunci yang sudah tercatat: penulis mengembalikan BKM lamanya dan menandainya kiriman ulang.
+    const kunci = typeof input.idempotencyKey === "string" ? input.idempotencyKey : null;
+    if (kunci && state.kunci.has(kunci)) return { ok: true, id: "bkm1", docNo: "BKM/1", diulang: true };
     return { ok: true, id: "bkm1", docNo: "BKM/1" };
   }),
 }));
@@ -67,7 +81,7 @@ vi.mock("@elorae/db", () => ({
   },
 }));
 
-const { buatKlaimAction } = await import("./receivables");
+const { buatKlaimAction, putuskanGiroAction, verifikasiKlaimAction } = await import("./receivables");
 
 const DASAR = {
   storeId: "s1",
@@ -86,6 +100,9 @@ beforeEach(() => {
   state.dicatat = [];
   state.lingkup = [];
   state.konsi = new Map();
+  state.tulisGagal = null;
+  state.putusan = { ok: true };
+  kabarBeban.dariKlaim.mockClear();
 });
 
 describe("buatKlaimAction — SPG tidak menagih", () => {
@@ -231,6 +248,57 @@ describe("buatKlaimAction — tagihan konsinyasi hanya lewat pemegang toko (P31)
     state.sesi = { user: { id: "kantor", permissions: ["receivables:manage"] } };
     state.konsi.set("f1", "u2");
     expect(await buatKlaimAction(DASAR)).toEqual({ ok: true, docNo: "BKM/1" });
+  });
+});
+
+describe("kabar selisih retur yang ditanggung TOKO ke pemegang toko (P84, keputusan 1)", () => {
+  /*
+   * Saat selisih diputuskan ditanggung toko, pemegang dikabari "kalau nanti dipotong … tagih saat
+   * itu". BKM yang memotong nota retur itu — dicatat, diverifikasi, atau giro yang cair — adalah
+   * "saat itu". Isi kabarnya (nota mana, berapa, dilewati bila pemegangnya sendiri yang bertindak)
+   * diuji di `lib/receivables/kabar-beban-toko.test.ts`.
+   */
+  it("BKM baru yang tercatat memanggilnya, dengan pelapornya sebagai pelaku", async () => {
+    expect(await buatKlaimAction(DASAR)).toEqual({ ok: true, docNo: "BKM/1" });
+    expect(kabarBeban.dariKlaim).toHaveBeenCalledTimes(1);
+    expect(kabarBeban.dariKlaim).toHaveBeenCalledWith("bkm1", "u1");
+  });
+
+  it("kiriman ulang antrean HP yang sudah tercatat tidak mengabari lagi", async () => {
+    state.kunci.set("hp-5", { salesmanId: "u1" });
+    expect(await buatKlaimAction({ ...DASAR, idempotencyKey: "hp-5" })).toEqual({ ok: true, docNo: "BKM/1" });
+    expect(kabarBeban.dariKlaim).not.toHaveBeenCalled();
+  });
+
+  it("BKM yang ditolak, oleh aksi atau oleh penulisnya, tidak mengabari", async () => {
+    state.tokoTetap = "s1";
+    expect(await buatKlaimAction(DASAR)).toEqual({ ok: false, kode: "TANPA_AKSES" });
+    state.tokoTetap = null;
+    state.tulisGagal = "SUDAH_LUNAS";
+    expect(await buatKlaimAction(DASAR)).toEqual({ ok: false, kode: "SUDAH_LUNAS" });
+    expect(kabarBeban.dariKlaim).not.toHaveBeenCalled();
+  });
+
+  it("verifikasi TERVERIFIKASI mengabari; DITOLAK dan penolakan penulis tidak", async () => {
+    state.sesi = { user: { id: "keu", permissions: ["payments:verify"] } };
+    expect(await verifikasiKlaimAction("bkm7", "TERVERIFIKASI")).toEqual({ ok: true });
+    expect(kabarBeban.dariKlaim).toHaveBeenCalledWith("bkm7", "keu");
+    kabarBeban.dariKlaim.mockClear();
+
+    expect(await verifikasiKlaimAction("bkm7", "DITOLAK", "tidak ada di mutasi")).toEqual({ ok: true });
+    state.putusan = { ok: false, alasan: "SUDAH_DIPUTUSKAN" };
+    expect(await verifikasiKlaimAction("bkm7", "TERVERIFIKASI")).toEqual({ ok: false, kode: "SUDAH_DIPUTUSKAN" });
+    expect(kabarBeban.dariKlaim).not.toHaveBeenCalled();
+  });
+
+  it("giro CAIR (verifikasi lewat pintu yang sama) mengabari; giro DITOLAK tidak", async () => {
+    state.sesi = { user: { id: "keu", permissions: ["payments:verify"] } };
+    expect(await putuskanGiroAction("bkm8", "CAIR")).toEqual({ ok: true });
+    expect(kabarBeban.dariKlaim).toHaveBeenCalledWith("bkm8", "keu");
+    kabarBeban.dariKlaim.mockClear();
+
+    expect(await putuskanGiroAction("bkm8", "DITOLAK", "dana tidak cukup")).toEqual({ ok: true });
+    expect(kabarBeban.dariKlaim).not.toHaveBeenCalled();
   });
 });
 

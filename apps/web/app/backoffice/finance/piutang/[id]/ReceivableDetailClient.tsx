@@ -35,6 +35,12 @@ type CollectionSubmissionStatus = "PENDING" | "VERIFIED" | "REJECTED";
 type Props = {
   receivable: ReceivableDetail;
   canManagePayments: boolean;
+  /**
+   * A konsi bill (`isKonsiBill`, resolved on the server from the bill's own marks): paid only
+   * through a BKM, so `recordPayment` refuses it (`KONSI_LEWAT_BKM`) and the payment sheet is not
+   * offered here. A rounding residue is still cleared from this page — the writer exempts it.
+   */
+  konsiBill: boolean;
   canManageCollections: boolean;
   journalRetryable: boolean;
   allocationCandidates: AllocationCandidate[];
@@ -133,6 +139,7 @@ function journalErrorKey(reason: string): string {
 export function ReceivableDetailClient({
   receivable: r,
   canManagePayments,
+  konsiBill,
   canManageCollections,
   journalRetryable,
   allocationCandidates,
@@ -223,11 +230,14 @@ export function ReceivableDetailClient({
           )}
           {r.source.kind === "CONSIGNMENT_CYCLE" && <Badge variant="outline">{t("detail.sourceCycle")}</Badge>}
           <Badge className={STATUS_BADGE_CLASS[status]}>{t(STATUS_LABEL_KEY[status])}</Badge>
-          {canManagePayments && (
+          {canManagePayments && !konsiBill && (
             <Button className="h-10" disabled={isSettled} onClick={() => setSheetOpen(true)}>
               <Wallet className="h-4 w-4 mr-2" />
               {primaryActionLabel}
             </Button>
+          )}
+          {canManagePayments && konsiBill && !isSettled && (
+            <span className="text-sm text-muted-foreground">{t("detail.konsiLewatBkm")}</span>
           )}
         </div>
       </div>
@@ -492,7 +502,7 @@ export function ReceivableDetailClient({
         </CardContent>
       </Card>
 
-      {canManagePayments && (
+      {canManagePayments && !konsiBill && (
         <RecordPaymentSheet
           open={sheetOpen}
           onOpenChange={setSheetOpen}

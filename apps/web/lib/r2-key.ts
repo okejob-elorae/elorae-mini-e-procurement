@@ -4,6 +4,7 @@ export type R2KeyPrefix =
   | "visit-photos"
   | "settlement-proofs"
   | "delivery-proofs"
+  | "delivery-handover"
   | "packing-videos"
   | "field-returns"
   | "items"

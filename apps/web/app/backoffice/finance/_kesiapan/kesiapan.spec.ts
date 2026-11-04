@@ -29,15 +29,38 @@ describe("peran wajib dan opsional", () => {
     expect(PERAN_WAJIB).toContain("AP");
     expect(PERAN_OPSIONAL).toContain("TAX");
     expect(PERAN_OPSIONAL).toContain("MARKETPLACE_FEE_OTHER");
-    expect(PERAN_WAJIB).toHaveLength(11);
+    // 11 peran inti + 4 yang datang bersama fitur tim (potongan pelunasan toko, jasa WO) — tetap WAJIB sampai diputuskan lain.
+    expect([...PERAN_WAJIB].sort()).toEqual([
+      "ADMIN_FEE_EXPENSE",
+      "AP",
+      "AR",
+      "BANK",
+      "CASH",
+      "COGS",
+      "INVENTORY",
+      "INVENTORY_FG",
+      "INVENTORY_VAN",
+      "INVENTORY_VARIANCE",
+      "MARKETPLACE_FEE",
+      "PRODUCTION_SERVICE_COST",
+      "ROUNDING_EXPENSE",
+      "SALES_REVENUE",
+      "TRADE_PROGRAM_EXPENSE",
+    ]);
+    expect(PERAN_WAJIB).toHaveLength(15);
   });
 
-  it("peran akuntansi & pajak lengkap (2026-10-08) semuanya opsional — tidak mengubah 11 peran wajib", () => {
+  it("peran akuntansi & pajak lengkap (2026-10-08) semuanya opsional — tidak menambah peran wajib", () => {
     for (const p of ["PPN_KELUARAN", "PPN_MASUKAN", "AR_STORE", "FIXED_ASSET", "RETAINED_EARNINGS", "PPH22_PREPAID", "PPH25_PREPAID"] as const) {
       expect(PERAN_OPSIONAL).toContain(p);
       expect(PERAN_WAJIB).not.toContain(p);
     }
     expect(new Set(PERAN_OPSIONAL).size).toBe(PERAN_OPSIONAL.length);
+  });
+
+  it("selisih harga pembelian (P49) opsional sampai sumbernya dipakai", () => {
+    expect(PERAN_OPSIONAL).toContain("PURCHASE_PRICE_VARIANCE");
+    expect(PERAN_WAJIB).not.toContain("PURCHASE_PRICE_VARIANCE");
   });
 });
 
@@ -47,10 +70,11 @@ describe("nilaiKesiapan", () => {
     expect(k.aktif).toBe(false);
     expect(k.alasan).toEqual(["PEMETAAN", "TANPA_JURNAL", "TANPA_TANGGAL_MULAI"]);
     expect(k.jumlahTerpetakan).toBe(0);
-    // 17 peran inti + 5 peran Ruang KOL + 32 peran akuntansi & pajak lengkap (opsional).
-    expect(k.totalPeran).toBe(54);
+    // 17 peran inti + 5 peran sesudahnya (potongan pelunasan toko, jasa WO, selisih harga pembelian) + 5 peran Ruang KOL
+    // + 32 peran akuntansi & pajak lengkap (opsional).
+    expect(k.totalPeran).toBe(59);
     expect(k.jumlahWajibTerpetakan).toBe(0);
-    expect(k.totalPeranWajib).toBe(11);
+    expect(k.totalPeranWajib).toBe(15);
     expect(k.peranWajibBelum).toEqual(SEMUA_WAJIB);
     expect(perluSpanduk(k)).toBe(true);
   });
@@ -64,8 +88,8 @@ describe("nilaiKesiapan", () => {
     });
     expect(k.aktif).toBe(true);
     expect(k.alasan).toEqual([]);
-    expect(k.jumlahTerpetakan).toBe(11);
-    expect(k.jumlahWajibTerpetakan).toBe(11);
+    expect(k.jumlahTerpetakan).toBe(15);
+    expect(k.jumlahWajibTerpetakan).toBe(15);
     expect(perluSpanduk(k)).toBe(false);
   });
 

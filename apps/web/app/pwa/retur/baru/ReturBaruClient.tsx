@@ -1,42 +1,43 @@
-'use client';
+"use client";
 
-import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
-import { KeteranganKirim } from '../../KeteranganKirim';
-import { toast } from 'sonner';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { KeteranganKirim } from "../../KeteranganKirim";
+import { toast } from "sonner";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { UnggahFoto, type NilaiFoto } from '@/components/foto/UnggahFoto';
-import { BacaNota } from '@/components/ocr/BacaNota';
-import { catatReturTokoAction } from '@/app/actions/store-returns';
-import { dinamis } from '@/lib/i18n/dinamis';
-import { unggahFoto } from '@/lib/foto/unggah';
-import { PERISTIWA_ANTREAN } from '@/lib/pwa/offline/hitung';
-import { nasibUnggah } from '@/lib/pwa/offline/laporan-classify';
-import { antreRetur } from '@/lib/pwa/offline/laporan-queue';
-import { newLocalId } from '@/lib/pwa/offline/queue';
+} from "@/components/ui/select";
+import { UnggahFoto, type NilaiFoto } from "@/components/foto/UnggahFoto";
+import { BacaNota } from "@/components/ocr/BacaNota";
+import { catatReturTokoAction } from "@/app/actions/store-returns";
+import { dinamis } from "@/lib/i18n/dinamis";
+import { unggahFoto } from "@/lib/foto/unggah";
+import { PERISTIWA_ANTREAN } from "@/lib/pwa/offline/hitung";
+import { nasibUnggah } from "@/lib/pwa/offline/laporan-classify";
+import { antreRetur } from "@/lib/pwa/offline/laporan-queue";
+import { newLocalId } from "@/lib/pwa/offline/queue";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
-import type { AwalRetur } from '@/lib/receivables/return-queries';
-import { Copy } from 'lucide-react';
+import type { AwalRetur } from "@/lib/receivables/return-queries";
+import { Copy } from "lucide-react";
 import { TanggalInput } from "@/components/ui/tanggal-input";
-import { TombolBantuanHp } from '@/app/pwa/TombolBantuanHp';
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 function hariIniWib(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
 }
 
-const KIRIM = ['SALES', 'TOKO', 'EKSPEDISI'] as const;
+const KIRIM = ["SALES", "TOKO", "EKSPEDISI"] as const;
 
 export function ReturBaruClient({
   toko,
@@ -49,8 +50,8 @@ export function ReturBaruClient({
   /** Toko yang langsung terpilih (dibuka dari halaman toko); diabaikan bila tidak ada di pilihan. */
   tokoAwal?: string | null;
 }) {
-  const t = useTranslations('pwaRetur');
-  const tFoto = useTranslations('foto');
+  const t = useTranslations("pwaRetur");
+  const tFoto = useTranslations("foto");
   const td = dinamis(t);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -58,28 +59,32 @@ export function ReturBaruClient({
   // mencatat nota yang sama dua kali.
   const [kunci] = useState(newLocalId);
 
-  const [noNrt, setNoNrt] = useState(awal?.noNrt ?? '');
+  const [noNrt, setNoNrt] = useState(awal?.noNrt ?? "");
   const [storeId, setStoreId] = useState(() =>
-    tokoAwal && toko.some((s) => s.id === tokoAwal) ? tokoAwal : '',
+    tokoAwal && toko.some((s) => s.id === tokoAwal) ? tokoAwal : "",
   );
   const [tanggal, setTanggal] = useState(awal?.tanggal || hariIniWib());
-  const [caraKirim, setCaraKirim] = useState<(typeof KIRIM)[number]>(awal?.caraKirim ?? 'SALES');
-  const [nilai, setNilai] = useState(awal ? String(awal.nilai) : '');
+  const [caraKirim, setCaraKirim] = useState<(typeof KIRIM)[number]>(awal?.caraKirim ?? "SALES");
+  const [nilai, setNilai] = useState(awal ? String(awal.nilai) : "");
   const [foto, setFoto] = useState<NilaiFoto>(awal?.foto ?? null);
-  const [catatan, setCatatan] = useState('');
+  const [catatan, setCatatan] = useState("");
+  // Barangnya cocok dengan kekurangan retur lain yang sedang dikirim balik (`ADA_SELISIH_DITEMUKAN`):
+  // pelapor menyatakan ini memang retur lain, lalu mengirim ulang — sama dengan formulir kantor.
+  const [bentrokSelisih, setBentrokSelisih] = useState<string | null>(null);
+  const [returLain, setReturLain] = useState(false);
 
   const bisaKirim =
-    !pending && noNrt.trim() !== '' && storeId !== '' && Number(nilai) > 0 && foto !== null;
+    !pending && noNrt.trim() !== "" && storeId !== "" && Number(nilai) > 0 && foto !== null;
   const kurang = pending
     ? null
     : foto === null
-      ? t('kurangFoto')
-      : noNrt.trim() === ''
-        ? t('kurangNomor')
-        : storeId === ''
-          ? t('kurangToko')
+      ? t("kurangFoto")
+      : noNrt.trim() === ""
+        ? t("kurangNomor")
+        : storeId === ""
+          ? t("kurangToko")
           : !(Number(nilai) > 0)
-            ? t('kurangNilai')
+            ? t("kurangNilai")
             : null;
 
   const kirim = () => {
@@ -91,6 +96,8 @@ export function ReturBaruClient({
         claimedAmount: Number(nilai),
         note: catatan,
         menggantikanId: awal?.dariId ?? null,
+        // Ikut tersimpan di antrean HP, jadi kiriman ulangnya membawa pernyataan yang sama.
+        ...(bentrokSelisih !== null && returLain ? { returLain: true } : {}),
       };
 
       // Tanpa sinyal: simpan di HP, terkirim otomatis begitu sinyal kembali.
@@ -98,13 +105,13 @@ export function ReturBaruClient({
         await antreRetur({
           localId: kunci,
           storeId,
-          storeName: toko.find((s) => s.id === storeId)?.name ?? '',
+          storeName: toko.find((s) => s.id === storeId)?.name ?? "",
           payload: isi,
           foto: foto ? (foto.berkas ? { nama: foto.nama, blob: foto.berkas } : { nama: foto.nama, url: foto.url }) : null,
         });
         window.dispatchEvent(new Event(PERISTIWA_ANTREAN));
-        toast.success(t('okQueued'));
-        router.replace('/pwa/retur');
+        toast.success(t("okQueued"));
+        router.replace("/pwa/retur");
       };
 
       if (!navigator.onLine) return antrekan();
@@ -112,24 +119,28 @@ export function ReturBaruClient({
       try {
         const photoUrl = foto
           ? foto.berkas
-            ? await unggahFoto(new File([foto.berkas], foto.nama, { type: foto.berkas.type || 'image/jpeg' }))
+            ? await unggahFoto(new File([foto.berkas], foto.nama, { type: foto.berkas.type || "image/jpeg" }))
             : foto.url
           : null;
         hasil = await catatReturTokoAction({ storeId, ...isi, photoUrl, idempotencyKey: kunci });
       } catch (err) {
         // Foto yang DITOLAK server tidak akan lolos di antrean juga.
-        if (nasibUnggah(err) === 'terminal') {
-          toast.error(tFoto(`err${err instanceof Error ? err.message : 'GAGAL'}` as never));
+        if (nasibUnggah(err) === "terminal") {
+          toast.error(tFoto(`err${err instanceof Error ? err.message : "GAGAL"}` as never));
           return;
         }
         return antrekan();
       }
       if (!hasil.ok) {
-        toast.error(td(`err${hasil.kode}`));
+        if (hasil.kode === "ADA_SELISIH_DITEMUKAN") {
+          setBentrokSelisih(hasil.noNrt ?? "");
+          setReturLain(false);
+        }
+        toast.error(td(`err${hasil.kode}`, { noNrt: hasil.noNrt ?? "" }));
         return;
       }
-      toast.success(t('okCreated'));
-      router.replace('/pwa/retur');
+      toast.success(t("okCreated"));
+      router.replace("/pwa/retur");
     });
   };
 
@@ -141,16 +152,16 @@ export function ReturBaruClient({
 
       <header className="space-y-1">
         <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold">{t('newTitle')}</h1>
-          <TombolBantuanHp judul={t('newTitle')} />
+          <h1 className="text-2xl font-bold">{t("newTitle")}</h1>
+          <TombolBantuanHp judul={t("newTitle")} />
         </div>
-        <p className="text-sm text-muted-foreground">{t('newBody')}</p>
+        <p className="text-sm text-muted-foreground">{t("newBody")}</p>
       </header>
 
       {awal && (
         <p className="flex items-start gap-2 rounded-lg bg-primary/10 px-3 py-2 text-sm">
           <Copy className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          <span>{t('salinan', { doc: awal.dariNoNrt })}</span>
+          <span>{t("salinan", { doc: awal.dariNoNrt })}</span>
         </p>
       )}
 
@@ -159,8 +170,8 @@ export function ReturBaruClient({
           {/* Foto didahulukan: inilah pekerjaan sebenarnya di lapangan, dan
               sisanya disalin dari yang terlihat di foto itu. */}
           <UnggahFoto
-            label={t('photoLabel')}
-            petunjuk={t('photoHint')}
+            label={t("photoLabel")}
+            petunjuk={t("photoHint")}
             nilai={foto}
             onChange={setFoto}
             wajib
@@ -176,27 +187,27 @@ export function ReturBaruClient({
             fotoUrl={foto && !foto.berkas ? foto.url : null}
             disabled={pending}
             onTotal={(n) => setNilai(String(n))}
-            onNomor={(no) => setNoNrt((lama) => (lama.trim() === '' ? no : lama))}
+            onNomor={(no) => setNoNrt((lama) => (lama.trim() === "" ? no : lama))}
             onTanggal={(tgl) => setTanggal((lama) => (lama === hariIniWib() ? tgl : lama))}
           />
 
           <div className="space-y-2">
-            <Label htmlFor="r-no">{t('noNrt')}</Label>
+            <Label htmlFor="r-no">{t("noNrt")}</Label>
             <Input
               id="r-no"
               value={noNrt}
               onChange={(e) => setNoNrt(e.target.value)}
-              placeholder={t('noNrtPlaceholder')}
+              placeholder={t("noNrtPlaceholder")}
               inputMode="text"
             />
-            <p className="text-xs text-muted-foreground">{t('noNrtHint')}</p>
+            <p className="text-xs text-muted-foreground">{t("noNrtHint")}</p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="r-toko">{t('store')}</Label>
+            <Label htmlFor="r-toko">{t("store")}</Label>
             <Select value={storeId} onValueChange={setStoreId}>
               <SelectTrigger id="r-toko" className="w-full">
-                <SelectValue placeholder={t('storePlaceholder')} />
+                <SelectValue placeholder={t("storePlaceholder")} />
               </SelectTrigger>
               <SelectContent>
                 {toko.map((s) => (
@@ -209,7 +220,7 @@ export function ReturBaruClient({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="r-nilai">{t('amount')}</Label>
+            <Label htmlFor="r-nilai">{t("amount")}</Label>
             <Input
               id="r-nilai"
               type="number"
@@ -221,7 +232,7 @@ export function ReturBaruClient({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="r-tgl">{t('claimDate')}</Label>
+            <Label htmlFor="r-tgl">{t("claimDate")}</Label>
             <TanggalInput
               id="r-tgl"
               value={tanggal}
@@ -230,7 +241,7 @@ export function ReturBaruClient({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="r-kirim">{t('deliveryMethod')}</Label>
+            <Label htmlFor="r-kirim">{t("deliveryMethod")}</Label>
             <Select value={caraKirim} onValueChange={(v) => setCaraKirim(v as never)}>
               <SelectTrigger id="r-kirim" className="w-full">
                 <SelectValue />
@@ -246,7 +257,7 @@ export function ReturBaruClient({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="r-catatan">{t('noteLabel')}</Label>
+            <Label htmlFor="r-catatan">{t("noteLabel")}</Label>
             <Textarea
               id="r-catatan"
               value={catatan}
@@ -254,11 +265,23 @@ export function ReturBaruClient({
               rows={2}
             />
           </div>
+
+          {bentrokSelisih !== null && (
+            <label className="flex min-h-11 items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+              <Checkbox
+                className="mt-0.5"
+                checked={returLain}
+                onCheckedChange={(v) => setReturLain(v === true)}
+                disabled={pending}
+              />
+              <span>{t("returLainKonfirmasi", { noNrt: bentrokSelisih })}</span>
+            </label>
+          )}
         </CardContent>
       </Card>
 
       <Button className="w-full" size="lg" disabled={!bisaKirim} onClick={kirim}>
-        {t('send')}
+        {t("send")}
       </Button>
       <KeteranganKirim teks={kurang} />
     </div>

@@ -171,6 +171,22 @@ describe("nilai bawaan push Jubelio: margin dan biaya tambahan sebagai bahan rek
     expect(data).not.toHaveProperty("defaultPriceRuleBasis");
   });
 
+  /* R14: batas persen berlaku untuk setiap gabungan isian — juga dasar baru dengan persen tersimpan. */
+  it("dasar dikirim tanpa persen: persen bawaan tersimpan diperiksa dengan dasar baru", async () => {
+    fn(prisma.jubelioPushDefaults.findFirst).mockResolvedValue({ ...BARIS, defaultMarginPercent: 178, defaultPriceRuleBasis: "MARKUP" });
+    const keMargin = { ...(isianDari({ defaultPriceRuleBasis: "MARGIN" }) as Record<string, unknown>) };
+    delete keMargin.defaultMarginPercent;
+    expect(await aksi.saveJubelioPushDefaults(keMargin as never)).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
+    expect(prisma.jubelioPushDefaults.update).not.toHaveBeenCalled();
+
+    fn(prisma.jubelioPushDefaults.findFirst).mockResolvedValue({ ...BARIS, defaultMarginPercent: 40, defaultPriceRuleBasis: "MARKUP" });
+    expect(await aksi.saveJubelioPushDefaults(keMargin as never)).toMatchObject({ ok: true });
+    const data = fn(prisma.jubelioPushDefaults.update).mock.calls[0][0].data as Record<string, unknown>;
+    expect(data).toMatchObject({ defaultPriceRuleBasis: "MARGIN" });
+    expect(data).not.toHaveProperty("defaultMarginPercent");
+    tidakAdaHargaYangDisentuh();
+  });
+
   it("penghitung barang yang ikut margin bawaan (untuk hitung ulang massal) tetap tidak ada", () => {
     expect("getMarginFallbackItemCount" in aksi).toBe(false);
   });

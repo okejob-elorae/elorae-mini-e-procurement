@@ -133,7 +133,7 @@ export function KoreksiUtangCard({
                               invoicePrice: k.invoicePrice,
                               amount: k.amount,
                               adaCmtLama,
-                              adaRetur: k.barangDiretur > 0,
+                              barangDiretur: k.barangDiretur,
                               dibayarSen: kx?.dibayarSen ?? null,
                               utangSen: kx?.utangSen ?? null,
                             })

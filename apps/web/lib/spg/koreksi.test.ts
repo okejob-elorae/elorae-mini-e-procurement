@@ -221,6 +221,52 @@ describe("rencanaBayarSemua", () => {
     const peta = rencanaBayarSemua([september(30_000, 12_500), oktober(30_000)], { bebanHilang: [], bebanRetur: [], utang: [] });
     expect([...peta.keys()]).toEqual(["r-okt"]);
   });
+
+  it("dua baris belum dibayar, satu beban: beban dibagi menurut urutan bayar dan tidak pernah tampak dua kali (B22)", () => {
+    // September belum dibayar (komisi Rp 3.000) dibayar lebih dulu dari Oktober (Rp 10.000).
+    const sepBelum = unit({
+      kunci: putusReportKey("s1", "2026-09"),
+      bulanJual: "2026-09",
+      angka: 3_000,
+      potong: 1,
+      baris: baris({ refId: "r-sep", komisiTersimpan: 3_000, potongTersimpan: 1 }),
+    });
+    const peta = rencanaBayarSemua([oktober(10_000), sepBelum], {
+      bebanHilang: [],
+      bebanRetur: [{ chargeId: "c1", storeId: "s1", sisaSen: 400_000 }],
+      kembaliBeban: [{ chargeId: "c9", storeId: "s1", sen: 200_000 }],
+      utang: [],
+    });
+    const sep = peta.get("r-sep");
+    const okt = peta.get("r-okt");
+    // Beban Rp 4.000: Rp 3.000 dari September, sisanya Rp 1.000 dari Oktober — jumlahnya tepat bebannya.
+    expect([sep?.potonganRetur, okt?.potonganRetur]).toEqual([3_000, 1_000]);
+    expect(sep?.potong.find((p) => p.sumber === "c1")).toMatchObject({ jumlah: 4_000, sisa: 1_000 });
+    expect(okt?.potong.find((p) => p.sumber === "c1")).toMatchObject({ jumlah: 1_000, sisa: 0 });
+    // Pengembalian beban ikut baris pertama saja.
+    expect(sep?.jumlahKembaliBeban).toBe(2_000);
+    expect(okt?.kembaliBeban).toEqual([]);
+    expect([sep?.dibayar, okt?.dibayar]).toEqual([2_000, 9_000]);
+  });
+
+  it("baris yang ditahan tidak mengambil beban; baris berikutnya yang membayarnya", () => {
+    const sepTahan = unit({
+      kunci: putusReportKey("s1", "2026-09"),
+      bulanJual: "2026-09",
+      angka: 3_000,
+      baris: baris({ refId: "r-sep", komisiTersimpan: 3_000 }),
+      ditahan: "CATATAN_HADIR_BELUM_DIMASUKKAN",
+      hariTahan: ["2026-09-01"],
+    });
+    const peta = rencanaBayarSemua([sepTahan, oktober(10_000)], {
+      bebanHilang: [],
+      bebanRetur: [{ chargeId: "c1", storeId: "s1", sisaSen: 400_000 }],
+      kembaliBeban: [{ chargeId: "c9", storeId: "s1", sen: 200_000 }],
+      utang: [],
+    });
+    expect(peta.get("r-sep")).toMatchObject({ ditahan: "CATATAN_HADIR_BELUM_DIMASUKKAN", potonganRetur: 0, jumlahKembaliBeban: 0 });
+    expect(peta.get("r-okt")).toMatchObject({ potonganRetur: 4_000, jumlahKembaliBeban: 2_000, dibayar: 8_000 });
+  });
 });
 
 describe("jendela koreksi (P10)", () => {

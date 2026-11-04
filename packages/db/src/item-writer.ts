@@ -1,5 +1,5 @@
 import { ItemSource, Prisma, type PrismaClient } from "../generated/prisma/client";
-import { sqlId } from "./sql-dialect";
+import { sqlId, usePostgres } from "./sql-dialect";
 
 export { hargaJubelioBerbeda, keputusanHargaBerlaku, type HargaMasukan } from "./item-writer-harga";
 
@@ -202,11 +202,23 @@ export async function recordJubelioPriceOnMapping(
   return count > 0;
 }
 
+/** A `DateTime(3)` column plus one millisecond, in the active dialect. */
+const satuMsSesudah = (x: Prisma.Sql) =>
+  usePostgres() ? Prisma.sql`${x} + INTERVAL '1 millisecond'` : Prisma.sql`${x} + INTERVAL 1000 MICROSECOND`;
+
 /**
  * Records what Jubelio was READ to show for an item: its highest and lowest variant price (owner
  * answer P1), read at `readAt`. `jubelioObservedChangedAt` moves only when either figure changes,
  * so a re-read of the same prices keeps the moment the difference first appeared — that moment is
  * what an admin's price decision is compared against (`keputusanHargaBerlaku`).
+ *
+ * A figure change from a read that began at or before the item's price decision is stamped 1 ms
+ * after that decision, so it always invalidates it (P75) — the admin never saw it;
+ * `jubelioObservedAt` stays the read time. Every caller takes `readAt` BEFORE its fetch, and a
+ * fetch of the whole catalog can outlast an admin's click: without this, an edit read before the
+ * decision but recorded after it would count as covered by that decision, and the next push would
+ * overwrite it. The decision is read by the statement itself, at write time, so a write that
+ * waited on the decision's row lock still sees it.
  *
  * ONE guarded statement: it is refused when a LATER read is already recorded, so an ingest or an
  * observer run that started before a push finished cannot plant a stale reading over the push's
@@ -214,8 +226,8 @@ export async function recordJubelioPriceOnMapping(
  * being updated, Postgres against the old row, so `jubelioObservedChangedAt` is assigned FIRST and
  * reads the old figures on both. The bound figures are CAST, or Postgres cannot type a NULL
  * parameter. The statement is built whole with `Prisma.sql` and passed as one argument. Never
- * touches `sellingPrice`, `jubelioConfirmed*` or `jubelioPriceDecidedAt`. Returns true when the
- * reading was recorded.
+ * touches `sellingPrice`, `jubelioConfirmed*` or `jubelioPriceDecidedAt` (the decision is only
+ * read). Returns true when the reading was recorded.
  */
 export async function recordJubelioObservedPrice(
   client: RawClient,
@@ -229,6 +241,7 @@ export async function recordJubelioObservedPrice(
   const l = Prisma.sql`CAST(${lowest} AS DECIMAL(14,2))`;
   const max = sqlId("jubelioObservedPriceMax");
   const min = sqlId("jubelioObservedPriceMin");
+  const decidedAt = sqlId("jubelioPriceDecidedAt");
   const count = await client.$executeRaw(Prisma.sql`
     UPDATE ${sqlId("Item")}
     SET ${sqlId("jubelioObservedChangedAt")} = CASE
@@ -236,6 +249,8 @@ export async function recordJubelioObservedPrice(
             AND (${max} = ${h} OR (${max} IS NULL AND ${h} IS NULL))
             AND (${min} = ${l} OR (${min} IS NULL AND ${l} IS NULL))
           THEN ${sqlId("jubelioObservedChangedAt")}
+          WHEN ${decidedAt} IS NOT NULL AND ${decidedAt} >= ${readAt}
+          THEN ${satuMsSesudah(decidedAt)}
           ELSE ${readAt}
         END,
         ${max} = ${h},

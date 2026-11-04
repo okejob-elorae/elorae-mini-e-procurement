@@ -152,6 +152,19 @@ export async function bacaBahanNota(client: Klien, deliveryId: string): Promise<
 }
 
 /**
+ * Pembagian PPN nota yang sudah terposting (sen, Σ semua generasinya): piutang toko dan PPN
+ * keluaran (positif). Null bila belum ada piutang terposting. Dibekukan sejak jurnal pertama,
+ * seperti `rusakTerposting`/`hppTerposting` retur: pengaturan PPN yang diubah kemudian tidak
+ * menggeser PPN nota yang sudah dijurnal.
+ */
+function ppnNotaTerposting(terposting: readonly BarisBertanda[]): { arSen: number; ppnSen: number } | null {
+  const arSen = terposting.filter((b) => b.role === "AR_STORE").reduce((s, b) => s + b.sen, 0);
+  if (arSen <= 0) return null;
+  const ppnSen = -terposting.filter((b) => b.role === "PPN_KELUARAN").reduce((s, b) => s + b.sen, 0);
+  return { arSen, ppnSen };
+}
+
+/**
  * Sasaran jurnal nota SEKARANG, atau jawaban tanpa penyelarasan: nota yang memegang pasangan
  * bentuk lama (`SUMBER_NOTA_LAMA`), yang bukan nota putus, yang dibatalkan sebelum pernah
  * dijurnal (selaras tanpa jurnal), atau yang biaya keluarnya tidak ditemukan
@@ -187,7 +200,14 @@ export async function susunJurnalNota(
   return {
     sasaran: batal
       ? []
-      : barisNota({ total: b.total, storeId: b.storeId, tanggal: b.invoiceDate, pengaturanPpn: await bacaPengaturanPpn(client), hpp: b.hpp }),
+      : barisNota({
+          total: b.total,
+          storeId: b.storeId,
+          tanggal: b.invoiceDate,
+          pengaturanPpn: await bacaPengaturanPpn(client),
+          hpp: b.hpp,
+          ppnTerposting: ppnNotaTerposting(terposting),
+        }),
     bolehMulai: boleh,
     tanggal: b.invoiceDate,
     deskripsi: `Nota tagihan ${b.docNo} — ${b.storeName}${batal ? " (dibatalkan)" : ""}`,
@@ -200,7 +220,8 @@ export async function susunJurnalNota(
  * nota SEKARANG, jadi nota yang dikoreksi (ditolak sebagian di pintu, hilang di jalan) memposting
  * selisihnya, dan nota yang dibatalkan bersasaran kosong — generasinya membalik seluruhnya.
  * Generasi pertama hanya sejak tanggal mulai buku besar (tanggal nota); generasi berikutnya
- * bertanggal saat nota berubah (`voidedAt`/`correctedAt`).
+ * bertanggal saat nota berubah (`voidedAt`/`correctedAt`), dan memegang pembagian PPN yang sudah
+ * terposting (`ppnNotaTerposting`), bukan pengaturan PPN hari ini.
  *
  * Nota yang sudah memegang jurnal bentuk lama (`SUMBER_NOTA_LAMA`) dijawab `NOTHING_TO_POST` dan
  * tidak disentuh: jurnal `FIELD_DELIVERY` di atasnya mengakui nota yang sama dua kali.

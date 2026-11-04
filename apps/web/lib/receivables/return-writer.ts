@@ -1,4 +1,4 @@
-import { moveMainStock, Prisma, type prisma, type StockLedgerRefType } from '@elorae/db';
+import { moveMainStock, Prisma, type prisma, type StockAdjustmentSource, type StockLedgerRefType } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { hariIniWib } from "@/lib/tanggal-isian";
 import { bentrokKunciKiriman } from './idempoten';
@@ -10,6 +10,7 @@ import { bentrokPengganti, catatDiganti, periksaReturLama, type AlasanPengganti 
 import { computeStorePrice } from "@elorae/db/pricing";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { masukkanGudangRusakDariNri } from "@/lib/spg/gudang-rusak-writer";
+import { siklusTerkunciDi } from "@/lib/spg/mutasi-terima";
 import { returPembeliSudahBerlaku } from "@/lib/spg/retur-pembeli-status";
 import { kunciStokReturMasuk } from "@/lib/finance/lapangan/aturan";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
@@ -223,6 +224,8 @@ export type AlasanGagalRetur =
 
 type Gagal = { ok: false; alasan: AlasanGagalRetur };
 type Berhasil = { ok: true; piutangDihitungUlang: number };
+/** Bulan terima penerimaan itu sudah dikunci di siklus konsinyasi toko nota — layar meminta konfirmasi lalu mengulang. */
+export type GagalSiklusTerkunci = { ok: false; alasan: "SIKLUS_TERKUNCI"; noKonsi: string[] };
 
 /**
  * Nomor NRI berikutnya: `NRI/26/08/0001`, direset tiap bulan (WIB).
@@ -405,7 +408,7 @@ async function masukkanKeStok(
         prevAvgCost: hargaRata,
         newAvgCost: hargaRata,
         createdById: input.olehUserId,
-        source: 'STORE_RETURN_RECEIVE',
+        source: 'STORE_RETURN_RECEIVE' satisfies StockAdjustmentSource,
         // Per baris hitungan: jurnal retur membaca biaya kartu stok SETIAP baris lewat kunci ini,
         // untuk membandingkannya dengan HPP saat barang itu dijual (`hppJualTerakhir`).
         idempotencyKey: kunciStokReturMasuk(b.id),
@@ -1005,9 +1008,11 @@ type BentrokSelisih = { noNrt: string; itemId: string; variantSku: string; qty: 
  * Baris nota baru yang bisa jadi barang selisih nota lain di toko yang sama —
  * barang yang sudah dilaporkan pemegang toko DITEMUKAN dan sedang dikirim balik
  * sebagai susulan (P22a "langsung di kirimkan saja"), sehingga tidak perlu nota
- * baru. Hanya baris yang jumlahnya tidak melebihi yang masih kurang untuk barang
- * itu; jumlah di atasnya jelas bukan (hanya) barang selisih itu. Dibaca di dalam
- * transaksi pemanggil.
+ * baru. Setiap baris yang barang + variannya masih kurang di nota itu, berapa pun
+ * jumlahnya (R16b): nota yang mencampur barang selisih dengan retur baru juga
+ * ditolak, supaya beban nota lama tidak menunggu susulan yang tidak pernah datang.
+ * Retur yang memang lain lolos lewat `returLain`. Dibaca di dalam transaksi
+ * pemanggil.
  */
 async function bentrokSelisihDitemukan(
   tx: Klien,
@@ -1051,7 +1056,7 @@ async function bentrokSelisihDitemukan(
     ];
     for (const k of kurangPerBarang(n.items, hitungan)) {
       const baru = perKunci.get(k.kunci);
-      if (!baru || k.qtyKurang <= 0 || baru.qty > k.qtyKurang) continue;
+      if (!baru || k.qtyKurang <= 0) continue;
       hasil.push({ noNrt: n.noNrt, itemId: baru.itemId, variantSku: baru.variantSku, qty: baru.qty, qtyKurang: k.qtyKurang });
     }
   }
@@ -1554,12 +1559,20 @@ export async function catatHitunganGudang(input: {
   }
 }
 
-/** Jodohkan penerimaan gudang yatim dengan nota toko yang baru ditemukan. */
+/**
+ * Jodohkan penerimaan gudang yatim dengan nota toko yang baru ditemukan.
+ *
+ * Penerimaan yang belum bertoko mendapat toko nota itu — penjaganya sama dengan
+ * `jadikanSusulan` dan `pindahkanNriKeToko`: bulan terimanya yang sudah dikunci di
+ * siklus konsinyasi toko itu ditolak `SIKLUS_TERKUNCI` sampai orangnya menyatakan
+ * sadar (`setujuSiklusTerkunci`).
+ */
 export async function jodohkanRetur(input: {
   warehouseReturnId: string;
   storeReturnId: string;
   olehUserId: string;
-}): Promise<(Berhasil & { selisihBaru: { chargeId: string } | null }) | Gagal> {
+  setujuSiklusTerkunci?: boolean;
+}): Promise<(Berhasil & { selisihBaru: { chargeId: string } | null }) | Gagal | GagalSiklusTerkunci> {
   // Catatan kantor selisih baru — disetel ulang tiap percobaan, disebar sesudah commit.
   let notifikasi: NotifikasiKantor | null = null;
   const hasil = await runSerializable(async (tx) => {
@@ -1573,6 +1586,7 @@ export async function jodohkanRetur(input: {
         storeId: true,
         physicalAmount: true,
         warehouseUserId: true,
+        receivedAt: true,
       },
     });
     if (!nri) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
@@ -1603,6 +1617,12 @@ export async function jodohkanRetur(input: {
     if (nrt.salesmanId && nrt.salesmanId === nri.warehouseUserId) {
       return { ok: false as const, alasan: "PENGHITUNG_SAMA_PELAPOR" as const };
     }
+    // Penerimaan tanpa toko yang mendapat toko nota ini mengubah stok titipan bulan terimanya di
+    // toko itu — seperti `jadikanSusulan` dan `pindahkanNriKeToko`.
+    const terkunci = nri.storeId ? [] : await siklusTerkunciDi(tx, [nrt.storeId], nri.receivedAt);
+    if (terkunci.length > 0 && !input.setujuSiklusTerkunci) {
+      return { ok: false as const, alasan: "SIKLUS_TERKUNCI" as const, noKonsi: terkunci };
+    }
 
     await tx.warehouseReturn.update({
       where: { id: nri.id },
@@ -1620,7 +1640,7 @@ export async function jodohkanRetur(input: {
       entityType: 'WarehouseReturn',
       entityId: nri.id,
       changes: { before: { storeReturnId: null }, after: { storeReturnId: nrt.id } },
-      metadata: { storeId: nrt.storeId },
+      metadata: { storeId: nrt.storeId, ...(terkunci.length > 0 ? { siklusTerkunci: terkunci } : {}) },
     });
 
     const selisihBaru = selaras.kejadian === "BARU" && selaras.chargeId ? { chargeId: selaras.chargeId } : null;
@@ -2076,12 +2096,18 @@ export async function catatHitunganSusulan(input: {
  * barang selisih yang ternyata sudah dihitung gudang sebagai penerimaan yatim.
  * Stok tidak bergerak lagi (hitungan yatimnya sudah menggerakkannya); selisih,
  * beban, buku toko, dan piutang diselaraskan di satu transaksi.
+ *
+ * Penerimaan yang belum bertoko mendapat toko nota itu — sama dengan menetapkan
+ * tokonya lewat `pindahkanNriKeToko`, jadi penjaganya juga sama: bulan terimanya
+ * yang sudah dikunci di siklus konsinyasi toko itu ditolak `SIKLUS_TERKUNCI`
+ * sampai orangnya menyatakan sadar (`setujuSiklusTerkunci`).
  */
 export async function jadikanSusulan(input: {
   warehouseReturnId: string;
   storeReturnId: string;
   olehUserId: string;
-}): Promise<(Berhasil & { selaras: HasilSelaras; notifikasi: NotifikasiKantor | null }) | Gagal> {
+  setujuSiklusTerkunci?: boolean;
+}): Promise<(Berhasil & { selaras: HasilSelaras; notifikasi: NotifikasiKantor | null }) | Gagal | GagalSiklusTerkunci> {
   try {
     return await runSerializable(async (tx) => {
       const nri = await tx.warehouseReturn.findUnique({
@@ -2093,6 +2119,7 @@ export async function jadikanSusulan(input: {
           storeId: true,
           status: true,
           warehouseUserId: true,
+          receivedAt: true,
           items: { select: { itemId: true, variantSku: true, qty: true } },
         },
       });
@@ -2126,6 +2153,12 @@ export async function jadikanSusulan(input: {
       if (tolak || !beban) return { ok: false as const, alasan: tolak ?? ("TIDAK_ADA_SELISIH" as const) };
       if ([nrt.salesmanId, beban.checkedById, beban.bearerUserId, nrt.store.salesmanId].includes(nri.warehouseUserId)) {
         return { ok: false as const, alasan: "PENGHITUNG_SAMA_PELAPOR" as const };
+      }
+      // Penerimaan tanpa toko yang mendapat toko nota ini mengubah stok titipan bulan terimanya di
+      // toko itu — seperti `pindahkanNriKeToko`.
+      const terkunci = nri.storeId ? [] : await siklusTerkunciDi(tx, [nrt.storeId], nri.receivedAt);
+      if (terkunci.length > 0 && !input.setujuSiklusTerkunci) {
+        return { ok: false as const, alasan: "SIKLUS_TERKUNCI" as const, noKonsi: terkunci };
       }
 
       const tokoMenanggung = beban.bearer === "TOKO" && beban.status !== "TERBUKA";
@@ -2164,7 +2197,11 @@ export async function jadikanSusulan(input: {
           before: { followUpOfStoreReturnId: null, storeId: nri.storeId },
           after: { followUpOfStoreReturnId: nrt.id, storeId: nrt.storeId },
         },
-        metadata: { storeReturnId: nrt.id, ...(barisBukuToko > 0 ? { barisBukuToko } : {}) },
+        metadata: {
+          storeReturnId: nrt.id,
+          ...(barisBukuToko > 0 ? { barisBukuToko } : {}),
+          ...(terkunci.length > 0 ? { siklusTerkunci: terkunci } : {}),
+        },
       });
 
       return {

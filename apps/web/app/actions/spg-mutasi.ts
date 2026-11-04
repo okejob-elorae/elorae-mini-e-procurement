@@ -27,14 +27,16 @@ import {
 } from "@/lib/spg/mutasi-writer";
 import { getActiveVisit } from "@/lib/stores/queries";
 import { cariKunjunganAntrean } from "@/lib/pwa/kunjungan-antrean";
+import { tokoSpgUntukAntrean } from "@/lib/pwa/peran";
 
 /**
  * Aksi mutasi antar toko — SPG (ajukan, kirim, batal) dan kantor (setujui,
  * tolak, batalkan, alihkan tujuan, terima atas nama toko, putuskan selisih),
  * plus kartu pengaturannya.
  *
- * Toko SPG TIDAK PERNAH diambil dari layar: selalu `User.assignedStoreId`.
- * Hasil dikembalikan sebagai kode, bukan dilempar, supaya pesan galat tidak
+ * Toko SPG TIDAK PERNAH diambil dari layar: selalu `User.assignedStoreId`, atau —
+ * hanya untuk kiriman antrean HP SPG yang sudah berhenti — toko yang dilepasnya
+ * (lihat `konteksSpg`). Hasil dikembalikan sebagai kode, bukan dilempar, supaya pesan galat tidak
  * disamarkan Next di produksi.
  *
  * Izin: SPG `spg_sales:record`; keputusan kantor `store_transfers:approve`
@@ -56,29 +58,40 @@ type KodeUmum = "FORBIDDEN" | "NO_ASSIGNED_STORE" | "NO_ACTIVE_VISIT" | "KUNJUNG
  */
 type Antrean = { visitId?: string | null; visitClientId?: string | null };
 
+/**
+ * `waktuTangkap` (ISO, hanya dari antrean HP): saat pekerjaannya dilakukan di HP. Kiriman
+ * antrean SPG yang sudah ditandai berhenti (P66) — `assignedStoreId`-nya kosong — tetap dicatat
+ * dari toko yang dilepasnya bila ditangkap paling lambat akhir hari terakhirnya
+ * (`tokoSpgUntukAntrean`); saat tangkap dijepit ke sekarang, sama dengan penulisnya. Selain itu
+ * tetap toko tetapnya.
+ */
 async function konteksSpg(
   butuhKunjungan: boolean,
   antrean?: Antrean,
+  waktuTangkap?: string,
 ): Promise<{ userId: string; storeId: string; kunjunganId: string | null } | { ok: false; code: KodeUmum }> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.SPG_SALES_RECORD)) {
     return { ok: false, code: "FORBIDDEN" };
   }
-  const me = await prisma.user.findUnique({ where: { id: session.user.id }, select: { assignedStoreId: true } });
-  if (!me?.assignedStoreId) return { ok: false, code: "NO_ASSIGNED_STORE" };
+  const storeId =
+    antrean && waktuTangkap
+      ? await tokoSpgUntukAntrean(session.user.id, new Date(Math.min(Date.parse(waktuTangkap), Date.now())))
+      : ((await prisma.user.findUnique({ where: { id: session.user.id }, select: { assignedStoreId: true } }))?.assignedStoreId ?? null);
+  if (!storeId) return { ok: false, code: "NO_ASSIGNED_STORE" };
   // Barang berpindah dari rak toko ini: mengajukan dan mengirim adalah pekerjaan
   // DI toko. Dari antrean HP, kunjungannya boleh sudah check-out (sinyal sering
   // kembali sesudah pulang), tapi harus milik SPG ini di tokonya.
   if (antrean) {
-    const kunjunganId = await cariKunjunganAntrean({ userId: session.user.id, storeId: me.assignedStoreId, ...antrean });
+    const kunjunganId = await cariKunjunganAntrean({ userId: session.user.id, storeId, ...antrean });
     if (!kunjunganId) return { ok: false, code: "KUNJUNGAN_TIDAK_SAH" };
-    return { userId: session.user.id, storeId: me.assignedStoreId, kunjunganId };
+    return { userId: session.user.id, storeId, kunjunganId };
   }
   if (butuhKunjungan) {
     const aktif = await getActiveVisit(session.user.id);
-    if (!aktif || aktif.storeId !== me.assignedStoreId) return { ok: false, code: "NO_ACTIVE_VISIT" };
+    if (!aktif || aktif.storeId !== storeId) return { ok: false, code: "NO_ACTIVE_VISIT" };
   }
-  return { userId: session.user.id, storeId: me.assignedStoreId, kunjunganId: null };
+  return { userId: session.user.id, storeId, kunjunganId: null };
 }
 
 /** Kolom bersama kiriman dari antrean HP. */
@@ -147,7 +160,7 @@ const ajukanSchema = z.object({
 export async function ajukanMutasiAction(input: unknown): Promise<HasilMutasiAksi> {
   const parsed = ajukanSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "VALIDATION" };
-  const k = await konteksSpg(true, antreanDari(parsed.data));
+  const k = await konteksSpg(true, antreanDari(parsed.data), parsed.data.luring ? parsed.data.waktuTangkap : undefined);
   if ("ok" in k) return k;
   const h = await ajukanMutasi({
     userId: k.userId,
@@ -177,7 +190,7 @@ const kirimSchema = idSchema.extend({
 export async function kirimMutasiAction(input: unknown): Promise<HasilMutasiAksi> {
   const parsed = kirimSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "VALIDATION" };
-  const k = await konteksSpg(true, antreanDari(parsed.data));
+  const k = await konteksSpg(true, antreanDari(parsed.data), parsed.data.luring ? parsed.data.waktuTangkap : undefined);
   if ("ok" in k) return k;
   return keAksi(
     await kirimMutasi({

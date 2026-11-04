@@ -14,7 +14,8 @@ import {
 } from "./absen-catatan-hadir";
 import { bulanWib } from "@/lib/salesman/pengaturan";
 import { hariAntara, masaKerjaBulan } from "./gaji-pokok";
-import { bulanGajiDibayar, kunciGaji, muatGajiPokok } from "./gaji-pokok-queries";
+import { sebelumSiklusPertama } from "@/lib/konsinyasi/siklus-pertama-aturan";
+import { bulanGajiDibayar, kunciGaji, lantaiBulanKonsi, muatGajiPokok } from "./gaji-pokok-queries";
 import { bulanSebelum } from "./komisi";
 import { izinPada } from "./shift";
 
@@ -69,8 +70,9 @@ const nama = (u: { name: string | null; email: string } | undefined) => u?.name?
  * SPG × bulan selesai yang gajinya belum dibayar dan SEKARANG tertahan
  * `CATATAN_HADIR_BELUM_DIMASUKKAN`, dengan hari yang menahannya. Kandidatnya setiap SPG yang punya
  * toko (bertugas atau sudah berhenti) dan tanggal mulai bekerja — tanpa tanggal mulai pembayarannya
- * tertahan `MULAI_KERJA_BELUM_DIISI` lebih dulu — di bulan yang disentuh masa kerjanya.
- * `cakupan` membatasi ke SPG tertentu (tes basis data).
+ * tertahan `MULAI_KERJA_BELUM_DIISI` lebih dulu — di bulan yang disentuh masa kerjanya. Toko
+ * konsinyasi: bulan sebelum siklus pertama tidak ditanyakan (P59, `lantaiBulanKonsi`) — bulan itu di
+ * luar sistem. `cakupan` membatasi ke SPG tertentu (tes basis data).
  */
 export async function pasanganPerluCatatan(
   sekarang: Date = new Date(),
@@ -87,12 +89,19 @@ export async function pasanganPerluCatatan(
     select: { id: true, assignedStoreId: true, spgEndedStoreId: true, spgStartedOn: true, spgEndedOn: true },
   });
   if (spg.length === 0) return [];
-  const dibayar = await bulanGajiDibayar(prisma, spg.map((u) => u.id));
+  const idToko = [...new Set(spg.map((u) => u.assignedStoreId ?? u.spgEndedStoreId).filter((x): x is string => Boolean(x)))];
+  const [dibayar, toko, lantaiKonsi] = await Promise.all([
+    bulanGajiDibayar(prisma, spg.map((u) => u.id)),
+    prisma.store.findMany({ where: { id: { in: idToko } }, select: { id: true, termsType: true } }),
+    lantaiBulanKonsi(prisma, "KONSI"),
+  ]);
+  const konsi = new Set(toko.filter((t) => t.termsType === "KONSI").map((t) => t.id));
   const calon = spg.flatMap((u) => {
     const storeId = u.assignedStoreId ?? u.spgEndedStoreId;
     if (!storeId) return [];
     return bulanSemua
       .filter((bulan) => masaKerjaBulan(bulan, u.spgStartedOn, u.spgEndedOn) !== null && !dibayar.get(u.id)?.has(bulan))
+      .filter((bulan) => !(konsi.has(storeId) && lantaiKonsi && sebelumSiklusPertama(bulan, lantaiKonsi)))
       .map((bulan) => ({ userId: u.id, storeId, bulan }));
   });
   const gaji = await muatGajiPokok(prisma, calon);

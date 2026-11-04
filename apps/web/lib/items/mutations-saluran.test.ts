@@ -190,7 +190,7 @@ d("saluran jual barang jadi (test bed only)", () => {
       const id = await fx.barang({ jubelioCreateRequestedAt: new Date("2026-11-02T03:00:00.000Z") });
       const [ubahan, konfirmasi] = await Promise.allSettled([
         ubah(id, "OFFLINE"),
-        jeda(ms).then(() => konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "100000.00", olehUserId: fx.keadaan.userId })),
+        jeda(ms).then(() => konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "100000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId })),
       ]);
       const akhir = await fx.baca(id);
       const kiriman = await kirimanProduk(id);

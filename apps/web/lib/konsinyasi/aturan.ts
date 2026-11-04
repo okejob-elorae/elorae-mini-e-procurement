@@ -140,18 +140,16 @@ export function stokTitipan(
 }
 
 /**
- * Jatuh tempo tagihan siklus konsinyasi (P54, disetujui pemilik 2026-11-02 malam — "P52–P59:
- * setuju" atas usulan: "Tanggal tagihannya … akhir bulan siklus, sama dengan tanggal jurnalnya.
- * Jatuh temponya dihitung dari tanggal itu ditambah tempo bayar toko. Contoh: siklus Oktober dikunci
- * 5 November, tempo 30 hari → jatuh tempo 30 November"). `tanggalTagihan` = tanggal tagihan siklus
- * (`tanggalPeriode`: akhir bulan siklus, atau hari dikunci kalau dikunci sebelum bulannya habis);
- * jatuh tempo = pukul 00:00 WIB hari itu ditambah tempo pembayaran toko (hari bulat, tidak pernah
- * negatif). Siklus yang dikunci lebih lambat dari temponya lahir sudah lewat jatuh tempo — itu
- * akibat aturan yang disetujui, bukan galat. WIB tanpa jam musim panas, jadi satu hari =
+ * Jatuh tempo tagihan siklus konsinyasi (P54). Usulan yang disetujui pemilik ("54. setuju",
+ * 2026-11-02): "Contoh: siklus Oktober dikunci 5 November, dan tempo toko 30 hari. Saran: jatuh tempo
+ * dihitung dari tanggal dikunci, yaitu 5 Desember." `hariKunci` = saat angka siklus dikunci; jatuh
+ * tempo = pukul 00:00 WIB hari dikunci itu ditambah tempo pembayaran toko (hari bulat, tidak pernah
+ * negatif). Tanggal tagihannya sendiri tetap akhir bulan siklus (`tanggalPeriode`, tanggal
+ * jurnalnya) — P54 hanya mengatur jatuh tempo. WIB tanpa jam musim panas, jadi satu hari =
  * 86.400.000 ms.
  */
-export function jatuhTempoSiklus(tanggalTagihan: Date, tempoHari: number): Date {
-  const hari = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" }).format(tanggalTagihan);
+export function jatuhTempoSiklus(hariKunci: Date, tempoHari: number): Date {
+  const hari = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" }).format(hariKunci);
   const tempo = Number.isFinite(tempoHari) ? Math.max(0, Math.trunc(tempoHari)) : 0;
   return new Date(new Date(`${hari}T00:00:00+07:00`).getTime() + tempo * 86_400_000);
 }

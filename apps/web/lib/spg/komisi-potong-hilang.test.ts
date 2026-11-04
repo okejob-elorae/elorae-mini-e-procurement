@@ -14,8 +14,9 @@ const d = isProd ? describe.skip : describe;
  * persen dan bukan saat ditetapkan/dikunci: "Tetapkan" toko putus dan kunci siklus konsinyasi tidak
  * menulis `StockLossDeduction` apa pun; pembayaranlah yang memotong setiap bagian terbuka, terlama
  * dulu, dari komisi dulu lalu gaji pokok (P5), sejauh pembayarannya menutup — sisanya tetap terbuka
- * untuk pembayaran berikutnya. Dua pembayaran bersamaan untuk SPG yang sama tidak pernah memotong
- * satu bagian dua kali.
+ * untuk pembayaran berikutnya. Beban dibagi ke baris menurut urutan bayar (B22), jadi dua pembayaran
+ * bersamaan untuk SPG yang sama masing-masing mengambil bagian yang tampak di layarnya, dan satu
+ * bagian tidak pernah dipotong lebih dari jumlahnya.
  *
  * Basis data sungguhan; semua baris diseed di sini dan dihapus lewat `seededId(s)`.
  */
@@ -209,22 +210,44 @@ d("potongan barang hilang penuh saat gaji & komisi SPG dibayar (test bed only)",
     expect(await bagianDari(loss)).toEqual({ dipotong: 1_008_000, lunas: false });
   });
 
-  it("dua pembayaran bersamaan untuk SPG yang sama: satu bagian beban dipotong tepat sekali", async () => {
+  it("dua pembayaran bersamaan untuk SPG yang sama: beban yang tampak di baris pertama diambil sekali, baris berikutnya dibayar penuh (B22)", async () => {
     const loss = await bebankan(spgA, putus, 5_000);
-    const jul = await putusSiap(JUL, 2); // komisi 4.000
-    const agu = await putusSiap(AGU, 4); // komisi 8.000
+    const jul = await putusSiap(JUL, 2); // 1.000.000 + komisi 4.000
+    const agu = await putusSiap(AGU, 4); // 1.000.000 + komisi 8.000
 
-    // Kedua layar melihat beban 5.000 dipotong dari barisnya masing-masing.
+    // Beban 5.000 milik baris Juli, yang pertama menurut urutan bayar: layar Juli 999.000, layar
+    // Agustus 1.008.000 tanpa potongan. Urutan selesai mana pun, keduanya dibayar sebesar layarnya.
     const [a, b] = await Promise.all([
       tandaiKomisiDibayar({ commissionId: jul.id, olehUserId: kantor, jumlahDiharapkan: 999_000 }),
-      tandaiKomisiDibayar({ commissionId: agu.id, olehUserId: kantor, jumlahDiharapkan: 1_003_000 }),
+      tandaiKomisiDibayar({ commissionId: agu.id, olehUserId: kantor, jumlahDiharapkan: 1_008_000 }),
     ]);
-    // Yang kalah melihat angkanya berubah (bebannya sudah diambil yang menang) dan tidak menulis apa pun.
-    expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
-    const kalah = a.ok ? b : a;
-    expect(kalah).toMatchObject({ ok: false, code: "ANGKA_BERUBAH" });
+    expect(a).toMatchObject({ ok: true, dibayar: 999_000 });
+    expect(b).toMatchObject({ ok: true, dibayar: 1_008_000 });
+    expect((await potonganRef(REF_KOMISI_SPG_PUTUS, jul.id)).map((p) => Number(p.amount))).toEqual([5_000]);
+    expect(await potonganRef(REF_KOMISI_SPG_PUTUS, agu.id)).toEqual([]);
     expect(await potonganBeban(loss)).toBe(5_000);
     expect(await bagianDari(loss)).toEqual({ dipotong: 5_000, lunas: true });
+  });
+
+  it("dua pembayaran bersamaan yang sama-sama memotong satu beban: masing-masing mengambil bagian di layarnya, jumlahnya tepat bebannya", async () => {
+    // Beban lebih besar dari pembayaran Juli: Juli mengambil seluruh 1.004.000-nya (dibayar 0),
+    // sisanya 6.000 tampak di baris Agustus (dibayar 1.002.000). Kedua pembayaran menulis bagian
+    // yang SAMA; `settledAmount` ditulis sebagai angka hasil bacaan, jadi tanpa `runSerializable`
+    // salah satu tulisan hilang dan bagian itu tampak belum lunas walau potongannya lengkap.
+    const loss = await bebankan(spgA, putus, 1_010_000);
+    const jul = await putusSiap(JUL, 2);
+    const agu = await putusSiap(AGU, 4);
+
+    const [a, b] = await Promise.all([
+      tandaiKomisiDibayar({ commissionId: jul.id, olehUserId: kantor, jumlahDiharapkan: 0 }),
+      tandaiKomisiDibayar({ commissionId: agu.id, olehUserId: kantor, jumlahDiharapkan: 1_002_000 }),
+    ]);
+    expect(a).toMatchObject({ ok: true, dibayar: 0 });
+    expect(b).toMatchObject({ ok: true, dibayar: 1_002_000 });
+    expect((await potonganRef(REF_KOMISI_SPG_PUTUS, jul.id)).map((p) => Number(p.amount))).toEqual([1_004_000]);
+    expect((await potonganRef(REF_KOMISI_SPG_PUTUS, agu.id)).map((p) => Number(p.amount))).toEqual([6_000]);
+    expect(await potonganBeban(loss)).toBe(1_010_000);
+    expect(await bagianDari(loss)).toEqual({ dipotong: 1_010_000, lunas: true });
   });
 
   it("konsinyasi: mengunci tidak memotong; pembayaran gaji & komisi memotong beban penuh", async () => {

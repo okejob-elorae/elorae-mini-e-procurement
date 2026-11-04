@@ -5,7 +5,7 @@ import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { capNotificationText } from "@/lib/notifications/text";
 import { bulanWib } from "@/lib/salesman/pengaturan";
 import { formatIDR } from "@/lib/sales-orders/format";
-import { catatBebanDipotong } from "./beban-spg-writer";
+import { catatBebanDipotong, loncengBebanLunasLewatUtangTx, utangBebanSudahDiputuskan } from "./beban-spg-writer";
 import { dariSen, keSen } from "./hilang";
 import { bagianHilangTerbukaSpg } from "./hilang-db";
 import { potongBebanHilangPenuh } from "./hilang-potong";
@@ -389,7 +389,8 @@ export type KodeBayarUtang =
   | "PEMERIKSA_SAMA"
   | "ALASAN_WAJIB"
   | "SUDAH_DIBATALKAN"
-  | "BUKAN_PENCATAT";
+  | "BUKAN_PENCATAT"
+  | "BEBAN_SUDAH_DIPUTUSKAN";
 
 function bacaJumlahSen(x: unknown): number | null {
   const n = typeof x === "number" ? x : typeof x === "string" && x.trim() !== "" ? Number(x.trim()) : NaN;
@@ -569,7 +570,9 @@ async function pencatatPembayaran(tx: Tx, id: string, createdById: string): Prom
 /**
  * Periksa pembayaran utang terhadap mutasi rekening (`payments:verify`, bukan pencatat/perevisinya).
  * TERVERIFIKASI: dialokasikan ke utang terlama dulu (`SpgDebtSettlement` BAYAR, tukar-bandingkan per
- * utang). DIKEMBALIKAN: catatan wajib; pencatat dikabari untuk merevisi.
+ * utang); beban retur pembeli yang sisanya pindah ke utang yang kini lunas sudah diganti, jadi
+ * kantor diberi lonceng "putuskan barangnya" (P79) — ditulis di transaksi ini, disebar sesudah komit.
+ * DIKEMBALIKAN: catatan wajib; pencatat dikabari untuk merevisi.
  */
 export async function periksaPenerimaanUtangSpg(input: {
   id: string;
@@ -583,9 +586,11 @@ export async function periksaPenerimaanUtangSpg(input: {
   if (input.keputusan === "DIKEMBALIKAN" && !catatan) return { ok: false, kode: "ALASAN_WAJIB" };
   if (catatan.length > MAKS_CATATAN_UTANG) return { ok: false, kode: "CATATAN_TERLALU_PANJANG" };
   const sekarang = input.sekarang ?? new Date();
-  const sesudah: { notif: AdminNotification | null } = { notif: null };
+  const sesudah: { notif: AdminNotification | null; lunas: AdminNotification[] } = { notif: null, lunas: [] };
   const hasil = await runSerializable(async (tx): Promise<{ ok: true } | { ok: false; kode: KodeBayarUtang }> => {
+    // Callback ini bisa diulang: lonceng dari percobaan yang gagal tidak boleh ikut tersebar.
     sesudah.notif = null;
+    sesudah.lunas = [];
     const p = await tx.spgDebtPayment.findUnique({ where: { id: input.id }, select: { id: true, spgUserId: true, status: true, version: true, amount: true, createdById: true } });
     if (!p) return { ok: false, kode: "TIDAK_DITEMUKAN" };
     if (p.status !== "MENUNGGU_CEK" || p.version !== input.versi) return { ok: false, kode: "STATUS_BERUBAH" };
@@ -603,17 +608,22 @@ export async function periksaPenerimaanUtangSpg(input: {
       const jumlahSen = keSen(angka(p.amount));
       if (jumlahSen > utang.reduce((n, u) => n + u.sisaSen, 0)) throw new LebihDariSisa();
       const alokasi = alokasiUtang(utang.map((u) => ({ id: u.debtId, sisaSen: u.sisaSen })), jumlahSen);
+      const jadiLunas: string[] = [];
       for (const a of alokasi) {
         const d = await tx.spgDebt.findUnique({ where: { id: a.id }, select: { amount: true, settledAmount: true } });
         if (!d) throw new LebihDariSisa();
         const baru = keSen(angka(d.settledAmount)) + a.sen;
+        const lunas = baru >= keSen(angka(d.amount));
         const u = await tx.spgDebt.updateMany({
           where: { id: a.id, settledAmount: d.settledAmount, status: "TERBUKA" },
-          data: { settledAmount: desimal(baru), ...(baru >= keSen(angka(d.amount)) ? { status: "LUNAS", settledAt: sekarang } : {}) },
+          data: { settledAmount: desimal(baru), ...(lunas ? { status: "LUNAS", settledAt: sekarang } : {}) },
         });
         if (u.count !== 1) throw new LebihDariSisa();
         await tx.spgDebtSettlement.create({ data: { debtId: a.id, amount: desimal(a.sen), kind: "BAYAR", refType: REF_BAYAR_UTANG_SPG, refId: p.id, createdById: input.olehUserId } });
+        if (lunas) jadiLunas.push(a.id);
       }
+      // P79: keputusan barang menunggu pelunasan penuh — begitu utangnya lunas, kantor memutuskannya.
+      sesudah.lunas.push(...(await loncengBebanLunasLewatUtangTx(tx, jadiLunas)));
     }
     await jejak(tx, {
       userId: input.olehUserId,
@@ -641,9 +651,10 @@ export async function periksaPenerimaanUtangSpg(input: {
     if (e instanceof LebihDariSisa) return { ok: false as const, kode: "MELEBIHI_SISA" as const };
     throw e;
   });
-  if (hasil.ok && sesudah.notif) {
-    const n = sesudah.notif;
-    await fanOutAdminNotification({ id: n.id, category: n.category, title: n.title, message: n.message, metadata: n.metadata });
+  if (hasil.ok) {
+    for (const n of [...(sesudah.notif ? [sesudah.notif] : []), ...sesudah.lunas]) {
+      await fanOutAdminNotification({ id: n.id, category: n.category, title: n.title, message: n.message, metadata: n.metadata });
+    }
   }
   return hasil;
 }
@@ -659,6 +670,9 @@ class LebihDariSisa extends Error {
  * Batalkan pembayaran utang. Yang belum diperiksa (MENUNGGU_CEK / DIKEMBALIKAN): pencatatnya atau
  * pemegang `spg_commission:pay` (`bolehBatalkanBelumDicek`). Yang sudah TERVERIFIKASI: hanya pemegang
  * `payments:verify` (`bolehBatalkanTerverifikasi`) — pelunasannya dikembalikan ke utang. Alasan wajib.
+ * Ditolak `BEBAN_SUDAH_DIPUTUSKAN` bila utang yang dilunasinya menanggung beban retur pembeli yang
+ * barangnya SUDAH diputuskan (P79): membatalkannya mengembalikan uang yang tidak pernah diterima,
+ * atau meninggalkan barang yang dibawa SPG tanpa dibayar.
  */
 export async function batalkanPenerimaanUtangSpg(input: {
   id: string;
@@ -680,13 +694,16 @@ export async function batalkanPenerimaanUtangSpg(input: {
     if (terverifikasi ? !input.bolehBatalkanTerverifikasi : !(input.bolehBatalkanBelumDicek || p.createdById === input.olehUserId)) {
       return { ok: false, kode: "BUKAN_PENCATAT" };
     }
+    // Pelunasan hanya ada pada penerimaan yang sudah TERVERIFIKASI; yang belum dicek tidak punya.
+    const lunasan = await tx.spgDebtSettlement.findMany({ where: { refType: REF_BAYAR_UTANG_SPG, refId: p.id, voidedAt: null }, select: { id: true, debtId: true, amount: true } });
+    // Diperiksa sebelum menulis apa pun (P79).
+    if (terverifikasi && (await utangBebanSudahDiputuskan(tx, lunasan.map((l) => l.debtId)))) return { ok: false, kode: "BEBAN_SUDAH_DIPUTUSKAN" };
     const r = await tx.spgDebtPayment.updateMany({
       where: { id: p.id, status: p.status },
       data: { status: "DIBATALKAN", voidedAt: sekarang, voidedById: input.olehUserId, voidReason: alasan },
     });
     if (r.count !== 1) return { ok: false, kode: "STATUS_BERUBAH" };
     if (terverifikasi) {
-      const lunasan = await tx.spgDebtSettlement.findMany({ where: { refType: REF_BAYAR_UTANG_SPG, refId: p.id, voidedAt: null }, select: { id: true, debtId: true, amount: true } });
       for (const l of lunasan) {
         const d = await tx.spgDebt.findUnique({ where: { id: l.debtId }, select: { settledAmount: true } });
         if (!d) continue;

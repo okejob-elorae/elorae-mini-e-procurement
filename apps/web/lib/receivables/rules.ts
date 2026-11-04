@@ -154,32 +154,6 @@ export function returTerpakaiMelebihi(nilaiNota: number, sudahDipakai: number, a
 const keSen = (n: number) => Math.round(n * 100);
 
 /**
- * @deprecated Tidak ada lagi faktur beban ke TOKO (P84, keputusan 1). Dipertahankan HANYA
- * karena `return-queries.ts` (paket selisih-retur-sales) masih memanggil `bebanDitagihKeToko`
- * untuk pratinjau lamanya; hapus ketiganya begitu pemanggil itu dibuang.
- */
-export type AturanBebanToko = "YANG_DIPOTONG" | "SELURUH_SELISIH";
-/** @deprecated Lihat `AturanBebanToko`. */
-export const ATURAN_BEBAN_TOKO: AturanBebanToko = "YANG_DIPOTONG";
-
-/**
- * @deprecated Lihat `AturanBebanToko` — tidak ada penulis yang menagih beban selisih ke toko
- * lagi; perilakunya tidak diubah supaya pemanggil lama tetap terkompilasi.
- *
- * Bagian selisih retur yang diambil toko melebihi barang yang sampai:
- * min(selisih, dipotong − fisik), dihitung dalam sen.
- */
-export function bebanDitagihKeToko(
-  r: { nilaiKlaim: number; nilaiFisik: number; sudahDipotong: number },
-  aturan: AturanBebanToko = ATURAN_BEBAN_TOKO,
-): number {
-  const selisih = Math.max(0, keSen(r.nilaiKlaim) - keSen(r.nilaiFisik));
-  if (aturan === "SELURUH_SELISIH") return selisih / 100;
-  const lebih = Math.max(0, keSen(r.sudahDipotong) - keSen(r.nilaiFisik));
-  return Math.min(selisih, lebih) / 100;
-}
-
-/**
  * Bagian sisa sebuah piutang yang HANYA ditahan Aturan 2: potongan retur di BKM
  * yang sudah terverifikasi, yang returnya belum dihitung gudang atau selisihnya
  * belum diputuskan. Bagian ini lepas sendiri begitu returnya beres, jadi BKM
@@ -403,17 +377,19 @@ export function langkahRetur(r: {
 export type CekSelisih = "DITANYAKAN" | "DITEMUKAN" | "TIDAK_DITEMUKAN";
 
 /**
- * Berapa hari kalender WIB sesudah selisih lahir kantor boleh membebankannya ke
- * sales walau sales belum melapor "tidak ketemu" (P88, jawaban pemilik
- * 2026-11-02 "setuju"). Mengubahnya adalah keputusan pemilik.
+ * BELUM DIPUTUSKAN — angka 14 bukan jawaban pemilik: P88 dijawab "setuju" atas
+ * pertanyaan tanpa batas hari ("boleh membebankan sebelum sales melapor 'tidak
+ * ketemu'?"), dan jumlah harinya masih ditanyakan. Tidak dipakai penulis mana pun;
+ * kantor boleh membebankan kapan saja. Jangan dipasang sebelum pemilik menjawab.
  */
 export const BATAS_HARI_LAPOR_SELISIH = 14;
 
 const HARI_MS = 86_400_000;
 
 /**
- * Bolehkah selisih retur dibebankan ke SALES sekarang (P88): seketika kalau sales
- * melaporkan barangnya TIDAK ditemukan; selain itu mulai hari ke-14 sejak
+ * BELUM DIPUTUSKAN pemilik (P88 terbuka, lihat `BATAS_HARI_LAPOR_SELISIH`) — tidak
+ * dipakai penulis mana pun, jangan dipasang. Rancangannya: seketika kalau sales
+ * melaporkan barangnya TIDAK ditemukan; selain itu mulai hari ke-N sejak
  * selisihnya lahir, dihitung per hari kalender WIB (tengah malam WIB batasnya).
  * `mulai` = tanggal WIB (YYYY-MM-DD) sejak kapan boleh tanpa laporan sales.
  */

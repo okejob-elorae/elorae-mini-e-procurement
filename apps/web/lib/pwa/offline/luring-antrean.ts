@@ -123,11 +123,19 @@ export async function returPembeliTertahanUntuk(spgSaleId: string): Promise<Pend
 
 /**
  * "Uang sudah dikembalikan" untuk laporan ini yang masih di HP — tombolnya tidak menawarkan
- * pencatatan kedua. Tak terbaca = tidak ada.
+ * pencatatan kedua. Baris yang sudah DITOLAK server (`failed`) tidak dihitung: ia tidak akan
+ * pernah tercatat, jadi tidak boleh terbaca sebagai pengembalian yang masih menunggu sinyal.
+ * Tak terbaca = tidak ada.
  */
 export async function uangKembaliTertahanUntuk(returnId: string): Promise<PendingSpgRefund | null> {
   try {
-    return (await pwaDb.pendingSpgRefunds.where("returnId").equals(returnId).first()) ?? null;
+    return (
+      (await pwaDb.pendingSpgRefunds
+        .where("returnId")
+        .equals(returnId)
+        .filter((r) => r.syncState !== "failed")
+        .first()) ?? null
+    );
   } catch {
     return null;
   }

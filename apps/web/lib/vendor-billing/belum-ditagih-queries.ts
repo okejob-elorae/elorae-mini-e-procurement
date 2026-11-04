@@ -380,8 +380,11 @@ export async function daftarBelumDitagih(
   };
 }
 
-/** Beranda: penerimaan yang masih punya pcs belum ditagih dan belum diminta invoice-nya (P19). */
-export async function hitungPenerimaanBelumDiminta(asOf?: Date): Promise<number> {
-  const r = await daftarBelumDitagih({ status: "belum", hariIni: asOf ? formatDateOnlyJakarta(asOf) : undefined });
+/**
+ * Beranda: penerimaan yang masih punya pcs belum ditagih dan belum diminta invoice-nya (P19). Tanpa
+ * `supplierIds` = semua pemasok; tes basis data membatasinya ke pemasok tesnya sendiri.
+ */
+export async function hitungPenerimaanBelumDiminta(asOf?: Date, supplierIds?: string[]): Promise<number> {
+  const r = await daftarBelumDitagih({ status: "belum", supplierIds, hariIni: asOf ? formatDateOnlyJakarta(asOf) : undefined });
   return new Set(r.baris.filter((b) => b.terhalang == null).map((b) => b.kunci)).size;
 }

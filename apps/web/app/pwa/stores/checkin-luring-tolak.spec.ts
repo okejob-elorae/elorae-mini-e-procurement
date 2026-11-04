@@ -4,18 +4,43 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * Check-in dari antrean HP dinilai dengan aturan yang SAMA dengan check-in
  * bersinyal — radius PERINGATAN/TOLAK dengan koordinat tangkapan, kunci toko
  * tetap SPG. Tanpa basis data — semua tiruan, seperti `kunjungan-aturan.spec.ts`.
+ *
+ * SPG yang sudah ditandai berhenti (P66): check-in/out dari antrean yang
+ * ditangkap paling lambat akhir hari terakhirnya (WIB) tetap kunjungan SPG di
+ * toko yang dilepasnya — absennya ikut terhitung (P7b); sesudahnya ditolak
+ * `SPG_BERHENTI`; toko lain `STORE_NOT_ASSIGNED`.
  */
 
 const dec = (n: number) => ({ toNumber: () => n });
 
+type Pengguna = { assignedStoreId: string | null; spgEndedOn: string | null; spgEndedStoreId: string | null };
+
 const state = {
   tokoTetapSpg: null as string | null,
+  berhenti: null as { hariTerakhir: string; storeId: string } | null,
+  /** Bacaan ulang di DALAM transaksi; null = sama dengan bacaan di luar. */
+  penggunaDiTx: null as Pengguna | null,
   toko: { lat: null as number | null, lng: null as number | null },
   setelan: {} as Record<string, string>,
+  kunjungan: null as null | Record<string, unknown>,
   transaksi: 0,
 };
 
+const pengguna = (): Pengguna => ({
+  assignedStoreId: state.tokoTetapSpg,
+  spgEndedOn: state.berhenti?.hariTerakhir ?? null,
+  spgEndedStoreId: state.berhenti?.storeId ?? null,
+});
+
+const absen = vi.hoisted(() => ({
+  masuk: vi.fn(async () => "MASUK"),
+  pulang: vi.fn(async () => "PULANG"),
+  lampau: vi.fn(async () => "MASUK"),
+  koreksi: vi.fn(async () => "PULANG"),
+}));
+
 const tx = {
+  user: { findUnique: vi.fn(async () => state.penggunaDiTx ?? pengguna()) },
   storeVisit: {
     findUnique: vi.fn(async () => null),
     findFirst: vi.fn(async () => null),
@@ -34,7 +59,12 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/store-changes/writer", () => ({ submitStoreChangeRequest: vi.fn() }));
 vi.mock("@/lib/salesman/queries", () => ({ tokoTerkunci: vi.fn(async () => false) }));
-vi.mock("@/lib/salesman/absensi-writer", () => ({ absenMasukLewatCheckin: vi.fn(), absenPulangLewatCheckout: vi.fn() }));
+vi.mock("@/lib/salesman/absensi-writer", () => ({
+  absenMasukLewatCheckin: absen.masuk,
+  absenPulangLewatCheckout: absen.pulang,
+  absenMasukKunjunganLampau: absen.lampau,
+  absenPulangKoreksi: absen.koreksi,
+}));
 
 vi.mock("@elorae/db", () => ({
   Prisma: {
@@ -45,7 +75,7 @@ vi.mock("@elorae/db", () => ({
     PrismaClientKnownRequestError: class extends Error {},
   },
   prisma: {
-    user: { findUnique: vi.fn(async () => ({ assignedStoreId: state.tokoTetapSpg })) },
+    user: { findUnique: vi.fn(async () => pengguna()) },
     store: {
       findUnique: vi.fn(async () => ({
         id: "s1",
@@ -59,7 +89,7 @@ vi.mock("@elorae/db", () => ({
     systemSetting: {
       findUnique: vi.fn(async ({ where }: { where: { key: string } }) => (where.key in state.setelan ? { value: state.setelan[where.key] } : null)),
     },
-    storeVisit: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) },
+    storeVisit: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => state.kunjungan), findMany: vi.fn(async () => []) },
     $transaction: vi.fn(async (cb: (c: unknown) => Promise<unknown>) => {
       state.transaksi += 1;
       return cb(tx);
@@ -67,17 +97,26 @@ vi.mock("@elorae/db", () => ({
   },
 }));
 
-const { checkInLuringAction } = await import("./actions");
+const { tokoTerkunci } = await import("@/lib/salesman/queries");
+const { checkInLuringAction, checkOutLuringAction } = await import("./actions");
 
 // ≈ 1,1 km di utara titik check-in.
 const TOKO_JAUH = { lat: -7.77, lng: 110.37 };
 const MASUK = { clientId: "hp-1", storeId: "s1", lat: -7.78, lng: 110.37, accuracy: 15, waktu: new Date(Date.now() - 3_600_000).toISOString() };
 
+/** Hari WIB (YYYY-MM-DD) dari sebuah waktu. */
+const hariWib = (t: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date(t));
+const HARI_MASUK = hariWib(Date.parse(MASUK.waktu));
+const HARI_SEBELUM_MASUK = hariWib(Date.parse(MASUK.waktu) - 86_400_000);
+
 beforeEach(() => {
   vi.clearAllMocks();
   state.tokoTetapSpg = null;
+  state.berhenti = null;
+  state.penggunaDiTx = null;
   state.toko = { lat: null, lng: null };
   state.setelan = {};
+  state.kunjungan = null;
   state.transaksi = 0;
 });
 
@@ -109,5 +148,76 @@ describe("checkInLuringAction — aturan check-in yang sama", () => {
   it("refuses a payload it cannot read", async () => {
     expect(await checkInLuringAction({ ...MASUK, waktu: "kemarin" })).toEqual({ ok: false, code: "VALIDATION" });
     expect(await checkInLuringAction({ ...MASUK, clientId: "" })).toEqual({ ok: false, code: "VALIDATION" });
+  });
+
+  it("an SPG moved to another store between the judgement and the write gets no visit (re-read inside the transaction)", async () => {
+    state.tokoTetapSpg = "s1";
+    state.penggunaDiTx = { assignedStoreId: "s2", spgEndedOn: null, spgEndedStoreId: null };
+    expect(await checkInLuringAction(MASUK)).toEqual({ ok: false, code: "STORE_NOT_ASSIGNED" });
+    expect(tx.storeVisit.create).not.toHaveBeenCalled();
+    expect(absen.masuk).not.toHaveBeenCalled();
+  });
+});
+
+describe("SPG yang sudah ditandai berhenti (P66) — antrean HP", () => {
+  it("(a) check-in captured on her last day at the store she left is an SPG visit: salesman lock untouched, attendance recorded", async () => {
+    state.berhenti = { hariTerakhir: HARI_MASUK, storeId: "s1" };
+    expect(await checkInLuringAction(MASUK)).toEqual({ ok: true, visitId: "v-baru", storeId: "s1" });
+    expect(tokoTerkunci).not.toHaveBeenCalled();
+    expect(tx.storeVisit.create).toHaveBeenCalledTimes(1);
+    expect(absen.masuk).toHaveBeenCalledWith(expect.objectContaining({ userId: "u1", sekarang: new Date(MASUK.waktu) }));
+  });
+
+  it("(b) check-in captured after her last day → SPG_BERHENTI, nothing written", async () => {
+    state.berhenti = { hariTerakhir: HARI_SEBELUM_MASUK, storeId: "s1" };
+    expect(await checkInLuringAction(MASUK)).toEqual({ ok: false, code: "SPG_BERHENTI" });
+    expect(state.transaksi).toBe(0);
+    expect(tokoTerkunci).not.toHaveBeenCalled();
+    expect(absen.masuk).not.toHaveBeenCalled();
+  });
+
+  it("(c) check-in at a store other than the one she left → STORE_NOT_ASSIGNED", async () => {
+    state.berhenti = { hariTerakhir: HARI_MASUK, storeId: "s2" };
+    expect(await checkInLuringAction(MASUK)).toEqual({ ok: false, code: "STORE_NOT_ASSIGNED" });
+    expect(state.transaksi).toBe(0);
+  });
+
+  it("(d) check-out of her visit from her last day closes as an SPG visit: no outcome asked, attendance closed", async () => {
+    state.berhenti = { hariTerakhir: HARI_MASUK, storeId: "s1" };
+    state.kunjungan = { id: "v-hp", userId: "u1", storeId: "s1", checkinAt: new Date(MASUK.waktu), checkoutAt: null, autoClosed: false };
+    tx.storeVisit.updateMany.mockResolvedValueOnce({ count: 1 });
+    const keluar = new Date(Date.parse(MASUK.waktu) + 60_000).toISOString();
+    expect(await checkOutLuringAction({ visitClientId: "hp-1", waktu: keluar, lat: -7.78, lng: 110.37 })).toEqual({
+      ok: true,
+      storeId: "s1",
+      sudahTertutup: false,
+    });
+    const data = (tx.storeVisit.updateMany.mock.calls[0] as unknown as [{ data: Record<string, unknown> }])[0].data;
+    expect(data).not.toHaveProperty("outcome");
+    expect(absen.pulang).toHaveBeenCalledWith(expect.objectContaining({ userId: "u1", sekarang: new Date(keluar) }));
+  });
+
+  it("check-out of a visit started after her last day → SPG_BERHENTI, not judged as a salesman", async () => {
+    state.berhenti = { hariTerakhir: HARI_SEBELUM_MASUK, storeId: "s1" };
+    state.kunjungan = { id: "v-hp", userId: "u1", storeId: "s1", checkinAt: new Date(MASUK.waktu), checkoutAt: null, autoClosed: false };
+    expect(await checkOutLuringAction({ visitClientId: "hp-1", waktu: new Date().toISOString(), lat: -7.78, lng: 110.37 })).toEqual({
+      ok: false,
+      code: "SPG_BERHENTI",
+    });
+    expect(state.transaksi).toBe(0);
+  });
+
+  it("marked as left between the judgement and the write, for a check-in after her last day → SPG_BERHENTI, no visit", async () => {
+    state.tokoTetapSpg = "s1";
+    state.penggunaDiTx = { assignedStoreId: null, spgEndedOn: HARI_SEBELUM_MASUK, spgEndedStoreId: "s1" };
+    expect(await checkInLuringAction(MASUK)).toEqual({ ok: false, code: "SPG_BERHENTI" });
+    expect(tx.storeVisit.create).not.toHaveBeenCalled();
+  });
+
+  it("a plain salesman is judged exactly as before", async () => {
+    expect(await checkInLuringAction(MASUK)).toEqual({ ok: true, visitId: "v-baru", storeId: "s1" });
+    expect(tokoTerkunci).toHaveBeenCalled();
+    expect(tx.user.findUnique).not.toHaveBeenCalled();
+    expect(absen.masuk).not.toHaveBeenCalled();
   });
 });

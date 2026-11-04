@@ -124,7 +124,16 @@ export async function buatKlaimPembayaran(input: {
   menggantikanId?: string | null;
   /** Kantor boleh mengganti BKM sales siapa pun; sales hanya miliknya sendiri. */
   lintasPelapor?: boolean;
-}): Promise<{ ok: true; id: string; docNo: string } | { ok: false; alasan: AlasanGagalKlaim }> {
+}): Promise<
+  | {
+      ok: true;
+      id: string;
+      docNo: string;
+      /** Kiriman ulang berkunci sama: BKM-nya sudah tercatat sebelumnya dan dikembalikan apa adanya. */
+      diulang?: true;
+    }
+  | { ok: false; alasan: AlasanGagalKlaim }
+> {
   const pelunasan = input.pelunasan.filter((p) => p.nilai > 0);
   if (pelunasan.length === 0) return { ok: false, alasan: 'TANPA_PIUTANG' };
 
@@ -183,7 +192,7 @@ export async function buatKlaimPembayaran(input: {
           });
           if (ada) {
             return ada.salesmanId === input.salesmanId
-              ? { ok: true as const, id: ada.id, docNo: ada.docNo }
+              ? { ok: true as const, id: ada.id, docNo: ada.docNo, diulang: true as const }
               : { ok: false as const, alasan: 'KUNCI_DIPAKAI' as const };
           }
         }

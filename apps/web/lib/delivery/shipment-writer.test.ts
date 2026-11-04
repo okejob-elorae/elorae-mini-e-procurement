@@ -10,7 +10,11 @@ import {
   updateShipmentTracking,
 } from "./shipment-writer";
 import { DeliveryShipmentError } from "./errors";
+import { mapError } from "./action-errors";
 import { terimaKiriman } from "@/lib/spg/stok-writer";
+import { folderFotoTerimaToko, terimaKirimanPemegang } from "@/lib/spg/stok-writer-pemegang";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { getDeliveryShipment } from "./shipment-queries";
 import {
   berangkatkanUji,
   bersihkanPesananUji,
@@ -443,6 +447,140 @@ d("completeDeliveryShipment (putus)", () => {
     expect(err.code).toBe("INVALID_STATE");
   });
 
+  it("an SPG who stops while the goods are on the road: the courier records the handover only, and the holder records the PIC's receipt (P45a)", async () => {
+    p = await buatPesananUji({ termsType: "PUTUS", qty: [10], spg: true, pemegang: true });
+    const k = await kirimEkspedisi(10);
+    /* She stops while the shipment is in transit: her store is released and her last day is today (P66). */
+    await prisma.user.update({
+      where: { id: seededId(p.spgId) },
+      data: { assignedStoreId: null, spgEndedStoreId: p.storeId, spgEndedOn: formatDateOnlyJakarta(new Date()) },
+    });
+    expect((await getDeliveryShipment(k.shipmentId))?.penerimaPod).toBe("PEMEGANG");
+    const tolak = await completeDeliveryShipment(
+      podEkspedisiUji(k.shipmentId, p.salesmanId, [{ shipmentLineId: k.shipmentLineId, deliveredQty: 9, lostQty: 1 }]),
+    ).catch((e) => e);
+    expect(tolak.code).toBe("DICATAT_SPG");
+    const r = await completeDeliveryShipment(podEkspedisiUji(k.shipmentId, p.salesmanId, [{ shipmentLineId: k.shipmentLineId, deliveredQty: 10 }]));
+    expect(r.mode).toBe("INFO_ONLY");
+    expect(await prisma.storeReceipt.count({ where: { storeId: seededId(p.storeId) } })).toBe(0);
+    const nota = await notaDari(k.shipmentId);
+    expect(nota.correctedAt).toBeNull();
+
+    await prisma.storeVisit.create({ data: { storeId: p.storeId, userId: p.salesmanId, checkinLat: 0, checkinLng: 0 } });
+    const folder = folderFotoTerimaToko(p.storeId, "PUTUS_DELIVERY", nota.id);
+    const terima = await terimaKirimanPemegang({
+      storeId: p.storeId,
+      userId: p.salesmanId,
+      sourceType: "PUTUS_DELIVERY",
+      sourceId: nota.id,
+      diterima: [{ lineId: nota.lines[0].id, qtyReceived: 10 }],
+      picName: "Ibu Sari",
+      photoUrl: `https://r2.test/${folder}/1.jpg`,
+      photoR2Key: `${folder}/1.jpg`,
+      idempotencyKey: `pmg-${p.token}`,
+    });
+    expect(terima.ok).toBe(true);
+    const receipt = await prisma.storeReceipt.findUniqueOrThrow({
+      where: { sourceType_sourceId: { sourceType: "PUTUS_DELIVERY", sourceId: nota.id } },
+    });
+    expect(receipt).toMatchObject({ receivedVia: "SALESMAN", picName: "Ibu Sari", receivedById: p.salesmanId });
+  });
+
+  /** The SPG of `p`'s store stops while its shipment is on the road: store released, last day today (P66). */
+  async function spgBerhentiHariIni() {
+    await prisma.user.update({
+      where: { id: seededId(p!.spgId) },
+      data: { assignedStoreId: null, spgEndedStoreId: p!.storeId, spgEndedOn: formatDateOnlyJakarta(new Date()) },
+    });
+  }
+
+  it("an SPG who stops while the goods are on the road: a door refusal is still recorded by the courier, whose confirmation stays the receipt (owner question open)", async () => {
+    p = await buatPesananUji({ termsType: "PUTUS", qty: [10], spg: true, pemegang: true });
+    const k = await kirimEkspedisi(10);
+    await spgBerhentiHariIni();
+    expect((await getDeliveryShipment(k.shipmentId))?.penerimaPod).toBe("PEMEGANG");
+    /* With a refusal every piece must be accounted for, as at a store without an SPG. */
+    const kurang = await completeDeliveryShipment(
+      podEkspedisiUji(k.shipmentId, p.salesmanId, [{ shipmentLineId: k.shipmentLineId, deliveredQty: 7, returnedQty: 2 }]),
+    ).catch((e) => e);
+    expect(kurang.code).toBe("LINE_UNACCOUNTED");
+
+    const r = await completeDeliveryShipment(
+      podEkspedisiUji(k.shipmentId, p.salesmanId, [{ shipmentLineId: k.shipmentLineId, deliveredQty: 8, returnedQty: 2 }]),
+    );
+    expect(r.mode).toBe("RECEIPT_AT_POD");
+    const nota = await notaDari(k.shipmentId);
+    expect(nota.correctedAt).not.toBeNull();
+    expect(nota.lines[0]).toMatchObject({ qty: 8, returnedQty: 2, lostQty: 0 });
+    expect(Number(nota.receivable?.amount)).toBe(80000);
+    const receipt = await prisma.storeReceipt.findUniqueOrThrow({
+      where: { sourceType_sourceId: { sourceType: "PUTUS_DELIVERY", sourceId: nota.id } },
+      include: { lines: true },
+    });
+    expect(receipt.receivedVia).toBe("POD");
+    expect(receipt.lines[0]).toMatchObject({ qtyRefused: 2, qtyReceived: 8 });
+    /* The 2 refused pieces are back in the main warehouse — never booked as lost. */
+    expect(await stok()).toEqual({ onHand: 12, reserved: 2 });
+    expect(await prisma.stockLoss.count({ where: { storeId: seededId(p.storeId) } })).toBe(0);
+  });
+
+  it("an SPG who stops while the goods are on the road: nothing handed over at all is still closed by the courier's confirmation", async () => {
+    p = await buatPesananUji({ termsType: "PUTUS", qty: [10], spg: true, pemegang: true });
+    const k = await kirimEkspedisi(10);
+    await spgBerhentiHariIni();
+    const r = await completeDeliveryShipment(
+      podEkspedisiUji(k.shipmentId, p.salesmanId, [{ shipmentLineId: k.shipmentLineId, deliveredQty: 0, lostQty: 10 }]),
+    );
+    expect(r.mode).toBe("RECEIPT_AT_POD");
+    const nota = await notaDari(k.shipmentId);
+    expect(nota.lines[0]).toMatchObject({ qty: 0, lostQty: 10 });
+    expect(await prisma.stockLoss.count({ where: { storeId: seededId(p.storeId), shipmentId: seededId(k.shipmentId) } })).toBe(1);
+    const s = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: seededId(k.shipmentId) } });
+    expect(s.status).toBe("PARTIALLY_DELIVERED");
+  });
+
+  it("an SPG who stops while the goods are on the road at a store WITHOUT a holder: the courier's confirmation stays the receipt, since nobody could record the PIC's", async () => {
+    p = await buatPesananUji({ termsType: "PUTUS", qty: [10], spg: true });
+    const k = await kirimEkspedisi(10);
+    await spgBerhentiHariIni();
+    expect((await getDeliveryShipment(k.shipmentId))?.penerimaPod).toBe("KURIR");
+    const r = await completeDeliveryShipment(
+      podEkspedisiUji(k.shipmentId, p.salesmanId, [{ shipmentLineId: k.shipmentLineId, deliveredQty: 9, lostQty: 1 }]),
+    );
+    expect(r.mode).toBe("RECEIPT_AT_POD");
+    expect(await prisma.storeReceipt.count({ where: { storeId: seededId(p.storeId) } })).toBe(1);
+    expect(await prisma.stockLoss.count({ where: { storeId: seededId(p.storeId), shipmentId: seededId(k.shipmentId) } })).toBe(1);
+  });
+
+  it("an SPG who stops while the goods are on the road at an INACTIVE store: the holder cannot check in there, so the courier receives", async () => {
+    p = await buatPesananUji({ termsType: "PUTUS", qty: [10], spg: true, pemegang: true });
+    const k = await kirimEkspedisi(10);
+    await spgBerhentiHariIni();
+    await prisma.store.update({ where: { id: seededId(p.storeId) }, data: { isActive: false } });
+    expect((await getDeliveryShipment(k.shipmentId))?.penerimaPod).toBe("KURIR");
+  });
+
+  it("a store whose SPG stopped before the shipment was created keeps the courier's confirmation as its receipt (tambahan #3)", async () => {
+    p = await buatPesananUji({ termsType: "PUTUS", qty: [10], spg: true, pemegang: true });
+    await prisma.user.update({
+      where: { id: seededId(p.spgId) },
+      data: { assignedStoreId: null, spgEndedStoreId: p.storeId, spgEndedOn: "2000-01-01" },
+    });
+    const k = await kirimEkspedisi(10);
+    expect((await getDeliveryShipment(k.shipmentId))?.penerimaPod).toBe("KURIR");
+    const r = await completeDeliveryShipment(
+      podEkspedisiUji(k.shipmentId, p.salesmanId, [{ shipmentLineId: k.shipmentLineId, deliveredQty: 9, returnedQty: 1 }]),
+    );
+    expect(r.mode).toBe("RECEIPT_AT_POD");
+    expect(await prisma.storeReceipt.count({ where: { storeId: seededId(p.storeId) } })).toBe(1);
+  });
+
+  it("a store with an SPG now reads SPG: the POD is the handover only", async () => {
+    p = await buatPesananUji({ termsType: "PUTUS", qty: [10], spg: true, pemegang: true });
+    const k = await kirimEkspedisi(10);
+    expect((await getDeliveryShipment(k.shipmentId))?.penerimaPod).toBe("SPG");
+  });
+
   it("refuses a shipment without its document (packed by the old rule) instead of moving anything", async () => {
     p = await buatPesananUji({ termsType: "PUTUS", qty: [10] });
     const lama = await prisma.deliveryShipment.create({
@@ -678,6 +816,64 @@ d("cancelDeliveryShipment (putus): the nota is voided unless the store has paid,
       expect(shipment.status).toBe("DELIVERED");
       expect(nota.voidedAt).toBeNull();
     }
+  });
+
+  /**
+   * An SPG receipt racing "tidak jadi dikirim" on an in-transit putus shipment (R14). Here the
+   * cancel side does not CAS the transfer: it reads the nota's `StoreReceipt` inside its serializable
+   * transaction (`periksaNotaBolehBatal`) and refuses ALREADY_RECEIVED once one exists, while the
+   * receipt refuses a voided nota. Run with each writer staggered in turn, so neither always reaches
+   * its write first. The loser of the cancel side is read through the action layer's `mapError`.
+   */
+  async function balapanTerimaBatalPutus(ditunda: "BATAL" | "TERIMA") {
+    const q = await buatPesananUji({ termsType: "PUTUS", qty: [10], spg: true });
+    p = q;
+    const k = await kirimEkspedisi(10);
+    const sesudahKirim = await stok();
+    const awal = await notaDari(k.shipmentId);
+    const tunda = (siapa: "BATAL" | "TERIMA") => new Promise((r) => setTimeout(r, ditunda === siapa ? 5 : 0));
+    const terima = tunda("TERIMA").then(() =>
+      terimaKiriman({
+        storeId: q.storeId,
+        userId: q.spgId,
+        sourceType: "PUTUS_DELIVERY",
+        sourceId: awal.id,
+        diterima: [{ lineId: awal.lines[0].id, qtyReceived: 10 }],
+      }),
+    );
+    const batal = tunda("BATAL").then(() => cancelDeliveryShipment({ shipmentId: k.shipmentId, cancelledById: q.salesmanId, reason: "Balapan" }));
+    const [t, b] = await Promise.allSettled([terima, batal]);
+
+    const terimaMenang = t.status === "fulfilled" && t.value.ok;
+    const batalMenang = b.status === "fulfilled";
+    expect(terimaMenang !== batalMenang).toBe(true);
+
+    const nota = await notaDari(k.shipmentId);
+    const tandaTerima = await prisma.storeReceipt.count({ where: { sourceType: "PUTUS_DELIVERY", sourceId: seededId(awal.id) } });
+    if (terimaMenang) {
+      expect(tandaTerima).toBe(1);
+      expect(nota.voidedAt).toBeNull();
+      expect(nota.receivable?.status).not.toBe("VOIDED");
+      expect(b.status).toBe("rejected");
+      const alasan = mapError((b as PromiseRejectedResult).reason, "uji-balapan").reason;
+      expect(["ALREADY_RECEIVED", "INVALID_STATE"]).toContain(alasan);
+      expect(await stok()).toEqual(sesudahKirim);
+    } else {
+      expect(nota.voidedAt).not.toBeNull();
+      expect(tandaTerima).toBe(0);
+      expect(nota.receivable?.status).toBe("VOIDED");
+      expect(t.status === "fulfilled" ? t.value : t.reason).toEqual({ ok: false, alasan: "KIRIMAN_DIBATALKAN" });
+      /* Back as in the "every piece refused" case. */
+      expect(await stok()).toEqual({ onHand: 20, reserved: 10 });
+    }
+  }
+
+  it("an SPG receipt racing 'tidak jadi dikirim' on an in-transit putus shipment: exactly one wins", async () => {
+    await balapanTerimaBatalPutus("BATAL");
+  });
+
+  it("the same putus race with the receipt staggered instead of the cancel: still exactly one wins", async () => {
+    await balapanTerimaBatalPutus("TERIMA");
   });
 });
 

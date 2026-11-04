@@ -1,12 +1,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
-import { catatHitunganGudang, catatReturToko, batalkanRetur } from "@/lib/receivables/return-writer";
+import { catatHitunganGudang, catatReturToko, batalkanRetur, KATEGORI_NOTIF_RETUR_SELISIH } from "@/lib/receivables/return-writer";
 import { pindahkanReturKeToko } from "@/lib/receivables/koreksi";
 import { catatReturPembeli, setujuiReturPembeli, tolakReturPembeli } from "./retur-pembeli";
 import { KATEGORI_NOTIF_RETUR_PEMBELI } from "./retur-pembeli-status";
 import { putuskanGudangRusak } from "./gudang-rusak-writer";
 import { barisReturPembeliUntukRetur, riwayatGudangRusak, rusakPembeliUntukSpg, saldoGudangRusak } from "./gudang-rusak-queries";
 import { JEJAK_GUDANG_RUSAK } from "./gudang-rusak";
+import { folderFotoReturPembeli } from "./foto-retur-pembeli-kunci";
 
 /*
  * Gudang barang rusak, terhadap basis data uji: retur pembeli RUSAK di konter
@@ -40,11 +41,13 @@ d("gudang barang rusak (test bed only)", () => {
   let nrtIds: string[] = [];
   let nriIds: string[] = [];
   let gerakIds: string[] = [];
+  let mulai = new Date();
 
   const varian = () => `${tag}-KAOS-M`;
   const tokoIds = () => seededIds([tokoA, tokoB].filter(Boolean));
 
   beforeAll(async () => {
+    mulai = new Date();
     uomId = (await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } })).id;
     kaos = (
       await prisma.item.create({
@@ -92,17 +95,35 @@ d("gudang barang rusak (test bed only)", () => {
     const nri = await prisma.warehouseReturn.findMany({ where: { storeReturnId: { in: seededIds(idNota) } }, select: { id: true } });
     const idNri = [...new Set([...nriIds, ...nri.map((n) => n.id)])];
     const gerak = await prisma.damagedStockMovement.findMany({ where: { itemId: seededId(kaos) }, select: { id: true } });
+    const beban = await prisma.returnCharge.findMany({ where: { storeReturnId: { in: seededIds(idNota) } }, select: { id: true } });
+    // Jejak beban (`BEBAN_DISESUAIKAN`) yang barisnya sudah dihapus tidak terjangkau lewat beban yang
+    // masih ada; jejak penulis retur membawa `storeReturnId` di metadata-nya — dicocokkan di JS.
+    const jejakNota = (
+      await prisma.auditLog.findMany({
+        where: { createdAt: { gte: mulai }, entityType: { in: ["ReturnCharge", "WarehouseReturn", "StoreReturn"] } },
+        select: { id: true, metadata: true },
+      })
+    )
+      .filter((x) => idNota.includes(String((x.metadata as Record<string, unknown> | null)?.storeReturnId ?? "")))
+      .map((x) => x.id);
     await prisma.auditLog.deleteMany({
-      where: { entityId: { in: seededIds([...idNota, ...idNri, ...returPembeliIds, ...gerakIds, ...gerak.map((g) => g.id)]) } },
+      where: {
+        entityId: {
+          in: seededIds([...idNota, ...idNri, ...returPembeliIds, ...gerakIds, ...gerak.map((g) => g.id), ...beban.map((b) => b.id)]),
+        },
+      },
     });
+    await prisma.auditLog.deleteMany({ where: { id: { in: seededIds(jejakNota) } } });
     await prisma.damagedStockMovement.deleteMany({ where: { itemId: seededId(kaos) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(kaos) } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(kaos) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(kaos) } });
+    await prisma.returnChargeDeduction.deleteMany({ where: { chargeId: { in: seededIds(beban.map((b) => b.id)) } } });
     await prisma.returnCharge.deleteMany({ where: { storeReturnId: { in: seededIds(idNota) } } });
-    // NRT SPG dari toko uji tanpa pemegang membunyikan lonceng kantor — dicocokkan di JS lewat metadata.
+    // NRT SPG dari toko uji tanpa pemegang, dan hitungan gudang yang kurang (selisih retur),
+    // membunyikan lonceng kantor — dicocokkan di JS lewat metadata.
     const lonceng = await prisma.adminNotification.findMany({
-      where: { category: "RETUR_SPG_TANPA_PEMEGANG" },
+      where: { category: { in: ["RETUR_SPG_TANPA_PEMEGANG", KATEGORI_NOTIF_RETUR_SELISIH] } },
       select: { id: true, metadata: true },
     });
     const loncengUji = lonceng
@@ -166,6 +187,10 @@ d("gudang barang rusak (test bed only)", () => {
       baris: [{ saleLineId: sale.lines[0].id, qty: rusak, condition: "RUSAK" }],
       alasan: "jahitan lepas",
       idempotencyKey: `${tag}-rp-${nota}`,
+      // Foto barang wajib saat melapor (P14/P77); uangnya belum dikembalikan — kantor menyetujui
+      // dulu, lalu HP meminta SPG mengembalikannya (P13a).
+      fotoBarangKey: `${folderFotoReturPembeli(toko, `${tag}-rp-${nota}`)}/barang.jpg`,
+      uangSudahDikembalikan: false,
     });
     if (!h.ok) throw new Error(`retur pembeli gagal: ${h.alasan}`);
     returPembeliIds.push(h.returnId);

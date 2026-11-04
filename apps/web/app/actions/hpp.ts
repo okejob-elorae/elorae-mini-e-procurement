@@ -5,6 +5,7 @@ import { ItemType } from '@elorae/db';
 import { getPpnRatePercent } from '@/app/actions/settings/ppn';
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { STATUS_KOREKSI_UTANG } from "@/lib/vendor-billing/koreksi-utang-aturan";
 
 /**
  * Pagar setiap ekspor berkas ini — semuanya titik akhir yang bisa dipanggil
@@ -30,6 +31,12 @@ export type HPPCostLine = {
   costPerPcs: number;
   ppnIncluded: boolean;
   nettCostPerPcs?: number;
+  /**
+   * Hanya baris jasa yang ikut selisih harga invoice yang DITERIMA pemilik (P49, "HPP harus
+   * real"): `dari` = harga jasa WO sebelum koreksi, `invoiceNo` = nomor invoice pemasok yang
+   * mengoreksinya. `costPerPcs` baris itu sudah memuat koreksinya.
+   */
+  koreksi?: { dari: number; invoiceNo: string[] };
 };
 
 export type HPPBreakdown = {
@@ -97,7 +104,10 @@ async function hitungHPP(woId: string): Promise<HPPBreakdown> {
       hppAdditionalCost: true,
       finishedGood: { select: { id: true, sku: true, nameId: true } },
       issues: { select: { issueType: true, items: true } },
-      steps: { orderBy: { sequence: 'asc' }, select: { stepName: true, supplierId: true, servicePrice: true, servicePpnIncluded: true } },
+      steps: {
+        orderBy: { sequence: 'asc' },
+        select: { id: true, stepName: true, supplierId: true, servicePrice: true, servicePpnIncluded: true },
+      },
     },
   });
 
@@ -172,22 +182,34 @@ async function hitungHPP(woId: string): Promise<HPPBreakdown> {
   const supplierNameById: Record<string, string> = {};
   for (const s of suppliers) supplierNameById[s.id] = s.name;
 
+  const koreksiPerLangkah = await koreksiJasaDiterima(wo.steps.map((s) => s.id));
+
   for (const step of wo.steps) {
     const price = Number(step.servicePrice) || 0;
     const ppnIncluded = step.servicePpnIncluded ?? false;
-    const nettCostPerPcs = ppnIncluded ? price : price * (1 + ppnRate / 100);
     const stepName = step.stepName?.trim() || supplierNameById[step.supplierId] || step.supplierId;
+    /*
+     * Selisih harga invoice jasa yang DITERIMA pemilik (P49, 2026-11-01 no. 5: "jika 55.000 maka
+     * tampak 55.000") menjadi HPP sebenarnya: Σ qty tertagih × (harga invoice − harga tercatat),
+     * dibagi pcs WO ini. Dibatalkan / dikoreksi turun ke harga WO = tidak ikut.
+     */
+    const k = koreksiPerLangkah.get(step.id);
+    const pcs = actualQty || plannedQty || (k?.qty ?? 0);
+    const koreksiPerPcs = k && k.selisih !== 0 && pcs > 0 ? k.selisih / pcs : null;
+    const costPerPcs = koreksiPerPcs != null ? Math.round((price + koreksiPerPcs) * 100) / 100 : price;
+    const nettCostPerPcs = ppnIncluded ? costPerPcs : costPerPcs * (1 + ppnRate / 100);
 
     lines.push({
       category: 'SERVICE',
       itemName: stepName,
-      unitCost: price,
+      unitCost: costPerPcs,
       qtyPerPcs: 1,
-      costPerPcs: price,
+      costPerPcs,
       ppnIncluded,
       nettCostPerPcs,
+      ...(k && koreksiPerPcs != null ? { koreksi: { dari: price, invoiceNo: k.invoiceNo } } : {}),
     });
-    serviceCostPerPcs += price;
+    serviceCostPerPcs += costPerPcs;
   }
 
   const subtotal = fabricCostPerPcs + accessoriesCostPerPcs + serviceCostPerPcs;
@@ -212,6 +234,38 @@ async function hitungHPP(woId: string): Promise<HPPBreakdown> {
     nettSubtotal,
     additionalCost,
   };
+}
+
+/**
+ * Koreksi utang pemasok yang DITERIMA untuk langkah jasa WO (`sourceType` WO_STEP), per langkah:
+ * Σ qty × (harga invoice − harga tercatat), Σ qty tertagih, dan nomor invoice pemasoknya.
+ */
+async function koreksiJasaDiterima(
+  stepIds: string[],
+): Promise<Map<string, { selisih: number; qty: number; invoiceNo: string[] }>> {
+  const hasil = new Map<string, { selisih: number; qty: number; invoiceNo: string[] }>();
+  if (stepIds.length === 0) return hasil;
+  const koreksi = await prisma.supplierPayableCorrection.findMany({
+    where: { status: STATUS_KOREKSI_UTANG.DITERIMA, sourceType: "WO_STEP", sourceId: { in: stepIds } },
+    select: { sourceId: true, billId: true, qty: true, recordedPrice: true, invoicePrice: true },
+  });
+  if (koreksi.length === 0) return hasil;
+  const billIds = [...new Set(koreksi.map((k) => k.billId))];
+  const tagihan = await prisma.vendorBill.findMany({
+    where: { id: { in: billIds } },
+    select: { id: true, vendorInvoiceNo: true },
+  });
+  const nomorInvoice = new Map(tagihan.map((b) => [b.id, b.vendorInvoiceNo]));
+  for (const k of koreksi) {
+    const qty = Number(k.qty) || 0;
+    const baris = hasil.get(k.sourceId) ?? { selisih: 0, qty: 0, invoiceNo: [] };
+    baris.selisih += qty * ((Number(k.invoicePrice) || 0) - (Number(k.recordedPrice) || 0));
+    baris.qty += qty;
+    const nomor = nomorInvoice.get(k.billId);
+    if (nomor && !baris.invoiceNo.includes(nomor)) baris.invoiceNo.push(nomor);
+    hasil.set(k.sourceId, baris);
+  }
+  return hasil;
 }
 
 export type HPPListFilters = {

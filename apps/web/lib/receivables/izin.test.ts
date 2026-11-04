@@ -8,6 +8,7 @@ import {
   bolehMembayarKomisiSpg,
   bolehMembukaKonsi,
   bolehMemutuskanBeban,
+  bolehMemutuskanSelisihRetur,
   bolehMemverifikasi,
   bolehMencatatNomorKonsi,
   bolehMengelola,
@@ -212,6 +213,14 @@ describe("persetujuan: bawaannya hanya admin", () => {
     expect(bolehMengelola(["receivables:decide_bearer"])).toBe(false);
   });
 
+  it("memutuskan selisih retur toko punya izinnya sendiri, terpisah dari barang hilang (P22)", () => {
+    expect(bolehMemutuskanSelisihRetur(["store_returns:decide_shortfall"])).toBe(true);
+    expect(bolehMemutuskanSelisihRetur(["receivables:decide_bearer"])).toBe(false);
+    expect(bolehMemutuskanSelisihRetur(PIUTANG)).toBe(false);
+    expect(bolehMemutuskanSelisihRetur(KEUANGAN)).toBe(false);
+    expect(bolehMemutuskanBeban(["store_returns:decide_shortfall"])).toBe(false);
+  });
+
   it("tidak satu pun persetujuan lolos untuk peran kantor yang hanya memegang izin kerja", () => {
     const KERJA_KANTOR = [
       "receivables:view",
@@ -228,6 +237,7 @@ describe("persetujuan: bawaannya hanya admin", () => {
       "spg_commission:manage",
     ];
     expect(bolehMemutuskanBeban(KERJA_KANTOR)).toBe(false);
+    expect(bolehMemutuskanSelisihRetur(KERJA_KANTOR)).toBe(false);
     expect(bolehMengunciKonsi(KERJA_KANTOR)).toBe(false);
     expect(bolehMembayarKomisiSpg(KERJA_KANTOR)).toBe(false);
   });
@@ -250,6 +260,7 @@ describe('admin', () => {
       bolehMengelolaKonsi,
       bolehMengunciKonsi,
       bolehMemutuskanBeban,
+      bolehMemutuskanSelisihRetur,
       bolehMembayarKomisiSpg,
     ]) {
       expect(f(ADMIN)).toBe(true);
@@ -269,6 +280,7 @@ describe('admin', () => {
       bolehMembacaRetur,
       bolehMengunciKonsi,
       bolehMemutuskanBeban,
+      bolehMemutuskanSelisihRetur,
       bolehMembayarKomisiSpg,
     ]) {
       expect(f(undefined)).toBe(false);

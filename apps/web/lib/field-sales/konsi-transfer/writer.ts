@@ -477,7 +477,7 @@ export async function kembalikanKonsiTransferInTx(
           newAvgCost: balik.newAvgCost,
           createdById: input.olehUserId,
           /* Kept apart from KONSI_TRANSFER, which biayaSatuanKonsi averages. */
-          source: "KONSI_TRANSFER_RETURN",
+          source: "KONSI_TRANSFER_RETURN" satisfies StockAdjustmentSource,
           idempotencyKey: `${kunciKembaliKonsi(input.kunci, b.orderLineId)}-${l.id}`,
         },
       });

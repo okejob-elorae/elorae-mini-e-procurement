@@ -154,6 +154,23 @@ d("retur-offset-queries (test bed only)", () => {
     expect(total).toBe(2);
   });
 
+  /*
+   * The store's terms are not a condition: `recordPayment` refuses a konsi BILL (`KONSI_LEWAT_BKM`),
+   * not a retur of a store whose terms read KONSI today, so every reader offers the same rows and
+   * credit as the putus-store control above. The picker must offer exactly what the writer accepts.
+   */
+  it("offers the same returns and credit when the store's terms read KONSI today", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { termsType: "KONSI" } });
+    const { rows, total } = await listOffsettableReturns({ storeId });
+    expect(rows.map((r) => r.id).sort()).toEqual([returAvailableId, returManualPricedId].sort());
+    expect(total).toBe(2);
+    expect((await listAllOffsettableReturns(storeId)).map((r) => r.id).sort()).toEqual(
+      [returAvailableId, returManualPricedId].sort(),
+    );
+    expect(await getStoreAvailableCredit(storeId)).toBe(550);
+    expect((await getStoreAvailableCreditMap([storeId])).get(storeId)).toBe(550);
+  });
+
   it("getStoreAvailableCredit sums only offsettable returns for that store", async () => {
     const credit = await getStoreAvailableCredit(storeId);
     expect(credit).toBe(550);

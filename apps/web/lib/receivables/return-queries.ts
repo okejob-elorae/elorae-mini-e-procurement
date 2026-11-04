@@ -8,6 +8,7 @@ import {
 } from "@/app/backoffice/laporan/komisi-salesman/potongan-retur";
 import { nilaiFisikNota } from "./deductions";
 import { giliranRetur, langkahRetur, type CekSelisih, type LangkahRetur } from './rules';
+import { JEJAK } from "./jejak";
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -73,7 +74,7 @@ const PILIH_NRT = {
   salesman: { select: { name: true } },
   warehouseReturn: { select: { noNri: true, physicalAmount: true, status: true } },
   // Barang susulan yang sudah dihitung gudang ikut menjadi nilai fisik nota (P22a).
-  followUps: { where: { status: "FINAL" }, select: { physicalAmount: true, createdAt: true } },
+  followUps: { where: { status: "FINAL" }, select: { id: true, physicalAmount: true, createdAt: true } },
   charges: {
     orderBy: { createdAt: "asc" },
     select: { id: true, status: true, bearer: true, amount: true, checkStatus: true, checkedAt: true },
@@ -103,7 +104,7 @@ export function dariNrt(r: {
   salesmanId: string | null;
   salesman: { name: string | null } | null;
   warehouseReturn: { noNri: string; physicalAmount: unknown; status: string } | null;
-  followUps: { physicalAmount: unknown; createdAt: Date }[];
+  followUps: { physicalAmount: unknown; createdAt: Date; dijodohkanAt?: Date | null }[];
   charges: {
     id: string;
     status: string;
@@ -128,9 +129,7 @@ export function dariNrt(r: {
     beban && beban.status === "TERBUKA" && r.store.salesmanId
       ? {
           status: beban.checkStatus as CekSelisih,
-          // Kapan susulan DICATAT, bukan tanggal terimanya: `receivedAt` disimpan pukul
-          // 00.00 WIB, jadi susulan yang dihitung siang sesudah laporan pagi tampak "sebelum".
-          adaSusulanSesudahLapor: dilapor !== null && r.followUps.some((f) => f.createdAt > dilapor),
+          adaSusulanSesudahLapor: adaSusulanSesudahLapor(r.followUps, dilapor),
           // P88 belum menetapkan batas hari lapor sales — tidak ada batas yang lewat.
           batasLewat: false,
         }
@@ -170,6 +169,43 @@ export function dariNrt(r: {
     cekSelisih: beban ? (beban.checkStatus as CekSelisih) : null,
     jumlahSusulan: r.followUps.length,
   };
+}
+
+/**
+ * Adakah barang susulan yang masuk ke nota ini SESUDAH sales pemegang toko melapor (`dilapor`)?
+ * Satu aturan giliran untuk daftar kerja kantor (`dariNrt`) dan HP pemegang (`selisihReturSaya`).
+ *
+ * Yang dibandingkan: kapan susulan DICATAT atau DIJADIKAN susulan nota ini (jejak
+ * RETUR_SUSULAN_DIJODOHKAN, lihat `waktuDijodohkan`), mana yang lebih akhir — bukan tanggal
+ * terimanya: `receivedAt` disimpan pukul 00.00 WIB, jadi susulan yang dihitung siang sesudah
+ * laporan pagi tampak "sebelum". Penerimaan tanpa nota yang dihitung SEBELUM laporan tetapi
+ * dijadikan susulan SESUDAHNYA adalah barang yang datang sesudah laporan.
+ */
+export function adaSusulanSesudahLapor(
+  followUps: { createdAt: Date; dijodohkanAt?: Date | null }[],
+  dilapor: Date | null,
+): boolean {
+  if (dilapor === null) return false;
+  return followUps.some((f) => (f.dijodohkanAt && f.dijodohkanAt > f.createdAt ? f.dijodohkanAt : f.createdAt) > dilapor);
+}
+
+/**
+ * Kapan tiap hitungan gudang terakhir DIJADIKAN susulan sebuah nota (`jadikanSusulan`) — dari
+ * jejaknya, karena tidak ada kolom untuk itu. Hitungan yang langsung dicatat sebagai susulan
+ * (`catatHitunganSusulan`) tidak punya jejak ini: waktunya `createdAt`. Satu kueri untuk semua id.
+ */
+export async function waktuDijodohkan(ids: string[]): Promise<Map<string, Date>> {
+  const peta = new Map<string, Date>();
+  if (ids.length === 0) return peta;
+  const jejak = await prisma.auditLog.findMany({
+    where: { action: JEJAK.RETUR_SUSULAN_DIJODOHKAN, entityType: "WarehouseReturn", entityId: { in: ids } },
+    select: { entityId: true, createdAt: true },
+  });
+  for (const j of jejak) {
+    const ada = peta.get(j.entityId);
+    if (!ada || j.createdAt > ada) peta.set(j.entityId, j.createdAt);
+  }
+  return peta;
 }
 
 export type LingkupKerjaRetur = {
@@ -224,8 +260,9 @@ export async function daftarKerjaRetur(
     }),
   ]);
 
+  const dijodohkan = await waktuDijodohkan(nrt.flatMap((r) => r.followUps.map((f) => f.id)));
   const baris: BarisKerjaRetur[] = [
-    ...nrt.map(dariNrt),
+    ...nrt.map((r) => dariNrt({ ...r, followUps: r.followUps.map((f) => ({ ...f, dijodohkanAt: dijodohkan.get(f.id) ?? null })) })),
     ...yatim.map((r) => ({
       jenis: 'GUDANG_YATIM' as const,
       id: r.id,
@@ -374,6 +411,7 @@ export async function rincianRetur(storeReturnId: string): Promise<RincianRetur 
         where: { status: "FINAL" },
         orderBy: { createdAt: "asc" },
         select: {
+          id: true,
           physicalAmount: true,
           createdAt: true,
           items: {
@@ -414,10 +452,12 @@ export async function rincianRetur(storeReturnId: string): Promise<RincianRetur 
 
   const nri = r.warehouseReturn;
   const beban = r.charges[0] ?? null;
+  const dijodohkan = await waktuDijodohkan(r.followUps.map((f) => f.id));
 
   return {
     baris: dariNrt({
       ...r,
+      followUps: r.followUps.map((f) => ({ ...f, dijodohkanAt: dijodohkan.get(f.id) ?? null })),
       warehouseReturn: nri
         ? { noNri: nri.noNri, physicalAmount: nri.physicalAmount, status: nri.status }
         : null,

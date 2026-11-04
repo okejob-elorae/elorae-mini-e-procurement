@@ -1,6 +1,12 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
-import { ENTITAS_CATATAN_HADIR, JEJAK_CATATAN_HADIR, KATEGORI_NOTIF_CATATAN_HADIR } from "./absen-catatan-hadir";
+import { ENTITAS_CATATAN_HADIR, JEJAK_CATATAN_HADIR, KATEGORI_NOTIF_CATATAN_HADIR, perluDimasukkan } from "./absen-catatan-hadir";
+import {
+  daftarCatatanHadirKantor,
+  jumlahCatatanHadirMenungguPeriksa,
+  jumlahCatatanHadirPerluDimasukkan,
+  pasanganPerluCatatan,
+} from "./absen-catatan-hadir-queries";
 import { kembalikanCatatanHadir, periksaCatatanHadir, simpanCatatanHadir } from "./absen-catatan-hadir-writer";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -68,6 +74,7 @@ d("catatan check-in toko SPG (test bed only)", () => {
   });
 
   afterAll(async () => {
+    await prisma.spgSalary.deleteMany({ where: { userId: seededId(dewi) } });
     await prisma.user.deleteMany({ where: { id: { in: seededIds(orangIds()) } } });
     if (toko) await prisma.store.delete({ where: { id: seededId(toko) } });
   });
@@ -154,5 +161,41 @@ d("catatan check-in toko SPG (test bed only)", () => {
     if (!periksa.ok) expect(periksa).toEqual({ ok: false, kode: "CATATAN_BERUBAH" });
     const akhir = await catatan();
     expect([akhir.status, akhir.version, akhir.checkedById]).toEqual(["DIAJUKAN", c.version + 1, null]);
+  });
+
+  it("antrean dari tahanan gaji: tanpa catatan → perlu dimasukkan; diajukan → periksa; dikembalikan → masukkan lagi; diperiksa sebagian → masih masukkan", async () => {
+    // Gaji bulanan diatur, tanpa jadwal: gaji Oktober tertahan sampai catatan check-in toko masuk (P7d/P7e).
+    await prisma.spgSalary.create({ data: { userId: dewi, effectiveFrom: "2026-10", monthlyAmount: 3_500_000, createdById: pencatat } });
+    const oktober = (dari: number) => Array.from({ length: 32 - dari }, (_, i) => `2026-10-${String(dari + i).padStart(2, "0")}`);
+    const cakupan = { userIds: [dewi] };
+    const masukkan = () => jumlahCatatanHadirPerluDimasukkan(cakupan, sekarang);
+    const periksa = () => jumlahCatatanHadirMenungguPeriksa(cakupan, sekarang);
+    const baris = async () => (await daftarCatatanHadirKantor(sekarang, cakupan)).find((b) => b.userId === dewi && b.bulan === BULAN);
+
+    // (1) Tanpa catatan: setiap hari Oktober menahan gajinya. Angka Beranda = daftar yang dibuka tautannya.
+    expect(await pasanganPerluCatatan(sekarang, cakupan)).toEqual([{ userId: dewi, storeId: toko, bulan: BULAN, hari: oktober(1) }]);
+    expect(await masukkan()).toBe(1);
+    expect((await daftarCatatanHadirKantor(sekarang, cakupan)).filter(perluDimasukkan)).toHaveLength(1);
+
+    // (2) Diajukan: pindah ke antrean periksa.
+    await simpan(pencatat, null);
+    expect(await masukkan()).toBe(0);
+    expect(await periksa()).toBe(1);
+
+    // (3) Dikembalikan pemeriksa: kembali perlu dimasukkan.
+    let c = await catatan();
+    expect((await kembalikanCatatanHadir({ recordId: c.id, versi: c.version, olehUserId: pemeriksa, catatan: "cocokkan dengan kertas" })).ok).toBe(true);
+    expect(await masukkan()).toBe(1);
+    expect((await baris())?.catatan?.status).toBe("DIKEMBALIKAN");
+
+    // (4) Disimpan lagi lalu diperiksa dengan tiga hari saja: sisa 28 hari Oktober masih tanpa dasar.
+    c = await catatan();
+    expect((await simpan(pencatat, c.version)).ok).toBe(true);
+    c = await catatan();
+    expect(await periksaCatatanHadir({ recordId: c.id, versi: c.version, olehUserId: pemeriksa })).toEqual({ ok: true });
+    const akhir = await baris();
+    expect(akhir?.catatan?.status).toBe("DIPERIKSA");
+    expect(akhir?.hariPerlu).toEqual(oktober(4));
+    expect(await masukkan()).toBe(1);
   });
 });

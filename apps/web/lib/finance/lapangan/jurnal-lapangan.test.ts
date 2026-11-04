@@ -40,7 +40,8 @@ vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi
 
 import { buatKlaimPembayaran } from "@/lib/receivables/claim-writer";
 import { batalkanKlaim, putuskanKlaim } from "@/lib/receivables/writer";
-import { catatHitunganGudang, putuskanBeban } from "@/lib/receivables/return-writer";
+import { catatHitunganGudang, KATEGORI_NOTIF_RETUR_SELISIH, putuskanBeban } from "@/lib/receivables/return-writer";
+import { JEJAK } from "@/lib/receivables/jejak";
 import { SUMBER_LAPANGAN, SUMBER_NOTA_LAMA } from "./aturan";
 import { kunciStokPengiriman, postJurnalNota, postJurnalTukar, selaraskanJurnalKlaim, selaraskanJurnalNota, selaraskanJurnalRetur } from "./jurnal";
 import { kaitKlaimBerubah, kaitReturBerubah } from "./kait";
@@ -162,6 +163,19 @@ afterEach(async () => {
   });
   if (milik.length) await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(milik.map((n) => n.id)) } } });
   if (entitas.length) await prisma.auditLog.deleteMany({ where: { entityId: { in: seededIds(entitas) } } });
+  // Selisih retur: lonceng `RETUR_SELISIH` dan jejak `BEBAN_DISESUAIKAN` (entitas `ReturnCharge`, yang bebannya
+  // bisa sudah terhapus) tidak terjangkau lewat id di atas — dicocokkan lewat `metadata.storeReturnId`, di JS.
+  if (nrtIds.length) {
+    const milikNrt = (m: unknown) => nrtIds.includes(String((m as Record<string, unknown> | null)?.storeReturnId ?? ""));
+    const lonceng = (
+      await prisma.adminNotification.findMany({ where: { category: KATEGORI_NOTIF_RETUR_SELISIH }, select: { id: true, metadata: true } })
+    ).filter((n) => milikNrt(n.metadata));
+    if (lonceng.length) await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(lonceng.map((n) => n.id)) } } });
+    const jejakBeban = (
+      await prisma.auditLog.findMany({ where: { action: JEJAK.BEBAN_DISESUAIKAN }, select: { id: true, metadata: true } })
+    ).filter((a) => milikNrt(a.metadata));
+    if (jejakBeban.length) await prisma.auditLog.deleteMany({ where: { id: { in: seededIds(jejakBeban.map((a) => a.id)) } } });
+  }
   if (beban.length) await prisma.returnCharge.deleteMany({ where: { id: { in: seededIds(beban.map((b) => b.id)) } } });
   if (klaim.length) await prisma.paymentClaim.deleteMany({ where: { id: { in: seededIds(klaim.map((k) => k.id)) } } });
   if (piutang.length) {
@@ -427,6 +441,35 @@ describe("nota tagihan putus — dikoreksi dan dibatalkan (bergenerasi)", () => 
       INVENTORY_FG: -400_000,
     });
     // Sudah selaras: pencari tidak menemukannya lagi, diulang tidak menulis apa pun.
+    expect(await cariNotaTertinggal({ ...opsi(), ids: [deliveryId] })).toEqual([]);
+    expect(await selaraskanJurnalNota(deliveryId, keuanganId)).toMatchObject({ ok: true, created: false });
+    expect(await jumlahGenerasi(SUMBER_LAPANGAN.NOTA, deliveryId)).toBe(2);
+  });
+
+  it("PPN nota yang sudah terposting tidak berubah karena pengaturan PPN berubah; koreksi memakai bagian PPN yang terposting", async () => {
+    h.ppn = PKP;
+    const { deliveryId } = await buatNota({ total: 1_110_000, qty: 2, harga: 555_000, biaya: 400_000 });
+    expect(await selaraskanJurnalNota(deliveryId, keuanganId)).toMatchObject({ ok: true, created: true });
+
+    // Pengaturan PPN diubah sesudah nota dijurnal: penyelarasan ulang tidak memposting apa pun.
+    h.ppn = NON_PKP;
+    expect(await selaraskanJurnalNota(deliveryId, keuanganId)).toMatchObject({ ok: true, created: false });
+    expect(await jumlahGenerasi(SUMBER_LAPANGAN.NOTA, deliveryId)).toBe(1);
+
+    // Koreksi sungguhan: PPN yang terposting diskalakan ke total baru, bukan dihitung dengan pengaturan non-PKP.
+    await koreksi(deliveryId, { qty: 1, kembali: 1, total: 555_000, harga: 555_000, pada: nanti() });
+    expect(await selaraskanJurnalNota(deliveryId, keuanganId)).toMatchObject({ ok: true, created: true });
+    expect(await jumlahGenerasi(SUMBER_LAPANGAN.NOTA, deliveryId)).toBe(2);
+    expect(await saldoPeran(SUMBER_LAPANGAN.NOTA, deliveryId)).toEqual({
+      AR_STORE: 555_000,
+      SALES_REVENUE: -500_000,
+      PPN_KELUARAN: -55_000,
+      COGS: 400_000,
+      INVENTORY_FG: -400_000,
+    });
+    // Pencari menyusun sasarannya dengan bagian PPN terposting yang sama. Baru di sini nota ini
+    // kandidatnya (`correctedAt` lebih baru dari generasi #2; sebelum koreksi `correctedAt` kosong):
+    // dengan pengaturan non-PKP hari ini sasarannya AR 555.000 / pendapatan −555.000, dan nota ini tampil.
     expect(await cariNotaTertinggal({ ...opsi(), ids: [deliveryId] })).toEqual([]);
     expect(await selaraskanJurnalNota(deliveryId, keuanganId)).toMatchObject({ ok: true, created: false });
     expect(await jumlahGenerasi(SUMBER_LAPANGAN.NOTA, deliveryId)).toBe(2);

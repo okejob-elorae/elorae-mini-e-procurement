@@ -66,11 +66,15 @@ function ditolakServer(err: unknown): string | null {
  * Laporan barang kembali dari pembeli milik SPG ini, terbaru dulu, dengan status
  * dan keadaan uangnya (P13, P13a, P83). Uang pembeli dikembalikan kasir SESUDAH
  * kantor menyetujui, lalu dicatat di sini dengan foto struk ("Uang sudah
- * dikembalikan", P77). Yang masih menunggu dan uangnya belum tercatat boleh
- * ditarik pelapornya; sesudah uangnya tercatat, kantor yang memutuskan. Laporan
- * yang dibebankan ke Anda menunjuk ke "Beban saya" (angkanya di sana). Barang
- * yang disisihkan ditampilkan supaya tidak ke rak, tidak dijual, tidak dihitung.
- * Tanpa harga dan total.
+ * dikembalikan", P77); uang yang terlanjur dikembalikan selama menunggu atau
+ * sesudah ditolak juga dicatat di sini, dan menjadi beban Anda kalau laporannya
+ * ditolak. Yang masih menunggu boleh ditarik pelapornya hanya selama tidak ada
+ * pengembalian uang yang tercatat — di server, ATAU masih di antrean HP ini
+ * (P78): sesudahnya kantor yang memutuskan. Tombol "Tarik" baru tampil setelah
+ * antrean HP terbaca (HP tanpa basis data tetap mendapatkannya; server yang
+ * menjaga). Laporan yang dibebankan ke Anda menunjuk ke "Beban saya" (angkanya
+ * di sana). Barang yang disisihkan ditampilkan supaya tidak ke rak, tidak
+ * dijual, tidak dihitung. Tanpa harga dan total.
  */
 export function ReturPembeliSayaClient({
   laporan,
@@ -89,6 +93,9 @@ export function ReturPembeliSayaClient({
   const [tertahan, setTertahan] = useState(0);
   const [uangTertahan, setUangTertahan] = useState<Set<string>>(() => new Set());
   const [uangGagal, setUangGagal] = useState<Set<string>>(() => new Set());
+  // "Tarik" menunggu sampai antrean pengembalian uang di HP terbaca: pengembalian yang masih di
+  // antrean tidak diketahui server, dan penarikan sebelum ia terkirim meloloskan bebannya (P78).
+  const [antreanDibaca, setAntreanDibaca] = useState(false);
 
   useEffect(() => {
     let hidup = true;
@@ -106,7 +113,7 @@ export function ReturPembeliSayaClient({
       const ada = new Set<string>();
       const gagal = new Set<string>();
       for (const r of laporan) {
-        if (!r.bisaCatatUangKembali) continue;
+        if (!r.bisaCatatUangKembali && !r.bisaDitarik) continue;
         try {
           const antre = await pwaDb.pendingSpgRefunds.where("returnId").equals(r.id).toArray();
           if (antre.some((x) => x.syncState !== "failed")) ada.add(r.id);
@@ -115,9 +122,11 @@ export function ReturPembeliSayaClient({
           // Tanpa basis data HP: tombolnya tetap tampil, server yang menolak dua kali.
         }
       }
+      // Dicapai juga saat bacaan HP melempar: HP tanpa basis data tetap mendapat tombolnya.
       if (hidup) {
         setUangTertahan(ada);
         setUangGagal(gagal);
+        setAntreanDibaca(true);
       }
     };
     void muat();
@@ -222,7 +231,9 @@ export function ReturPembeliSayaClient({
 
                     <p className={cn("rounded-lg px-3 py-2 text-sm leading-relaxed", NADA_UANG[r.uang])}>
                       <span className="block font-medium">{ts(`uang.${r.uang}`)}</span>
-                      <span className="block">{ts(`uangKet.${r.uang}`)}</span>
+                      <span className="block">
+                        {r.uang === "DIBEBANKAN" && r.beban === "DIBELI_SPG" ? t("uangKetDibeliSpg") : ts(`uangKet.${r.uang}`)}
+                      </span>
                     </p>
 
                     {r.beban ? (
@@ -287,7 +298,7 @@ export function ReturPembeliSayaClient({
                         </>
                       )
                     ) : null}
-                    {r.bisaDitarik ? <TombolTarik returnId={r.id} docNo={r.docNo} /> : null}
+                    {r.bisaDitarik && antreanDibaca && !uangTertahan.has(r.id) ? <TombolTarik returnId={r.id} docNo={r.docNo} /> : null}
                   </CardContent>
                 </Card>
               </li>
@@ -304,7 +315,8 @@ export function ReturPembeliSayaClient({
  * diunggah ke folder laporan ini, lalu dicatat. Tanpa sinyal (atau unggah/jawaban
  * yang tidak datang): disimpan di HP dan dikirim saat sinyal kembali, dengan jam
  * saat Anda mencatatnya. Selama laporannya masih menunggu kantor, dialognya
- * mengingatkan bahwa uang itu menjadi beban Anda kalau laporannya ditolak.
+ * mengingatkan bahwa uang itu menjadi beban Anda kalau laporannya ditolak; untuk
+ * laporan yang sudah ditolak, bahwa uang itu langsung menjadi beban Anda (P13, P13a).
  */
 function TombolUangKembali({ laporan: r, storeId }: { laporan: ReturPembeliHp; storeId: string }) {
   const t = useTranslations("spgRetur.pembeliSaya");
@@ -388,10 +400,10 @@ function TombolUangKembali({ laporan: r, storeId }: { laporan: ReturPembeliHp; s
             <AlertDialogTitle>{t("catatUangJudul", { docNo: r.docNo })}</AlertDialogTitle>
             <AlertDialogDescription>{t("catatUangIsi")}</AlertDialogDescription>
           </AlertDialogHeader>
-          {r.status === "MENUNGGU" ? (
+          {r.status === "MENUNGGU" || r.status === "DITOLAK" ? (
             <p className="flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-              <span>{t("catatUangPeringatanMenunggu")}</span>
+              <span>{r.status === "DITOLAK" ? t("catatUangPeringatanDitolak") : t("catatUangPeringatanMenunggu")}</span>
             </p>
           ) : null}
           <FotoReturTunda id={`struk-${r.id}`} label={t("fotoStruk")} nilai={foto} onChange={setFoto} disabled={sibuk} />

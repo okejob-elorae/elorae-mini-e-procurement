@@ -44,6 +44,7 @@ import { getItems } from '@/app/actions/items';
 import { getGRNs } from '@/app/actions/grn';
 import { BuktiRetur, PerkiraanNilaiRetur } from '../../BuktiDanNilaiRetur';
 import { pisahTautanBukti, type BarisPerkiraan } from '../../perkiraan-nilai';
+import { grnBolehDiretur } from "../../pilihan-grn";
 import { labelPemasok, urutPemasok } from '@/lib/suppliers/label-pemasok';
 import type { VendorReturnLineInput } from '@/app/actions/vendor-returns';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
@@ -286,7 +287,17 @@ export default function EditVendorReturnPage() {
             docNumber: w.docNumber
           }))
         );
-        const grnRows = (grnList as { id: string; docNumber: string }[]).map((g) => ({
+        // GRN tanpa PO yang menunggu konfirmasi admin belum diproses dan tidak bisa diretur (P51a);
+        // GRN yang sudah terpilih di draf tetap tampil.
+        const grnRows = grnBolehDiretur(
+          grnList as {
+            id: string;
+            docNumber: string;
+            requiresNoPoConfirmation: boolean;
+            noPoConfirmedAt: Date | string | null;
+          }[],
+          retGrnId,
+        ).map((g) => ({
           id: g.id,
           docNumber: g.docNumber,
         }));

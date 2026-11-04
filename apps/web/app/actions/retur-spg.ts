@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { ambilTokoTetap } from "@/lib/pwa/peran";
+import { ambilTokoTetap, tokoSpgUntukAntrean } from "@/lib/pwa/peran";
 import { isSafeR2KeySegment } from "@/lib/r2-key";
 import { BATAS_STOK_LURING_MS, jepitWaktuLuring } from "@/lib/pwa/waktu-luring";
 import {
@@ -28,7 +28,9 @@ import { BATAS_ALASAN_RETUR_PEMBELI } from "@/lib/spg/retur-pembeli-status";
  * Aksi retur pembeli SPG (keputusan pemilik 2026-11-02, P12–P14, P77–P83).
  *
  * HP SPG (`spg_sales:record` + toko tetap dari `User.assignedStoreId`, tidak
- * pernah dari HP): melapor, mencatat uang sudah dikembalikan, menarik laporan.
+ * pernah dari HP — untuk kiriman antrean SPG yang sudah berhenti, toko yang
+ * dilepasnya selama ditangkap paling lambat di hari terakhirnya): melapor,
+ * mencatat uang sudah dikembalikan, menarik laporan.
  * Kantor (`spg_returns:approve`, bawaannya admin dan Admin Penjualan; tidak
  * pernah pelapornya sendiri — `PELAPOR_SAMA` di penulis): menyetujui, menolak
  * (termasuk tanda "uang ternyata sudah dikembalikan" dan besar beban),
@@ -53,7 +55,9 @@ export type HasilPutusanReturPembeliAksi =
         | AlasanTolakUbahBeban;
     };
 
-const alasanSkema = z.string().max(BATAS_ALASAN_RETUR_PEMBELI);
+// Dihitung per titik kode (`Array.from`), sama dengan penulisnya — `.max` zod menghitung satuan
+// UTF-16, jadi alasan dalam batas yang memuat emoji akan ditolak sebagai isian tak terbaca.
+const alasanSkema = z.string().refine((s) => Array.from(s).length <= BATAS_ALASAN_RETUR_PEMBELI);
 const idSkema = z.string().min(1).max(64);
 const kunciR2Skema = z.string().max(191);
 
@@ -127,6 +131,15 @@ function waktuLuring(isi: { luring?: boolean; waktuTangkap?: string }): Date | n
 }
 
 /**
+ * Toko SPG untuk langkah HP. Dari antrean (`waktuTangkap`): menurut saat ditangkap di HP —
+ * SPG yang sudah berhenti tetap mendapat toko yang dilepasnya untuk pekerjaan yang ditangkap
+ * paling lambat di hari terakhirnya (`tokoSpgUntukAntrean`). Langsung: toko tetapnya saja.
+ */
+function tokoUntukLangkahHp(userId: string, waktuTangkap: Date | null): Promise<string | null> {
+  return waktuTangkap ? tokoSpgUntukAntrean(userId, waktuTangkap) : ambilTokoTetap(userId);
+}
+
+/**
  * Halaman yang membaca laporan retur pembeli dan bebannya. Yang disetujui juga
  * mengubah buku stok toko, penjualan bersih, dan komisi; beban mengubah gaji.
  */
@@ -158,10 +171,10 @@ export async function catatReturPembeliAction(input: unknown): Promise<HasilRetu
   if (!userId) return { ok: false, kode: "TANPA_AKSES" };
   const isi = skemaLapor.safeParse(input);
   if (!isi.success) return { ok: false, kode: "ISIAN_TIDAK_VALID" };
-  const storeId = await ambilTokoTetap(userId);
-  if (!storeId) return { ok: false, kode: "TANPA_TOKO" };
   const waktuTangkap = waktuLuring(isi.data);
   if (waktuTangkap === undefined) return { ok: false, kode: "WAKTU_TIDAK_VALID" };
+  const storeId = await tokoUntukLangkahHp(userId, waktuTangkap);
+  if (!storeId) return { ok: false, kode: "TANPA_TOKO" };
 
   try {
     const hasil = await catatReturPembeli({
@@ -259,18 +272,20 @@ export async function tarikReturPembeliAction(input: unknown): Promise<HasilPutu
 
 /**
  * SPG mencatat kasir sudah mengembalikan uang pembeli, dengan foto struk (P77)
- * — sesudah disetujui, atau selama menunggu (kantor diberi tahu). Dari antrean
- * HP: dicatat pada jam ia dilakukan.
+ * — sesudah disetujui; selama menunggu (kantor diberi tahu); atau sesudah
+ * ditolak, dan uang itu menjadi beban SPG (P13, P13a). Dari antrean HP: dicatat
+ * pada jam ia dilakukan — laporan yang ditarik SESUDAH jam itu menunggu kantor
+ * lagi (P78). Penulisnya yang memutuskan semuanya.
  */
 export async function catatUangDikembalikanAction(input: unknown): Promise<HasilPutusanReturPembeliAksi> {
   const userId = await sesiDengan(PERMISSIONS.SPG_SALES_RECORD);
   if (!userId) return { ok: false, kode: "TANPA_AKSES" };
   const isi = skemaUangKembali.safeParse(input);
   if (!isi.success) return { ok: false, kode: "ISIAN_TIDAK_VALID" };
-  const storeId = await ambilTokoTetap(userId);
-  if (!storeId) return { ok: false, kode: "TANPA_TOKO" };
   const waktuTangkap = waktuLuring(isi.data);
   if (waktuTangkap === undefined) return { ok: false, kode: "WAKTU_TIDAK_VALID" };
+  const storeId = await tokoUntukLangkahHp(userId, waktuTangkap);
+  if (!storeId) return { ok: false, kode: "TANPA_TOKO" };
   try {
     const hasil = await catatUangDikembalikan({
       returnId: isi.data.returnId,

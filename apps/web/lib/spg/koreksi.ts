@@ -574,19 +574,36 @@ export function rencanaBayarKomisi(input: { units: readonly UnitKomisiSpg[]; kun
 
 /**
  * Rencana bayar setiap baris yang belum dibayar dan boleh dibayar, menurut id barisnya. Pengurang
- * SPG itu (`konteks`) ditampilkan pada setiap barisnya — mana pun yang dibayar lebih dulu yang
- * mengambilnya. `akhir(refId)`: baris itu pembayaran terakhir SPG yang berhenti.
+ * SPG itu (`konteks`) dibagi BERURUTAN menurut urutan bayar (`urutSasaran`: bulan pembayaran
+ * terlama, bulan penjualan terlama, konsinyasi dulu, lalu id): setiap baris hanya melihat sisa yang
+ * belum diambil baris sebelumnya, dan pengembalian beban ikut baris pertama yang bisa dibayar —
+ * yang tampak di sebuah baris adalah yang diambil pembayarannya, jadi satu beban atau pengembalian
+ * tidak pernah tampak dua kali (B22; semantik `bagiBebanKeBaris`). Penulis bayar memakai fungsi ini
+ * juga (`siapkanBayarKomisi`). `akhir(refId)`: baris itu pembayaran terakhir SPG yang berhenti.
  */
 export function rencanaBayarSemua(
   units: readonly UnitKomisiSpg[],
   konteks: Omit<KonteksBayar, "akhir"> & { akhir?: (refId: string) => boolean } = { bebanHilang: [], bebanRetur: [], kembaliBeban: [], utang: [] },
 ): Map<string, RencanaBayarKomisi> {
   const hasil = new Map<string, RencanaBayarKomisi>();
-  for (const u of units) {
-    if (!u.baris || u.baris.dibayar || !u.baris.dapatDibayar) continue;
-    const akhir = konteks.akhir ? konteks.akhir(u.baris.refId) : false;
-    const r = rencanaBayarKomisi({ units, kunci: u.kunci, konteks: { ...konteks, akhir } });
-    if (r) hasil.set(r.refId, r);
+  let bebanHilang = [...konteks.bebanHilang];
+  let bebanRetur = [...konteks.bebanRetur];
+  let utang = [...konteks.utang];
+  let kembaliBeban = [...(konteks.kembaliBeban ?? [])];
+  const urut = units.filter((u) => u.baris && !u.baris.dibayar && u.baris.dapatDibayar).sort(urutSasaran);
+  for (const u of urut) {
+    const akhir = konteks.akhir && u.baris ? konteks.akhir(u.baris.refId) : false;
+    const r = rencanaBayarKomisi({ units, kunci: u.kunci, konteks: { bebanHilang, bebanRetur, kembaliBeban, utang, akhir } });
+    if (!r) continue;
+    hasil.set(r.refId, r);
+    // Baris yang ditahan tidak mengambil apa pun.
+    if (r.ditahan) continue;
+    const diambil = (jenis: PotongBayar["jenis"], sumber: string) =>
+      r.potong.filter((p) => p.jenis === jenis && p.sumber === sumber).reduce((n, p) => n + sen(p.dariKomisi) + sen(p.dariGaji), 0);
+    bebanHilang = bebanHilang.map((h) => ({ ...h, sisaSen: h.sisaSen - diambil("BARANG_HILANG", h.shareId) })).filter((h) => h.sisaSen > 0);
+    bebanRetur = bebanRetur.map((x) => ({ ...x, sisaSen: x.sisaSen - diambil("RETUR_PEMBELI", x.chargeId) })).filter((x) => x.sisaSen > 0);
+    utang = utang.map((d) => ({ ...d, sisaSen: d.sisaSen - diambil("UTANG", d.debtId) })).filter((d) => d.sisaSen > 0);
+    kembaliBeban = [];
   }
   return hasil;
 }
@@ -618,6 +635,26 @@ export function kalimatKoreksiKabar(k: readonly BarisKoreksi[]): string {
   if (terap.length > 0) bagian.push(`Termasuk ${terap.map((x) => `${teksKoreksi(x)} ${formatKoreksi(x.diterapkan)}`).join("; ")}.`);
   if (dibawaSen < 0) bagian.push(`Sisa koreksi ${formatIDR(rupiah(-dibawaSen))} dikurangkan dari pembayaran berikutnya.`);
   return bagian.join(" ");
+}
+
+/**
+ * Kalimat pengurang dan kalimat beban retur pembeli untuk kabar pembayaran, urut (P13a/P79), sebagai
+ * bagian `rangkaiDalamBatas`. Kalau kalimat beban (`kalimatBebanRencana`, dengan nomor notanya)
+ * menyebut beban retur yang dipotong, keduanya SATU bagian dengan dua pilihan: kalimat potong tanpa
+ * "beban retur pembeli Rp X" disusul kalimat bernota — beban itu disebut sekali saja — atau, kalau
+ * gabungan itu tidak muat di kolom kabar, kalimat potong umum yang tetap menyebut jumlah beban
+ * returnya dan bagian dari gaji pokoknya. Tanpa pilihan kedua, potongan sebagian ("… Sisa beban Rp Y
+ * dipotong di pembayaran berikutnya.") yang melewati 191 karakter dibuang utuh dan kabarnya tidak
+ * pernah menyebut beban retur yang dipotong. Kalimat kosong dibuang.
+ */
+export function kalimatPotongDanBebanKabar(
+  r: Pick<RencanaBayarKomisi, "potonganHilang" | "potonganRetur" | "potonganUtang" | "dariGaji" | "beban">,
+  kalimatBeban: string,
+): (string | string[])[] {
+  const bebanDisebut = kalimatBeban !== "" && r.beban.some((x) => x.diterapkan > 0);
+  if (!bebanDisebut) return [kalimatPotongKabar(r), kalimatBeban].filter(Boolean);
+  const gabungan = [kalimatPotongKabar({ ...r, potonganRetur: 0 }), kalimatBeban].filter(Boolean).join(" ");
+  return [[gabungan, kalimatPotongKabar(r)].filter(Boolean)];
 }
 
 /** Kalimat pengurang untuk kabar pembayaran: beban barang hilang, beban retur, utang — dari komisi / gaji. */

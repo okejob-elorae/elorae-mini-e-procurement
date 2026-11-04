@@ -106,7 +106,9 @@ async function simpanBawaan(
   if (!session) return gagalJubelio("TANPA_AKSES");
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
-  const ada = await prisma.jubelioPushDefaults.findFirst({ select: { id: true, defaultPriceRuleBasis: true } });
+  const ada = await prisma.jubelioPushDefaults.findFirst({
+    select: { id: true, defaultPriceRuleBasis: true, defaultMarginPercent: true },
+  });
   if (!ada) return gagalJubelio("BAWAAN_BELUM_ADA", RINCIAN_TANPA_BARIS);
 
   // Persen dan bantalan margin bawaan hanya bahan rekomendasi harga: menyimpannya
@@ -118,7 +120,14 @@ async function simpanBawaan(
   }
   const dasar: DasarAturanHarga = defaultPriceRuleBasis ?? ada.defaultPriceRuleBasis;
   const batasPersen = dasar === "MARGIN" ? MARGIN_MAKS : MARKUP_MAKS;
-  if (!angkaBawaanSah(defaultMarginPercent, batasPersen)) {
+  // Dasar yang dikirim tanpa persennya memeriksa persen bawaan TERSIMPAN dengan dasar baru (R14).
+  const persenDiperiksa =
+    defaultMarginPercent !== undefined
+      ? defaultMarginPercent
+      : defaultPriceRuleBasis !== undefined && ada.defaultMarginPercent != null
+        ? Number(ada.defaultMarginPercent)
+        : undefined;
+  if (!angkaBawaanSah(persenDiperiksa, batasPersen)) {
     return gagalJubelio("ISIAN_TIDAK_SAH", dasar === "MARGIN" ? "defaultMarginPercent: margin 0–99.99" : "defaultMarginPercent: markup 0–999.99");
   }
   if (!angkaBawaanSah(defaultAdditionalCost, BIAYA_BAWAAN_MAKS)) {

@@ -34,6 +34,7 @@ export type PaymentActionReason =
   | "NOT_A_RESIDUE"
   | "PENDING_CLAIM"
   | "METHOD_NOT_ALLOWED"
+  | "KONSI_LEWAT_BKM"
   | "RECEIVABLE_REVENUE_NOT_POSTED_YET"
   | "RECEIVABLE_OUTSIDE_LEDGER"
   | "NOTHING_TO_POST"
@@ -95,8 +96,14 @@ async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBI
  * same "that request was not valid" message the action-level guard already uses. `INVALID_EVENT_ID`
  * collapses the same way: `recordRoundingAdjustmentAction` rejects a malformed event id itself, so
  * the writer's own check is the backstop behind it.
+ *
+ * The konsi refusal keeps its own reason, so the office toast names the real cause:
+ * `KONSI_LEWAT_BKM` — a konsi bill is paid only through a BKM. It is spelled into the key type
+ * here as well as in `errors.ts`, so this map stays complete whether or not the AR writer's
+ * union already carries it.
  */
-const ERROR_CODE_MAP: Record<PaymentErrorCode, PaymentActionReason> = {
+type KodeTolakKonsi = "KONSI_LEWAT_BKM";
+const ERROR_CODE_MAP: Record<PaymentErrorCode | KodeTolakKonsi, PaymentActionReason> = {
   INVALID_AMOUNT: "INVALID_AMOUNT",
   NO_ALLOCATIONS: "NO_ALLOCATIONS",
   ALLOCATION_MISMATCH: "ALLOCATION_MISMATCH",
@@ -116,6 +123,7 @@ const ERROR_CODE_MAP: Record<PaymentErrorCode, PaymentActionReason> = {
   PENDING_CLAIM: "PENDING_CLAIM",
   METHOD_NOT_ALLOWED: "METHOD_NOT_ALLOWED",
   INVALID_EVENT_ID: "INVALID_REQUEST",
+  KONSI_LEWAT_BKM: "KONSI_LEWAT_BKM",
 };
 
 /**

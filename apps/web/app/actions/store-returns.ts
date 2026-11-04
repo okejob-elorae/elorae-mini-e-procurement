@@ -41,6 +41,7 @@ import { ambilTokoTetap } from "@/lib/pwa/peran";
 import { tokoTerkunci } from "@/lib/salesman/queries";
 import { kaitReturBerubah } from "@/lib/finance/lapangan/kait";
 import { kaitPotongSalesRetur } from "@/lib/finance/operasional/kait";
+import { kabarBebanTokoRetur } from "@/lib/receivables/kabar-beban-toko";
 
 export type KodeAksiRetur =
   | 'TANPA_AKSES'
@@ -48,9 +49,14 @@ export type KodeAksiRetur =
   | "TOKO_TIDAK_DIIZINKAN"
   | AlasanGagalRetur
   | AlasanPengganti
+  | "SIKLUS_TERKUNCI"
   | 'GAGAL';
-/** `noNrt` hanya pada `ADA_SELISIH_DITEMUKAN`: nota yang barang selisihnya sedang dikirim balik. */
-export type HasilAksiRetur = { ok: true } | { ok: false; kode: KodeAksiRetur; noNrt?: string };
+/**
+ * `noNrt` hanya pada `ADA_SELISIH_DITEMUKAN`: nota yang barang selisihnya sedang dikirim balik.
+ * `noKonsi` hanya pada `SIKLUS_TERKUNCI`: siklus konsinyasi terkunci yang tersentuh — layar
+ * meminta konfirmasi lalu mengulang.
+ */
+export type HasilAksiRetur = { ok: true } | { ok: false; kode: KodeAksiRetur; noNrt?: string; noKonsi?: string[] };
 
 /**
  * Hasil hitungan gudang. Klaim toko baru dikembalikan SESUDAH hitungan
@@ -119,7 +125,8 @@ function tanggalWib(teks: string): Date | null {
  * membuatnya tampak gagal. Pelaku yang kebetulan penerimanya sendiri tidak dikabari.
  *
  * Rupiah selisih ikut ke HP salesman, juga untuk toko konsinyasi: HP salesman menampilkan konsi
- * lengkap (P18, P18a). HP SPG tidak pernah menerima kabar-kabar ini.
+ * lengkap (P18, P18a). Kabar yang sampai ke HP SPG hanya untuk nota yang ia laporkan sendiri
+ * (dihitung, dipindah, dibatalkan) — tanpa rupiah di toko konsinyasi.
  */
 
 /** Kabar ke pelapor NRT bahwa gudang sudah menghitung fisiknya — dengan selisihnya kalau ada. */
@@ -130,6 +137,7 @@ async function kabarReturDihitung(storeReturnId: string, pelakuId: string): Prom
       select: {
         noNrt: true,
         salesmanId: true,
+        reportedBySpg: true,
         claimedAmount: true,
         store: { select: { name: true, termsType: true } },
         warehouseReturn: { select: { physicalAmount: true, items: { select: { qty: true } } } },
@@ -139,13 +147,14 @@ async function kabarReturDihitung(storeReturnId: string, pelakuId: string): Prom
     const klaim = Number(nota.claimedAmount);
     const fisik = Number(nota.warehouseReturn.physicalAmount);
     const selisih = klaim - fisik;
-    // Nilai toko KONSI tidak pernah sampai ke HP — kabarnya cukup jumlah potong.
+    // Nota yang dilaporkan SPG dikabarkan ke HP SPG-nya: nilai toko KONSI tidak pernah sampai ke
+    // sana (P18a) — kabarnya cukup jumlah potong. HP salesman menampilkan konsi lengkap (P18).
     const potong = nota.warehouseReturn.items.reduce((n, i) => n + i.qty, 0);
     await kabariPengguna(nota.salesmanId, {
       jenis: JENIS_KABAR.RETUR_DIHITUNG,
       judul: `Retur ${nota.noNrt} sudah dihitung gudang`,
       isi:
-        nota.store.termsType === "KONSI"
+        nota.reportedBySpg && nota.store.termsType === "KONSI"
           ? `${nota.store.name}${potong > 0 ? ` · ${potong} potong diterima` : ""}`
           : `${nota.store.name} · klaim ${formatIDR(klaim)}, fisik ${formatIDR(fisik)}` +
             (selisih > 0 ? ` · selisih ${formatIDR(selisih)}` : ''),
@@ -274,74 +283,6 @@ async function kabarSelisihRetur(
     });
   } catch (err) {
     console.error('[kabar] selisih retur gagal', storeReturnId, err);
-  }
-}
-
-/**
- * Kabar ke salesman pemegang toko bahwa selisih retur ditanggung TOKO (P84, keputusan 1
- * 2026-10-29: "sales dikabari untuk menagih kekurangannya"), berubah karena barang susulan, atau
- * dialihkan dari toko. Yang masih harus ditagih dibaca dari BKM yang memotong nota itu
- * (`bebanTokoDiNota`). Saat diputuskan, toko yang BELUM memotong nota returnya tetap dikabarkan —
- * tanpa angka tagihan, karena belum ada yang tertahan: bagian selisihnya baru tidak dikreditkan
- * begitu nota itu dipotong di BKM, dan saat itulah sales menagihnya.
- */
-async function kabarBebanTokoRetur(
-  storeReturnId: string,
-  pelakuId: string,
-  jenis: 'DITANGGUNG' | 'BERUBAH' | 'DILEPAS',
-  tertahanSebelum = 0,
-): Promise<void> {
-  try {
-    const nota = await prisma.storeReturn.findUnique({
-      where: { id: storeReturnId },
-      select: {
-        noNrt: true,
-        storeId: true,
-        store: { select: { name: true, salesmanId: true } },
-        charges: { orderBy: { createdAt: 'asc' }, take: 1, select: { id: true, amount: true } },
-      },
-    });
-    const pemegang = nota?.store.salesmanId ?? null;
-    if (!nota || !pemegang || pemegang === pelakuId) return;
-    const data = { chargeId: nota.charges[0]?.id ?? '', returnId: storeReturnId, storeId: nota.storeId };
-    if (jenis === 'DILEPAS') {
-      if (!(tertahanSebelum > 0)) return;
-      await kabariPengguna(pemegang, {
-        jenis: JENIS_KABAR.RETUR_DITANGGUNG_TOKO,
-        judul: `Selisih retur ${nota.noNrt} tidak lagi ditanggung ${nota.store.name}`,
-        isi: 'Tidak perlu ditagih lagi ke toko.',
-        data,
-      });
-      return;
-    }
-    const beban = await bebanTokoDiNota(prisma, storeReturnId);
-    if (!(beban.tertahan > 0)) {
-      // Toko belum mengambil potongan selisih ini: tidak ada angka untuk ditagih sekarang.
-      if (jenis !== 'DITANGGUNG') return;
-      const selisih = Number(nota.charges[0]?.amount ?? 0);
-      if (!(selisih > 0)) return;
-      await kabariPengguna(pemegang, {
-        jenis: JENIS_KABAR.RETUR_DITANGGUNG_TOKO,
-        judul: `Selisih retur ${nota.noNrt} ditanggung ${nota.store.name}`,
-        isi:
-          `Selisih ${formatIDR(selisih)}. Toko belum memotong nota retur ini di pembayarannya; kalau nanti ` +
-          'dipotong, bagian selisihnya tidak dikurangkan dari tagihannya — tagih saat itu.',
-        data,
-      });
-      return;
-    }
-    if (jenis === 'DITANGGUNG' && !(beban.tampil > 0)) return;
-    await kabariPengguna(pemegang, {
-      jenis: JENIS_KABAR.RETUR_DITANGGUNG_TOKO,
-      judul: `Selisih retur ${nota.noNrt} ditanggung ${nota.store.name}`,
-      isi:
-        beban.tampil > 0
-          ? `${formatIDR(beban.tampil)} tidak dikurangkan dari tagihannya; tagih saat berkunjung.`
-          : 'Barang susulannya sudah dihitung — tidak ada lagi yang perlu ditagih ke toko.',
-      data,
-    });
-  } catch (err) {
-    console.error('[kabar] beban toko retur gagal', storeReturnId, err);
   }
 }
 
@@ -522,17 +463,22 @@ export async function catatHitunganGudangAction(input: {
   }
 }
 
-/** Jodohkan penerimaan gudang yatim dengan nota toko. */
+/**
+ * Jodohkan penerimaan gudang yatim dengan nota toko. Penerimaan tanpa toko di bulan yang siklus
+ * konsinyasi toko notanya sudah dikunci baru jalan sesudah dikonfirmasi (`setujuSiklusTerkunci`),
+ * seperti menjadikannya susulan atau memindahkannya ke toko.
+ */
 export async function jodohkanReturAction(
   warehouseReturnId: string,
   storeReturnId: string,
+  setujuSiklusTerkunci = false,
 ): Promise<HasilAksiRetur> {
   const userId = await butuh(PERMISSIONS.RECEIVABLES_MANAGE);
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   try {
-    const hasil = await jodohkanRetur({ warehouseReturnId, storeReturnId, olehUserId: userId });
-    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    const hasil = await jodohkanRetur({ warehouseReturnId, storeReturnId, olehUserId: userId, setujuSiklusTerkunci });
+    if (!hasil.ok) return "noKonsi" in hasil ? { ok: false, kode: hasil.alasan, noKonsi: hasil.noKonsi } : { ok: false, kode: hasil.alasan };
     await kaitReturBerubah({ nriIds: [warehouseReturnId] }, userId);
     segarkan();
     // Baru sekarang hitungan gudang menempel ke nota si pelapor — bagi dia, inilah saat returnya dihitung.
@@ -617,13 +563,21 @@ export async function catatHitunganSusulanAction(input: {
   }
 }
 
-/** Jadikan penerimaan gudang tanpa nota sebagai barang susulan sebuah nota retur — pekerjaan penjodohan. */
-export async function jadikanSusulanAction(warehouseReturnId: string, storeReturnId: string): Promise<HasilAksiRetur> {
+/**
+ * Jadikan penerimaan gudang tanpa nota sebagai barang susulan sebuah nota retur — pekerjaan penjodohan.
+ * Penerimaan tanpa toko di bulan yang siklus konsinyasi toko notanya sudah dikunci baru jalan sesudah
+ * dikonfirmasi (`setujuSiklusTerkunci`), seperti memindahkan penerimaan ke toko.
+ */
+export async function jadikanSusulanAction(
+  warehouseReturnId: string,
+  storeReturnId: string,
+  setujuSiklusTerkunci = false,
+): Promise<HasilAksiRetur> {
   const userId = await butuh(PERMISSIONS.RECEIVABLES_MANAGE);
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
   try {
-    const hasil = await jadikanSusulan({ warehouseReturnId, storeReturnId, olehUserId: userId });
-    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    const hasil = await jadikanSusulan({ warehouseReturnId, storeReturnId, olehUserId: userId, setujuSiklusTerkunci });
+    if (!hasil.ok) return "noKonsi" in hasil ? { ok: false, kode: hasil.alasan, noKonsi: hasil.noKonsi } : { ok: false, kode: hasil.alasan };
     if (hasil.notifikasi) void fanOutAdminNotification(hasil.notifikasi);
     await kaitReturBerubah({ nriIds: [warehouseReturnId], nrtIds: [storeReturnId] }, userId);
     segarkanSelisih();

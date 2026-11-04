@@ -37,11 +37,12 @@ beforeEach(async () => {
   jualIds = [];
   returIds = [];
 
-  tokoId = (await prisma.store.create({ data: { code: `${tag}-S`, name: `${tag} Konsi`, address: "uji", termsType: "KONSI", isActive: true } })).id;
+  // Toko konsi selalu punya salesman pemegang (P47/P55) — kunciAngka menolak TOKO_TANPA_PEMEGANG.
+  orangId = (await prisma.user.create({ data: { email: `${tag.toLowerCase()}@uji.local`, name: `${tag} SPG`, passwordHash: "x" } })).id;
+  tokoId = (await prisma.store.create({ data: { code: `${tag}-S`, name: `${tag} Konsi`, address: "uji", termsType: "KONSI", isActive: true, salesmanId: orangId } })).id;
   uomId = (await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } })).id;
   barangA = (await prisma.item.create({ data: { sku: `${tag}-A`, nameId: `${tag} Blus`, nameEn: `${tag} Blouse`, type: "FINISHED_GOOD", uomId } })).id;
   barangB = (await prisma.item.create({ data: { sku: `${tag}-B`, nameId: `${tag} Rok`, nameEn: `${tag} Skirt`, type: "FINISHED_GOOD", uomId } })).id;
-  orangId = (await prisma.user.create({ data: { email: `${tag.toLowerCase()}@uji.local`, name: `${tag} SPG`, passwordHash: "x" } })).id;
   siklusId = (await prisma.consignmentCycle.create({ data: { noKonsi: `${tag}/K`, storeId: tokoId, periodYear: 2026, periodMonth: 8 } })).id;
 
   await nota("J1", "2026-07-20T03:00:00Z", [{ itemId: barangA, qty: 1, discount: 20_000, storeDiscount: 0 }]);
@@ -56,7 +57,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await prisma.auditLog.deleteMany({ where: { entityType: "ConsignmentCycle", entityId: seededId(siklusId) } });
+  // Semua jejak tes ini ditulis atas nama orangId: siklus (ConsignmentCycle) dan tagihannya (Receivable).
+  await prisma.auditLog.deleteMany({ where: { userId: seededId(orangId) } });
   await prisma.spgSaleReturnLine.deleteMany({ where: { returnId: { in: seededIds(returIds) } } });
   await prisma.spgSaleReturn.deleteMany({ where: { id: { in: seededIds(returIds) } } });
   await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: { in: seededIds(jualIds) } } });
@@ -66,6 +68,8 @@ afterEach(async () => {
   await prisma.consignmentReport.deleteMany({ where: { cycleId: seededId(siklusId) } });
   await prisma.consignmentSold.deleteMany({ where: { cycleId: seededId(siklusId) } });
   await prisma.consignmentCommission.deleteMany({ where: { cycleId: seededId(siklusId) } });
+  // Mengunci menerbitkan tagihan siklus (keputusan 2026-10-29); Receivable menahan siklus, toko, dan pemegangnya.
+  await prisma.receivable.deleteMany({ where: { consignmentCycleId: seededId(siklusId) } });
   await prisma.consignmentCycle.deleteMany({ where: { id: seededId(siklusId) } });
   await prisma.item.deleteMany({ where: { id: { in: seededIds([barangA, barangB].filter(Boolean)) } } });
   await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
@@ -196,8 +200,11 @@ describe("kunciAngka / bukaKunci membekukan potongan promo Elorae", () => {
 
     await keduaLaporan();
     await kunci();
-    await prisma.consignmentCommission.create({
-      data: { cycleId: siklusId, spgUserId: orangId, baseSalary: 0, commission: 0, total: 0, paidAt: new Date() },
+    // orangId menjual di kasir, jadi mengunci sudah membuat barisnya — tandai baris itu dibayar.
+    await prisma.consignmentCommission.upsert({
+      where: { cycleId_spgUserId: { cycleId: siklusId, spgUserId: orangId } },
+      create: { cycleId: siklusId, spgUserId: orangId, baseSalary: 0, commission: 0, total: 0, paidAt: new Date() },
+      update: { paidAt: new Date() },
     });
     expect(await bukaKunci({ cycleId: siklusId, olehUserId: orangId })).toEqual({ ok: false, alasan: "ADA_GAJI_SUDAH_DIBAYAR" });
     expect(Number((await prisma.consignmentCycle.findUniqueOrThrow({ where: { id: siklusId } })).promoBorneByElorae)).toBe(25_000);

@@ -388,6 +388,20 @@ describe("kunciAngka — tagihan siklus di Piutang dan gerbangnya", () => {
     expect(batal.status).toBe("VOIDED");
   });
 
+  it("tagihan bertanggal akhir bulan siklus; jatuh tempo = hari dikunci (WIB) + tempo toko (P54)", async () => {
+    await prisma.store.update({ where: { id: tokoId }, data: { paymentTempo: 30 } });
+    const r = await kunciAngka({
+      cycleId: siklusId,
+      olehUserId: adminId,
+      sekarang: new Date("2026-10-05T10:00:00+07:00"),
+      baris: [{ itemId: barangId, itemName: `${tag} Blus`, qty: 10, price: 150_000 }],
+    });
+    expect(r).toMatchObject({ ok: true });
+    const t = await prisma.receivable.findFirstOrThrow({ where: { consignmentCycleId: seededId(siklusId) }, select: { invoiceDate: true, dueDate: true } });
+    expect(t.invoiceDate.toISOString()).toBe(new Date("2026-09-30T00:00:00+07:00").toISOString());
+    expect(t.dueDate.toISOString()).toBe(new Date("2026-11-04T00:00:00+07:00").toISOString());
+  });
+
   it("toko tanpa salesman pemegang tidak bisa dikunci (TOKO_TANPA_PEMEGANG)", async () => {
     await prisma.store.update({ where: { id: tokoId }, data: { salesmanId: null } });
     expect(await kunci()).toEqual({ ok: false, alasan: "TOKO_TANPA_PEMEGANG" });

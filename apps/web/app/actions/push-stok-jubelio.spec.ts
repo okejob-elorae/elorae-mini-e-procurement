@@ -166,6 +166,8 @@ d("push stok ke Jubelio sesudah dokumen stok (test bed only)", () => {
     await prisma.gRN.deleteMany({ where: { id: { in: seededIds([...semuaGrn, ...grnIds]) } } });
     await prisma.itemPriceChangeLog.deleteMany({ where: { itemId: { in: seededIds(items) } } });
     await prisma.stockMovement.deleteMany({ where: { itemId: { in: seededIds(items) } } });
+    // Kartu stok yang ditulis setiap gerak stok utama (`moveMainStock` → `appendStockLedger`).
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: seededIds(items) } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: seededIds(items) } } });
     await prisma.auditLog.deleteMany({ where: { userId: seededId(userId) } });
     await prisma.jubelioProductMapping.deleteMany({ where: { itemId: { in: seededIds(items) } } });

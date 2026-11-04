@@ -149,7 +149,7 @@ export default function ItemCategoriesPage() {
   };
 
   const pesanGagal = (
-    code: 'DUPLICATE_CODE' | 'IN_USE' | 'HAS_COMMISSION_RATES' | 'FAILED',
+    code: 'DUPLICATE_CODE' | 'IN_USE' | 'HAS_COMMISSION_RATES' | "HAS_SALE_LINES" | 'FAILED',
     count = 0,
     kode = '',
   ) =>
@@ -159,7 +159,9 @@ export default function ItemCategoriesPage() {
         ? tCat('errInUse', { count })
         : code === 'HAS_COMMISSION_RATES'
           ? tCat('errHasCommissionRates')
-          : tCat('saveFailed');
+          : code === "HAS_SALE_LINES"
+            ? tCat("errHasSaleLines")
+            : tCat('saveFailed');
 
   const onSubmit = async (data: FormData) => {
     try {

@@ -5,9 +5,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * pekerjaannya dilakukan (boleh sudah check-out, harus milik SPG ini di
  * tokonya), kunci dan waktu tangkap diteruskan ke penulis. Kiriman di konter
  * tetap butuh check-in yang masih aktif. Tanpa basis data.
+ *
+ * SPG yang sudah ditandai berhenti (P66, `assignedStoreId` kosong): kiriman antrean
+ * yang ditangkap paling lambat akhir hari terakhirnya (WIB) tetap dicatat ke toko yang
+ * dilepasnya (`tokoSpgUntukAntrean` asli); sesudahnya, atau dari konter, NO_ASSIGNED_STORE.
  */
 const state = {
   aktif: null as null | { storeId: string },
+  user: { assignedStoreId: "t1" as string | null, spgEndedOn: null as string | null, spgEndedStoreId: null as string | null },
   kunjunganAntrean: "v-antre" as string | null,
   cari: [] as Record<string, unknown>[],
   terima: [] as Record<string, unknown>[],
@@ -16,7 +21,7 @@ const state = {
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => ({ user: { id: "spg1", permissions: ["spg_sales:record"] } })) }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@elorae/db", () => ({ prisma: { user: { findUnique: vi.fn(async () => ({ assignedStoreId: "t1" })) } } }));
+vi.mock("@elorae/db", () => ({ prisma: { user: { findUnique: vi.fn(async () => ({ ...state.user })) } } }));
 vi.mock("@/lib/stores/queries", () => ({ getActiveVisit: vi.fn(async () => state.aktif) }));
 vi.mock("@/lib/pwa/kunjungan-antrean", () => ({
   cariKunjunganAntrean: vi.fn(async (k: Record<string, unknown>) => {
@@ -45,6 +50,7 @@ const WAKTU = "2026-10-03T02:00:00.000Z";
 
 beforeEach(() => {
   state.aktif = null;
+  state.user = { assignedStoreId: "t1", spgEndedOn: null, spgEndedStoreId: null };
   state.kunjunganAntrean = "v-antre";
   state.cari = [];
   state.terima = [];
@@ -119,5 +125,49 @@ describe("catatOpnameAction dari antrean HP", () => {
     expect(r).toEqual({ ok: true, opnameId: "o1", selisih: 1 });
     expect(state.cari[0]).toMatchObject({ visitId: "v1" });
     expect(state.opname[0]).toMatchObject({ idempotencyKey: "op-1", waktuTangkap: new Date(WAKTU) });
+  });
+});
+
+describe("terimaKirimanAction — SPG yang sudah berhenti (P66)", () => {
+  /* Ditandai berhenti dengan hari terakhir 31 Okt 2026 (WIB), melepas toko "toko-1". */
+  const berhenti = () => {
+    state.user = { assignedStoreId: null, spgEndedOn: "2026-10-31", spgEndedStoreId: "toko-1" };
+  };
+
+  it("a queued receipt captured on her last day (22:00 WIB) is recorded at the store she left", async () => {
+    berhenti();
+    const r = await terimaKirimanAction({ ...TERIMA, idempotencyKey: "kunci-b", luring: true, waktuTangkap: "2026-10-31T15:00:00.000Z", visitClientId: "hp-1" });
+    expect(r).toEqual({ ok: true, receiptId: "r1" });
+    expect(state.cari[0]).toEqual({ userId: "spg1", storeId: "toko-1", visitId: null, visitClientId: "hp-1" });
+    expect(state.terima[0]).toMatchObject({ storeId: "toko-1", waktuTangkap: new Date("2026-10-31T15:00:00.000Z") });
+  });
+
+  it("a queued receipt captured after her last day (00:30 WIB the next day) is refused with NO_ASSIGNED_STORE", async () => {
+    berhenti();
+    expect(
+      await terimaKirimanAction({ ...TERIMA, luring: true, waktuTangkap: "2026-10-31T17:30:00.000Z", visitClientId: "hp-1" }),
+    ).toEqual({ ok: false, code: "NO_ASSIGNED_STORE" });
+    expect(state.cari).toHaveLength(0);
+    expect(state.terima).toHaveLength(0);
+  });
+
+  it("a receipt at the counter (not from the queue) from an ended SPG is refused with NO_ASSIGNED_STORE, even with a visit open", async () => {
+    berhenti();
+    state.aktif = { storeId: "toko-1" };
+    expect(await terimaKirimanAction({ ...TERIMA, waktuTangkap: "2026-10-31T15:00:00.000Z" })).toEqual({ ok: false, code: "NO_ASSIGNED_STORE" });
+    expect(state.terima).toHaveLength(0);
+  });
+
+  it("a queued stock count captured on her last day is recorded at the store she left too", async () => {
+    berhenti();
+    const r = await catatOpnameAction({
+      baris: [{ itemId: "i1", variantSku: null, qtyCounted: 4 }],
+      idempotencyKey: "op-b",
+      luring: true,
+      waktuTangkap: "2026-10-31T15:00:00.000Z",
+      visitId: "v1",
+    });
+    expect(r).toEqual({ ok: true, opnameId: "o1", selisih: 1 });
+    expect(state.opname[0]).toMatchObject({ storeId: "toko-1" });
   });
 });

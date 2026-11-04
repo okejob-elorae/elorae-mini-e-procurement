@@ -3,10 +3,11 @@ import { konsiReportKey, payoutMonth, putusReportKey } from "@/lib/spg-commissio
 import { bacaDetailGaji } from "./gaji-pokok";
 import { kunciGaji, muatGajiPokok } from "./gaji-pokok-queries";
 import { pembayaranAkhir } from "./koreksi-akhir";
+import { bacaJenisTokoBeban, kalimatBebanKabar, type BarisBebanDipotong, type BarisKembaliBeban } from "./beban-spg";
 import { REF_KOMISI_KONSI, REF_KOMISI_SPG_PUTUS } from "./hilang";
 import { bagianHilangTerbukaSpg } from "./hilang-db";
 import { ENTITAS_KOREKSI_KOMISI, JEJAK_KOMISI_SPG } from "./komisi";
-import { rencanaBayarKomisi, teksKoreksi, type RefBarisKomisi, type RencanaBayarKomisi, type UnitKomisiSpg } from "./koreksi";
+import { rencanaBayarSemua, teksKoreksi, type RefBarisKomisi, type RencanaBayarKomisi, type UnitKomisiSpg } from "./koreksi";
 import { bebanReturTerbukaSpg, kembaliBebanTerbukaSpg, utangTerbukaSpg } from "./utang-queries";
 
 /**
@@ -164,13 +165,54 @@ export async function siapkanBayarKomisi(
     utangTerbukaSpg(tx, input.userId),
     pembayaranAkhir(tx, { userId: input.userId, refType: input.refType, refId: input.refId }),
   ]);
-  const rencana = rencanaBayarKomisi({
-    units,
-    kunci: input.kunci,
-    konteks: { bebanHilang: hilang, bebanRetur: retur, kembaliBeban: kembali, utang, akhir: akhir.akhir },
-  });
-  if (!rencana) throw new KomisiBerubahError(0);
+  // Rencana yang SAMA dengan layar (B22): pengurang dibagi menurut urutan bayar, jadi baris yang
+  // dibayar lebih dulu dari urutannya hanya mengambil yang ditampilkan untuknya.
+  const rencana = rencanaBayarSemua(units, {
+    bebanHilang: hilang,
+    bebanRetur: retur,
+    kembaliBeban: kembali,
+    utang,
+    akhir: (refId) => refId === input.refId && akhir.akhir,
+  }).get(input.refId);
+  if (!rencana || rencana.kunci !== input.kunci) throw new KomisiBerubahError(0);
   return rencana;
+}
+
+/**
+ * Kalimat beban retur pembeli yang dipotong dan pengembalian beban yang dibayar di pembayaran ini
+ * (P13a/P79), untuk kabar SPG — nomor notanya dibaca dari bebannya. Pada pembayaran terakhir sisa
+ * yang tidak terpotong menjadi utang SPG, bukan "dipotong di pembayaran berikutnya". Kosong bila
+ * tidak ada keduanya.
+ */
+export async function kalimatBebanRencana(tx: Tx, rencana: Pick<RencanaBayarKomisi, "beban" | "kembaliBeban" | "akhir">): Promise<string> {
+  const ids = [...new Set([...rencana.beban.map((b) => b.chargeId), ...rencana.kembaliBeban.map((k) => k.chargeId)])];
+  if (ids.length === 0) return "";
+  const c = await tx.spgCharge.findMany({ where: { id: { in: ids } }, select: { id: true, sourceId: true, sourceDocNo: true, sourceKind: true } });
+  const per = new Map(c.map((x) => [x.id, x]));
+  const beban: BarisBebanDipotong[] = rencana.beban.flatMap((b) => {
+    const x = per.get(b.chargeId);
+    if (!x) return [];
+    return [
+      {
+        chargeId: b.chargeId,
+        sumber: "RETUR_PEMBELI" as const,
+        sumberId: x.sourceId,
+        docNo: x.sourceDocNo,
+        storeId: b.storeId,
+        jenisToko: bacaJenisTokoBeban(x.sourceKind),
+        sisaSebelum: b.sisaSebelum,
+        diterapkan: b.diterapkan,
+        dariKomisi: b.dariKomisi,
+        dariGaji: b.dariGaji,
+        dibawa: rencana.akhir ? 0 : b.dibawa,
+      },
+    ];
+  });
+  const kembali: BarisKembaliBeban[] = rencana.kembaliBeban.flatMap((k) => {
+    const x = per.get(k.chargeId);
+    return x ? [{ chargeId: k.chargeId, docNo: x.sourceDocNo, storeId: k.storeId, jenisToko: bacaJenisTokoBeban(x.sourceKind), jumlah: k.jumlah }] : [];
+  });
+  return kalimatBebanKabar(beban, kembali);
 }
 
 /**

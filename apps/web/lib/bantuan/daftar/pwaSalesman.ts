@@ -573,7 +573,7 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "pwaSalesman",
     judul: "Catat penerimaan kiriman di toko",
     isi: [
-      "Di toko yang SPG-nya sudah berhenti, kiriman yang sudah diserahkan ke toko dicatat sales pemegang saat berkunjung: jumlah tiba per barang, nama penanggung jawab toko, dan satu foto. Yang tidak tiba dicatat sebagai barang hilang.",
+      "Di toko yang SPG-nya sudah berhenti, kiriman yang sudah diserahkan ke toko dicatat sales pemegang saat berkunjung: jumlah tiba per barang, nama penanggung jawab toko, dan satu foto. Yang tidak tiba dicatat sebagai barang hilang. Ini juga berlaku untuk barang yang masih di jalan saat SPG berhenti: ekspedisi atau kurir hanya mencatat yang diserahkan. Kalau kurir mencatat barang ditolak di pintu toko, atau tidak ada yang sampai sama sekali, konfirmasi kurir itulah penerimaan tokonya, seperti di toko tanpa SPG, dan tidak ada yang perlu dicatat di sini.",
       "Hanya pemegang toko yang bisa membukanya, selama sedang check-in di toko itu dan toko itu tidak punya SPG. Butuh sinyal.",
     ],
   },

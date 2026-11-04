@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  bebanDitagihKeToko,
   sisaBolehDilunasi,
   tertahanPiutang,
   type PorsiKlaim,
@@ -15,24 +14,6 @@ import {
 // Aturan beban toko sementara (2026-10-06: faktur beban `BEBAN/<NRT>` dan batas
 // potong NRT) dicabut oleh keputusan 1 (2026-11-02, P84): selisih yang ditanggung
 // toko tetap terbuka di nota asalnya, tidak ditagih lewat faktur baru.
-
-// `bebanDitagihKeToko` tinggal sebagai pembantu USANG untuk pratinjau lama di
-// `return-queries.ts`; perilakunya dikunci di sini sampai pemanggil itu dibuang.
-describe("bebanDitagihKeToko (usang) — perilakunya tidak berubah", () => {
-  const nota = { nilaiKlaim: 300_000, nilaiFisik: 100_000 };
-
-  it("hanya bagian yang dipotong melebihi barang yang sampai, tidak pernah melebihi selisih", () => {
-    expect(bebanDitagihKeToko({ ...nota, sudahDipotong: 300_000 })).toBe(200_000);
-    expect(bebanDitagihKeToko({ ...nota, sudahDipotong: 150_000 })).toBe(50_000);
-    expect(bebanDitagihKeToko({ ...nota, sudahDipotong: 0 })).toBe(0);
-    expect(bebanDitagihKeToko({ nilaiKlaim: 300_000, nilaiFisik: 300_000, sudahDipotong: 300_000 })).toBe(0);
-  });
-
-  it("dihitung dalam sen, dan aturan seluruh-selisih tetap bisa dipilih", () => {
-    expect(bebanDitagihKeToko({ nilaiKlaim: 100.3, nilaiFisik: 0.1, sudahDipotong: 50.2 })).toBe(50.1);
-    expect(bebanDitagihKeToko({ ...nota, sudahDipotong: 0 }, "SELURUH_SELISIH")).toBe(200_000);
-  });
-});
 
 const klaim = (status: PorsiKlaim["status"], nilaiFaktur: number, dilunasi: number, potonganRetur: PorsiKlaim["potonganRetur"]): PorsiKlaim => ({
   status,

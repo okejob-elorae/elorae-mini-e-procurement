@@ -6,6 +6,7 @@ import {
   recordJubelioObservedPrice,
   recordJubelioPriceOnMapping,
 } from "./item-writer";
+import { hargaJubelioBerbeda, keputusanHargaBerlaku } from "./item-writer-harga";
 import { seededId } from "./spec-teardown";
 
 // Writes Item rows — never run against the shared prod DB (port 3307 tunnel / VPS host).
@@ -273,6 +274,48 @@ d("item-writer Jubelio price confirmation (test bed only)", () => {
         await Promise.all([lama, baru]);
         expect(await terbaca(id)).toMatchObject({ tertinggi: 120_000, terendah: 120_000, pada: t2.toISOString() });
       }
+    });
+
+    /*
+     * P75 ("saya tidak setuju jika harga bisa tertimpa"): every caller takes `readAt` before its
+     * fetch, so a Jubelio edit can be READ before an admin's price decision and RECORDED after it.
+     * Such a change is stamped just after the decision, so the decision no longer covers it and the
+     * next push is held instead of overwriting a price the admin never saw.
+     */
+    describe("a reading recorded after a price decision (P75)", () => {
+      const t1b = new Date("2026-11-03T01:05:00.000Z");
+
+      it("a changed reading that began before a price decision but lands after it is stamped after the decision, so the decision no longer covers it", async () => {
+        const id = await barang({ jubelioConfirmedPrice: 110_000, jubelioPriceDecidedAt: t2 });
+        await recordJubelioObservedPrice(prisma, id, { highest: "110000", lowest: "100000" }, t1);
+        expect(await recordJubelioObservedPrice(prisma, id, { highest: "120000", lowest: "120000" }, t1b)).toBe(true);
+
+        const k = await terbaca(id);
+        const sesudahKeputusan = new Date(t2.getTime() + 1).toISOString();
+        expect(k).toMatchObject({ tertinggi: 120_000, terendah: 120_000, pada: t1b.toISOString(), berubah: sesudahKeputusan });
+        expect(k.diputuskan?.toISOString()).toBe(t2.toISOString());
+        expect(keputusanHargaBerlaku({ diputuskanPada: t2, berubahPada: new Date(k.berubah!) })).toBe(false);
+        // The push's hold (`tahanKarenaHargaBeda`) follows: Jubelio differs and nothing decided it.
+        expect(hargaJubelioBerbeda({ tertinggi: k.tertinggi, terendah: k.terendah, terkonfirmasi: k.dikonfirmasi })).toBe(true);
+      });
+
+      it("the same figures read again after such a stamp keep it", async () => {
+        const id = await barang({ jubelioPriceDecidedAt: t2 });
+        await recordJubelioObservedPrice(prisma, id, { highest: "110000", lowest: "100000" }, t1);
+        await recordJubelioObservedPrice(prisma, id, { highest: "120000", lowest: "120000" }, t1b);
+        const sesudahKeputusan = new Date(t2.getTime() + 1).toISOString();
+        expect((await terbaca(id)).berubah).toBe(sesudahKeputusan);
+
+        expect(await recordJubelioObservedPrice(prisma, id, { highest: 120_000, lowest: 120_000 }, t3)).toBe(true);
+        expect(await terbaca(id)).toMatchObject({ pada: t3.toISOString(), berubah: sesudahKeputusan });
+      });
+
+      it("a reading that begins after the decision is stamped with its own read time", async () => {
+        const id = await barang({ jubelioPriceDecidedAt: t1 });
+        await recordJubelioObservedPrice(prisma, id, { highest: "120000", lowest: "120000" }, t2);
+        expect(await terbaca(id)).toMatchObject({ pada: t2.toISOString(), berubah: t2.toISOString() });
+        expect((await terbaca(id)).diputuskan?.toISOString()).toBe(t1.toISOString());
+      });
     });
   });
 

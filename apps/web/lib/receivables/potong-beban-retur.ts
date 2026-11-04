@@ -9,9 +9,16 @@ import { statusBebanSales } from "./rules";
  * yang sama dengan potongan beban barang hilang (`tandaiSalesDipotong`):
  * penggajian salesman belum ada di sistem, jadi kantor menandai berapa yang
  * dipotong bulan itu dan jumlahnya dibagikan ke beban-bebannya yang terlama
- * dulu. Kalau barangnya kemudian ketemu (barang susulan menurunkan bebannya
- * di bawah yang sudah dipotong), kelebihannya DIKEMBALIKAN (P87) lewat jalur
- * kedua di bawah.
+ * dulu.
+ *
+ * Jalur kedua di bawah (kelebihan potongan DIKEMBALIKAN ke sales) MENUNGGU
+ * JAWABAN P87 dan tidak pernah tercapai hari ini. Yang dijawab pemilik
+ * ("setuju") adalah bawaannya: barang yang baru ketemu sesudah komisi sales
+ * dipotong TIDAK dicatat sebagai susulan nota itu — penulis susulan menolaknya
+ * (`SUDAH_DIPOTONG`/`SUDAH_LUNAS`) dan barangnya diterima gudang sebagai
+ * penerimaan tanpa nota. Jadi beban tidak pernah turun di bawah yang sudah
+ * dipotong, dan kelebihan selalu nol. Kalau pemilik memilih "potongannya
+ * dikembalikan", penolakan di penulis susulan dicabut dan jalur ini dipakai.
  *
  * Idempoten per `kunci` layar (refType `KomisiSalesman`, refId
  * `<sales>:<bulan>:<kunci>`). Setiap beban yang tersentuh ditukar dengan
@@ -157,9 +164,10 @@ export async function tandaiBebanReturDipotong(input: Masukan): Promise<Hasil> {
 }
 
 /**
- * Kelebihan potongan dikembalikan ke sales (P87, "barang ketemu sesudah komisi
- * sales dipotong"): beban yang turun di bawah yang sudah dipotong. Hanya
- * sebesar kelebihannya, terlama dulu.
+ * Kelebihan potongan dikembalikan ke sales — MENUNGGU JAWABAN P87 ("barang ketemu
+ * sesudah komisi sales dipotong"; lihat catatan di atas): beban yang turun di bawah
+ * yang sudah dipotong. Hanya sebesar kelebihannya, terlama dulu. Dengan bawaan yang
+ * disetujui pemilik, kelebihannya selalu nol (`TIDAK_ADA_KELEBIHAN`).
  */
 export async function tandaiKelebihanReturDikembalikan(input: Masukan): Promise<Hasil> {
   const cek = periksaMasukan(input);

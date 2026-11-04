@@ -25,8 +25,8 @@ export type ReceivableRow = {
   storeName: string;
   docNo: string;
   /** Null for a SELL_THROUGH row whose report has no salesman yet, an INVOICE row raised without
-   * one, or a CONSIGNMENT_CYCLE row (a konsi cycle bill carries no seller); a DELIVERY row keeps the
-   * pre-existing "" fallback so existing output is byte-identical. */
+   * one, or a CONSIGNMENT_CYCLE row whose store had no holder at lock (normally the holder, P55); a
+   * DELIVERY row keeps the pre-existing "" fallback so existing output is byte-identical. */
   salesmanName: string | null;
   sourceKind: "DELIVERY" | "SELL_THROUGH" | "INVOICE" | "CONSIGNMENT_CYCLE";
   invoiceDate: Date;
@@ -316,10 +316,21 @@ export type AllocationCandidate = {
  *
  * An orphan (a receivable whose source row is gone, possible under `relationMode = "prisma"`) stays
  * a candidate — its money is still owed — and shows its own id as `docNo`.
+ *
+ * `excludeKonsiBills` is for a picker that pays: a konsi bill (`isKonsiBill`) is paid only through a
+ * BKM, and `recordPayment` refuses it (`KONSI_LEWAT_BKM`), so a payment or offset sheet must not
+ * offer it. Left off, every open receivable is listed, which is what the store summary counts.
  */
-export async function listAllocationCandidatesForStore(storeId: string): Promise<AllocationCandidate[]> {
+export async function listAllocationCandidatesForStore(
+  storeId: string,
+  options: { excludeKonsiBills?: boolean } = {},
+): Promise<AllocationCandidate[]> {
   const rows = await prisma.receivable.findMany({
-    where: { storeId, status: { in: ["OUTSTANDING", "PARTIAL"] } },
+    where: {
+      storeId,
+      status: { in: ["OUTSTANDING", "PARTIAL"] },
+      ...(options.excludeKonsiBills ? { isConsignment: false, sellThroughId: null } : {}),
+    },
     orderBy: [{ dueDate: "asc" }, { id: "asc" }],
     select: { id: true, dueDate: true, outstandingAmount: true, ...RECEIVABLE_SOURCE_SELECT },
   });

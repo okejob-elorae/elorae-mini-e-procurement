@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
-import { jodohkanRetur } from "./return-writer";
+import { jodohkanRetur, KATEGORI_NOTIF_RETUR_SELISIH } from "./return-writer";
 
 /**
  * Menjodohkan hitungan gudang yatim (NRI) ke nota retur toko (NRT) memegang
@@ -38,9 +38,31 @@ beforeEach(async () => {
   ).id;
 });
 
+/**
+ * Hitungan gudang yang kurang (selisih retur) membunyikan lonceng kantor (`RETUR_SELISIH`) dan
+ * menulis jejak beban (`BEBAN_DISESUAIKAN`, entitas `ReturnCharge`). Keduanya tidak terjangkau lewat
+ * id nota: dicocokkan lewat id beban nota uji dan `metadata.storeReturnId`, di JS.
+ */
+async function hapusJejakSelisih(idNrt: string[], idNri: string[], idBebanLain: string[] = []) {
+  const bebanNota = await prisma.returnCharge.findMany({
+    where: { OR: [{ storeReturnId: { in: seededIds(idNrt) } }, { warehouseReturnId: { in: seededIds(idNri) } }] },
+    select: { id: true },
+  });
+  const idBeban = [...new Set([...idBebanLain, ...bebanNota.map((b) => b.id)])];
+  if (idBeban.length) await prisma.auditLog.deleteMany({ where: { entityType: "ReturnCharge", entityId: { in: seededIds(idBeban) } } });
+  if (idNrt.length === 0) return;
+  const lonceng = (
+    await prisma.adminNotification.findMany({ where: { category: KATEGORI_NOTIF_RETUR_SELISIH }, select: { id: true, metadata: true } })
+  )
+    .filter((x) => idNrt.includes(String((x.metadata as Record<string, unknown> | null)?.storeReturnId ?? "")))
+    .map((x) => x.id);
+  if (lonceng.length) await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(lonceng) } } });
+}
+
 afterEach(async () => {
   const entitas = [...nrtIds, ...nriIds].filter(Boolean).map(seededId);
   if (entitas.length) await prisma.auditLog.deleteMany({ where: { entityId: { in: seededIds(entitas) } } });
+  await hapusJejakSelisih(nrtIds.filter(Boolean), nriIds.filter(Boolean));
   await prisma.returnCharge.deleteMany({
     where: {
       OR: [

@@ -24,9 +24,9 @@ import { terapkanPembayaran } from "./komisi-bayar";
 import { hitunganPutus, keBarisResmi } from "./komisi-queries";
 import { REF_KOMISI_KONSI, REF_KOMISI_SPG_PUTUS } from "./hilang";
 import { rangkaiDalamBatas } from "./antaran";
-import { kalimatKoreksiKabar, kalimatPotongKabar } from "./koreksi";
+import { kalimatKoreksiKabar, kalimatPotongDanBebanKabar } from "./koreksi";
 import { unitKomisiSpg } from "./koreksi-queries";
-import { catatHitungUlangSaatBayar, KomisiBerubahError, siapkanBayarKomisi } from "./koreksi-writer";
+import { catatHitungUlangSaatBayar, kalimatBebanRencana, KomisiBerubahError, siapkanBayarKomisi } from "./koreksi-writer";
 
 /**
  * Laporan penjualan SPG toko putus: dicek, ditetapkan gaji & komisinya, dibayar (`SpgSalesCheck`,
@@ -518,7 +518,11 @@ export async function tandaiKomisiDibayar(input: {
         reason: catatan || null,
       });
       const toko = await tx.store.findUnique({ where: { id: b.storeId }, select: { name: true } });
-      const tambahan = [kalimatKoreksiKabar(rencana.koreksi), kalimatPotongKabar(rencana)].filter(Boolean);
+      // Beban retur pembeli yang dipotong atau dikembalikan disebut dengan notanya (P13a/P79), sekali saja.
+      const tambahan = [
+        kalimatKoreksiKabar(rencana.koreksi),
+        ...kalimatPotongDanBebanKabar(rencana, await kalimatBebanRencana(tx, rencana)),
+      ].filter(Boolean);
       kabar.push({
         userId: b.userId,
         kabar: {

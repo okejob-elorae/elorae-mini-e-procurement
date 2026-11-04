@@ -60,6 +60,8 @@ export const JEJAK = {
   RETUR_PEMBELI_DITARIK: "SPG_SALE_RETURN_WITHDRAWN",
   /** SPG mencatat uang retur sudah dikembalikan ke pembeli (foto struk; P77). */
   RETUR_PEMBELI_UANG_DIKEMBALIKAN: "SPG_SALE_RETURN_REFUNDED",
+  /** Penarikan laporan retur pembeli dibatalkan: uangnya dicatat di HP sebelum SPG menariknya (P78) — sebelum/sesudah. */
+  RETUR_PEMBELI_PENARIKAN_DIBATALKAN: "SPG_SALE_RETURN_WITHDRAWAL_UNDONE",
   /** Penolakan retur pembeli yang keliru dibatalkan kantor (P82) — sebelum/sesudah. */
   RETUR_PEMBELI_PENOLAKAN_DIBATALKAN: "SPG_SALE_RETURN_REJECTION_REVERSED",
   /** Retur yang sudah dibebankan ke SPG akhirnya diterima (uang SPG dikembalikan, P79). */
@@ -88,7 +90,11 @@ export const JEJAK = {
   BEBAN_DISESUAIKAN: "RETURN_CHARGE_ADJUSTED",
   /** Beban selisih retur dipotong dari komisi sales (bulan dan jumlahnya). */
   BEBAN_DIPOTONG: "RETURN_CHARGE_DEDUCTED",
-  /** Kelebihan potongan beban selisih retur dikembalikan ke sales (P87). */
+  /**
+   * Kelebihan potongan beban selisih retur dikembalikan ke sales. Jalurnya MENUNGGU jawaban P87:
+   * yang disetujui pemilik ("setuju") adalah bawaannya — barang yang ketemu sesudah komisi dipotong
+   * tidak dicatat sebagai susulan nota itu — jadi kelebihan potongan tidak terjadi hari ini.
+   */
   BEBAN_DIKEMBALIKAN: "RETURN_CHARGE_REFUNDED",
   /** Nota putus dibatalkan lewat "tidak jadi dikirim" — piutangnya ikut dibatalkan. */
   PIUTANG_NOTA_DIBATALKAN: "RECEIVABLE_DELIVERY_VOIDED",
@@ -96,10 +102,11 @@ export const JEJAK = {
   PIUTANG_NOTA_DIKOREKSI: "RECEIVABLE_DELIVERY_CORRECTED",
   /**
    * Tagihan siklus konsinyasi lahir saat angka terjual dikunci (keputusan 2026-10-29):
-   * bernomor konsi, atas nama pemegang toko saat dikunci (P55). Jatuh temponya
-   * SEMENTARA hari dikunci + tempo toko (`jatuhTempoSiklus`) — dasar tanggalnya
-   * (akhir bulan siklus / hari dikunci / nomor nota dicatat) masih ditanyakan ke
-   * pemilik (P54); jejak ini mencatat tanggal yang benar-benar dipakai.
+   * bernomor konsi, atas nama pemegang toko saat dikunci (P55), bertanggal akhir bulan
+   * siklus (`tanggalPeriode`, sama dengan tanggal jurnalnya), jatuh tempo = pukul 00:00 WIB
+   * hari DIKUNCI + tempo toko (P54, disetujui pemilik 2026-11-02 — "setuju" atas usulan
+   * "jatuh tempo dihitung dari tanggal dikunci": siklus Oktober dikunci 5 November, tempo
+   * 30 hari → jatuh tempo 5 Desember). Jejak ini mencatat tanggal yang benar-benar dipakai.
    */
   TAGIHAN_KONSI_DIBUAT: "CONSIGNMENT_RECEIVABLE_CREATED",
   /** Tagihan siklus konsinyasi dibatalkan karena kunci siklusnya dibuka — sebelum/sesudah. */

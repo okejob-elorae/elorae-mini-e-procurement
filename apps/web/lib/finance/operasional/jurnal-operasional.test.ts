@@ -1376,7 +1376,7 @@ describe("koreksi komisi SPG pada pembayaran", () => {
     const [k] = await prisma.consignmentCommission.findMany({ where: { cycleId: siklusId }, select: { id: true, total: true } });
     await prisma.consignmentCommission.update({
       where: { id: k.id },
-      data: { salaried: false, baseSalary: 0, commission: 0, total: 0, deduction: 0, paidAt: wib("2004-10-10"), paidById: adminId },
+      data: { baseSalary: 0, commission: 0, total: 0, deduction: 0, paidAt: wib("2004-10-10"), paidById: adminId },
     });
     expect(await cariBayarGajiKonsiTanpaJurnal({ sejak: wib("2004-10-01"), sampai: wib("2004-10-31"), batas: 500, ids: [k.id] })).toEqual([]);
     expect(await cariKomisiKonsiTanpaJurnal({ ...sekitarSekarang(), ids: [siklusId] })).toEqual([]);

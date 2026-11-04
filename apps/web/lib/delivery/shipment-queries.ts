@@ -1,4 +1,4 @@
-import { jumlahSpgToko } from "@/lib/spg/kiriman";
+import { penerimaPod, type PenerimaPod } from "@/lib/spg/kiriman";
 import { prisma, type DeliveryShipmentStatus } from "@elorae/db";
 import { SHIPMENT_STATUS_LABEL_KEY, type ShipmentStatusLabelKey } from "@/lib/delivery/shipment-status-display";
 import { urlFromKey } from "@/lib/r2";
@@ -103,8 +103,13 @@ export async function getDeliveryShipment(id: string): Promise<{
   /** The handover-to-courier photo (showing the weight) is on file (P43). */
   adaFotoSerah: boolean;
   shippedAt: Date | null;
-  /** The store has an SPG now (`jumlahSpgToko`): the POD is information only, the SPG receives. */
-  tokoPunyaSpg: boolean;
+  /**
+   * Who records the store's receipt (`penerimaPod`, the writer's own rule): `SPG` — the store has an
+   * SPG now, the POD is the handover only; `PEMEGANG` — its SPG stopped while these goods were on
+   * the road, the holder salesman records the PIC's receipt (P45a), and the POD becomes the receipt
+   * only when it records a door refusal; `KURIR` — the POD is the store's receipt.
+   */
+  penerimaPod: PenerimaPod;
   /** The store's receipt of this shipment's document exists (`StoreReceipt`). */
   sudahDiterimaToko: boolean;
   lines: Array<{
@@ -137,8 +142,8 @@ export async function getDeliveryShipment(id: string): Promise<{
     : row.deliveryId
       ? { sourceType: "PUTUS_DELIVERY", sourceId: row.deliveryId }
       : null;
-  const [tokoPunyaSpg, diterima] = await Promise.all([
-    jumlahSpgToko(prisma, row.order.storeId).then((n) => n > 0),
+  const [penerima, diterima] = await Promise.all([
+    penerimaPod(prisma, row.order.storeId, row.createdAt),
     sumber ? prisma.storeReceipt.findUnique({ where: { sourceType_sourceId: sumber }, select: { id: true } }) : null,
   ]);
 
@@ -165,7 +170,7 @@ export async function getDeliveryShipment(id: string): Promise<{
     weightKg: row.weightKg === null ? null : Number(row.weightKg),
     adaFotoSerah: Boolean(row.handoverPhotoR2Key && row.handoverPhotoUrl),
     shippedAt: row.shippedAt,
-    tokoPunyaSpg,
+    penerimaPod: penerima,
     sudahDiterimaToko: diterima !== null,
     lines: row.lines.map((line) => ({
       id: line.id,

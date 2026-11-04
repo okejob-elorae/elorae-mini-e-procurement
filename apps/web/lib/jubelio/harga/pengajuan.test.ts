@@ -83,7 +83,7 @@ d("ajukanKeJubelio (test bed only)", () => {
   it("pengajuan ulang tepat sesudah konfirmasi produk baru → SEDANG_DIKIRIM, kiriman pembuatnya tidak tertahan", async () => {
     const id = await fx.barang({ sellingPrice: 150_000 });
     await ajukanKeJubelio([id], fx.keadaan.userId);
-    const konfirmasi = await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "150000.00", olehUserId: fx.keadaan.userId });
+    const konfirmasi = await konfirmasiHargaJubelio({ itemId: id, hargaErpDiharapkan: "150000.00", berubahPadaDiharapkan: null, olehUserId: fx.keadaan.userId });
     expect(konfirmasi.hasil).toBe("DIKONFIRMASI");
 
     expect(await ajukanKeJubelio([id], fx.keadaan.userId)).toEqual([{ itemId: id, hasil: "SEDANG_DIKIRIM" }]);

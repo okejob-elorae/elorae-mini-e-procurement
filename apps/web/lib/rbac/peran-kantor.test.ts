@@ -394,4 +394,109 @@ describe("izin keputusan pemilik putaran 4 (2026-11-02b)", () => {
       expect(cek).toMatch(/AND NOT \(r\.name = 'KEUANGAN' AND p\.code = 'spg_commission:pay'\)/);
     }
   });
+
+  /*
+   * P51a: "tidak usah di hapus, tapi ada konfirmasi dari admin saja". Hanya konfirmasi yang diputuskan
+   * dan dibangun (`putuskanGrnTanpaPo` menerima KONFIRMASI saja), jadi baris Permission tidak boleh
+   * menjanjikan menolak. Baris produksi dibuat sekali di balik NOT EXISTS; versi lama teksnya hanya boleh
+   * muncul di WHERE UPDATE yang menggantinya.
+   */
+  it("keterangan konfirmasi penerimaan tanpa PO hanya konfirmasi, sama di seed.ts dan kedua salinan SQL", () => {
+    const teks = "Confirm a goods receipt recorded without a PO before it is processed (manager decision)";
+    const lama = "Confirm or decline a goods receipt recorded without a PO before it is processed (manager decision)";
+    expect(seedTs).toContain(
+      `code: "goods_receipts:confirm_no_po", module: "goods_receipts", action: "confirm_no_po", description: "${teks}"`,
+    );
+    expect(seedTs).not.toContain(lama);
+    for (const sql of [sqlIzin1102b, sqlIzin1102bPg]) {
+      expect(sql).toMatch(/'goods_receipts:confirm_no_po', 'goods_receipts', 'confirm_no_po',\s*'Confirm a goods receipt recorded without a PO before it is processed \(manager decision\)'/);
+      expect(sql.split(lama).length - 1).toBe(1);
+      expect(sql).toMatch(/code`? = 'goods_receipts:confirm_no_po'\s*AND `?description`? = 'Confirm or decline/);
+    }
+  });
+
+  /*
+   * P48: pengingat jatuh tempo kantor (AR_OVERDUE) pindah dari collections:manage ke izin sendiri.
+   * Pemegang collections:manage tidak diberi izin baru itu otomatis — pemilik memberikannya di layar —
+   * jadi berkas 2b menampilkan siapa yang karena itu tidak lagi menerimanya, dan tidak menulis tautan
+   * apa pun berdasarkan collections:manage.
+   */
+  it("pemegang collections:manage yang kehilangan pengingat jatuh tempo ditampilkan, tidak diberi izin otomatis", () => {
+    const transaksi = sqlIzin1102b.slice(sqlIzin1102b.indexOf("START TRANSACTION;"), sqlIzin1102b.indexOf("COMMIT;"));
+    expect(transaksi).not.toContain("collections:manage");
+    const cek = sqlIzin1102b.slice(sqlIzin1102b.indexOf("COMMIT;"));
+    expect(cek).toMatch(
+      /p\.`code` = 'collections:manage'\s*WHERE r\.`isSystem` = 0\s*AND NOT EXISTS \([\s\S]*?p2\.`code` = 'receivables:overdue_reminder'/,
+    );
+
+    const transaksiPg = sqlIzin1102bPg.slice(sqlIzin1102bPg.indexOf("BEGIN;"), sqlIzin1102bPg.indexOf("COMMIT;"));
+    expect(transaksiPg).not.toContain("collections:manage");
+    const cekPg = sqlIzin1102bPg.slice(sqlIzin1102bPg.indexOf("COMMIT;"));
+    expect(cekPg).toMatch(
+      /p\.code = 'collections:manage'\s*WHERE NOT r\."isSystem"\s*AND NOT EXISTS \([\s\S]*?p2\.code = 'receivables:overdue_reminder'/,
+    );
+  });
+});
+
+/*
+ * Keputusan pemilik 2026-11-01 (8): pemilik mengatur izin sendiri di Peran & izin, jadi menjalankan
+ * ulang berkas peran kantor tidak boleh mengembalikan tautan bawaan yang sudah ia cabut (mis.
+ * KEUANGAN → spg_commission:pay, ADMIN_PENJUALAN → deliveries:cancel_nota). Tautannya hanya ditulis
+ * pada run yang MEMBUAT perannya, dengan penanda yang ditangkap sebelum INSERT peran — pola berkas 2b.
+ */
+describe("berkas peran kantor menautkan izin bawaan hanya saat membuat perannya", () => {
+  const PENANDA: [Peran, string, string][] = [
+    ["KEUANGAN", "keuangan_is_new", "keuangan_baru"],
+    ["ADMIN_PENJUALAN", "admin_penjualan_is_new", "admin_penjualan_baru"],
+    ["ADMIN_PAJAK", "admin_pajak_is_new", "admin_pajak_baru"],
+  ];
+
+  it.each(PENANDA)("%s: tautan bawaannya dijaga penanda yang ditangkap sebelum perannya dibuat", (peran, penanda, penandaPg) => {
+    expect(sqlPeran).toMatch(
+      new RegExp(`WHERE r\\.name = '${peran}'\\s*AND p\\.code IN \\([^)]*\\)\\s*AND @${penanda} = 1\\s*AND NOT EXISTS`),
+    );
+    const tangkap = sqlPeran.indexOf(`SET @${penanda}`);
+    expect(tangkap).toBeGreaterThan(-1);
+    expect(tangkap).toBeLessThan(sqlPeran.indexOf("INSERT INTO RoleDefinition"));
+
+    expect(sqlPeranPg).toMatch(
+      new RegExp(
+        `WHERE r\\.name = '${peran}'\\s*AND p\\.code IN \\([^)]*\\)\\s*AND \\(SELECT ${penandaPg} FROM peran_kantor_baru\\)\\s*AND NOT EXISTS`,
+      ),
+    );
+    expect(sqlPeranPg).toContain(`AS ${penandaPg}`);
+  });
+
+  it("salinan PostgreSQL menangkap penandanya sebelum INSERT peran pertama", () => {
+    const tangkapPg = sqlPeranPg.indexOf("CREATE TEMP TABLE peran_kantor_baru ON COMMIT DROP");
+    expect(tangkapPg).toBeGreaterThan(-1);
+    expect(tangkapPg).toBeLessThan(sqlPeranPg.indexOf('INSERT INTO "RoleDefinition"'));
+  });
+
+  it("setiap INSERT tautan di kedua salinan memakai penanda peran; tidak ada yang menulis tanpa syarat", () => {
+    const pernyataan = (teks: string, awal: string) =>
+      teks.split(awal).slice(1).map((s) => s.slice(0, s.indexOf(";")));
+    const maria = pernyataan(sqlPeran, "INSERT INTO RolePermission");
+    expect(maria).toHaveLength(PERAN.length);
+    for (const s of maria) expect(s).toMatch(/AND @[a-z_]+_is_new = 1/);
+    const pg = pernyataan(sqlPeranPg, 'INSERT INTO "RolePermission"');
+    expect(pg).toHaveLength(PERAN.length);
+    for (const s of pg) expect(s).toMatch(/AND \(SELECT [a-z_]+_baru FROM peran_kantor_baru\)/);
+  });
+
+  it("versi izin hanya dinaikkan untuk peran yang dibuat run ini", () => {
+    const naik = (teks: string, awal: string) => {
+      const i = teks.indexOf(awal);
+      expect(i, awal).toBeGreaterThan(-1);
+      return teks.slice(i, teks.indexOf(";", i));
+    };
+    const maria = naik(sqlPeran, "SET permissionsVersion = permissionsVersion + 1");
+    for (const [peran, penanda] of PENANDA) expect(maria).toContain(`(name = '${peran}' AND @${penanda} = 1)`);
+    expect(maria).not.toMatch(/WHERE name IN \(/);
+    const pg = naik(sqlPeranPg, 'SET "permissionsVersion" = "permissionsVersion" + 1');
+    for (const [peran, , penandaPg] of PENANDA) {
+      expect(pg).toContain(`(name = '${peran}' AND (SELECT ${penandaPg} FROM peran_kantor_baru))`);
+    }
+    expect(pg).not.toMatch(/WHERE name IN \(/);
+  });
 });

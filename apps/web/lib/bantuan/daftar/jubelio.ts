@@ -84,7 +84,7 @@ export const ENTRI: EntriBantuan[] = [
     kartu: [
       {
         judul: "Setujui & kirim ke Jubelio",
-        isi: "Centang satu atau beberapa baris lalu tekan tombolnya. Baris yang harga ERP-nya berubah sejak halaman dibuka tidak dikirim — muat ulang halaman lalu periksa lagi. Setiap konfirmasi tercatat di Jejak audit.",
+        isi: "Centang satu atau beberapa baris lalu tekan tombolnya. Baris yang harga ERP-nya berubah sejak halaman dibuka tidak dikirim — muat ulang halaman lalu periksa lagi. Setujui dan Kembalikan juga ditolak bila harga di Jubelio berubah sesudah halaman dibuka — muat ulang lalu periksa angkanya dulu. Setiap konfirmasi tercatat di Jejak audit.",
       },
       {
         judul: "Kembalikan ke harga Jubelio",
@@ -93,7 +93,7 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: "Beda di Jubelio",
         isi: [
-          "Barang yang harganya di Jubelio berbeda dengan harga ERP terkonfirmasi — misalnya karena diubah langsung di Jubelio. Jubelio dibaca setiap kali produknya berubah di Jubelio, saat Impor katalog, setiap 10 menit, dan sesudah setiap kiriman, jadi perubahan tampil paling lambat sekitar 10 menit. Bila variannya berbeda harga, harga tertinggi yang dihitung dan rentangnya ditampilkan. Peringatannya juga tampil di kartu barang, Beranda, dan lonceng.",
+          "Barang yang harganya di Jubelio berbeda dengan harga ERP terkonfirmasi — misalnya karena diubah langsung di Jubelio. Jubelio dibaca setiap kali produknya berubah di Jubelio, saat Impor katalog, setiap 10 menit, dan sesudah setiap kiriman, jadi perubahan tampil paling lambat sekitar 10 menit. Bila variannya berbeda harga, rentangnya ditampilkan, dan peringatannya muncul bila harga tertinggi ATAU terendahnya berbeda dengan harga ERP. Peringatannya juga tampil di kartu barang, Beranda, dan lonceng.",
           "Selama bedanya terbuka, tidak ada kiriman lain ke Jubelio untuk barang itu (nama, foto, varian, status aktif), supaya harga di Jubelio tidak tertimpa diam-diam. Kiriman yang ditahan berangkat sendiri begitu bedanya beres.",
         ],
       },

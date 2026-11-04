@@ -40,6 +40,8 @@ import {
 } from "@/app/backoffice/inventory/stock-opname/angka-sistem";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { kodeGalatOpname, type KodeGalatOpname } from "@/lib/inventory/galat-opname";
+import { bacaBarisDasarGrn } from "@/lib/grn/grn-proses";
+import { SYARAT_GRN_MENUNGGU_KONFIRMASI } from "@/lib/grn/grn-tanpa-po";
 
 const OPNAME_PATH = "/backoffice/inventory/stock-opname";
 const HITUNGAN_DITUTUP = "Opname sudah dikirim untuk persetujuan; hitungan tidak dapat diubah lagi";
@@ -512,4 +514,49 @@ export async function getOpnameById(opnameId: string) {
     hasPostableJournal: !j && probe !== null && probe.computable && Math.abs(probe.delta) >= 0.01,
     journalDeltaUnknown: !j && probe !== null && !probe.computable,
   });
+}
+
+export type GrnTanpaPoMenunggu = {
+  id: string;
+  docNumber: string;
+  pemasok: string;
+  diterimaPada: string;
+  barang: { itemId: string; sku: string | null; nama: string; variantSku: string | null; qty: number }[];
+};
+
+/**
+ * GRN tanpa PO yang masih menunggu konfirmasi admin (P51a), untuk layar hitung dan layar
+ * persetujuan opname: barangnya sudah ada secara fisik tetapi BELUM masuk stok, jadi ikut
+ * terhitung di rak tanpa ada di angka sistem. Satu bacaan untuk kedua layar, dijaga izin yang
+ * sama dengan halaman opname (`inventory_opname:view`). Paling lama dulu, paling banyak 50.
+ */
+export async function getGrnTanpaPoMenungguUntukOpname(): Promise<GrnTanpaPoMenunggu[]> {
+  const user = await sessionUser();
+  requirePermission(user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_VIEW);
+
+  const grn = await prisma.gRN.findMany({
+    where: SYARAT_GRN_MENUNGGU_KONFIRMASI,
+    orderBy: { createdAt: "asc" },
+    take: 50,
+    select: { id: true, docNumber: true, grnDate: true, items: true, supplier: { select: { name: true } } },
+  });
+  const baris = grn.map((g) => ({ g, items: bacaBarisDasarGrn(g.items) }));
+  const itemIds = [...new Set(baris.flatMap((b) => b.items.map((i) => i.itemId)))];
+  const induk: { id: string; sku: string; nameId: string }[] =
+    itemIds.length > 0 ? await prisma.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, sku: true, nameId: true } }) : [];
+  const barangInduk = new Map(induk.map((i) => [i.id, i]));
+
+  return baris.map(({ g, items }) => ({
+    id: g.id,
+    docNumber: g.docNumber,
+    pemasok: g.supplier.name,
+    diterimaPada: g.grnDate.toISOString(),
+    barang: items.map((i) => ({
+      itemId: i.itemId,
+      sku: barangInduk.get(i.itemId)?.sku ?? null,
+      nama: barangInduk.get(i.itemId)?.nameId ?? i.itemId,
+      variantSku: i.variantSku,
+      qty: Number.isFinite(i.qty) ? i.qty : 0,
+    })),
+  }));
 }

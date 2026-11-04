@@ -254,7 +254,7 @@ async function main() {
     { code: "receivables:overdue_reminder", module: "receivables", action: "overdue_reminder", description: "Receive the office reminder when a store invoice passes an overdue threshold (receiving only)" },
     { code: "store_returns:decide_shortfall", module: "store_returns", action: "decide_shortfall", description: "Decide or reassign who bears a store-return shortfall (manager decision)" },
     { code: "vendor_bills:decide_price", module: "vendor_bills", action: "decide_price", description: "Decide a supplier invoice whose price differs from the recorded payable: accept it or correct the invoice (manager decision)" },
-    { code: "goods_receipts:confirm_no_po", module: "goods_receipts", action: "confirm_no_po", description: "Confirm or decline a goods receipt recorded without a PO before it is processed (manager decision)" },
+    { code: "goods_receipts:confirm_no_po", module: "goods_receipts", action: "confirm_no_po", description: "Confirm a goods receipt recorded without a PO before it is processed (manager decision)" },
     { code: "spg_schedules:approve", module: "spg_schedules", action: "approve", description: "Approve, reject or reopen an SPG's monthly work schedule (manager decision)" },
     { code: "spg_attendance:record", module: "spg_attendance", action: "record", description: "Enter an SPG's store check-in record for a month, typed or from an Excel file" },
     { code: "spg_attendance:verify", module: "spg_attendance", action: "verify", description: "Check an SPG store check-in record entered by someone else against the original" },

@@ -18,6 +18,9 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  *   punya toko tetap diperlakukan sebagai SPG di HP. SPG yang sudah punya
  *   riwayat di tokonya tidak diganti perannya di sini (`SPG_GUNAKAN_BERHENTI`),
  *   dan SPG yang sudah berhenti tidak wajib punya toko tetap.
+ * - Peran SPG dengan toko tetap juga butuh tanggal mulai bekerja (`spgStartedOn`,
+ *   P62/B20): aksi ini tidak punya isian tanggal, jadi akun tanpa tanggal ditolak
+ *   `MULAI_WAJIB` tanpa perubahan dan tanpa jejak — sama dengan Pengaturan → Pengguna.
  */
 
 type SesiUji = { user: { id: string; email: null; role: string; permissions: string[] } };
@@ -96,7 +99,7 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
     await prisma.storeVisit.deleteMany({ where: { userId: seededId(target) } });
     await prisma.user.update({
       where: { id: seededId(target) },
-      data: { roleId: peranBiasa, assignedStoreId: null, spgEndedOn: null, spgEndedStoreId: null },
+      data: { roleId: peranBiasa, assignedStoreId: null, spgEndedOn: null, spgEndedStoreId: null, spgStartedOn: null },
     });
   });
 
@@ -253,12 +256,24 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
       expect(await assignUserRole(target, peranSpg)).toEqual({ ok: false, code: "TOKO_WAJIB" });
     });
 
-    it("peran SPG dengan toko tetap aktif → berhasil, tokonya tetap", async () => {
-      await prisma.user.update({ where: { id: seededId(target) }, data: { assignedStoreId: tokoAktif } });
+    it("peran SPG dengan toko tetap aktif → berhasil, tokonya dan tanggal mulainya tetap", async () => {
+      await prisma.user.update({ where: { id: seededId(target) }, data: { assignedStoreId: tokoAktif, spgStartedOn: "2026-10-01" } });
       masuk(["settings_security:manage"]);
       expect(await assignUserRole(target, peranSpg)).toEqual({ ok: true });
+      const u = await prisma.user.findUniqueOrThrow({
+        where: { id: seededId(target) },
+        select: { roleId: true, assignedStoreId: true, spgStartedOn: true },
+      });
+      expect(u).toEqual({ roleId: peranSpg, assignedStoreId: tokoAktif, spgStartedOn: "2026-10-01" });
+    });
+
+    it("peran SPG dengan toko tetap aktif tanpa tanggal mulai → MULAI_WAJIB, tanpa perubahan dan tanpa jejak", async () => {
+      await prisma.user.update({ where: { id: seededId(target) }, data: { assignedStoreId: tokoAktif, spgStartedOn: null } });
+      masuk(["settings_security:manage"]);
+      expect(await assignUserRole(target, peranSpg)).toEqual({ ok: false, code: "MULAI_WAJIB" });
       const u = await prisma.user.findUniqueOrThrow({ where: { id: seededId(target) }, select: { roleId: true, assignedStoreId: true } });
-      expect(u).toEqual({ roleId: peranSpg, assignedStoreId: tokoAktif });
+      expect(u).toEqual({ roleId: peranBiasa, assignedStoreId: tokoAktif });
+      expect(await jejak(target, "USER_UPDATED")).toHaveLength(0);
     });
 
     it("berganti dari peran SPG ke peran lain mengosongkan toko tetap, dan jejaknya mencatatnya", async () => {

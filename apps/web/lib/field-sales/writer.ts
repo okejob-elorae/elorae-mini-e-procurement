@@ -652,10 +652,11 @@ async function bacaAturanKreditTx(tx: Prisma.TransactionClient): Promise<AturanK
  * owner P21, 2026-11-02: an empty konsi limit is not gated) is not gated. Otherwise the store's live
  * `computeStoreCreditExposure` plus `orderTotal` is compared against the limit: a PUTUS approve
  * passes its final order total, a KONSI approve passes 0, because consigned goods are not owed
- * until a sell-through report invoices them. Over the limit with no override reason it THROWS
- * `CreditLimitExceededError` — never a return, since `runSerializable` commits on return. With a
- * reason it writes the `CREDIT_LIMIT_OVERRIDE` audit row and hands back the five approve-side
- * columns for the caller's own status write; within the limit it returns null.
+ * until the store's consignment CYCLE bills them at its lock (`kunciAngka`,
+ * lib/konsinyasi/writer.ts) — and that receivable counts toward exposure. Over the limit with no
+ * override reason it THROWS `CreditLimitExceededError` — never a return, since `runSerializable`
+ * commits on return. With a reason it writes the `CREDIT_LIMIT_OVERRIDE` audit row and hands back
+ * the five approve-side columns for the caller's own status write; within the limit it returns null.
  */
 async function enforceApproveCreditLimit(
   tx: Prisma.TransactionClient,
@@ -1031,10 +1032,11 @@ export async function approveKonsiOrderInTx(
 
   /**
    * Gated on exposure alone, before any reservation or price write: the order's own retail value
-   * is never added (orderTotal 0), because consigned goods stay ours until a sell-through report
-   * invoices them — and that invoice's receivable is what counts toward exposure. Both konsi
-   * approve paths reach this through here, so neither can skip it; an already-APPROVED replay
-   * returns before its caller ever gets here and stays ungated.
+   * is never added (orderTotal 0), because consigned goods stay ours until the consignment CYCLE
+   * bills them at its lock (`kunciAngka`) — and that receivable is what counts toward exposure
+   * (sell-through reports no longer invoice, `INVOICING_RETIRED`). Both konsi approve paths reach
+   * this through here, so neither can skip it; an already-APPROVED replay returns before its
+   * caller ever gets here and stays ungated.
    */
   const creditOverride = await enforceApproveCreditLimit(tx, {
     orderId: order.id,

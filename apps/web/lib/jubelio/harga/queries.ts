@@ -145,6 +145,12 @@ export type BarisHargaMenunggu = {
   /** Yang terakhir terbaca di Jubelio — tertinggi dan terendah ("150000.00"); null = belum terbaca. */
   jubelioTertinggi: string | null;
   jubelioTerendah: string | null;
+  /**
+   * ISO `jubelioObservedChangedAt` — token compare-and-swap kedua yang dikirim balik saat menyetujui
+   * atau mengembalikan: bacaan Jubelio yang berubah sesudah halaman dibuka ditolak (P75). null =
+   * bacaannya belum pernah berubah.
+   */
+  berubahPada: string | null;
 };
 
 /** Barang yang punya kiriman produk PENDING/PROCESSING, di antara `ids`. */
@@ -288,6 +294,7 @@ export async function daftarHargaMenunggu(
       }),
       jubelioTertinggi: b.jubelioObservedAt ? jubelioTertinggi : null,
       jubelioTerendah: b.jubelioObservedAt ? jubelioTerendah : null,
+      berubahPada: b.jubelioObservedChangedAt?.toISOString() ?? null,
     });
   }
   return { baris, total, terpotong: total > tampil.length };

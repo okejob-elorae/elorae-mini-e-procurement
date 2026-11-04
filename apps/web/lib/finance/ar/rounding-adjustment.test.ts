@@ -166,6 +166,21 @@ d("recordRoundingAdjustment (test bed only)", () => {
     expect(totalDebit).toBeCloseTo(totalCredit, 6);
   });
 
+  /*
+   * A konsi bill is paid only through a BKM (`KONSI_LEWAT_BKM`), but a residue under Rp 1 is not a
+   * payment anyone makes: the write-off stays open to it, or the bill would sit PARTIAL forever.
+   */
+  it("still writes off a konsi bill's residue under Rp 1", async () => {
+    const receivableId = await makeReceivable(1000.4, 0.4);
+    await prisma.receivable.update({ where: { id: receivableId }, data: { isConsignment: true } });
+    const res = await adjust(receivableId);
+    expect(res.alreadyApplied).toBe(false);
+
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: receivableId } });
+    expect(Number(after.outstandingAmount)).toBe(0);
+    expect(after.status).toBe("PAID");
+  });
+
   it("replays the same event as the same payment without writing off twice", async () => {
     const receivableId = await makeReceivable(500.25, 0.25);
     const eventId = crypto.randomUUID();

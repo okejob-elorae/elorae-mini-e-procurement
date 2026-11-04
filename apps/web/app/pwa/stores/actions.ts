@@ -33,6 +33,7 @@ import {
 } from "@/lib/salesman/absensi-writer";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { BATAS_CHECKIN_LURING_MS, jepitWaktuLuring } from "@/lib/pwa/waktu-luring";
+import { ambilTokoTetap, spgBerhentiPada, tokoSpgUntukAntrean } from "@/lib/pwa/peran";
 
 const checkInSchema = z.object({
   storeId: z.string().min(1),
@@ -56,8 +57,39 @@ async function bacaSetelan(key: string): Promise<string | null> {
 }
 
 export type CheckInHasil =
-  | { ok: false; code: "UNAUTHORIZED" | "NOT_FOUND" | "STORE_NOT_ASSIGNED" }
+  | { ok: false; code: "UNAUTHORIZED" | "NOT_FOUND" | "STORE_NOT_ASSIGNED" | "SPG_BERHENTI" }
   | { ok: false; code: "DI_LUAR_RADIUS"; jarakMeter: number; radiusMeter: number; akurasiMeter: number | null };
+
+type TolakTokoSpg = "STORE_NOT_ASSIGNED" | "SPG_BERHENTI";
+
+/**
+ * Toko SPG dibaca ulang DI DALAM transaksi kunjungan. Kantor bisa memindah toko
+ * SPG (Pengaturan → Pengguna) atau menandainya berhenti (P66) di sela penilaian
+ * (`nilaiCheckIn`) dan penulisan kunjungan; bacaan ini membuat penulisan `User`
+ * kantor dan sisipan kunjungan bertabrakan di transaksi serializable, jadi salah
+ * satunya diulang atau ditolak — SPG tidak pernah mendapat kunjungan di toko yang
+ * baru saja dilepas darinya. Aturannya sama dengan `nilaiCheckIn`
+ * (`tokoSpgUntukAntrean` untuk antrean): toko tetapnya; untuk SPG yang sudah
+ * berhenti, toko yang dilepasnya hanya dari antrean HP dan hanya untuk check-in
+ * yang ditangkap paling lambat akhir hari terakhirnya (WIB).
+ */
+async function tolakTokoSpgBerubah(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  storeId: string,
+  waktu: Date,
+  luring: boolean,
+): Promise<TolakTokoSpg | null> {
+  const u = await tx.user.findUnique({
+    where: { id: userId },
+    select: { assignedStoreId: true, spgEndedOn: true, spgEndedStoreId: true },
+  });
+  if (u?.assignedStoreId) return u.assignedStoreId === storeId ? null : "STORE_NOT_ASSIGNED";
+  // Bukan SPG lagi (perannya diganti di sela penilaian), padahal kunjungan ini dinilai sebagai SPG.
+  if (!u?.spgEndedOn || !u.spgEndedStoreId) return "STORE_NOT_ASSIGNED";
+  if (!luring || waktu.getTime() > new Date(`${u.spgEndedOn}T23:59:59.999+07:00`).getTime()) return "SPG_BERHENTI";
+  return u.spgEndedStoreId === storeId ? null : "STORE_NOT_ASSIGNED";
+}
 
 /**
  * Penilaian check-in yang sama untuk check-in dengan sinyal dan dari antrean
@@ -66,6 +98,13 @@ export type CheckInHasil =
  * otomatis. Semuanya dinilai dengan koordinat dan WAKTU tangkapan — untuk
  * antrean, `waktu` adalah saat check-in ditekan di HP, dan kunjungan
  * "sebelumnya" adalah yang sebelum waktu itu.
+ *
+ * SPG yang sudah ditandai berhenti (P66) tidak pernah dinilai sebagai salesman
+ * keliling: check-in dari antrean HP yang ditangkap paling lambat akhir hari
+ * terakhirnya (WIB) dicatat sebagai kunjungan SPG di toko yang dilepasnya
+ * (`tokoSpgUntukAntrean`), jadi absennya ikut terhitung (P7b); di toko lain →
+ * `STORE_NOT_ASSIGNED`; sesudah hari terakhirnya, atau check-in dengan sinyal →
+ * `SPG_BERHENTI`.
  */
 type PenilaianCheckIn =
   | { ok: false; hasil: CheckInHasil }
@@ -86,11 +125,15 @@ async function nilaiCheckIn(
 ): Promise<PenilaianCheckIn> {
   // An SPG is stationed at one store — they may only check in there, even if they
   // reach another store's route directly. Non-SPG users have no assignedStoreId.
-  const me = await prisma.user.findUnique({ where: { id: userId }, select: { assignedStoreId: true } });
-  if (me?.assignedStoreId && me.assignedStoreId !== p.storeId) {
+  // An SPG marked as left (P66) has none either, and is never judged as a salesman.
+  const tokoTetap = luring ? await tokoSpgUntukAntrean(userId, waktu) : await ambilTokoTetap(userId);
+  if (!tokoTetap && (await spgBerhentiPada(userId))) {
+    return { ok: false, hasil: { ok: false, code: "SPG_BERHENTI" } };
+  }
+  if (tokoTetap && tokoTetap !== p.storeId) {
     return { ok: false, hasil: { ok: false, code: "STORE_NOT_ASSIGNED" } };
   }
-  const spg = Boolean(me?.assignedStoreId);
+  const spg = Boolean(tokoTetap);
 
   const store = await prisma.store.findUnique({
     where: { id: p.storeId },
@@ -247,9 +290,16 @@ export async function checkIn(input: {
   const { spg, radius, tanda, tutupOtomatisBertransaksi } = nilai;
   const clientId = parsed.clientId ?? null;
 
-  await prisma.$transaction(async (tx) => {
+  // `runSerializable`: bacaan ulang toko SPG di bawah sengaja bertabrakan dengan
+  // penulisan `User` kantor — yang kalah diulang, bukan dilempar ke pengguna.
+  const tolak = await runSerializable(async (tx): Promise<TolakTokoSpg | null> => {
+    if (spg) {
+      const berubah = await tolakTokoSpgBerubah(tx, userId, parsed.storeId, sekarang, false);
+      if (berubah) return berubah;
+    }
+
     // Check-in yang sama sudah tercatat (ketukan ulang dengan id yang sama).
-    if (clientId && (await tx.storeVisit.findUnique({ where: { clientId }, select: { id: true } }))) return;
+    if (clientId && (await tx.storeVisit.findUnique({ where: { clientId }, select: { id: true } }))) return null;
 
     const active = await tx.storeVisit.findFirst({
       where: { userId, checkoutAt: null },
@@ -261,7 +311,7 @@ export async function checkIn(input: {
       active ? { id: active.id, storeId: active.storeId } : null,
     );
 
-    if (plan.kind === "no-op-same-store") return;
+    if (plan.kind === "no-op-same-store") return null;
 
     if (plan.kind === "auto-close-and-open") {
       await tx.storeVisit.updateMany({
@@ -290,7 +340,9 @@ export async function checkIn(input: {
         ...(clientId ? { clientId } : {}),
       },
     });
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    return null;
+  });
+  if (tolak) return { ok: false, code: tolak };
 
   // SPG: check-in di toko tetapnya = absen masuk (bila absensi menyala). Sesudah
   // kunjungannya tercatat, dan tidak pernah menggagalkannya.
@@ -365,7 +417,10 @@ export async function bacaSyaratCheckOut(visitId: string): Promise<SyaratCheckOu
 
 export type CheckOutHasil =
   | { alreadyClosed: boolean; storeId: string }
-  | { ok: false; code: "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "HASIL_WAJIB" | "HASIL_TIDAK_SAH" | "CATATAN_WAJIB" };
+  | {
+      ok: false;
+      code: "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "HASIL_WAJIB" | "HASIL_TIDAK_SAH" | "CATATAN_WAJIB" | "SPG_BERHENTI";
+    };
 
 /**
  * Check-out. Untuk salesman, hasil kunjungan diputuskan di sini: ada transaksi
@@ -400,6 +455,9 @@ export async function checkOut(input: {
   if (visit.checkoutAt) return { alreadyClosed: true, storeId: visit.storeId };
 
   const me = await prisma.user.findUnique({ where: { id: userId }, select: { assignedStoreId: true } });
+  // SPG yang sudah ditandai berhenti (P66) tidak pernah dinilai sebagai salesman; check-out
+  // kunjungannya hanya lewat antrean HP (`checkOutLuringAction`).
+  if (!me?.assignedStoreId && (await spgBerhentiPada(userId))) return { ok: false, code: "SPG_BERHENTI" };
   const spg = Boolean(me?.assignedStoreId);
 
   let hasil: { outcome: string | null; outcomeNote: string | null } = { outcome: null, outcomeNote: null };
@@ -462,7 +520,10 @@ const checkInLuringSchema = z.object({
 
 export type CheckInLuringHasil =
   | { ok: true; visitId: string; storeId: string }
-  | { ok: false; code: "VALIDATION" | "UNAUTHORIZED" | "NOT_FOUND" | "STORE_NOT_ASSIGNED" | "WAKTU_TIDAK_VALID" | "KUNCI_DIPAKAI" }
+  | {
+      ok: false;
+      code: "VALIDATION" | "UNAUTHORIZED" | "NOT_FOUND" | "STORE_NOT_ASSIGNED" | "WAKTU_TIDAK_VALID" | "KUNCI_DIPAKAI" | "SPG_BERHENTI";
+    }
   | { ok: false; code: "DI_LUAR_RADIUS"; jarakMeter: number; radiusMeter: number; akurasiMeter: number | null };
 
 /** Kunjungan yang sudah dicatat dengan id buatan HP ini — hasil yang sama untuk kiriman ulang. */
@@ -494,7 +555,9 @@ async function kunjunganDenganClientId(clientId: string, userId: string): Promis
  *
  * SPG: kunjungan yang menjadi kunjungan berjalan = absen masuk pada waktu HP;
  * kunjungan yang dicatat sudah selesai tetap mencatat absen hari itu (jam
- * masuk = check-in pertama hari itu, `absenMasukKunjunganLampau`).
+ * masuk = check-in pertama hari itu, `absenMasukKunjunganLampau`). SPG yang
+ * sudah ditandai berhenti (P66) tetap SPG untuk check-in yang ditangkap paling
+ * lambat akhir hari terakhirnya di toko yang dilepasnya (`nilaiCheckIn`).
  * Tidak pernah mengalihkan halaman — antrean berjalan di latar.
  */
 export async function checkInLuringAction(input: unknown): Promise<CheckInLuringHasil> {
@@ -517,11 +580,17 @@ export async function checkInLuringAction(input: unknown): Promise<CheckInLuring
   if (!nilai.ok) return nilai.hasil;
   const { spg, radius, tanda, tutupOtomatisBertransaksi } = nilai;
 
-  let hasil: { visitId: string; berjalan: boolean; selesai?: boolean };
+  type HasilTulis = { visitId: string; berjalan: boolean; selesai?: boolean } | { tolak: TolakTokoSpg };
+  let hasil: HasilTulis;
   try {
-    hasil = await runSerializable(async (tx) => {
+    hasil = await runSerializable(async (tx): Promise<HasilTulis> => {
       const sama = await tx.storeVisit.findUnique({ where: { clientId: d.clientId }, select: { id: true } });
       if (sama) return { visitId: sama.id, berjalan: false };
+
+      if (spg) {
+        const berubah = await tolakTokoSpgBerubah(tx, userId, d.storeId, waktu, true);
+        if (berubah) return { tolak: berubah };
+      }
 
       const dasar = {
         storeId: d.storeId,
@@ -583,6 +652,7 @@ export async function checkInLuringAction(input: unknown): Promise<CheckInLuring
     }
     throw err;
   }
+  if ("tolak" in hasil) return { ok: false, code: hasil.tolak };
 
   if (spg && hasil.berjalan) {
     await absenMasukLewatCheckin({ userId, lat: d.lat, lng: d.lng, akurasi, sekarang: waktu });
@@ -614,13 +684,26 @@ export type CheckOutLuringHasil =
   | { ok: true; storeId: string; sudahTertutup: boolean }
   | {
       ok: false;
-      code: "VALIDATION" | "UNAUTHORIZED" | "FORBIDDEN" | "KUNJUNGAN_TIDAK_SAH" | "HASIL_WAJIB" | "HASIL_TIDAK_SAH" | "CATATAN_WAJIB";
+      code:
+        | "VALIDATION"
+        | "UNAUTHORIZED"
+        | "FORBIDDEN"
+        | "KUNJUNGAN_TIDAK_SAH"
+        | "HASIL_WAJIB"
+        | "HASIL_TIDAK_SAH"
+        | "CATATAN_WAJIB"
+        | "SPG_BERHENTI";
     };
 
 /**
  * Check-out yang dicatat TANPA sinyal. Antrean HP mengirimnya PALING AKHIR —
  * sesudah check-in, pesanan/nota, dan pekerjaan stok — supaya hasil kunjungan
  * salesman ("ada transaksi?") dinilai sesudah transaksinya sampai.
+ *
+ * SPG atau bukan dinilai menurut WAKTU CHECK-IN kunjungannya
+ * (`tokoSpgUntukAntrean`): kunjungan SPG yang sudah ditandai berhenti (P66) yang
+ * dimulai paling lambat akhir hari terakhirnya tetap ditutup sebagai kunjungan
+ * SPG — tanpa alasan kunjungan, dengan absen pulang.
  *
  * `checkoutAt` = waktu di HP, dijepit antara check-in dan sekarang.
  * Kunjungan yang sudah ditutup tidak disentuh — KECUALI ditutup otomatis oleh
@@ -652,8 +735,9 @@ export async function checkOutLuringAction(input: unknown): Promise<CheckOutLuri
   const luruskan = visit.checkoutAt !== null && visit.autoClosed && waktuKeluar.getTime() <= visit.checkoutAt.getTime();
   if (visit.checkoutAt && !luruskan) return { ok: true, storeId: visit.storeId, sudahTertutup: true };
 
-  const me = await prisma.user.findUnique({ where: { id: userId }, select: { assignedStoreId: true } });
-  const spg = Boolean(me?.assignedStoreId);
+  const tokoSpg = await tokoSpgUntukAntrean(userId, visit.checkinAt);
+  if (!tokoSpg && (await spgBerhentiPada(userId))) return { ok: false, code: "SPG_BERHENTI" };
+  const spg = Boolean(tokoSpg);
 
   let hasil: { outcome: string | null; outcomeNote: string | null } = { outcome: null, outcomeNote: null };
   if (!spg) {

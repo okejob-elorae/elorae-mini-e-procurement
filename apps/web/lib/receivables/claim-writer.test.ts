@@ -310,12 +310,14 @@ describe('kiriman dari antrean offline HP', () => {
   it('menyimpan kunci kirimannya pada BKM baru', async () => {
     const hasil = await buatKlaimPembayaran(KIRIMAN);
     expect(hasil.ok).toBe(true);
+    // BKM baru tidak ditandai kiriman ulang — aksinya mengabari pemegang toko hanya untuk yang baru.
+    expect(hasil).not.toHaveProperty('diulang');
     expect(state.dibuat[0].idempotencyKey).toBe('hp-1');
   });
 
   it('mengembalikan BKM yang sudah ada untuk kunci yang sama, tanpa membuat baru', async () => {
     state.klaimBerkunci = { id: 'bkm0', docNo: 'BKM/2026/0007', salesmanId: 'u1' };
-    expect(await buatKlaimPembayaran(KIRIMAN)).toEqual({ ok: true, id: 'bkm0', docNo: 'BKM/2026/0007' });
+    expect(await buatKlaimPembayaran(KIRIMAN)).toEqual({ ok: true, id: 'bkm0', docNo: 'BKM/2026/0007', diulang: true });
     expect(state.dibuat).toHaveLength(0);
     expect(state.jejak).toHaveLength(0);
   });
@@ -325,7 +327,7 @@ describe('kiriman dari antrean offline HP', () => {
     // diverifikasi akan ditolak "sudah lunas" dan sales mengira laporannya hilang.
     state.klaimBerkunci = { id: 'bkm0', docNo: 'BKM/2026/0007', salesmanId: 'u1' };
     state.sisa.set('r1', 0);
-    expect(await buatKlaimPembayaran(KIRIMAN)).toEqual({ ok: true, id: 'bkm0', docNo: 'BKM/2026/0007' });
+    expect(await buatKlaimPembayaran(KIRIMAN)).toEqual({ ok: true, id: 'bkm0', docNo: 'BKM/2026/0007', diulang: true });
   });
 
   it('tidak menyerahkan BKM milik sales lain yang kebetulan berkunci sama', async () => {
@@ -336,7 +338,7 @@ describe('kiriman dari antrean offline HP', () => {
 
   it('dua kiriman kembar yang tiba bersamaan menghasilkan satu BKM', async () => {
     state.kalahBalapan = 1;
-    expect(await buatKlaimPembayaran(KIRIMAN)).toEqual({ ok: true, id: 'bkm-kembar', docNo: 'BKM/2026/0009' });
+    expect(await buatKlaimPembayaran(KIRIMAN)).toEqual({ ok: true, id: 'bkm-kembar', docNo: 'BKM/2026/0009', diulang: true });
     expect(state.dibuat).toHaveLength(0);
   });
 
@@ -467,6 +469,6 @@ describe("buatKlaimPembayaran — tagihan konsinyasi dan tagihan yang dibatalkan
     state.klaimBerkunci = { id: "bkm-lama", docNo: "BKM/2026/0007", salesmanId: "u1" };
     expect(
       await buatKlaimPembayaran({ ...DASAR, idempotencyKey: "hp-1", pelunasan: [{ receivableId: "r1", nilai: 1_000 }] }),
-    ).toEqual({ ok: true, id: "bkm-lama", docNo: "BKM/2026/0007" });
+    ).toEqual({ ok: true, id: "bkm-lama", docNo: "BKM/2026/0007", diulang: true });
   });
 });

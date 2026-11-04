@@ -58,8 +58,8 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "spgRetur.pembeliSaya.judul" },
     isi: [
       "Laporan barang yang dikembalikan pembeli yang Anda kirim, dengan statusnya: Menunggu persetujuan kantor, Disetujui, Ditolak (beserta alasan kantor), atau Ditarik.",
-      "Selama menunggu, stok rak, penjualan bersih, dan komisi belum berubah, dan potong yang sudah dilaporkan tidak bisa dilaporkan lagi dari nota yang sama. Laporan yang masih menunggu dan belum tercatat uangnya dikembalikan bisa Anda tarik sendiri dengan alasan bila salah catat — laporannya tidak dihapus, kantor tetap melihatnya sebagai ditarik — lalu barangnya bisa dilaporkan ulang dari nota.",
-      "Setelah disetujui, kembalikan uang pembeli lewat kasir lalu tekan Uang sudah dikembalikan dengan foto struknya (bisa tanpa sinyal). Pengembalian uang hanya bisa dicatat selama laporan menunggu atau sesudah disetujui, tidak pernah sesudah ditolak. Ditolak tanpa uang dikembalikan: jangan kembalikan uangnya, dan serahkan lagi barangnya ke pembeli. Ditolak sesudah uang dikembalikan: barangnya tetap disisihkan sampai beban Anda lunas dan kantor memutuskan barangnya (uang Anda dikembalikan di pembayaran berikutnya dan barangnya masuk stok, atau barangnya menjadi milik Anda).",
+      "Selama menunggu, stok rak, penjualan bersih, dan komisi belum berubah, dan potong yang sudah dilaporkan tidak bisa dilaporkan lagi dari nota yang sama. Laporan yang masih menunggu dan belum tercatat uangnya dikembalikan bisa Anda tarik sendiri dengan alasan bila salah catat — laporannya tidak dihapus, kantor tetap melihatnya sebagai ditarik — lalu barangnya bisa dilaporkan ulang dari nota. Pengembalian uang yang sudah Anda catat di HP — walau belum terkirim — membuat laporannya tidak bisa ditarik lagi; kantor yang memutuskan.",
+      "Setelah disetujui, kembalikan uang pembeli lewat kasir lalu tekan Uang sudah dikembalikan dengan foto struknya (bisa tanpa sinyal). Kalau uangnya terlanjur dikembalikan sebelum disetujui atau sesudah ditolak, catat juga dengan foto struknya: bila laporannya ditolak, uang itu menjadi beban Anda (dipotong dari komisi, lalu gaji). Kalau barangnya sudah dilaporkan lagi di laporan lain, atau laporannya sudah Anda tarik sebelum uangnya dicatat, pengembaliannya tidak tercatat dan kantor diberi tahu. Ditolak tanpa uang dikembalikan: jangan kembalikan uangnya, dan serahkan lagi barangnya ke pembeli. Ditolak sesudah uang dikembalikan: barangnya tetap disisihkan sampai beban Anda lunas dan kantor memutuskan barangnya (uang Anda dikembalikan di pembayaran berikutnya dan barangnya masuk stok, atau barangnya menjadi milik Anda).",
       "Laporan yang dicatat tanpa sinyal baru muncul di sini setelah terkirim; sebelum itu ada di Lainnya → Belum terkirim.",
     ],
   },
@@ -493,7 +493,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "spgTutupHari.hp.judul" },
     isi: [
       "Laporan penutupan hari toko Anda, dikirim sebelum pulang. Angka penjualan dihitung sistem; Anda menambahkan jumlah pengunjung, total kasir toko untuk merek kita, kendala hari itu, dan foto, sesuai yang diatur kantor.",
-      "Retur pembeli dihitung pada hari dilaporkan dan hanya bila sudah disetujui kantor; yang masih menunggu kantor ditulis terpisah dan belum mengurangi penjualan bersih.",
+      "Retur pembeli dihitung pada hari uangnya dikembalikan kasir, dan hanya bila sudah disetujui kantor; uang yang dikembalikan hari itu untuk laporan yang belum atau tidak disetujui ditulis terpisah dan tidak mengurangi penjualan bersih.",
       "Satu laporan per toko per hari: kalau Anda atau rekan mengirim lagi, laporan hari itu diperbarui. Laporan kemarin masih bisa dikirim lewat tombol Kemarin. Pukul 21.30 WIB, SPG yang check-in hari itu menerima pengingat kalau tokonya sudah punya nota tetapi belum punya laporan. Laporan yang terkirim bisa dibagikan lewat WhatsApp.",
     ],
     kartu: [

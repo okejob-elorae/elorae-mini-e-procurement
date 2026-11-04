@@ -659,6 +659,14 @@ export async function jumlahKomisiSpgTertunggak(sekarang: Date = new Date(), sco
 }
 
 /**
+ * Angka baris Beranda spgSalariesUnset: tunggakan yang DITAHAN karena gaji bulanan SPG belum diatur —
+ * sama dengan bagian ditahan kartu #tunggakan dengan sebab itu. `scope` untuk tes.
+ */
+export async function jumlahGajiSpgBelumDiatur(sekarang: Date = new Date(), scope: { userIds?: string[] } = {}): Promise<number> {
+  return (await daftarTunggakanKomisi(prisma, sekarang, scope)).filter((t) => t.ditahan === "GAJI_POKOK_BELUM_DIATUR").length;
+}
+
+/**
  * SPG yang unitnya diperiksa halaman Komisi SPG untuk koreksi yang menunggu: pemegang baris resmi
  * (belum dibayar, atau bulan penjualannya di jendela), penerima koreksi di jendela, dan penjual TANPA
  * baris yang menjual di laporan yang sudah tertutup (notanya masuk sesudah dikunci/dicek).

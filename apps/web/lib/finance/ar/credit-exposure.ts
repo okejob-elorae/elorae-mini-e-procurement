@@ -19,9 +19,10 @@ export type CreditExposure = EksposurKredit & {
  *
  * - `receivableOutstanding`: Σ the team `outstandingAmount` of the store's OUTSTANDING/PARTIAL
  *   receivables, any source, konsi bills included.
- * - `undeliveredOrderResidual`: Σ `nilaiBelumDinota` over the store's APPROVED putus orders that are
- *   not CLOSED — the value of each order's OPEN line quantity, floored at zero PER ORDER (never on
- *   the grand sum, so an over-delivered line lends no headroom to a sibling's shortfall).
+ * - `undeliveredOrderResidual`: Σ `nilaiBelumDinota` over the store's APPROVED putus orders whose
+ *   deliveryStatus is PENDING or PARTIAL — the value of each order's OPEN line quantity, floored at
+ *   zero PER ORDER (never on the grand sum, so an over-delivered line lends no headroom to a
+ *   sibling's shortfall).
  * - `openInvoiceCount` / `openReceivableIds`: the receivables whose balance rounds to at least one
  *   rupiah. A sub-rupiah residue is not an invoice anyone collects, but its sen stay in
  *   `receivableOutstanding`.
@@ -33,19 +34,21 @@ export type CreditExposure = EksposurKredit & {
  * jadi dikirim", P16/P25) or corrected at handover (retur langsung P24, lost in transit) needs no
  * special case here: credit follows the order line and the receivable.
  *
- * DELIVERED orders are read too and add 0 (every line settled). Only CLOSED is left out, because
- * CLOSED is terminal for reopening: `closeFieldSalesOrderRemainder` refuses while a shipment is in
- * flight, and both a door refusal and "tidak jadi dikirim" act only on an in-flight shipment. A
- * DELIVERED order, by contrast, reopens pieces through exactly those two paths; reading only
- * PENDING/PARTIAL orders would rest on every such writer recomputing `deliveryStatus` in the same
- * transaction, and one that forgot would silently wave the reopened value through both checks.
+ * Only PENDING/PARTIAL orders are read, so the lock footprint inside the serializable create and
+ * approve transactions does not grow with the store's history. `nextDeliveryStatus` returns PENDING
+ * or PARTIAL exactly when some line has open quantity, so the filter drops only orders that add 0
+ * (DELIVERED, CLOSED). That rests on invariant 2.
  *
  * INVARIANTS this figure rests on (docs/landmines/finance-ar.md):
  * 1. every nota writer raises `FieldSalesOrderLine.deliveredQty` AND creates the nota's receivable
  *    in ONE transaction (`recordFieldSalesDelivery`/`recordFieldSalesDeliveryInTx`); a path writing
  *    a nota without raising deliveredQty would count its pieces twice;
- * 2. an order never reads CLOSED while a line still has open quantity (`nextDeliveryStatus`);
- * 3. every receivable writer keeps both column families in step: `originalAmount = amount`, and
+ * 2. every writer that changes deliveredQty or cancelledQty recomputes deliveryStatus with
+ *    `nextDeliveryStatus` in the same transaction (`recordFieldSalesDelivery`, koreksi-nota,
+ *    konsi-transfer writer, shipment writer, pesanan-lama writer). A writer that forgot would wave
+ *    reopened pieces through both checks;
+ * 3. an order never reads CLOSED while a line still has open quantity (`nextDeliveryStatus`);
+ * 4. every receivable writer keeps both column families in step: `originalAmount = amount`, and
  *    `outstandingAmount = outstanding` = the opening balance (the whole amount for a nota, a manual
  *    invoice, a sell-through report or a konsi cycle; the imported `sisa` for an import, with
  *    `paidBeforeImport = amount − sisa`), a value correction re-runs `hitungUlangPiutang`, and a
@@ -78,7 +81,7 @@ export async function computeStoreCreditExposure(
   const terbuka = receivables.filter((r) => Math.round(Number(r.outstandingAmount)) >= 1);
 
   const approvedOrders = await client.fieldSalesOrder.findMany({
-    where: { storeId, status: "APPROVED", orderType: "PUTUS", deliveryStatus: { not: "CLOSED" } },
+    where: { storeId, status: "APPROVED", orderType: "PUTUS", deliveryStatus: { in: ["PENDING", "PARTIAL"] } },
     select: {
       total: true,
       orderDiscountAmount: true,

@@ -70,6 +70,9 @@ export async function bacaSebaranLapisan(
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: { locationType: true, locationId: true },
     });
+    // Kiriman konsinyasi yang masih dalam perjalanan (`KonsiTransfer` IN_TRANSIT) belum punya entri masuk
+    // di toko, jadi bagiannya ikut terhitung sudah keluar. Menilainya ulang butuh sisi penerimaan toko dan
+    // biaya konsinyasi yang ikut membawanya — belum dibangun.
     if (!masuk || (masuk.locationType !== "STORE" && masuk.locationType !== "VAN")) continue;
     const lokasi: LokasiTujuan = { jenis: masuk.locationType, lokasiId: masuk.locationId };
     const di = await entriLokasi(tx, lokasi, a.itemId, a.variantSku);

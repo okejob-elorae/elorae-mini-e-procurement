@@ -41,6 +41,11 @@ function akhirHariWib(hari: string): Date {
  * dilepasnya — selama pekerjaan itu ditangkap paling lambat di akhir hari terakhirnya (WIB).
  * Pekerjaan yang ditangkap sebelum ia berhenti tidak boleh hilang hanya karena sinyalnya datang
  * sesudah kantor menandainya berhenti; yang ditangkap sesudah hari terakhirnya ditolak (null).
+ *
+ * Aturan "sampai hari terakhir" ini belum punya jawaban pemilik (P66 menjawab penandanya, bukan
+ * antreannya) — pertanyaan pemilik: apakah pekerjaan antrean sampai hari terakhir tetap dicatat.
+ * Penulis nota SPG membaca ulang aturan yang sama di transaksinya (`SPG_BERHENTI`,
+ * `recordSpgSaleTx`), jadi mengubahnya berarti mengubah keduanya.
  */
 export const tokoSpgUntukAntrean = cache(async (userId: string, waktuTangkap: Date): Promise<string | null> => {
   const tetap = await ambilTokoTetap(userId);

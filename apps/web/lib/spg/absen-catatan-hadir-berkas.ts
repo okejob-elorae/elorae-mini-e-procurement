@@ -8,7 +8,8 @@ import { rapikanHariCatatan, type GalatBaris, type HariCatatan } from "./absen-c
  * Kolom: Tanggal, Jadwal (KERJA/LIBUR), Hadir (YA/TIDAK), Catatan. `XLSX.read` WAJIB `raw: true`
  * (ranjau piutang: tanpanya SheetJS membaca teks seperti "900.000" sebagai angka dengan aturan
  * lokal). Tanggal boleh tanggal Excel (nomor seri), "YYYY-MM-DD", "DD/MM/YYYY", atau "DD-MM-YYYY".
- * Baris yang seluruhnya kosong dilewati; galat dilaporkan dengan nomor baris berkasnya.
+ * Baris yang seluruhnya kosong, atau yang hanya bertanggal (Jadwal, Hadir, dan Catatan kosong — hari
+ * templat yang tidak diisi), dilewati; galat dilaporkan dengan nomor baris berkasnya.
  */
 
 const KOLOM = { tanggal: ["tanggal", "tgl", "date"], jadwal: ["jadwal", "jenis"], hadir: ["hadir"], catatan: ["catatan", "keterangan", "note"] };
@@ -60,6 +61,8 @@ export function bacaBerkasCatatanHadir(
   const isian: unknown[] = [];
   sel.slice(iKepala + 1).forEach((r, i) => {
     if (r.every(kosong)) return;
+    // Hari templat yang tidak diisi = Tidak dicatat (B13: catatan boleh hanya sebagian hari).
+    if (cJ >= 0 && cH >= 0 && kosong(r[cJ]) && kosong(r[cH]) && (cC < 0 || kosong(r[cC]))) return;
     nomor.push(iKepala + 2 + i);
     isian.push({
       day: bacaTanggalSel(r[cT]),

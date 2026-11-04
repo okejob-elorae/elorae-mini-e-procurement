@@ -7,6 +7,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordSpgSale, type AlasanTanpaMember, type KodeGagalJualSpg, type MemberNota } from "@/lib/spg/sale-writer";
 import { getActiveVisit } from "@/lib/stores/queries";
 import { cariKunjunganAntrean } from "@/lib/pwa/kunjungan-antrean";
+import { tokoSpgUntukAntrean } from "@/lib/pwa/peran";
 
 export type KodeGagalJualSpgAksi = "FORBIDDEN" | "NO_ASSIGNED_STORE" | "NO_ACTIVE_VISIT" | "KUNJUNGAN_TIDAK_SAH" | "VALIDATION" | KodeGagalJualSpg;
 
@@ -30,6 +31,10 @@ export type RecordSpgSaleActionResult =
 
 // storeId is NOT taken from the client — it's derived server-side from the SPG's
 // fixed `assignedStoreId`, so an SPG can only ever record a sale at their own store.
+// The one exception is a note from the phone queue (`luring`) of an SPG the office
+// has marked as left (P66): it goes to the store she left, when it was captured by
+// the end of her last WIB day (`tokoSpgUntukAntrean`). An ended SPG still cannot
+// sell at the counter.
 const schema = z.object({
   cashReceived: z.number().min(0).optional(),
   saleLat: z.number().min(-90).max(90).nullable().optional(),
@@ -74,10 +79,17 @@ export async function recordSpgSaleAction(input: unknown): Promise<RecordSpgSale
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.SPG_SALES_RECORD)) {
     return { ok: false, code: "FORBIDDEN" };
   }
-  // Authoritative store = the SPG's assigned store; never trust a client-supplied id.
-  const me = await prisma.user.findUnique({ where: { id: session.user.id }, select: { assignedStoreId: true } });
-  if (!me?.assignedStoreId) return { ok: false, code: "NO_ASSIGNED_STORE" };
   const d = parsed.data;
+  // Authoritative store (see above); never trust a client-supplied id. The capture time is
+  // clamped to now exactly as `tentukanWaktuJual` stamps the note, so the store is resolved
+  // from the same moment the note will carry.
+  const storeId = d.luring
+    ? await tokoSpgUntukAntrean(
+        session.user.id,
+        d.waktuJual ? new Date(Math.min(Date.parse(d.waktuJual), Date.now())) : new Date(),
+      )
+    : ((await prisma.user.findUnique({ where: { id: session.user.id }, select: { assignedStoreId: true } }))?.assignedStoreId ?? null);
+  if (!storeId) return { ok: false, code: "NO_ASSIGNED_STORE" };
 
   // Penjualan di konter butuh check-in yang MASIH aktif di toko tetapnya — penjaga
   // halaman saja bisa dilewati dari tab basi atau panggilan aksi langsung.
@@ -88,7 +100,7 @@ export async function recordSpgSaleAction(input: unknown): Promise<RecordSpgSale
   if (d.luring && (d.visitId || d.visitClientId)) {
     const kunjungan = await cariKunjunganAntrean({
       userId: session.user.id,
-      storeId: me.assignedStoreId,
+      storeId,
       visitId: d.visitId ?? null,
       visitClientId: d.visitClientId ?? null,
     });
@@ -96,13 +108,13 @@ export async function recordSpgSaleAction(input: unknown): Promise<RecordSpgSale
     visitId = kunjungan;
   } else {
     const activeVisit = await getActiveVisit(session.user.id);
-    if (!activeVisit || activeVisit.storeId !== me.assignedStoreId) return { ok: false, code: "NO_ACTIVE_VISIT" };
+    if (!activeVisit || activeVisit.storeId !== storeId) return { ok: false, code: "NO_ACTIVE_VISIT" };
     visitId = activeVisit.id;
   }
 
   const res = await recordSpgSale({
     salesmanId: session.user.id,
-    storeId: me.assignedStoreId,
+    storeId,
     lines: d.lines,
     cashReceived: d.cashReceived,
     saleLat: d.saleLat ?? null,

@@ -48,6 +48,8 @@ export const KODE_ALASAN_NOTA_SPG: readonly (KodeGagalJualSpgAksi | "KUNJUNGAN_D
   "ALASAN_DISKON_WAJIB",
   "PELANGGAN_TIDAK_VALID",
   "WAKTU_TIDAK_VALID",
+  // Dijual sesudah hari terakhirnya sebagai SPG (P66), atau di toko yang bukan tokonya.
+  "SPG_BERHENTI",
 ];
 
 /** Kunci teks alasan untuk kode di kolom `error` antrean; `UMUM` kalau kodenya tidak dikenal. */

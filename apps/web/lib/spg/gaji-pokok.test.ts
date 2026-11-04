@@ -192,7 +192,10 @@ describe("catatan check-in toko (P61)", () => {
   });
 
   it("catatan yang diperiksa menutup hari yang jadwalnya ditolak", () => {
-    const semua = new Map<string, { kind: JenisHari; present: boolean }>(hariBulan("2026-11").map((d) => [d, { kind: jadwal26().get(d)!, present: true }]));
+    // Hadir di setiap hari KERJA, tidak masuk di hari LIBUR — masuk di hari libur dibayar tambahan (P65a).
+    const semua = new Map<string, { kind: JenisHari; present: boolean }>(
+      hariBulan("2026-11").map((d) => [d, { kind: jadwal26().get(d)!, present: jadwal26().get(d) === "KERJA" }]),
+    );
     const r = rincian(hitung({ statusJadwal: "DITOLAK", statusCatatan: "DIPERIKSA", catatan: semua }));
     expect(r.gajiPokok).toBe(3_500_000);
     expect(r.hariDariCatatan).toBe(30);

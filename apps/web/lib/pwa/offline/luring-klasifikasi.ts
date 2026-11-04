@@ -47,6 +47,7 @@ export const KODE_ALASAN_LURING = [
   "UNAUTHORIZED",
   "NOT_FOUND",
   "STORE_NOT_ASSIGNED",
+  "SPG_BERHENTI",
   "DI_LUAR_RADIUS",
   "WAKTU_TIDAK_VALID",
   "KUNCI_DIPAKAI",
@@ -70,6 +71,7 @@ export const KODE_ALASAN_LURING = [
   "KETERANGAN_RUSAK_WAJIB",
   "TANPA_BARIS",
   "BARANG_TIDAK_DITEMUKAN",
+  "CATATAN_STOK_TIDAK_COCOK",
   // terima kiriman: pengirimannya tidak jadi dikirim, atau belum berangkat dari gudang
   "KIRIMAN_DIBATALKAN",
   "BELUM_BERANGKAT",
@@ -89,11 +91,16 @@ export const KODE_ALASAN_LURING = [
   "GANTI_BUKAN_MILIK",
   "GANTI_TIDAK_BISA",
   "ALASAN_GANTI_WAJIB",
-  // uang retur pembeli dikembalikan — nama umum, lihat KODE_ALASAN_LINTAS_PEKERJAAN
+  // uang retur pembeli dikembalikan — empat nama umum, lihat KODE_ALASAN_LINTAS_PEKERJAAN; yang
+  // terakhir khusus langkah ini (potong laporan yang ditolak/ditarik sudah dilaporkan lagi)
   "TIDAK_DITEMUKAN",
   "BUKAN_MILIK",
   "TIDAK_DISETUJUI",
   "SUDAH_DICATAT",
+  "POTONG_SUDAH_DILAPORKAN_ULANG",
+  // foto retur pembeli ditolak rute unggahnya karena keadaan laporannya (409 KEADAAN, tersimpan
+  // `FOTO_KEADAAN` — pola `FOTO_<kode>` di luring-sinkron.ts)
+  "FOTO_KEADAAN",
 ] as const;
 
 /**

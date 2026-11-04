@@ -39,7 +39,10 @@ vi.mock("next/cache", () => ({
     state.disegarkan.push(path);
   },
 }));
-vi.mock("@/lib/pwa/peran", () => ({ ambilTokoTetap: vi.fn(async () => state.tokoTetap) }));
+vi.mock("@/lib/pwa/peran", () => ({
+  ambilTokoTetap: vi.fn(async () => state.tokoTetap),
+  tokoSpgUntukAntrean: vi.fn(async () => state.tokoTetap),
+}));
 vi.mock("@/lib/spg/retur-pembeli", () => ({
   catatReturPembeli: vi.fn(async (input: Panggilan) => {
     catat("catatReturPembeli", input);

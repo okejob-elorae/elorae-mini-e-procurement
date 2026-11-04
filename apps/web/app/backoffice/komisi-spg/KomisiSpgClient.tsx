@@ -45,6 +45,7 @@ import type { BarisUtangSpgKantor } from "@/lib/spg/utang-queries";
 import { JadwalBulanKantorCard } from "./JadwalBulanKantorCard";
 import { UtangSpgCard } from "./UtangSpgCard";
 import { cn } from "@/lib/utils";
+import { formatDisplayDate } from "@/lib/date-only";
 
 export type LaporanPutusTampil = {
   storeId: string;
@@ -90,8 +91,8 @@ export type LaporanPutusTampil = {
     gaji: RincianGaji | null;
     /** Seluruh pembayaran menunggu dasar gajinya (P60); `hariLabel` sudah diformat server. */
     tahan: { alasan: AlasanTahanBayar; hariLabel: string[] } | null;
-    /** Check-in di luar radius toko (P70) — hanya tanda. */
-    luarRadius: number;
+    /** Tanggal check-in di luar radius toko (P70), sudah diformat server — hanya tanda. */
+    luarRadius: string[];
     /** Sisa beban barang hilang SPG ini yang belum terpotong. */
     bebanHilangSisa: number;
     /** Yang AKAN dibayarkan baris yang belum dibayar: komisi per SPG sekarang, koreksi yang ikut. */
@@ -125,7 +126,8 @@ export type KonsiTampil = {
     gajiPokok: number;
     gaji: RincianGaji | null;
     tahan: { alasan: AlasanTahanBayar; hariLabel: string[] } | null;
-    luarRadius: number;
+    /** Tanggal check-in di luar radius toko (P70), sudah diformat server — hanya tanda. */
+    luarRadius: string[];
     komisi: number;
     komisiHitung: number;
     total: number;
@@ -1196,7 +1198,7 @@ function KartuKoreksi({
 }
 
 /** Sebab pembayaran tertahan (P60) dan tanda check-in di luar radius (P70). */
-function CatatanTahan({ tahan, luarRadius }: { tahan: { alasan: AlasanTahanBayar; hariLabel: string[] } | null; luarRadius: number }) {
+function CatatanTahan({ tahan, luarRadius }: { tahan: { alasan: AlasanTahanBayar; hariLabel: string[] } | null; luarRadius: string[] }) {
   const t = useTranslations("komisiSpg");
   const td = dinamis(t);
   return (
@@ -1207,7 +1209,11 @@ function CatatanTahan({ tahan, luarRadius }: { tahan: { alasan: AlasanTahanBayar
           {tahan.hariLabel.length > 0 ? ` (${tahan.hariLabel.join(", ")})` : ""}
         </span>
       ) : null}
-      {luarRadius > 0 ? <span className="block text-xs text-amber-800 dark:text-amber-300">{t("luarRadius", { n: luarRadius })}</span> : null}
+      {luarRadius.length > 0 ? (
+        <span className="block max-w-[14rem] whitespace-normal text-xs text-amber-800 dark:text-amber-300">
+          {t("luarRadius", { n: luarRadius.length, tanggal: luarRadius.join(", ") })}
+        </span>
+      ) : null}
     </>
   );
 }
@@ -1299,6 +1305,8 @@ function TombolBayar({
     });
 
   const koreksi = bayar.koreksi.filter((k) => k.diterapkan !== 0 || k.dibawa !== 0);
+  // Dibaca dari yang dibayarkan, jadi juga tampil untuk tunggakan yang tidak membawa data baris (B35, P70).
+  const luarRadius = (bayar.gaji?.tanggalLuarRadius ?? []).map((d) => formatDisplayDate(new Date(`${d}T00:00:00+07:00`)));
 
   return (
     <>
@@ -1316,6 +1324,9 @@ function TombolBayar({
               {t("bayarRincian.gaji", { jumlah: formatIDR(bayar.gajiPokok) })}
               <RincianGajiSingkat gaji={bayar.gaji} />
             </li>
+            {luarRadius.length > 0 ? (
+              <li className="text-xs text-amber-800 dark:text-amber-300">{t("luarRadius", { n: luarRadius.length, tanggal: luarRadius.join(", ") })}</li>
+            ) : null}
             <li>{t("bayarRincian.komisi", { jumlah: formatIDR(bayar.komisiBaru) })}</li>
             {bayar.potonganHilang > 0 ? <li>{t("bayarRincian.potongan", { jumlah: formatIDR(bayar.potonganHilang) })}</li> : null}
             {bayar.potonganRetur > 0 ? <li>{t("bayarRincian.potonganRetur", { jumlah: formatIDR(bayar.potonganRetur) })}</li> : null}

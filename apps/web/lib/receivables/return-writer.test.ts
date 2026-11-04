@@ -67,6 +67,8 @@ const state = {
   }[],
   /** Yang sudah dikirim balik per baris retur pembeli (nota tidak batal). */
   returPembeliTerpakai: [] as { spgSaleReturnLineId: string; _sum: { qty: number } }[],
+  /** Siklus konsinyasi terkunci di bulan terima penerimaan yang mendapat toko (`siklusTerkunciDi`). */
+  siklusTerkunci: [] as { noKonsi: string }[],
 };
 
 const tx = {
@@ -193,6 +195,7 @@ const tx = {
   },
   storeReturnItem: { groupBy: vi.fn(async () => state.returPembeliTerpakai) },
   store: { findUnique: vi.fn(async () => state.toko) },
+  consignmentCycle: { findMany: vi.fn(async () => state.siklusTerkunci) },
   item: {
     findMany: vi.fn(async (a: { where: { id: { in: string[] } } }) =>
       state.barang.filter((b) => a.where.id.in.includes(b.id)),
@@ -301,6 +304,8 @@ beforeEach(() => {
   state.gudangRusak = [];
   state.returPembeli = [];
   state.returPembeliTerpakai = [];
+  state.siklusTerkunci = [];
+  tx.consignmentCycle.findMany.mockClear();
 });
 
 const NRT_DASAR = {
@@ -558,6 +563,47 @@ describe('jodohkanRetur', () => {
     const h = await jodohkanRetur({ warehouseReturnId: 'nri1', storeReturnId: 'nrt1', olehUserId: 'u1' });
     expect(h).toEqual({ ok: true, piutangDihitungUlang: 2, selisihBaru: null });
     expect(state.nriUpdates[0]).toMatchObject({ storeReturnId: 'nrt1', storeId: 't1' });
+  });
+
+  it('penerimaan TANPA toko di bulan yang sudah dikunci di siklus konsinyasi toko nota: ditolak sampai dikonfirmasi', async () => {
+    // Penerimaannya mendapat toko nota — stok titipan bulan terimanya di toko itu berubah,
+    // sama dengan `jadikanSusulan` dan `pindahkanNriKeToko`.
+    state.nri = { ...state.nri, receivedAt: HARI_INI };
+    state.siklusTerkunci = [{ noKonsi: 'KONSI/2026/08/0001' }];
+    expect(await jodohkanRetur({ warehouseReturnId: 'nri1', storeReturnId: 'nrt1', olehUserId: 'u1' })).toEqual({
+      ok: false,
+      alasan: 'SIKLUS_TERKUNCI',
+      noKonsi: ['KONSI/2026/08/0001'],
+    });
+    expect(state.nriUpdates).toHaveLength(0);
+    expect(state.jejak).toHaveLength(0);
+    expect(tx.consignmentCycle.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ storeId: { in: ['t1'] }, periodYear: 2026, periodMonth: 8 }),
+      }),
+    );
+
+    const h = await jodohkanRetur({
+      warehouseReturnId: 'nri1',
+      storeReturnId: 'nrt1',
+      olehUserId: 'u1',
+      setujuSiklusTerkunci: true,
+    });
+    expect(h).toMatchObject({ ok: true });
+    expect(state.nriUpdates[0]).toMatchObject({ storeReturnId: 'nrt1', storeId: 't1' });
+    const jejak = state.jejak.find((j) => j.action === 'STORE_RETURN_MATCHED');
+    expect((jejak?.metadata as Record<string, unknown>).siklusTerkunci).toEqual(['KONSI/2026/08/0001']);
+  });
+
+  it('penerimaan yang sudah bertoko tidak diperiksa siklusnya — tokonya tidak berubah', async () => {
+    state.nri = { ...state.nri, storeId: 't1', receivedAt: HARI_INI };
+    state.siklusTerkunci = [{ noKonsi: 'KONSI/2026/08/0001' }];
+    expect(await jodohkanRetur({ warehouseReturnId: 'nri1', storeReturnId: 'nrt1', olehUserId: 'u1' })).toMatchObject({
+      ok: true,
+    });
+    expect(tx.consignmentCycle.findMany).not.toHaveBeenCalled();
+    const jejak = state.jejak.find((j) => j.action === 'STORE_RETURN_MATCHED');
+    expect((jejak?.metadata as Record<string, unknown>).siklusTerkunci).toBeUndefined();
   });
 });
 
@@ -1272,10 +1318,28 @@ describe('catatReturToko — barang selisih yang sedang dikirim balik', () => {
     expect(state.nrtDibuat).toHaveLength(0);
   });
 
-  it('menerima baris yang melebihi kekurangan itu — jelas bukan (hanya) barang selisihnya', async () => {
+  it('menolak juga baris yang melebihi kekurangan itu — barang selisih bercampur retur baru (R16b)', async () => {
     state.bebanDitemukan = [BEBAN_DITEMUKAN];
-    const h = await catatReturToko({ ...NRT_KANTOR, items: [{ ...NRT_KANTOR.items[0], qty: 5 }] });
+    const lima = { ...NRT_KANTOR, items: [{ ...NRT_KANTOR.items[0], qty: 5 }] };
+    expect(await catatReturToko(lima)).toEqual({ ok: false, alasan: 'ADA_SELISIH_DITEMUKAN', noNrt: 'NRT-LAMA' });
+    expect(state.nrtDibuat).toHaveLength(0);
+    const h = await catatReturToko({ ...lima, returLain: true });
     expect(h).toMatchObject({ ok: true });
+    expect((state.jejak[0].metadata as Record<string, unknown>).returLainDariSelisih).toEqual([
+      { noNrt: 'NRT-LAMA', itemId: 'brg1', variantSku: 'KMJ-M', qty: 5, qtyKurang: 2 },
+    ]);
+  });
+
+  it('2 pcs yang ketemu dikirim bersama 1 pcs retur baru (3 pcs atas kurang 2) tetap ditolak (P22, P22a)', async () => {
+    state.bebanDitemukan = [BEBAN_DITEMUKAN];
+    const tiga = { ...NRT_KANTOR, items: [{ ...NRT_KANTOR.items[0], qty: 3 }] };
+    expect(await catatReturToko(tiga)).toEqual({ ok: false, alasan: 'ADA_SELISIH_DITEMUKAN', noNrt: 'NRT-LAMA' });
+    expect(state.nrtDibuat).toHaveLength(0);
+    expect(await catatReturToko({ ...tiga, returLain: true })).toMatchObject({ ok: true });
+    expect(state.nrtDibuat).toHaveLength(1);
+    expect((state.jejak[0].metadata as Record<string, unknown>).returLainDariSelisih).toEqual([
+      { noNrt: 'NRT-LAMA', itemId: 'brg1', variantSku: 'KMJ-M', qty: 3, qtyKurang: 2 },
+    ]);
   });
 
   it('menerima bila pelapor menyatakan retur lain, dan mencatat kecocokannya di jejak', async () => {

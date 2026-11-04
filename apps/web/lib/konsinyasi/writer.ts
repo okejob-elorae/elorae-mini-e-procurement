@@ -22,9 +22,9 @@ import { detailGajiUntukDisimpan, type AlasanTahanBayar, type HasilGaji } from "
 import { kunciGaji, kunciTokoBulan, muatGajiPokok, muatPesertaGaji } from "@/lib/spg/gaji-pokok-queries";
 import { bulanSudahSelesai } from "@/lib/spg/komisi";
 import { terapkanPembayaran } from "@/lib/spg/komisi-bayar";
-import { kalimatKoreksiKabar, kalimatPotongKabar } from "@/lib/spg/koreksi";
+import { kalimatKoreksiKabar, kalimatPotongDanBebanKabar } from "@/lib/spg/koreksi";
 import { unitKomisiSpg } from "@/lib/spg/koreksi-queries";
-import { catatHitungUlangSaatBayar, KomisiBerubahError, siapkanBayarKomisi } from "@/lib/spg/koreksi-writer";
+import { catatHitungUlangSaatBayar, kalimatBebanRencana, KomisiBerubahError, siapkanBayarKomisi } from "@/lib/spg/koreksi-writer";
 import { rangkaiDalamBatas } from "@/lib/spg/antaran";
 import { promoEloraeSiklus } from "./promo-elorae-queries";
 import { labelVarian } from "./varian-kirim";
@@ -812,9 +812,9 @@ export async function kunciAngka(input: {
     /*
      * Tagihan siklus di Piutang (keputusan pemilik 2026-10-29: "tagihan konsi masuk Piutang setelah
      * angka terjual dikunci"): satu tagihan bernomor konsi, atas nama salesman pemegang toko (P55),
-     * bertanggal akhir bulan siklus — sama dengan tanggal jurnalnya (`tanggalPeriode`) — dan jatuh
-     * tempo dari tanggal tagihan itu + tempo toko (P54, disetujui pemilik: siklus Oktober dikunci
-     * 5 November, tempo 30 hari → jatuh tempo 30 November). Total nol tidak menagih.
+     * bertanggal akhir bulan siklus — sama dengan tanggal jurnalnya (`tanggalPeriode`). Jatuh tempo =
+     * hari dikunci (WIB) + tempo toko (P54, disetujui pemilik: siklus Oktober dikunci 5 November,
+     * tempo 30 hari → jatuh tempo 5 Desember). Total nol tidak menagih.
      */
     const sold = await tx.consignmentSold.findMany({ where: { cycleId: siklus.id }, select: { amount: true } });
     const totalTagihan = totalTagihanBeku({ sold, promoBorneByElorae: promo.total, lossChargedToStore: bebanHilang });
@@ -827,7 +827,7 @@ export async function kunciAngka(input: {
           storeId: siklus.storeId,
           invoiceNo: siklus.noKonsi,
           invoiceDate: tanggalTagihan,
-          dueDate: jatuhTempoSiklus(tanggalTagihan, siklus.store.paymentTempo),
+          dueDate: jatuhTempoSiklus(waktuKunci, siklus.store.paymentTempo),
           originalAmount: jumlah,
           outstandingAmount: jumlah,
           amount: jumlah,
@@ -1122,7 +1122,11 @@ export async function bayarKomisi(input: {
         reason: input.catatan,
       });
 
-      const tambahan = [kalimatKoreksiKabar(rencana.koreksi), kalimatPotongKabar(rencana)].filter(Boolean);
+      // Beban retur pembeli yang dipotong atau dikembalikan disebut dengan notanya (P13a/P79), sekali saja.
+      const tambahan = [
+        kalimatKoreksiKabar(rencana.koreksi),
+        ...kalimatPotongDanBebanKabar(rencana, await kalimatBebanRencana(tx, rencana)),
+      ].filter(Boolean);
       kabar = {
         userId: k.spgUserId,
         kabar: {

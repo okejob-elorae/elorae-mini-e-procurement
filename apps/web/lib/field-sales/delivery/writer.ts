@@ -432,9 +432,10 @@ export async function recordFieldSalesDeliveryInTx(
    * `PARTIAL` that no real payment could clear. Rounding here, once, is what makes every figure
    * downstream agree: the receivable is created from `total`, the revenue journal posts `total` on
    * both its AR and SALES_REVENUE sides, and the nota prints it. The exact figure stays derivable
-   * as `subtotal - discountAmount - Σ line discountAmount`, which is what the undelivered-residual
-   * readers measure against the order. `roundCents` first so a float sum that lands a hair under
-   * a half rupiah (`x.4999999`) still rounds half-up as its 2dp value would.
+   * as `subtotal - discountAmount - Σ line discountAmount`, which is `deliveredGoodsValue`; what an
+   * order still owes is read from its open lines (`nilaiBelumDinota`), never from these delivery
+   * figures. `roundCents` first so a float sum that lands a hair under a half rupiah (`x.4999999`)
+   * still rounds half-up as its 2dp value would.
    */
   const subtotal = deliveredLines.reduce((s, d) => s + d.deliveredSubtotal, 0);
   const lineDiscountTotal = allocation.lineDiscounts.reduce((s, l) => s + l.discountAmount, 0);

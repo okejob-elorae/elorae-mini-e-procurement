@@ -257,11 +257,18 @@ d("computeStoreCreditExposure (test bed only)", () => {
     expect(reopened.total).toBe(200_000);
   });
 
-  it("a DELIVERED order still holding open pieces is read — never trusted to have recomputed its status", async () => {
-    // A writer that reopened pieces but left a stale DELIVERED must not wave them through.
+  it("a DELIVERED order adds 0 and is not read", async () => {
+    await pesanan({ lines: [{ qty: 10, unitPrice: 10_000, deliveredQty: 10 }], deliveryStatus: "DELIVERED" });
+    // Deliberately stale: its 4 open pcs prove the FILTER leaves it out, not the valuation.
     await pesanan({ lines: [{ qty: 10, unitPrice: 10_000, deliveredQty: 6 }], deliveryStatus: "DELIVERED" });
     const exposure = await computeStoreCreditExposure(prisma, storeId);
-    expect(exposure.undeliveredOrderResidual).toBe(40_000);
+    expect(exposure.undeliveredOrderResidual).toBe(0);
+    expect(exposure.total).toBe(0);
+
+    // The contrast: the same open pieces on a PARTIAL order are read and counted.
+    await pesanan({ lines: [{ qty: 10, unitPrice: 10_000, deliveredQty: 6 }], deliveryStatus: "PARTIAL" });
+    const partial = await computeStoreCreditExposure(prisma, storeId);
+    expect(partial.undeliveredOrderResidual).toBe(40_000);
   });
 
   it("pending, rejected, cancelled-by-salesman and konsi orders add nothing", async () => {

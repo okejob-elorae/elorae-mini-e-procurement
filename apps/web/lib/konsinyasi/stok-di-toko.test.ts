@@ -384,6 +384,19 @@ describe("stokDiToko / nilaiStokToko (basis data)", () => {
     expect(s.baris[0].soldLast30).toBe(4);
   });
 
+  it("isi ulang tidak menawarkan barang \"Marketplace saja\" (P3a); stok di raknya tetap tampil (P73)", async () => {
+    await titipan();
+    await prisma.inventoryValue.create({ data: { itemId: barangId, variantSku: null, qtyOnHand: 50, reservedQty: 0, avgCost: 1000, totalValue: 50_000 } });
+    await prisma.storeStockTarget.create({ data: { storeId: tokoId, itemId: barangId, variantSku: "", minQty: 6, maxQty: 10 } });
+    const dijualOffline = (await nilaiStokToko([tokoId], SEKARANG)).get(tokoId)!;
+    expect(dijualOffline.baris).toEqual([expect.objectContaining({ itemId: barangId, qty: 6, saranQty: 4 })]);
+
+    await prisma.item.update({ where: { id: barangId }, data: { salesChannel: "MARKETPLACE" } });
+    const marketplace = (await nilaiStokToko([tokoId], SEKARANG)).get(tokoId)!;
+    expect(marketplace.baris).toEqual([expect.objectContaining({ itemId: barangId, qty: 6, saranQty: 0, kurangGudang: false })]);
+    expect(marketplace.baris[0].tanda).toContain("HAMPIR_HABIS");
+  });
+
   it("begitu toko punya buku stok, buku yang dipakai — titipan tidak ikut dihitung", async () => {
     await titipan();
     await prisma.storeStockMovement.createMany({

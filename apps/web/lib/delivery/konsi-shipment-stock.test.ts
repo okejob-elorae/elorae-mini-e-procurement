@@ -2,6 +2,8 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
 import { terimaKiriman } from "@/lib/spg/stok-writer";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { mapError } from "./action-errors";
 import { cancelDeliveryShipment, completeDeliveryShipment } from "./shipment-writer";
 import {
   berangkatkanUji,
@@ -121,6 +123,28 @@ d("konsi shipment stock: creation, POD receipt, SPG receipt, cancel (test bed on
     expect(Number(inv.qtyOnHand)).toBe(45);
   });
 
+  it("a konsi store whose SPG stops while the goods are on the road: the courier still records a door refusal, which goes back to main instead of being written off", async () => {
+    p = await buatPesananUji({ termsType: "KONSI", qty: [6], onHand: 50, avgCost: 10000, unitPrice: 40000, spg: true, pemegang: true });
+    const k = await kirim(6);
+    /* P45a: she stops while the shipment is in transit — store released, last day today. */
+    await prisma.user.update({
+      where: { id: seededId(p.spgId) },
+      data: { assignedStoreId: null, spgEndedStoreId: p.storeId, spgEndedOn: formatDateOnlyJakarta(new Date()) },
+    });
+    const r = await completeDeliveryShipment(
+      podEkspedisiUji(k.shipmentId, p.salesmanId, [{ shipmentLineId: k.shipmentLineId, deliveredQty: 4, returnedQty: 2 }]),
+    );
+    expect(r.mode).toBe("RECEIPT_AT_POD");
+    const t = await prisma.konsiTransfer.findUniqueOrThrow({ where: { id: seededId(k.transfer.id) }, include: { lines: true } });
+    expect(t.status).toBe("RECEIVED");
+    expect(t.lines[0]).toMatchObject({ receivedQty: 4, returnedQty: 2 });
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(p.storeId), itemId: seededId(p.itemId) } });
+    expect(Number(ss.qty)).toBe(4);
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: seededId(p.invId) } });
+    expect(Number(inv.qtyOnHand)).toBe(46);
+    expect(await prisma.stockLoss.count({ where: { storeId: seededId(p.storeId) } })).toBe(0);
+  });
+
   it("an SPG cannot receive a shipment still packed in the warehouse", async () => {
     p = await buatPesananUji({ termsType: "KONSI", qty: [6], spg: true });
     const s = await kemasUji(p, { lines: [{ orderLineId: p.lineIds[0], qty: 6 }] });
@@ -159,5 +183,62 @@ d("konsi shipment stock: creation, POD receipt, SPG receipt, cancel (test bed on
     /* Delivered and received: no longer cancellable. */
     const telat = await cancelDeliveryShipment({ shipmentId: k.shipmentId, cancelledById: p.salesmanId, reason: "x" }).catch((e) => e);
     expect(telat.code).toBe("INVALID_STATE");
+  });
+
+  /**
+   * An SPG receipt racing "tidak jadi dikirim" on an in-transit konsi shipment (R14): both guard on
+   * the transfer still being IN_TRANSIT, inside `runSerializable`. Run once with the cancel
+   * staggered and once with the receipt staggered, so neither writer always reaches its write first
+   * (a race test can pass on buggy code when one side always wins). The loser is read through the
+   * action layer's `mapError`, which is what the operator sees.
+   */
+  async function balapanTerimaBatal(ditunda: "BATAL" | "TERIMA") {
+    const q = await buatPesananUji({ termsType: "KONSI", qty: [6], onHand: 50, avgCost: 10000, spg: true });
+    p = q;
+    const k = await kirim(6);
+    const tunda = (siapa: "BATAL" | "TERIMA") => new Promise((r) => setTimeout(r, ditunda === siapa ? 5 : 0));
+    const terima = tunda("TERIMA").then(() =>
+      terimaKiriman({
+        storeId: q.storeId,
+        userId: q.spgId,
+        sourceType: "KONSI_TRANSFER",
+        sourceId: k.transfer.id,
+        diterima: [{ lineId: k.transfer.lines[0].id, qtyReceived: 6 }],
+      }),
+    );
+    const batal = tunda("BATAL").then(() => cancelDeliveryShipment({ shipmentId: k.shipmentId, cancelledById: q.salesmanId, reason: "Balapan" }));
+    const [t, b] = await Promise.allSettled([terima, batal]);
+
+    const terimaMenang = t.status === "fulfilled" && t.value.ok;
+    const batalMenang = b.status === "fulfilled";
+    expect(terimaMenang !== batalMenang).toBe(true);
+
+    const transfer = await prisma.konsiTransfer.findUniqueOrThrow({ where: { id: seededId(k.transfer.id) } });
+    const shipment = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: seededId(k.shipmentId) } });
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: seededId(q.invId) } });
+    if (terimaMenang) {
+      expect(transfer.status).toBe("RECEIVED");
+      const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(q.storeId), itemId: seededId(q.itemId) } });
+      expect(Number(ss.qty)).toBe(6);
+      expect(Number(inv.qtyOnHand)).toBe(44);
+      expect(shipment.status).not.toBe("CANCELLED");
+      expect(b.status).toBe("rejected");
+      const alasan = mapError((b as PromiseRejectedResult).reason, "uji-balapan").reason;
+      expect(["ALREADY_RECEIVED", "INVALID_STATE"]).toContain(alasan);
+    } else {
+      expect(transfer.status).toBe("CANCELLED");
+      expect(shipment.status).toBe("CANCELLED");
+      expect(await prisma.storeStock.count({ where: { storeId: seededId(q.storeId) } })).toBe(0);
+      expect(Number(inv.qtyOnHand)).toBe(50);
+      expect(t.status === "fulfilled" ? t.value : t.reason).toEqual({ ok: false, alasan: "KIRIMAN_DIBATALKAN" });
+    }
+  }
+
+  it("an SPG receipt racing 'tidak jadi dikirim' on an in-transit konsi shipment: exactly one wins and the stock lands in one place", async () => {
+    await balapanTerimaBatal("BATAL");
+  });
+
+  it("the same race with the receipt staggered instead of the cancel: still exactly one wins", async () => {
+    await balapanTerimaBatal("TERIMA");
   });
 });

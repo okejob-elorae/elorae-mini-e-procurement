@@ -23,8 +23,8 @@ export type KoreksiUntukDialog = {
   amount: number;
   /** Baris ikut membukukan ongkos jahit lama: "Koreksi invoice" ditolak (ADA_CMT_LAMA). */
   adaCmtLama: boolean;
-  /** Barang yang ditagih pada kunci GRN ini sudah diretur ke pemasok: "Terima" ditolak (ADA_RETUR). */
-  adaRetur: boolean;
+  /** Pcs yang ditagih pada kunci GRN ini lalu diretur ke pemasok (0 bila tidak ada): Terima tetap boleh, dengan peringatan. */
+  barangDiretur: number;
   /** Sudah dibayar atas penerimaan itu (sen), untuk kalimat lebih bayar saat invoice lebih rendah (P53). */
   dibayarSen: number | null;
   /** Utang penerimaan sekarang (sen). */
@@ -34,8 +34,8 @@ export type KoreksiUntukDialog = {
 /**
  * Putuskan satu selisih harga invoice (keputusan pemilik 2026-11-02, P27 + P53): Terima (dua arah), atau
  * Koreksi invoice ke harga penerimaan (hanya invoice lebih tinggi, dan tidak untuk baris yang ikut
- * membukukan ongkos jahit lama). Terima tidak ditawarkan kalau barang yang ditagih sudah diretur ke
- * pemasok (`ADA_RETUR`, penulisnya juga menolak). Hanya dibuka pemegang `vendor_bills:decide_price`.
+ * membukukan ongkos jahit lama). Terima selalu ditawarkan; kalau sebagian barang yang ditagih sudah
+ * diretur ke pemasok, dialognya memperingatkan. Hanya dibuka pemegang `vendor_bills:decide_price`.
  */
 export function PutuskanSelisihDialog({ koreksi, onClose }: { koreksi: KoreksiUntukDialog | null; onClose: () => void }) {
   const t = useTranslations("vendorBills.selisih");
@@ -78,19 +78,18 @@ export function PutuskanSelisihDialog({ koreksi, onClose }: { koreksi: KoreksiUn
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 text-sm">
-          {koreksi.adaRetur ? (
-            <p className="text-amber-700 dark:text-amber-400">{t("galat.ADA_RETUR")}</p>
-          ) : (
-            <p>{naik ? t("terimaNaik", { selisih: formatIDR(koreksi.amount) }) : t("terimaTurun", { selisih: formatIDR(-koreksi.amount) })}</p>
+          {koreksi.barangDiretur > 0 && (
+            <p className="text-amber-700 dark:text-amber-400">{t("direturMenunggu", { qty: koreksi.barangDiretur.toLocaleString("id-ID") })}</p>
           )}
-          {!koreksi.adaRetur && lebihBayarSen > 0 && (
+          <p>{naik ? t("terimaNaik", { selisih: formatIDR(koreksi.amount) }) : t("terimaTurun", { selisih: formatIDR(-koreksi.amount) })}</p>
+          {lebihBayarSen > 0 && (
             <p className="text-amber-700 dark:text-amber-400">
               {t("lebihBayar", { dibayar: formatIDR((koreksi.dibayarSen ?? 0) / 100), lebih: formatIDR(lebihBayarSen / 100) })}
             </p>
           )}
           {naik && !koreksi.adaCmtLama && <p className="text-muted-foreground">{t("koreksiInvoiceIsi", { harga: formatIDR(koreksi.recordedPrice) })}</p>}
           {naik && koreksi.adaCmtLama && <p className="text-muted-foreground">{t("galat.ADA_CMT_LAMA")}</p>}
-          {!naik && !koreksi.adaRetur && <p className="text-muted-foreground">{t("tidakBolehNaik")}</p>}
+          {!naik && <p className="text-muted-foreground">{t("tidakBolehNaik")}</p>}
           <div className="space-y-2">
             <Label htmlFor="catatan-selisih">{t("catatan")}</Label>
             <Textarea id="catatan-selisih" rows={2} maxLength={500} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
@@ -102,12 +101,10 @@ export function PutuskanSelisihDialog({ koreksi, onClose }: { koreksi: KoreksiUn
               {t("koreksiInvoice", { harga: formatIDR(koreksi.recordedPrice) })}
             </Button>
           )}
-          {!koreksi.adaRetur && (
-            <Button disabled={pending} onClick={() => putuskan("TERIMA")}>
-              {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {t("terima")}
-            </Button>
-          )}
+          <Button disabled={pending} onClick={() => putuskan("TERIMA")}>
+            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t("terima")}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

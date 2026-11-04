@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { kaitBayarTambahanSpg, kaitPenerimaanUtangSpg } from "@/lib/finance/operasional/kait";
 import { uploadToR2 } from "@/lib/r2";
+import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import {
   batalkanPenerimaanUtangSpg,
@@ -54,8 +55,10 @@ const teks = (x: FormDataEntryValue | unknown) => (typeof x === "string" ? x : "
 async function simpanFoto(spgUserId: string, foto: FormDataEntryValue | null): Promise<{ ok: true; key: string | null } | { ok: false; code: "FOTO_TIDAK_SAH" | "FOTO_GAGAL_DISIMPAN" }> {
   if (!(foto instanceof File) || foto.size === 0) return { ok: true, key: null };
   if (foto.size > MAKS_FOTO || !JENIS_FOTO.has(foto.type)) return { ok: false, code: "FOTO_TIDAK_SAH" };
+  // Nilai permintaan tidak pernah dirangkai ke kunci R2 dengan tangan (ranjau R2).
+  if (!isSafeR2KeySegment(spgUserId)) return { ok: false, code: "FOTO_TIDAK_SAH" };
   const ext = foto.type === "image/png" ? "png" : foto.type === "image/webp" ? "webp" : "jpg";
-  const key = `spg-utang/${spgUserId}/${randomUUID()}.${ext}`;
+  const key = buildR2Key("spg-utang", [spgUserId, randomUUID()], ext);
   try {
     await uploadToR2(key, new Uint8Array(await foto.arrayBuffer()), foto.type);
     return { ok: true, key };

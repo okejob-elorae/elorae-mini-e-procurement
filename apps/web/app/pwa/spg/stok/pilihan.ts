@@ -8,12 +8,16 @@ import type { BarisPilihan } from "./barang-pilihan";
  * toko SPG): katalog aktif yang dijual offline DIGABUNG dengan barang yang
  * pernah bergerak di toko.
  *
- * Katalog saja tidak cukup — barang yang sudah dinonaktifkan di master, atau
- * dijadikan "Marketplace saja" (P3a), tetap bisa masih ada di rak toko, dan
- * opname harus bisa menghitungnya (P73). Barang di buku toko itu karenanya
- * diminta tetap tampil di katalog (`tetapTampilkan`), supaya baris katalognya
- * (barcode, label varian) tetap terbaca. Stok toko saja juga tidak cukup —
- * barang yang belum pernah ada di toko justru yang paling perlu diminta.
+ * Katalog saja tidak cukup — barang yang dijadikan "Marketplace saja" (P3a)
+ * tetap bisa masih ada di rak toko, dan opname harus bisa menghitungnya (P73).
+ * Barang di buku toko itu karenanya diminta tetap tampil di katalog
+ * (`tetapTampilkan`), supaya baris katalognya (barcode, label varian) tetap
+ * terbaca. Barang yang sudah DINONAKTIFKAN di master tidak ikut — P73 hanya
+ * soal saluran jual, dan belum ada jawaban pemilik untuk barang nonaktif —
+ * jadi yang tampil hanya baris yang memang ada di saldo toko (tanpa barcode
+ * katalog, seperti sebelum P73); varian yang belum pernah dipegang toko tidak
+ * ditawarkan. Stok toko saja juga tidak cukup — barang yang belum pernah ada
+ * di toko justru yang paling perlu diminta.
  *
  * Hanya untuk server component: dipanggil dari halaman, hasilnya dikirim ke
  * klien sebagai data polos. Tipe dan pencariannya ada di `barang-pilihan.ts`,

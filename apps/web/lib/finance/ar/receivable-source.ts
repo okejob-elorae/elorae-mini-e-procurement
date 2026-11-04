@@ -126,7 +126,8 @@ export type ReceivableSource =
       /*
        * A konsi bill born when its consignment cycle was locked. `docNo` is the receivable's own
        * invoice number (the cycle's `noKonsi`, or its "(batal)" form once voided). The receivable
-       * carries no seller by construction; the salesman fields are the receivable's own.
+       * carries the store's holder at lock as its salesman (P55); the salesman fields are the
+       * receivable's own.
        */
       kind: "CONSIGNMENT_CYCLE";
       cycleId: string;

@@ -171,8 +171,9 @@ export type BarisSelisihHarga = {
   createdAt: string;
   /**
    * Pcs yang sudah ditagih pada kunci GRN-nya lalu diretur ke pemasok (`invoicedReturnedQtyByGrnLine`);
-   * 0 untuk langkah WO. Di atas nol: MENUNGGU tidak bisa diterima (`ADA_RETUR`), DITERIMA masih menghitung
-   * selisih atas barang yang diretur — keduanya dibetulkan dengan membatalkan tagihan lalu mencatat ulang.
+   * 0 untuk langkah WO. Di atas nol: selisihnya tetap boleh diterima (P27/P53), tetapi utangnya ikut
+   * menghitung selisih atas barang yang diretur — angka yang tepat didapat dengan membatalkan tagihan lalu
+   * mencatat ulang.
    */
   barangDiretur: number;
 };

@@ -176,10 +176,10 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "navigation.navSelisihHargaInvoice" },
     isi: [
       "Harga invoice yang berbeda dengan harga yang dicatat penerimaannya — lebih tinggi (Rp 8.500 dibanding Rp 8.000 per pcs) atau lebih rendah — tidak dibayar begitu saja. Ia menunggu keputusan admin/pemilik di sini, dan selama menunggu SELURUH penerimaan itu (satu GRN atau satu step WO) tidak bisa dibayar di Bayar pemasok.",
-      "Terima: utangnya dikoreksi, begitu pula HPP penerimaan itu. Barangnya yang masih ada di Gudang Utama, di gudang toko konsinyasi, atau di van ikut bernilai baru; barang yang sudah terjual, terpakai, atau keluar tidak dihitung ulang, dan bagiannya dicatat sebagai HPP periode itu (Selisih harga pembelian & jasa).",
+      "Terima: utangnya dikoreksi, begitu pula HPP penerimaan itu. Barangnya yang masih ada di Gudang Utama atau di van ikut bernilai baru; barang yang sudah terjual, terpakai, atau keluar tidak dihitung ulang, dan bagiannya dicatat sebagai HPP periode itu (Selisih harga pembelian & jasa). Untuk sementara, barang yang sudah dikirim ke toko konsinyasi (di jalan maupun di gudang tokonya) juga belum ikut bernilai baru; bagiannya ikut dicatat sebagai HPP periode itu.",
       "Koreksi invoice (hanya bila invoicenya lebih tinggi): invoice diterima dengan harga penerimaannya. Invoice tidak pernah dikoreksi naik.",
       "Selisihnya termasuk PPN persis seperti yang dicatat penerimaannya.",
-      "Kalau sebagian barang yang ditagih invoice sudah diretur ke pemasok, selisihnya tidak bisa diterima; batalkan tagihan lalu catat ulang tanpa barang yang diretur.",
+      "Kalau sebagian barang yang ditagih invoice sudah diretur ke pemasok, selisihnya tetap boleh diterima, dengan peringatan: utangnya ikut menghitung selisih atas barang yang diretur. Untuk angka yang tepat, batalkan tagihan lalu catat ulang tanpa barang yang diretur.",
       "Memutuskan butuh izin Putuskan selisih harga invoice (bawaannya admin). Akun Selisih harga pembelian & jasa harus sudah dipetakan di Keuangan → Pemetaan akun; sebelum itu, Terima untuk barang yang sebagian sudah terjual ditolak dan penerimaannya tetap belum bisa dibayar.",
     ],
   },

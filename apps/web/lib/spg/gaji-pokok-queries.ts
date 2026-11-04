@@ -1,5 +1,7 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { kunciHariWib } from "@/lib/dashboard/tren";
+import { muatBulanSiklusPertama } from "@/lib/konsinyasi/siklus-pertama";
+import { sebelumSiklusPertama } from "@/lib/konsinyasi/siklus-pertama-aturan";
 import { bacaHariKerjaSpg, KUNCI_HARI_KERJA_SPG } from "@/lib/salesman/izin";
 import { bulanWib } from "@/lib/salesman/pengaturan";
 import { wibMonthRange } from "@/lib/spg-commission/laporan-queries";
@@ -206,19 +208,34 @@ export async function muatPesertaGaji(klien: Klien, pasangan: ReadonlyArray<{ st
 }
 
 /**
+ * Bulan siklus pertama konsinyasi sebagai lantai bulan gaji toko KONSI (P59: bulan sebelumnya ada di
+ * luar sistem dan tidak pernah bisa dikunci). Null = tanpa lantai: toko putus (belum ada jawaban
+ * pemilik untuk bulan pertamanya), atau bulan siklus pertama belum diatur.
+ */
+export async function lantaiBulanKonsi(klien: Klien, termsType: string | null | undefined): Promise<string | null> {
+  if (termsType !== "KONSI") return null;
+  const pertama = await muatBulanSiklusPertama(klien);
+  return pertama.diatur ? pertama.bulan : null;
+}
+
+/**
  * Setiap toko × bulan tempat seorang SPG menjadi peserta gaji (B28): bulan masa tugasnya di tokonya
  * (dari bulan mulai sampai bulan berhenti, atau bulan berjalan), bulan yang punya kepala jadwal
- * atau catatan check-in, dan bulan tempat ia menjual.
+ * atau catatan check-in, dan bulan tempat ia menjual. Toko konsinyasi: bulan sebelum siklus pertama
+ * tidak ikut (`lantaiBulanKonsi`, P59) — bulan itu tidak pernah bisa dikunci, jadi tidak pernah
+ * menahan pembayaran terakhirnya.
  */
 export async function bulanPesertaSpg(klien: Klien, userId: string, sekarang: Date = new Date()): Promise<{ storeId: string; bulan: string }[]> {
   const u = await klien.user.findUnique({ where: { id: userId }, select: { assignedStoreId: true, spgEndedStoreId: true, spgStartedOn: true, spgEndedOn: true } });
   const storeId = u?.assignedStoreId ?? u?.spgEndedStoreId ?? null;
   if (!u || !storeId) return [];
-  const [kepala, catatan, jual] = await Promise.all([
+  const [kepala, catatan, jual, toko] = await Promise.all([
     klien.spgMonthSchedule.findMany({ where: { userId, storeId }, select: { month: true } }),
     klien.spgAttendanceRecord.findMany({ where: { userId, storeId }, select: { month: true } }),
     klien.spgSale.aggregate({ where: { salesmanId: userId, storeId }, _min: { createdAt: true }, _max: { createdAt: true } }),
+    klien.store.findUnique({ where: { id: storeId }, select: { termsType: true } }),
   ]);
+  const lantai = await lantaiBulanKonsi(klien, toko?.termsType);
   const bulan = new Set<string>([...kepala.map((k) => k.month), ...catatan.map((c) => c.month)]);
   const batasAkhir = u.spgEndedOn ? u.spgEndedOn.slice(0, 7) : bulanWib(sekarang);
   const rentang = (dari: string, sampai: string) => {
@@ -230,7 +247,7 @@ export async function bulanPesertaSpg(klien: Klien, userId: string, sekarang: Da
     rentang(bulanWib(jual._min.createdAt), bulanWib(jual._max.createdAt));
   }
   return [...bulan]
-    .filter((b) => b <= batasAkhir)
+    .filter((b) => b <= batasAkhir && !(lantai && sebelumSiklusPertama(b, lantai)))
     .sort()
     .map((b) => ({ storeId, bulan: b }));
 }

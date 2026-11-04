@@ -5,18 +5,19 @@ vi.mock("@elorae/db", () => ({
 }));
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/r2", () => ({ isConfigured: vi.fn(), uploadToR2: vi.fn() }));
-vi.mock("@/lib/pwa/peran", () => ({ ambilTokoTetap: vi.fn() }));
+vi.mock("@/lib/pwa/peran", () => ({ ambilTokoTetap: vi.fn(), spgBerhentiPada: vi.fn() }));
 
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { isConfigured, uploadToR2 } from "@/lib/r2";
-import { ambilTokoTetap } from "@/lib/pwa/peran";
+import { ambilTokoTetap, spgBerhentiPada } from "@/lib/pwa/peran";
 import { POST } from "./route";
 
 const mockAuth = auth as unknown as ReturnType<typeof vi.fn>;
 const mockIsConfigured = isConfigured as unknown as ReturnType<typeof vi.fn>;
 const mockUpload = uploadToR2 as unknown as ReturnType<typeof vi.fn>;
 const mockToko = ambilTokoTetap as unknown as ReturnType<typeof vi.fn>;
+const mockBerhenti = spgBerhentiPada as unknown as ReturnType<typeof vi.fn>;
 const mockFind = prisma.spgSaleReturn.findUnique as unknown as ReturnType<typeof vi.fn>;
 
 const USER = "spg1";
@@ -41,13 +42,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockAuth.mockResolvedValue({ user: { id: USER, permissions: ["spg_sales:record"] } });
   mockToko.mockResolvedValue(TOKO);
+  mockBerhenti.mockResolvedValue(null);
   mockIsConfigured.mockReturnValue(true);
   mockUpload.mockImplementation(async (key: string) => `https://cdn.example/${key}`);
   mockFind.mockResolvedValue(null);
 });
 
 describe("POST /pwa/api/upload/spg-sale-return-photo — akses", () => {
-  it("401 tanpa sesi, 403 tanpa izin atau tanpa toko tetap, 503 tanpa R2", async () => {
+  it("401 tanpa sesi, 403 tanpa izin atau tanpa toko tetap (dan tidak berhenti), 503 tanpa R2", async () => {
     mockAuth.mockResolvedValueOnce(null);
     expect((await kirim({ jenis: "barang", kunci: KUNCI })).status).toBe(401);
     mockAuth.mockResolvedValueOnce({ user: { id: USER, permissions: [] } });
@@ -57,6 +59,28 @@ describe("POST /pwa/api/upload/spg-sale-return-photo — akses", () => {
     mockIsConfigured.mockReturnValueOnce(false);
     expect((await kirim({ jenis: "barang", kunci: KUNCI })).status).toBe(503);
     expect(mockUpload).not.toHaveBeenCalled();
+  });
+
+  it("SPG yang sudah berhenti: toko yang dilepasnya (dari server), di kedua cara", async () => {
+    mockToko.mockResolvedValue(null);
+    mockBerhenti.mockResolvedValue({ hariTerakhir: "2026-11-01", storeId: "toko-lepas" });
+    const lapor = await kirim({ jenis: "barang", kunci: KUNCI });
+    expect(lapor.body.key).toBe(`spg-sale-returns/toko-lepas/${KUNCI}/barang.jpg`);
+
+    mockFind.mockResolvedValue({
+      createdById: USER,
+      storeId: "toko-lepas",
+      status: "DISETUJUI",
+      idempotencyKey: KUNCI,
+      refundedAt: null,
+      refundSlipR2Key: null,
+      refundMarkedById: null,
+    });
+    const uang = await kirim({ jenis: "struk", returnId: "r1" });
+    expect(uang.body.key).toBe(`spg-sale-returns/toko-lepas/${KUNCI}/struk.jpg`);
+    // Laporan di toko lain tetap 404, juga untuk SPG yang berhenti.
+    mockFind.mockResolvedValue({ createdById: USER, storeId: TOKO, status: "DISETUJUI", idempotencyKey: KUNCI, refundedAt: null, refundSlipR2Key: null, refundMarkedById: null });
+    expect((await kirim({ jenis: "struk", returnId: "r1" })).status).toBe(404);
   });
 
   it.each([
@@ -114,10 +138,25 @@ describe("mode returnId (langkah uang dikembalikan)", () => {
     ...o,
   });
 
-  it.each(["MENUNGGU", "DISETUJUI"])("menulis struk untuk laporan %s yang uangnya belum tercatat", async (status) => {
+  // DITOLAK: uangnya menjadi beban SPG; DIBATALKAN: laporannya dibuka lagi atau kantor diberi tahu
+  // dengan foto struknya — penulisnya yang memutuskan, jadi fotonya harus bisa naik dulu.
+  it.each(["MENUNGGU", "DISETUJUI", "DITOLAK", "DIBATALKAN"])("menulis struk untuk laporan %s yang uangnya belum tercatat", async (status) => {
     mockFind.mockResolvedValue(laporan({ status }));
     const r = await kirim({ jenis: "struk", returnId: "r1" });
+    expect(r.status).toBe(200);
     expect(r.body.key).toBe(`spg-sale-returns/${TOKO}/${KUNCI}/struk.jpg`);
+    expect(mockUpload).toHaveBeenCalledWith(`spg-sale-returns/${TOKO}/${KUNCI}/struk.jpg`, expect.anything(), "image/jpeg");
+  });
+
+  it("ditolak dengan tanda kantor (P78): struk belum ada → tulis; sudah ada → kunci tersimpan tanpa menulis", async () => {
+    mockFind.mockResolvedValue(laporan({ status: "DITOLAK", refundMarkedById: "kantor" }));
+    expect((await kirim({ jenis: "struk", returnId: "r1" })).body.key).toBe(`spg-sale-returns/${TOKO}/${KUNCI}/struk.jpg`);
+    expect(mockUpload).toHaveBeenCalledTimes(1);
+
+    mockUpload.mockClear();
+    mockFind.mockResolvedValue(laporan({ status: "DITOLAK", refundMarkedById: "kantor", refundSlipR2Key: "spg-sale-returns/toko1/k/struk.jpg" }));
+    expect(await kirim({ jenis: "struk", returnId: "r1" })).toEqual({ status: 200, body: { key: "spg-sale-returns/toko1/k/struk.jpg" } });
+    expect(mockUpload).not.toHaveBeenCalled();
   });
 
   it("laporan orang lain, toko lain, atau tidak ada: 404 yang sama", async () => {
@@ -137,14 +176,13 @@ describe("mode returnId (langkah uang dikembalikan)", () => {
     expect(mockUpload).not.toHaveBeenCalled();
   });
 
-  it("ditolak, ditarik, atau disetujui dengan tanda kantor: 409", async () => {
-    mockFind.mockResolvedValue(laporan({ status: "DITOLAK" }));
-    expect((await kirim({ jenis: "struk", returnId: "r1" })).status).toBe(409);
-    mockFind.mockResolvedValue(laporan({ status: "DITOLAK", refundMarkedById: "kantor" }));
-    expect((await kirim({ jenis: "struk", returnId: "r1" })).status).toBe(409);
-    mockFind.mockResolvedValue(laporan({ status: "DIBATALKAN" }));
-    expect((await kirim({ jenis: "struk", returnId: "r1" })).status).toBe(409);
-    mockFind.mockResolvedValue(laporan({ status: "DISETUJUI", refundMarkedById: "kantor" }));
-    expect((await kirim({ jenis: "struk", returnId: "r1" })).status).toBe(409);
+  it("bertanda kantor tetapi tidak DITOLAK (mis. penolakannya dibatalkan, P82): 409, sama dengan penulisnya (SUDAH_DICATAT)", async () => {
+    for (const status of ["DISETUJUI", "MENUNGGU", "DIBATALKAN"]) {
+      mockFind.mockResolvedValue(laporan({ status, refundMarkedById: "kantor" }));
+      expect((await kirim({ jenis: "struk", returnId: "r1" })).status, status).toBe(409);
+      mockFind.mockResolvedValue(laporan({ status, refundMarkedById: "kantor", refundSlipR2Key: "spg-sale-returns/toko1/k/struk.jpg" }));
+      expect((await kirim({ jenis: "struk", returnId: "r1" })).status, `${status} + struk`).toBe(409);
+    }
+    expect(mockUpload).not.toHaveBeenCalled();
   });
 });

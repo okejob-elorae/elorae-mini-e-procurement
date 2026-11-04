@@ -54,6 +54,7 @@ export default async function RincianReturPembeliSpgPage({ params }: { params: P
       olehKantor: r.uang.olehKantor,
     },
     foto: r.foto,
+    strukTidakTercatat: r.strukTidakTercatat.map((s) => ({ url: s.url, pada: formatDisplayDateTime(s.pada) })),
     bebanJikaDitolak: r.bebanJikaDitolak,
     beban: b
       ? {

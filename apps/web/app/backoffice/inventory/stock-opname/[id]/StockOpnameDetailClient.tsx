@@ -21,13 +21,17 @@ import {
 } from "@/components/ui/dialog";
 import { OpnameDetailReviewTable } from "@/components/inventory/OpnameDetailReviewTable";
 import { TabelHitunganButa } from "./TabelHitunganButa";
+import { KartuGrnTanpaPoMenunggu } from "./KartuGrnTanpaPoMenunggu";
 import { barisButa } from "../angka-sistem";
+import { peringatanGrnTanpaPoTampil } from "../peringatan-grn-tanpa-po";
 import {
   approveOpname,
   cancelOpname,
+  getGrnTanpaPoMenungguUntukOpname,
   getOpnameById,
   postOpnameJournalAction,
   submitOpname,
+  type GrnTanpaPoMenunggu,
 } from "@/app/actions/stock-opname";
 import {
   buildItemLines,
@@ -61,6 +65,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
   const { data: session } = useSession();
   const perms = session?.user?.permissions ?? [];
   const [opname, setOpname] = useState<OpnameDetail | null>(null);
+  const [grnMenunggu, setGrnMenunggu] = useState<GrnTanpaPoMenunggu[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [postingJournal, setPostingJournal] = useState(false);
@@ -72,8 +77,16 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getOpnameById(opnameId);
+      // Peringatan GRN tanpa PO yang menunggu tidak boleh menghalangi layar ini bila gagal dimuat.
+      const [data, grn] = await Promise.all([
+        getOpnameById(opnameId),
+        getGrnTanpaPoMenungguUntukOpname().catch((e: unknown) => {
+          console.error(e);
+          return [] as GrnTanpaPoMenunggu[];
+        }),
+      ]);
       setOpname(data);
+      setGrnMenunggu(grn);
     } finally {
       setLoading(false);
     }
@@ -313,6 +326,9 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
           ) : null}
         </div>
       </div>
+
+      {/* Penyetuju melihat peringatan yang sama dengan penghitung sebelum menyetujui surplus. */}
+      {peringatanGrnTanpaPoTampil(status) && <KartuGrnTanpaPoMenunggu grn={grnMenunggu} />}
 
       <div className={`grid gap-4 sm:grid-cols-2 ${tampil ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         <StatCard label={t("statTotal")} value={summary.totalLines} />

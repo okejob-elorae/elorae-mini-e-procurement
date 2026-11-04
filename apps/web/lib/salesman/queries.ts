@@ -86,10 +86,12 @@ export async function pesananSaya(salesmanId: string, hariIni: Date): Promise<Pe
         ],
       },
     }),
-    // Pesanan yang masih punya surat jalan terbuka belum selesai dikirim.
+    // Nota yang dibatalkan ("tidak jadi dikirim") tidak dihitung, sama dengan rincian pesanan;
+    // pesanan yang masih punya surat jalan terbuka belum selesai dikirim.
     prisma.fieldSalesDelivery.count({
       where: {
         deliveredAt: { gte: awalBulan },
+        voidedAt: null,
         order: { salesmanId, shipments: { none: { status: { in: ["PACKED", "IN_TRANSIT"] } } } },
       },
     }),

@@ -386,9 +386,9 @@ export const PERMISSIONS = {
   INVENTORY_OPNAME_APPROVE: 'inventory_opname:approve',
   INVENTORY_RECONCILIATION_VIEW: 'inventory_reconciliation:view',
   INVENTORY_RECONCILIATION_MANAGE: 'inventory_reconciliation:manage',
-  // Confirming or declining a goods receipt recorded WITHOUT a PO, before it enters stock or
-  // payables (owner 2026-11-02, P51a: "tidak usah dihapus, tapi ada konfirmasi dari admin").
-  // Manager decision, admin only by default.
+  // Confirming a goods receipt recorded WITHOUT a PO, before it enters stock or payables
+  // (owner 2026-11-02, P51a: "tidak usah dihapus, tapi ada konfirmasi dari admin"). Only the
+  // confirmation was decided; there is no decline. Manager decision, admin only by default.
   GOODS_RECEIPTS_CONFIRM_NO_PO: "goods_receipts:confirm_no_po",
   // Work Orders
   WORK_ORDERS_VIEW: 'work_orders:view',

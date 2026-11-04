@@ -410,7 +410,9 @@ export async function tautanPesanKlaim(
             invoiceNo: l.receivable.invoiceNo,
             sisa: sisa.get(l.receivable.id) ?? angka(l.settledAmount),
           })),
-          tertahan: returTertahan(potonganRetur(k.deductions)),
+          // Selisih yang ditetapkan ditanggung TOKO (P84) sudah diputuskan dan tetap utang toko —
+          // bukan "menunggu pemeriksaan barang di gudang" (`pesanToko.tertahan`).
+          tertahan: returTertahan(potonganRetur(k.deductions).filter((p) => !p.ditanggungToko)),
         },
       },
       t,

@@ -28,6 +28,14 @@ describe("kunciAlasanLuring", () => {
     // A server refusal whose name starts with FOTO_ keeps its own text, not the upload one.
     expect(kunciAlasanLuring("FOTO_STRUK_WAJIB")).toBe("FOTO_STRUK_WAJIB");
     expect(kunciAlasanLuring("KIRIMAN_DIBATALKAN")).toBe("KIRIMAN_DIBATALKAN");
+    // A queued check-in/out from an SPG marked as left, and a receipt whose stock records disagree.
+    expect(kunciAlasanLuring("SPG_BERHENTI")).toBe("SPG_BERHENTI");
+    expect(kunciAlasanLuring("CATATAN_STOK_TIDAK_COCOK")).toBe("CATATAN_STOK_TIDAK_COCOK");
+    // A buyer-return photo refused because of the report's state keeps its own text, not the upload one.
+    expect(kunciAlasanLuring("FOTO_KEADAAN")).toBe("FOTO_KEADAAN");
+    // A queued refund refused because the pieces of a rejected/withdrawn report were reported again elsewhere.
+    expect(kunciAlasanLuring("POTONG_SUDAH_DILAPORKAN_ULANG")).toBe("POTONG_SUDAH_DILAPORKAN_ULANG");
+    expect(nasibReturPembeli({ ok: false, kode: "POTONG_SUDAH_DILAPORKAN_ULANG" })).toBe("terminal");
     expect(kunciAlasanLuring("APA_INI")).toBe("UMUM");
     expect(kunciAlasanLuring(undefined)).toBe("UMUM");
   });

@@ -140,12 +140,19 @@ d("nota tagihan putus menjadi piutang (basis data uji)", () => {
   it("cek kredit toko langsung melihat nota yang baru keluar (dulu buta sampai ada yang mengetik piutangnya)", async () => {
     const sebelum = await keadaanTagihanToko(storeId, 0);
     expect(sebelum.keadaan.sisa).toBe(0);
+    // Pesanan yang sudah disetujui tetapi belum di nota mana pun tetap dihitung — sekali (Q10).
+    expect(sebelum.keadaan.belumDinota).toBe(740000);
 
     await kirim([{ orderLineId: lineAId, qty: 2 }]);
 
     const sesudah = await keadaanTagihanToko(storeId, 0);
     expect(sesudah.keadaan.sisa).toBe(270000);
     expect(sesudah.keadaan.fakturTerbuka).toBe(1);
+    // Nilai barang nota itu (270.000) pindah dari "belum di nota" ke sisa piutang, tidak terhitung dua kali.
+    expect(sesudah.keadaan.belumDinota).toBe(470000);
+    expect(
+      Math.abs(sesudah.keadaan.sisa + sesudah.keadaan.belumDinota - (sebelum.keadaan.sisa + sebelum.keadaan.belumDinota)),
+    ).toBeLessThanOrEqual(1);
   });
 
   it("kiriman ulang dengan kunci idempoten yang sama tidak membuat piutang kedua", async () => {
@@ -231,6 +238,8 @@ d("nota tagihan putus menjadi piutang (basis data uji)", () => {
         dueDate: TGL_TEMPO,
         amount: 500000,
         outstanding: 500000,
+        originalAmount: 500000,
+        outstandingAmount: 500000,
         source: "MANUAL",
       },
     });
@@ -294,6 +303,8 @@ d("nota tagihan putus menjadi piutang (basis data uji)", () => {
         dueDate: TGL_TEMPO,
         amount: 111000,
         outstanding: 111000,
+        originalAmount: 111000,
+        outstandingAmount: 111000,
         source: "MANUAL" as const,
       })),
       skipDuplicates: true,
@@ -379,6 +390,8 @@ d("nota tagihan putus menjadi piutang (basis data uji)", () => {
           dueDate: TGL_TEMPO,
           amount: 320000,
           outstanding: 320000,
+          originalAmount: 320000,
+          outstandingAmount: 320000,
           source: "IMPORT",
         },
       });
@@ -412,6 +425,8 @@ d("nota tagihan putus menjadi piutang (basis data uji)", () => {
           dueDate: new Date("2026-07-01T00:00:00.000+07:00"),
           amount: 250000,
           outstanding: 250000,
+          originalAmount: 250000,
+          outstandingAmount: 250000,
           source: "MANUAL",
         },
       });
@@ -426,7 +441,7 @@ d("nota tagihan putus menjadi piutang (basis data uji)", () => {
       const docNo = `TEST-PN-BENTROK-${token}`;
       const id = await notaLama(docNo, 300000);
       const lain = await prisma.receivable.create({
-        data: { invoiceNo: docNo, storeId, invoiceDate: TGL_NOTA, dueDate: TGL_TEMPO, amount: 300000, outstanding: 300000, source: "IMPORT" },
+        data: { invoiceNo: docNo, storeId, invoiceDate: TGL_NOTA, dueDate: TGL_TEMPO, amount: 300000, outstanding: 300000, originalAmount: 300000, outstandingAmount: 300000, source: "IMPORT" },
       });
       piutangLainId = lain.id;
 

@@ -17,13 +17,18 @@ import {
  *
  * Boleh hanya bila (R12): pengguna ini pemegang toko (`Store.salesmanId`), sedang check-in di toko
  * itu, toko itu kini TANPA SPG (SPG yang hanya tidak masuk tetap ditugaskan — P26: tidak ada yang
- * menerima atas namanya), pengirimannya sudah DISERAHKAN ke toko (DELIVERED/PARTIALLY_DELIVERED —
- * yang masih di jalan diterima lewat konfirmasi ekspedisi/kurir, yang di toko tanpa SPG sekaligus
- * penerimaan toko dan bisa mencatat retur langsung; dikemas atau di jalan → BELUM_DISERAHKAN), dan
- * toko belum menerimanya. Nota yang dicatat tangan tanpa pengiriman tidak pernah lewat sini. Per
- * baris hanya TIBA (penuh/kurang) — kurirnya sudah pergi, jadi tidak ada "ditolak"; barang rusak di
- * toko tanpa SPG belum punya jalur (pertanyaan pemilik). Yang tidak tiba adalah barang hilang,
- * dibuka di transaksi penerimaannya sendiri.
+ * menerima atas namanya), pengirimannya sudah DISERAHKAN ke toko (DELIVERED/PARTIALLY_DELIVERED;
+ * dikemas atau di jalan → BELUM_DISERAHKAN), dan toko belum menerimanya. Pengiriman yang dibuat
+ * sebelum SPG-nya berhenti — termasuk yang masih di jalan saat ia berhenti — dikonfirmasi kurir
+ * sebagai serah terima saja (`penerimaPod` = PEMEGANG), jadi penerimaannya lewat sini; yang dibuat
+ * sesudah toko tanpa SPG diterima lewat konfirmasi kurir itu sendiri, yang bisa mencatat retur
+ * langsung. Bila kurir mencatat barang yang DITOLAK di pintu (siapa yang mencatatnya di kasus ini
+ * belum dijawab pemilik) atau tidak menyerahkan apa pun, konfirmasinya tetap menjadi penerimaan
+ * toko seperti sebelumnya dan pengiriman itu tidak sampai ke sini. Nota yang dicatat tangan tanpa
+ * pengiriman tidak pernah lewat sini. Per baris hanya TIBA (penuh/kurang) — penolakan di pintu
+ * dicatat kurir, jadi di sini tidak ada "ditolak"; barang rusak di toko tanpa SPG belum punya jalur
+ * (pertanyaan pemilik). Yang tidak tiba adalah barang hilang, dibuka di transaksi penerimaannya
+ * sendiri.
  *
  * Foto WAJIB dan terikat pada DOKUMEN ini: kuncinya harus di
  * `store-receipt-photos/<storeId>/<sourceType>-<sourceId>/…` dan belum dipakai tanda terima lain —

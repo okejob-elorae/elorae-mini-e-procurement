@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, seededIds } from "@elorae/db";
 import {
   batalkanKlaimSendiri,
   batalkanReturSendiri,
@@ -14,7 +14,7 @@ import {
   riwayatDokumen,
 } from "./koreksi";
 import { buatKlaimPembayaran } from "./claim-writer";
-import { batalkanRetur, catatReturToko, jodohkanRetur, lepasPasangan } from "./return-writer";
+import { batalkanRetur, catatReturToko, jodohkanRetur, KATEGORI_NOTIF_RETUR_SELISIH, lepasPasangan } from "./return-writer";
 import { putuskanKlaim } from "./writer";
 import { JEJAK } from "./jejak";
 
@@ -86,6 +86,27 @@ beforeEach(async () => {
   ).id;
 });
 
+/**
+ * Hitungan gudang yang kurang (selisih retur) membunyikan lonceng kantor (`RETUR_SELISIH`) dan
+ * menulis jejak beban (`BEBAN_DISESUAIKAN`, entitas `ReturnCharge`). Keduanya tidak terjangkau lewat
+ * id nota: dicocokkan lewat id beban nota uji dan `metadata.storeReturnId`, di JS.
+ */
+async function hapusJejakSelisih(idNrt: string[], idNri: string[], idBebanLain: string[] = []) {
+  const bebanNota = await prisma.returnCharge.findMany({
+    where: { OR: [{ storeReturnId: { in: seededIds(idNrt) } }, { warehouseReturnId: { in: seededIds(idNri) } }] },
+    select: { id: true },
+  });
+  const idBeban = [...new Set([...idBebanLain, ...bebanNota.map((b) => b.id)])];
+  if (idBeban.length) await prisma.auditLog.deleteMany({ where: { entityType: "ReturnCharge", entityId: { in: seededIds(idBeban) } } });
+  if (idNrt.length === 0) return;
+  const lonceng = (
+    await prisma.adminNotification.findMany({ where: { category: KATEGORI_NOTIF_RETUR_SELISIH }, select: { id: true, metadata: true } })
+  )
+    .filter((x) => idNrt.includes(String((x.metadata as Record<string, unknown> | null)?.storeReturnId ?? "")))
+    .map((x) => x.id);
+  if (lonceng.length) await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(lonceng) } } });
+}
+
 afterEach(async () => {
   const entitas = [...klaimIds, ...nrtIds, ...nriIds].filter(Boolean);
   if (entitas.length) await prisma.auditLog.deleteMany({ where: { entityId: { in: entitas.map(seededId) } } });
@@ -104,6 +125,7 @@ afterEach(async () => {
     select: { id: true },
   });
   if (notif.length) await prisma.adminNotification.deleteMany({ where: { id: { in: notif.map((n) => seededId(n.id)) } } });
+  await hapusJejakSelisih(nrtIds.filter(Boolean), nriIds.filter(Boolean), bebanIds.filter(Boolean));
   await prisma.returnCharge.deleteMany({ where: { id: { in: bebanIds.filter(Boolean).map(seededId) } } });
   // Beban yang dibuat penulis (bukan fixture) juga harus pergi sebelum notanya.
   await prisma.returnCharge.deleteMany({

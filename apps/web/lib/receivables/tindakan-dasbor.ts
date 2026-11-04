@@ -9,7 +9,7 @@
  */
 
 import type { JenisTahanan, KeadaanPiutang, LangkahRetur } from './rules';
-import { kalimatTertahan, type KalimatTertahan, type KeadaanTampil } from './jatuh-tempo';
+import { bagianKalimatTertahan, kalimatTertahan, type BagianTertahan, type KalimatTertahan, type KeadaanTampil } from './jatuh-tempo';
 
 export type JenisTindakan = 'lewat' | 'jatuh_tempo' | 'klaim' | 'tertahan' | 'cek' | 'keputusan' | 'jodoh';
 
@@ -39,6 +39,8 @@ export type TindakanHariIni = {
     klaimTersembunyi?: boolean;
     /** Faktur tertahan (Q15): yang menunggu dan sebabnya, yang tetap, bagian yang lewat tempo. */
     tahanan?: KalimatTertahan;
+    /** Bagian kalimat tertahan dalam urutan tampil — satu aturan dengan Faktur & piutang (Q15/P46). */
+    bagianTahanan?: BagianTertahan[];
   };
 };
 
@@ -163,7 +165,7 @@ export function susunTindakan(b: BahanTindakan): TindakanHariIni[] {
         // nilai yang ditahan; nota returnya ada di daftar Retur & pencocokan.
         tautan: tautanPiutang({ keadaan: 'tertahan', cari: p.invoiceNo }),
         nilai,
-        konteks: { toko: p.storeName, tahanan: k },
+        konteks: { toko: p.storeName, tahanan: k, bagianTahanan: bagianKalimatTertahan(p.alasan) },
       });
     }
   }

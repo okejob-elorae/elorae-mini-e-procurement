@@ -79,6 +79,8 @@ export type RincianReturPembeliTampil = {
   diputuskan: { oleh: string | null; pada: string | null; alasanTolak: string | null };
   uang: { keadaan: KeadaanUangRetur; pada: string | null; olehKantor: { oleh: string; alasan: string | null } | null };
   foto: { barang: string | null; struk: string | null };
+  /** Foto struk yang dicatat SPG tetapi tidak tercatat di laporan ini (dari lonceng kantor). */
+  strukTidakTercatat: { url: string; pada: string }[];
   bebanJikaDitolak: number;
   beban: BebanReturTampil | null;
   baris: RincianReturPembeliKantor["baris"];
@@ -249,6 +251,19 @@ export function RincianReturPembeliClient({
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <Foto label={t("rincian.fotoBarang")} url={r.foto.barang} kosong={t("rincian.fotoTidakAda")} />
             <Foto label={t("rincian.fotoStruk")} url={r.foto.struk} kosong={t("rincian.fotoTidakAda")} />
+            {r.strukTidakTercatat.length > 0 ? (
+              <div className="space-y-3 sm:col-span-2">
+                <p className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  {t("rincian.strukTidakTercatatIsi")}
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {r.strukTidakTercatat.map((s) => (
+                    <Foto key={s.url} label={t("rincian.strukTidakTercatatLabel", { pada: s.pada })} url={s.url} kosong={t("rincian.fotoTidakAda")} />
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       </div>

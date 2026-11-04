@@ -10,6 +10,7 @@ import { ALASAN_PERMINTAAN } from "@/lib/spg/saran-minta";
 import { catatBarangDicari, catatOpname, mintaKiriman, terimaKiriman, ubahStatusPermintaan } from "@/lib/spg/stok-writer";
 import { getActiveVisit } from "@/lib/stores/queries";
 import { cariKunjunganAntrean } from "@/lib/pwa/kunjungan-antrean";
+import { tokoSpgUntukAntrean } from "@/lib/pwa/peran";
 
 /**
  * Aksi stok toko untuk SPG (terima kiriman, opname, minta kiriman, barang
@@ -17,7 +18,8 @@ import { cariKunjunganAntrean } from "@/lib/pwa/kunjungan-antrean";
  * juga dikabarkan ke salesman pemegang toko oleh penulisnya (`mintaKiriman`).
  *
  * Toko TIDAK PERNAH diambil dari layar: selalu toko tetap SPG
- * (`User.assignedStoreId`). Hasil dikembalikan sebagai kode, bukan dilempar,
+ * (`User.assignedStoreId`), atau — hanya untuk kiriman antrean HP SPG yang sudah
+ * berhenti — toko yang dilepasnya (lihat `konteks`). Hasil dikembalikan sebagai kode, bukan dilempar,
  * supaya pesan galat tidak disamarkan Next di produksi.
  */
 
@@ -30,28 +32,39 @@ export type HasilSpgStok<T extends object = object> = ({ ok: true } & T) | { ok:
  */
 type Antrean = { visitId?: string | null; visitClientId?: string | null };
 
+/**
+ * `waktuTangkap` (ISO, hanya dari antrean HP): saat pekerjaannya dilakukan di HP. Kiriman
+ * antrean SPG yang sudah ditandai berhenti (P66) — `assignedStoreId`-nya kosong — tetap dicatat
+ * ke toko yang dilepasnya bila ditangkap paling lambat akhir hari terakhirnya
+ * (`tokoSpgUntukAntrean`); saat tangkap dijepit ke sekarang, sama dengan penulisnya. Selain itu
+ * tetap toko tetapnya.
+ */
 async function konteks(
   butuhKunjungan: boolean,
   antrean?: Antrean,
+  waktuTangkap?: string,
 ): Promise<{ userId: string; storeId: string } | { ok: false; code: KodeUmum }> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.SPG_SALES_RECORD)) {
     return { ok: false, code: "FORBIDDEN" };
   }
-  const me = await prisma.user.findUnique({ where: { id: session.user.id }, select: { assignedStoreId: true } });
-  if (!me?.assignedStoreId) return { ok: false, code: "NO_ASSIGNED_STORE" };
+  const storeId =
+    antrean && waktuTangkap
+      ? await tokoSpgUntukAntrean(session.user.id, new Date(Math.min(Date.parse(waktuTangkap), Date.now())))
+      : ((await prisma.user.findUnique({ where: { id: session.user.id }, select: { assignedStoreId: true } }))?.assignedStoreId ?? null);
+  if (!storeId) return { ok: false, code: "NO_ASSIGNED_STORE" };
   // Menghitung barang dan menerima kiriman adalah pekerjaan DI toko — sama
   // dengan mencatat penjualan, butuh check-in di toko itu. Dari antrean HP,
   // kunjungannya boleh sudah check-out (sinyal sering kembali sesudah pulang),
   // tapi harus milik SPG ini di tokonya.
   if (antrean) {
-    const visitId = await cariKunjunganAntrean({ userId: session.user.id, storeId: me.assignedStoreId, ...antrean });
+    const visitId = await cariKunjunganAntrean({ userId: session.user.id, storeId, ...antrean });
     if (!visitId) return { ok: false, code: "KUNJUNGAN_TIDAK_SAH" };
   } else if (butuhKunjungan) {
     const aktif = await getActiveVisit(session.user.id);
-    if (!aktif || aktif.storeId !== me.assignedStoreId) return { ok: false, code: "NO_ACTIVE_VISIT" };
+    if (!aktif || aktif.storeId !== storeId) return { ok: false, code: "NO_ACTIVE_VISIT" };
   }
-  return { userId: session.user.id, storeId: me.assignedStoreId };
+  return { userId: session.user.id, storeId };
 }
 
 /** Kolom bersama kiriman dari HP: kunci sekali per formulir, dan tanda antrean. */
@@ -109,7 +122,7 @@ const terimaSchema = z.object({
 export async function terimaKirimanAction(input: unknown): Promise<HasilSpgStok<{ receiptId: string }>> {
   const parsed = terimaSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "VALIDATION" };
-  const k = await konteks(true, antreanDari(parsed.data));
+  const k = await konteks(true, antreanDari(parsed.data), parsed.data.luring ? parsed.data.waktuTangkap : undefined);
   if ("ok" in k) return k;
   const hasil = await terimaKiriman({
     storeId: k.storeId,
@@ -152,7 +165,7 @@ export async function catatOpnameAction(
 ): Promise<HasilSpgStok<{ opnameId: string; selisih: number; dilewati?: number }>> {
   const parsed = opnameSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "VALIDATION" };
-  const k = await konteks(true, antreanDari(parsed.data));
+  const k = await konteks(true, antreanDari(parsed.data), parsed.data.luring ? parsed.data.waktuTangkap : undefined);
   if ("ok" in k) return k;
   const hasil = await catatOpname({
     storeId: k.storeId,

@@ -1,13 +1,17 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { REF_BEBAN_KE_UTANG } from "./beban-spg";
 import { KomisiBerubahError } from "./koreksi-writer";
+import { putuskanBarangReturPembeli } from "./retur-pembeli";
+import { KATEGORI_NOTIF_RETUR_PEMBELI } from "./retur-pembeli-status";
 import { ENTITAS_BAYAR_UTANG_SPG, KATEGORI_NOTIF_UTANG_SPG, REF_BAYAR_UTANG_SPG } from "./utang";
 import { batalkanPenerimaanUtangSpg, catatPenerimaanUtangSpg, periksaPenerimaanUtangSpg, potongUtangSpg, revisiPenerimaanUtangSpg } from "./utang-writer";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
+const tunda = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Pembayaran utang SPG yang sudah berhenti (P68, keputusan 11) terhadap basis data sungguhan:
@@ -218,5 +222,174 @@ d("pembayaran utang SPG (test bed only)", () => {
       { dilunasi: 0, status: "TERBUKA" },
     ]);
     expect(await prisma.spgDebtSettlement.count({ where: { debtId: seededId(utang[0]), voidedAt: null } })).toBe(1);
+  });
+
+  /**
+   * Beban retur pembeli yang sisanya dipindah ke utang SPG di pembayaran terakhirnya (DIUTANGKAN):
+   * barangnya baru diputuskan sesudah utang itu LUNAS (P79). Nota, laporan DITOLAK, beban, dan
+   * potongannya diseed langsung; dihapus lewat `seededId(s)` sebelum utangnya (afterEach luar).
+   */
+  describe("beban retur pembeli yang dilunasi lewat utang (P79)", () => {
+    let tokoIds: string[] = [];
+    let notaIds: string[] = [];
+    let returIds: string[] = [];
+    let bebanIds: string[] = [];
+
+    afterEach(async () => {
+      const semua = await prisma.adminNotification.findMany({ where: { category: KATEGORI_NOTIF_RETUR_PEMBELI }, select: { id: true, metadata: true } });
+      const milik = semua.filter((n) => bebanIds.includes(String((n.metadata as Record<string, unknown> | null)?.chargeId ?? ""))).map((n) => n.id);
+      await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(milik) } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: seededIds([...bebanIds, ...returIds]) } } });
+      await prisma.spgChargeDeduction.deleteMany({ where: { chargeId: { in: seededIds(bebanIds) } } });
+      await prisma.spgCharge.deleteMany({ where: { id: { in: seededIds(bebanIds) } } });
+      await prisma.spgSaleReturn.deleteMany({ where: { id: { in: seededIds(returIds) } } });
+      await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(notaIds) } } });
+      await prisma.store.deleteMany({ where: { id: { in: seededIds(tokoIds) } } });
+      tokoIds = [];
+      notaIds = [];
+      returIds = [];
+      bebanIds = [];
+    });
+
+    /** Satu laporan retur DITOLAK dengan beban Rp 30.000 yang seluruhnya pindah ke satu utang SPG. */
+    async function bebanLewatUtang() {
+      const toko = await prisma.store.create({ data: { code: `${tag}-T${nomor++}`, name: `Toko ${tag}`, address: "uji", termsType: "KONSI" } });
+      tokoIds.push(toko.id);
+      const nota = await prisma.spgSale.create({
+        data: { docNo: `${tag}/SPG/${nomor++}`, salesmanId: spg, storeId: toko.id, subtotal: 30_000, total: 30_000, cashReceived: 30_000, changeGiven: 0, createdById: spg },
+      });
+      notaIds.push(nota.id);
+      const retur = await prisma.spgSaleReturn.create({
+        data: {
+          spgSaleId: nota.id,
+          storeId: toko.id,
+          createdById: spg,
+          reason: "uji",
+          idempotencyKey: `${tag}-retur-${nomor++}`,
+          status: "DITOLAK",
+          decidedById: pencatat,
+          decidedAt: new Date("2026-09-10T03:00:00Z"),
+          rejectReason: "uji",
+        },
+      });
+      returIds.push(retur.id);
+      const beban = await prisma.spgCharge.create({
+        data: {
+          spgUserId: spg,
+          storeId: toko.id,
+          sourceKind: "KONSI",
+          source: "RETUR_PEMBELI",
+          sourceId: retur.id,
+          sourceDocNo: nota.docNo,
+          spgSaleId: nota.id,
+          reportedAt: new Date("2026-09-10T03:00:00Z"),
+          computedAmount: 30_000,
+          amount: 30_000,
+          settledAmount: 30_000,
+          status: "DIUTANGKAN",
+          note: "uji",
+          createdById: pencatat,
+        },
+      });
+      bebanIds.push(beban.id);
+      const u = await prisma.spgDebt.create({
+        data: {
+          spgUserId: spg,
+          kind: "RETUR_PEMBELI",
+          sourceKey: beban.id,
+          sourceStoreId: toko.id,
+          amount: 30_000,
+          createdRefType: "SpgDebtRecording",
+          createdRefId: `${tag}-catat-beban`,
+          note: "uji",
+          createdById: pencatat,
+        },
+      });
+      utang.push(u.id);
+      await prisma.spgChargeDeduction.create({
+        data: { chargeId: beban.id, amount: 30_000, fromCommission: 0, fromSalary: 0, paidRefType: REF_BEBAN_KE_UTANG, paidRefId: u.id, payoutMonth: "2026-10", createdById: pencatat },
+      });
+      return { returId: retur.id, bebanId: beban.id, utangId: u.id };
+    }
+
+    const lonceng = async (bebanId: string) =>
+      (await prisma.adminNotification.findMany({ where: { category: KATEGORI_NOTIF_RETUR_PEMBELI }, select: { metadata: true } })).filter(
+        (n) => (n.metadata as Record<string, unknown> | null)?.chargeId === bebanId,
+      ).length;
+    const putuskan = (returId: string) => putuskanBarangReturPembeli({ returnId: returId, keputusan: "DIBELI_SPG", olehUserId: pemeriksa, sekarang });
+    const keadaan = async (b: { bebanId: string; utangId: string }, bayarId: string) => ({
+      barang: (await prisma.spgCharge.findUniqueOrThrow({ where: { id: seededId(b.bebanId) }, select: { goodsDecision: true } })).goodsDecision,
+      utang: (await prisma.spgDebt.findUniqueOrThrow({ where: { id: seededId(b.utangId) }, select: { status: true } })).status,
+      bayar: (await prisma.spgDebtPayment.findUniqueOrThrow({ where: { id: seededId(bayarId) }, select: { status: true } })).status,
+    });
+
+    it("diperiksa dan melunasi utangnya: SATU lonceng putuskan barangnya; pembayaran sebagian tidak", async () => {
+      const b = await bebanLewatUtang();
+      const sebagian = await catat(10_000);
+      if (!sebagian.ok) throw new Error(sebagian.kode);
+      expect(await periksaPenerimaanUtangSpg({ id: sebagian.id, versi: 1, keputusan: "TERVERIFIKASI", olehUserId: pemeriksa, sekarang })).toEqual({ ok: true });
+      expect(await lonceng(b.bebanId)).toBe(0);
+      expect(await putuskan(b.returId)).toEqual({ ok: false, alasan: "BEBAN_BELUM_LUNAS" });
+
+      const sisa = await catat(20_000);
+      if (!sisa.ok) throw new Error(sisa.kode);
+      expect(await periksaPenerimaanUtangSpg({ id: sisa.id, versi: 1, keputusan: "TERVERIFIKASI", olehUserId: pemeriksa, sekarang })).toEqual({ ok: true });
+      expect(await lonceng(b.bebanId)).toBe(1);
+      expect((await putuskan(b.returId)).ok).toBe(true);
+    });
+
+    it("membatalkan penerimaan terverifikasi ditolak begitu barangnya diputuskan, tanpa menulis apa pun", async () => {
+      const b = await bebanLewatUtang();
+      const a = await catat(30_000);
+      if (!a.ok) throw new Error(a.kode);
+      await periksaPenerimaanUtangSpg({ id: a.id, versi: 1, keputusan: "TERVERIFIKASI", olehUserId: pemeriksa, sekarang });
+      expect((await putuskan(b.returId)).ok).toBe(true);
+      expect(await batalkanPenerimaanUtangSpg({ id: a.id, olehUserId: pemeriksa, alasan: "salah", bolehBatalkanBelumDicek: false, bolehBatalkanTerverifikasi: true, sekarang })).toEqual({
+        ok: false,
+        kode: "BEBAN_SUDAH_DIPUTUSKAN",
+      });
+      expect(await keadaan(b, a.id)).toEqual({ barang: "DIBELI_SPG", utang: "LUNAS", bayar: "TERVERIFIKASI" });
+      expect(await prisma.spgDebtSettlement.count({ where: { refType: REF_BAYAR_UTANG_SPG, refId: seededId(a.id), voidedAt: null } })).toBe(1);
+    });
+
+    it("balapan pemeriksaan vs keputusan barang: barang tidak pernah diputuskan selagi utangnya terbuka, lonceng tepat satu", async () => {
+      const b = await bebanLewatUtang();
+      const a = await catat(30_000);
+      if (!a.ok) throw new Error(a.kode);
+      const [periksa, putus] = await Promise.all([
+        periksaPenerimaanUtangSpg({ id: a.id, versi: 1, keputusan: "TERVERIFIKASI", olehUserId: pemeriksa, sekarang }),
+        tunda(5).then(() => putuskan(b.returId)),
+      ]);
+      expect(periksa).toEqual({ ok: true });
+      const akhir = await keadaan(b, a.id);
+      expect([akhir.utang, akhir.bayar]).toEqual(["LUNAS", "TERVERIFIKASI"]);
+      if (putus.ok) expect(akhir.barang).toBe("DIBELI_SPG");
+      else {
+        // Keputusan lebih dulu: ia melihat utangnya belum lunas dan tidak menulis apa pun.
+        expect(putus).toEqual({ ok: false, alasan: "BEBAN_BELUM_LUNAS" });
+        expect(akhir.barang).toBeNull();
+      }
+      expect(await lonceng(b.bebanId)).toBe(1);
+    });
+
+    it("balapan pembatalan penerimaan terverifikasi vs keputusan barang: tidak pernah dibatalkan DAN diputuskan", async () => {
+      const b = await bebanLewatUtang();
+      const a = await catat(30_000);
+      if (!a.ok) throw new Error(a.kode);
+      await periksaPenerimaanUtangSpg({ id: a.id, versi: 1, keputusan: "TERVERIFIKASI", olehUserId: pemeriksa, sekarang });
+      const [batal, putus] = await Promise.all([
+        batalkanPenerimaanUtangSpg({ id: a.id, olehUserId: pemeriksa, alasan: "transfer dibatalkan bank", bolehBatalkanBelumDicek: false, bolehBatalkanTerverifikasi: true, sekarang }),
+        tunda(5).then(() => putuskan(b.returId)),
+      ]);
+      const akhir = await keadaan(b, a.id);
+      expect([batal.ok, putus.ok].filter(Boolean)).toHaveLength(1);
+      if (batal.ok) {
+        expect(putus).toEqual({ ok: false, alasan: "BEBAN_BELUM_LUNAS" });
+        expect(akhir).toEqual({ barang: null, utang: "TERBUKA", bayar: "DIBATALKAN" });
+      } else {
+        expect(batal).toEqual({ ok: false, kode: "BEBAN_SUDAH_DIPUTUSKAN" });
+        expect(akhir).toEqual({ barang: "DIBELI_SPG", utang: "LUNAS", bayar: "TERVERIFIKASI" });
+      }
+    });
   });
 });

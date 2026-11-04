@@ -2220,7 +2220,7 @@
       "MISSING_CARRIER": "Select who is carrying this delivery before shipping.",
       "INVALID_CARRIER": "The selected carrier does not exist or is not eligible to carry deliveries.",
       "NOT_CARRIER": "This delivery is assigned to a different salesman.",
-      "MISSING_DATES": "Enter the invoice and due dates before shipping.",
+      "MISSING_DATES": "Enter the nota due date before creating the shipment.",
       "MISSING_GPS": "Location is required to complete this delivery.",
       "STORE_NOT_GEOCODED": "This store has no location on record — contact an admin before completing here.",
       "GPS_OUT_OF_RADIUS": "You're too far from the store to complete this delivery.",
@@ -2246,7 +2246,7 @@
       "MISSING_HANDOVER_PHOTO": "Upload the handover-to-courier photo showing the weight before it leaves.",
       "CONSUME_RECORD_MISSING": "The stock movement this line would reverse was not found, so its goods cannot be put back in the warehouse. Contact an admin.",
       "LINE_UNACCOUNTED": "Received + refused + lost must equal the planned qty on every line.",
-      "DICATAT_SPG": "This store has an SPG — refused or lost goods are recorded by the SPG when receiving.",
+      "DICATAT_SPG": "This confirmation records only what was handed to the store; any shortfall is recorded when the store receives — by the store's SPG, or by the holding salesman if the SPG stopped while these goods were on the road.",
       "POD_KOSONG": "Nothing was handed over. If the goods were carried back, use Cancel Shipment; if they were lost, the SPG records it when receiving.",
       "TERIMA_GAGAL": "The store receipt failed. {detail}",
       "RECEIVABLE_PAID_TANPA_LAPORAN": "Cannot cancel: the store has already paid this nota's bill.",
@@ -2285,7 +2285,8 @@
     "podDiserahkan": "Handed over",
     "podDiterima": "Received by store",
     "podReturLangsung": "Refused at the door",
-    "podHilang": "Lost in transit"
+    "podHilang": "Lost in transit",
+    "completePemegangDescription": "Upload the delivery proof. This store's SPG stopped while these goods were on the road: the store's person in charge receives them, and the holding salesman records the receipt on a visit — here, record how many were handed over on each line. If the store refused goods at the door, or nothing arrived at all, this confirmation becomes the store's receipt: every piece must be recorded as received, refused at the door, or lost in transit."
   },
   "production": {
     "targetCutting": "Target cutting",
@@ -2694,7 +2695,8 @@
       "codeLocked": "The code cannot be changed after saving.",
       "sortHelp": "Smaller numbers appear first in the category choices.",
       "activeHelp": "Inactive categories are not offered when creating new goods, but existing goods keep them.",
-      "errHasCommissionRates": "This category still has SPG commission rates, so it cannot be deleted. Remove its rates under SPG commission first, or deactivate the category."
+      "errHasCommissionRates": "This category still has SPG commission rates, so it cannot be deleted. Remove its rates under SPG commission first, or deactivate the category.",
+      "errHasSaleLines": "This category is recorded on SPG sale lines (their commission basis), so it cannot be deleted. Deactivate the category instead."
     },
     "detail": {
       "pushStock": "Push stock to Jubelio",
@@ -3957,7 +3959,11 @@
     "tombolBuat": "Create stock count",
     "penjelasanBuat": "When created, the system stock of every item in scope is frozen as the comparison, then the warehouse counts without seeing the system figures.",
     "tanpaVarian": "No variant (pooled stock)",
-    "judul": "Stock count"
+    "judul": "Stock count",
+    "grnTanpaPoMenunggu": {
+      "judul": "Receipts without a PO awaiting confirmation",
+      "isi": "These goods are not in stock yet — confirm them first or set them aside before counting."
+    }
   },
   "stockMovements": {
     "title": "Stock Movements",
@@ -4907,7 +4913,8 @@
     "detailDesc": "Cost per piece for this work order",
     "rekomendasiBarang": "Item price recommendation",
     "rekomendasiBarangDari": "markup {markup}% (= margin {margin}%) · latest cost {dokumen} {tanggal}",
-    "rekomendasiBarangBelum": "{kurang, select, HPP {This item has no cost yet.} ATURAN {This item has no markup/margin and no default.} other {No cost and no markup/margin yet.}}"
+    "rekomendasiBarangBelum": "{kurang, select, HPP {This item has no cost yet.} ATURAN {This item has no markup/margin and no default.} other {No cost and no markup/margin yet.}}",
+    "dikoreksiDari": "Corrected from {dari} (invoice {nomor})"
   },
   "productionColors": {
     "titleAll": "Colours",
@@ -6554,7 +6561,8 @@
       "izinMasihDitolak": "Location is still denied. Follow the steps above, then try again.",
       "fotoWajib": "Take at least one visit photo before checking out.",
       "fotoWajibBuka": "Open the store page to take a photo",
-      "fieldReturn": "Field return"
+      "fieldReturn": "Field return",
+      "spgBerhenti": "Your account is marked as no longer an SPG, so you cannot check in. Contact the office."
     },
     "catalog": {
       "back": "Back",
@@ -6986,7 +6994,8 @@
       "diserahkanLabel": "Handed over",
       "diterimaLabel": "Received",
       "returLangsungLabel": "Refused",
-      "hilangLabel": "Lost"
+      "hilangLabel": "Lost",
+      "pemegangHint": "This store's SPG stopped while these goods were on the road: the store's person in charge receives them, and the holding salesman records the receipt on a visit. Record how many were handed over. If the store refused goods at the door, or nothing arrived at all, this confirmation becomes the store's receipt: every piece must be recorded as received, refused, or lost."
     },
     "logout": {
       "title": "Unsynced items on this device",
@@ -7454,7 +7463,7 @@
         "MULAI_KERJA_BELUM_DIISI": "The {month} payment is waiting for the office to fill in your start date.",
         "CATATAN_HADIR_BELUM_DIPERIKSA": "The {month} payment is waiting for the office to check the store check-in record.",
         "JADWAL_MENUNGGU_PERSETUJUAN": "The {month} payment is waiting for the office to approve your monthly schedule.",
-        "CATATAN_HADIR_BELUM_DIMASUKKAN": "The {month} payment is waiting for the office to enter the store check-in record for unscheduled days.",
+        "CATATAN_HADIR_BELUM_DIMASUKKAN": "The {month} payment is waiting for the office to enter the store check-in record for days without an approved schedule.",
         "TANPA_HARI_KERJA": "The {month} payment is waiting: there are no scheduled working days that month."
       },
       "heldDays": "Days holding it: {days}",
@@ -7548,7 +7557,8 @@
         "DISKON_MANUAL_TIDAK_VALID": "Invalid discount amount.",
         "ALASAN_DISKON_WAJIB": "A reason for the discount is required.",
         "PELANGGAN_TIDAK_VALID": "The shopper's details are invalid or not a customer of this store. Check the name, phone number, and consent.",
-        "WAKTU_TIDAK_VALID": "Invalid sale time. Check the phone's clock."
+        "WAKTU_TIDAK_VALID": "Invalid sale time. Check the phone's clock.",
+        "SPG_BERHENTI": "You no longer work as an SPG at this store, so this sale was not saved. Contact the office."
       },
       "promo": {
         "bannerTitle": "Promos running ({count})",
@@ -9702,7 +9712,8 @@
         "PELANGGAN_TIDAK_VALID": "The shopper's details were rejected (not a customer of this store, or the name, number, or consent is invalid).",
         "WAKTU_TIDAK_VALID": "The receipt is older than 14 days (or the phone's clock is wrong), so it can't be recorded from the phone. Contact the office.",
         "UMUM": "Rejected by the server. Try again, or contact the office.",
-        "KUNJUNGAN_DITOLAK": "The check-in of the visit this receipt belongs to was rejected by the server, so the receipt cannot be recorded. Contact the office."
+        "KUNJUNGAN_DITOLAK": "The check-in of the visit this receipt belongs to was rejected by the server, so the receipt cannot be recorded. Contact the office.",
+        "SPG_BERHENTI": "You no longer work as an SPG, and this sale was recorded after your last day or at another store, so it was not saved. Contact the office."
       }
     },
     "kehadiranSpg": {
@@ -9859,7 +9870,8 @@
         "ISIAN_TIDAK_VALID": "The form is incomplete or invalid. Check it again.",
         "JARINGAN": "Cannot reach the server. Check your signal, then save again.",
         "GAGAL": "The receipt could not be saved. Try again.",
-        "FOTO_GAGAL": "The photo could not be uploaded. Try again."
+        "FOTO_GAGAL": "The photo could not be uploaded. Try again.",
+        "CATATAN_STOK_TIDAK_COCOK": "The receipt cannot be recorded because this shipment's stock records do not match. Contact the office."
       }
     },
     "spgBerhenti": {
@@ -12479,7 +12491,7 @@
       "OTHER_INCOME": "Income outside sales, e.g. bank interest.",
       "PREPAID_EXPENSE": "Expenses paid for future periods (rent, subscriptions), expensed over time.",
       "ACCRUED_EXPENSE": "Expenses incurred but not yet billed or paid; offset of accrual journals reversed at the start of the next month.",
-      "PURCHASE_PRICE_VARIANCE": "Cost of goods sold account for the part of an accepted supplier or service (CMT) invoice price difference on goods no longer in any location (sold or lost): debited when the invoice is higher, credited when it is lower. The part on goods still in the main warehouse, a consignment store's warehouse or a van revalues that stock instead of reaching this account."
+      "PURCHASE_PRICE_VARIANCE": "Cost of goods sold account for the part of an accepted supplier or service (CMT) invoice price difference on goods no longer in the main warehouse or a van (sold, lost, or sent to a consignment store): debited when the invoice is higher, credited when it is lower. The part on goods still in the main warehouse or a van revalues that stock instead of reaching this account. Goods at a consignment store's warehouse use this account for now, until the consignment cost carries their revaluation."
     },
     "error": {
       "FORBIDDEN": "You do not have permission to change account mappings.",
@@ -12976,7 +12988,8 @@
       "NOTHING_TO_POST": "Nothing to post: there is no journal entry for this payment to book or reverse.",
       "NOT_A_RESIDUE": "Only a balance below Rp 1 can be written off as rounding, and this receivable's outstanding is not one or has just changed. Refresh the page to see its current balance.",
       "PENDING_CLAIM": "A collection submission or store settlement is still pending against this receivable. Verify or reject it first, then write off whatever residue is left.",
-      "METHOD_NOT_ALLOWED": "A rounding adjustment can only be posted from the write-off control on a receivable's own page."
+      "METHOD_NOT_ALLOWED": "A rounding adjustment can only be posted from the write-off control on a receivable's own page.",
+      "KONSI_LEWAT_BKM": "This is a consignment bill. Its payment is recorded only through a BKM (payment report), not here."
     },
     "methodProgramDeduction": "Program Deduction",
     "methodAdminFee": "Admin Fee",
@@ -13614,7 +13627,8 @@
         }
       },
       "sourceCycle": "Consignment cycle",
-      "primaryActionDisabledVoidedCycle": "This receivable was voided when its consignment cycle was unlocked; the replacement bill is issued when the cycle is locked again."
+      "primaryActionDisabledVoidedCycle": "This receivable was voided when its consignment cycle was unlocked; the replacement bill is issued when the cycle is locked again.",
+      "konsiLewatBkm": "A consignment bill is paid only through a BKM."
     },
     "journalWarning": {
       "title": "Journal not posted",
@@ -13870,7 +13884,6 @@
     "voidBlockedBySupplierPayments": "Can't be voided yet: voiding this bill lowers the payable of the receipts {steps}, and the supplier payments on those receipts already exceed what they would still owe without it. Cancel the supplier payment first.",
     "selisih": {
       "galat": {
-        "ADA_RETUR": "Some goods this invoice bills were returned to the supplier, so its difference cannot be accepted on the invoiced quantity. Void the bill and record it again without the returned goods.",
         "TIDAK_DITEMUKAN": "The difference was not found.",
         "SUDAH_DIPUTUSKAN": "This difference has already been decided. Reload the page.",
         "TAGIHAN_DIBATALKAN": "The bill has been voided.",
@@ -13884,8 +13897,8 @@
         "TANPA_AKSES": "You do not have permission to decide price differences.",
         "GAGAL": "Could not save. Try again."
       },
-      "direturMenunggu": "{qty} pcs this invoice bills were returned to the supplier. The difference cannot be accepted; void the bill and record it again without the returned goods.",
-      "direturDiterima": "{qty} pcs were returned to the supplier after this difference was accepted: the payable still counts the difference on the returned goods. Void the bill and record it again without the returned goods.",
+      "direturMenunggu": "{qty} pcs this invoice bills were returned to the supplier. If the difference is accepted, the payable also counts it on the returned goods — for an exact figure, void the bill and record it again without the returned goods.",
+      "direturDiterima": "{qty} pcs this invoice bills were returned to the supplier: the payable still counts the difference on the returned goods. Void the bill and record it again without the returned goods.",
       "dibuat": "{count} price differences are waiting for an admin decision.",
       "akanMenunggu": "This difference waits for an admin decision; the receipt cannot be paid until it is decided.",
       "kartuJudul": "Price differences",
@@ -13899,7 +13912,7 @@
       "kolomStatus": "Status",
       "poTombolLama": "This PO was marked paid with the old toggle — clear that mark on the PO page, then pay the receipt through Supplier payments.",
       "bagianPpn": "including input VAT {nilai}",
-      "bagianStok": "{stok} to stock value · {keluar} to goods already gone",
+      "bagianStok": "{stok} to stock value · {keluar} to the period's cost of goods sold (goods already gone and, for now, goods at a consignment store)",
       "status": {
         "MENUNGGU": "Awaiting decision",
         "DITERIMA": "Accepted",
@@ -13910,7 +13923,7 @@
       "putuskan": "Decide",
       "dialogJudul": "Price difference on invoice {invoice}",
       "dialogIsi": "{penerimaan} · {barang} · {qty}: receipt price {tercatat}, invoice price {invoice}.",
-      "terimaNaik": "Accept: the payable to the supplier rises by {selisih}. This receipt's cost rises too; goods already sold are not corrected.",
+      "terimaNaik": "Accept: the payable to the supplier rises by {selisih}. The cost of this receipt's goods still in the main warehouse or a van rises too; goods already sold or used are not corrected. For now, goods already sent to a consignment store do not rise either.",
       "terimaTurun": "Accept: the payable to the supplier falls by {selisih}.",
       "lebihBayar": "This receipt has already been paid {dibayar}. If accepted, it is overpaid by {lebih}.",
       "koreksiInvoiceIsi": "Correct the invoice: the invoice price is taken as {harga}, the receipt price; the payable does not change.",
@@ -14643,7 +14656,8 @@
     "receiptsWithoutInvoice": "Receipts with no supplier invoice, not yet requested",
     "invoiceRequestsOverdue": "Supplier invoices requested over 7 days ago, not yet received",
     "vendorBillPriceDifferences": "Invoice price differences awaiting a decision",
-    "grnNoPoPending": "Goods receipts without a PO awaiting admin confirmation"
+    "grnNoPoPending": "Goods receipts without a PO awaiting admin confirmation",
+    "spgSalariesUnset": "SPG base salary not set for a month to be paid"
   },
   "statuses": {
     "unknown": "Unknown",
@@ -15235,7 +15249,9 @@
       "jadikanPilih": "Warehouse receipt",
       "jadikanPlaceholder": "Choose a receipt",
       "jadikanSimpan": "Attach",
-      "okDijadikan": "Receipt attached as follow-up goods."
+      "okDijadikan": "Receipt attached as follow-up goods.",
+      "jadikanSiklusTerkunci": "This receipt has no store yet and will take this note's store. Its receipt month is already locked in consignment cycle {cycles}: that month's consigned stock changes too, and printed reports may differ from the screen.",
+      "jadikanSiklusSetuju": "I understand, attach it anyway."
     },
     "errBUKAN_PEMEGANG": "Only the store's current holding salesman can report the shortfall check.",
     "errADA_SUSULAN": "This note has follow-up counts. Detach them first.",
@@ -15247,7 +15263,9 @@
     "errSUDAH_DIPOTONG": "Part of it has already been cut from the bearer, so the charge cannot be reassigned and goods found later are recorded as a receipt without a note.",
     "errADA_SELISIH_DITEMUKAN": "These goods are being sent back as the shortfall of return {noNrt} — no new note is needed. If this really is another return, tick the statement and save again.",
     "errBEBAN_BERUBAH": "The charge just changed. Reload the page and try again.",
-    "errTOKO_SUDAH_MEMBAYAR": "The store has already paid its share of the shortfall. Releasing it now would overpay the store — report it to Finance."
+    "errTOKO_SUDAH_MEMBAYAR": "The store has already paid its share of the shortfall. Releasing it now would overpay the store — report it to Finance.",
+    "pairLockedCycleBody": "This receipt has no store yet and will take the chosen note's store. Its receipt month is already locked in consignment cycle {cycles}: that month's consigned stock changes too, and printed reports may differ from the screen.",
+    "pairLockedCycleConfirm": "I understand, match it anyway."
   },
   "foto": {
     "pick": "Take or choose a photo",
@@ -15452,10 +15470,11 @@
     "kpiReturnsFoot": "Check {cek} · match {jodoh} · decide {keputusan}",
     "why_tertahan_hitung": "{toko} — the return deduction of {nilai} is waiting for the warehouse to count the goods.",
     "why_tertahan_campur": "{toko} — return deductions of {nilai} are waiting for the warehouse count and a decision on who bears the difference.",
-    "why_tertahan_tetap": "{toko} — {nilai} is held permanently: the deduction points at a return note that was cancelled or does not exist, so it does not reduce the bill.",
+    "why_tertahan_tetap": "{toko} — a {nilai} return deduction no longer stands; the store still owes it.",
     "why_tertahan_lewatTempo": "The rest, {nilai}, is {hari} days past due.",
     "why_tertahan_lewatTempoSemua": "The collectable part, {nilai}, is {hari} days past due.",
-    "why_tertahan_tetapJuga": "Another {nilai} is held permanently: its deduction points at a return note that was cancelled or does not exist, so it does not reduce the bill."
+    "why_tertahan_tetapJuga": "A further return deduction {nilai} is not recognised; the store still owes it.",
+    "why_tertahan_tagihBkm": "Collect it with the next BKM."
   },
   "bebanSelisih": {
     "pageTitle": "Return differences",
@@ -15673,7 +15692,12 @@
         "SUDAH_DIBATALKAN": "This return note was cancelled."
       }
     },
-    "errADA_SELISIH_DITEMUKAN": "These goods are being sent back as the shortfall of another return note at this store — hand them to the holding salesman, no new note is needed."
+    "errADA_SELISIH_DITEMUKAN": "These goods match the shortfall of return {noNrt} that is being sent back — no new note is needed. If this really is a different return, tick the statement and send again.",
+    "returLainKonfirmasi": "These goods match the shortfall of return {noNrt} that is being sent back. Tick this if it really is a different return, then send again.",
+    "antreanReturLain": "This is another return",
+    "antreanReturLainJudul": "Send as another return?",
+    "antreanReturLainIsi": "These goods match the shortfall goods of note {noNrt} being sent back. Send again only if this really is another return, not those shortfall goods.",
+    "antreanReturLainKirim": "Yes, send again"
   },
   "pwaBeban": {
     "pageTitle": "My charges",
@@ -16070,7 +16094,7 @@
     "stockSourceTitipan": "Source: consignment count",
     "salaryCommissionNote": "Commission on {salesMonth} sales · paid in {payoutMonth} (the month the official figures were locked).",
     "salaryCommissionNoteUnlocked": "Commission on {salesMonth} sales · its payout month is set when the official figures are locked again.",
-    "salaryCommissionRule": "Commission = rate per item category (Settings → SPG commission) × the pieces each SPG sold at the till, capped at the official figure. Each assigned SPG keeps her full base salary. Rows not yet paid are always paid at today's per-SPG commission; differences after payment go into the next payout as a correction.",
+    "salaryCommissionRule": "Commission = the rate of the item's category at the time of sale (Settings → SPG commission) × the pieces each SPG sold at the till, capped at the official figure. Base salary comes from that month's work schedule or the checked store check-in record: daily rate = monthly salary ÷ scheduled work days. Each scheduled day with no presence and no approved leave deducts one daily rate, and a day off worked adds one daily rate. An SPG who starts or leaves mid-month is paid only her working days. Rows not yet paid are always paid at the salary and commission recomputed at payment; differences after payment go into the next payout as a correction.",
     "colCorrection": "Corrections",
     "colPaidOut": "Paid out",
     "commissionReplaced": "Locked at {old} — paid at today's per-SPG commission",
@@ -16103,7 +16127,7 @@
     "salaryOutOfRadius": "{n} check-ins outside the store radius — check before paying.",
     "correctionSalaryPart": "including base salary {amount}",
     "baseSalaryFromSchedule": "SPG base salary is not typed here: it comes from the monthly salary (Settings → SPG commission) and the approved schedule or check-in record.",
-    "lockCreatesReceivable": "Locking issues bill {doc} in Invoices & receivables, dated the last day of the cycle month and due {days} days after that date (the store's payment terms).",
+    "lockCreatesReceivable": "Locking issues bill {doc} in Invoices & receivables, dated the last day of the cycle month and due {days} days after the lock date (the store's payment terms).",
     "lockNoCategory": "{pcs} pieces sold by SPGs have no item category. The figures can still be locked — their commission follows once the category is set.",
     "lockNoCategoryItem": "{nama}: {pcs} pieces",
     "shipViaPush": "Goods for consignment stores now go through Push consignment and a warehouse-to-store delivery. Choose the store.",
@@ -16767,7 +16791,18 @@
       "SPG_CHARGE_DEDUCTED": "SPG charge deducted",
       "SPG_CHARGE_CANCELLED": "SPG charge cancelled",
       "SPG_CHARGE_GOODS_DECIDED": "SPG charge goods decided",
-      "SPG_CHARGE_PAID_BACK": "SPG charge paid back"
+      "SPG_CHARGE_PAID_BACK": "SPG charge paid back",
+      "SPG_SALE_RETURN_WITHDRAWAL_UNDONE": "Shopper return withdrawal undone (refund already made)",
+      "RETURN_CHARGE_CHECK_REPORTED": "Return shortfall check reported",
+      "STORE_RETURN_FOLLOW_UP_COUNTED": "Store return follow-up counted",
+      "STORE_RETURN_FOLLOW_UP_MATCHED": "Store return follow-up matched",
+      "STORE_RETURN_FOLLOW_UP_UNMATCHED": "Store return follow-up unmatched",
+      "RETURN_CHARGE_ADJUSTED": "Return charge adjusted",
+      "RETURN_CHARGE_DEDUCTED": "Return charge deducted from the salesperson's commission",
+      "RETURN_CHARGE_REFUNDED": "Return charge over-deduction refunded",
+      "GRN_NO_PO_DECLINED": "Receipt without a PO declined",
+      "ITEM_CATEGORY_CHANGED": "Item category changed",
+      "ITEM_SPG_COMMISSION_CHANGED": "Item SPG commission per piece changed"
     },
     "entities": {
       "ChainTemplate": "Chain template",
@@ -17273,7 +17308,8 @@
         "HARGA_KOSONG": "{count} have no ERP price — not sent.",
         "KATEGORI_BELUM_DIPETAKAN": "{count} have an unmapped category — not sent.",
         "TIDAK_DITEMUKAN": "{count} products not found.",
-        "BUKAN_BARANG_JADI": "{count} are not finished goods."
+        "BUKAN_BARANG_JADI": "{count} are not finished goods.",
+        "TERBACA_BERUBAH": "{count} Jubelio prices changed again since the page opened — reload and check again."
       },
       "kembalikanBerhasil": "ERP price reverted to the Jubelio price.",
       "galat": {
@@ -20057,7 +20093,7 @@
     },
     "kantor": {
       "judul": "Goods returned by shoppers",
-      "penjelasan": "The store's cashier refunds the money; only the goods are recorded. Only returns the office approved reduce net quantities, commission and consignment reports.",
+      "penjelasan": "The cashier refunds the shopper only after the office approves, and the SPG records it with a photo of the slip. Only approved returns reduce net sales, commission (in the original nota's month), and the consignment report.",
       "terjual": "Sold",
       "kembali": "Returned",
       "bersih": "Net",
@@ -20117,10 +20153,11 @@
         "ALASAN_TERLALU_PANJANG": "The reason is too long (500 characters at most).",
         "MELEBIHI_SISA": "More than can still be reported from this receipt.",
         "UANG_SUDAH_DIKEMBALIKAN": "The money for this report is recorded as refunded, so it can no longer be withdrawn. The office decides.",
-        "TIDAK_DISETUJUI": "This report was rejected or withdrawn — the refund cannot be recorded.",
+        "TIDAK_DISETUJUI": "You withdrew this report before its refund was recorded, so the refund cannot be recorded here. The office has been told.",
         "SUDAH_DICATAT": "The refund for this report is already recorded with another photo.",
         "FOTO_STRUK_WAJIB": "A refund slip photo is required. Take it again.",
-        "WAKTU_TIDAK_VALID": "The recording time is too old. Record it again."
+        "WAKTU_TIDAK_VALID": "The recording time is too old. Record it again.",
+        "POTONG_SUDAH_DILAPORKAN_ULANG": "The goods of this report were reported again in another report, so its refund cannot be recorded here. The office has been told."
       },
       "catatUangGagal": "The refund you recorded on this phone could not be sent. Record it again below.",
       "uang": {
@@ -20137,7 +20174,7 @@
         "MENUNGGU_SUDAH": "The office has been told. If this report is rejected, that money becomes your charge — deducted from commission, then from salary.",
         "SILAKAN_KEMBALIKAN": "The office approved: refund the shopper through the cashier, then press \"Money refunded\" with a photo of the slip. Sellable goods may go back on the shelf.",
         "SUDAH_DIKEMBALIKAN": "This return has taken effect: sellable goods are back in the store's stock.",
-        "JANGAN_KEMBALIKAN": "The office rejected this report. Do not refund the shopper; give the goods back to the shopper.",
+        "JANGAN_KEMBALIKAN": "The office rejected this report. Do not refund the shopper; give the goods back to the shopper. If the money was already refunded, record it with a photo of the slip — that money becomes your charge.",
         "DIBEBANKAN": "The office rejected this report although the money was already refunded. That money is your charge; the goods stay set aside until the office decides.",
         "DITARIK": "You withdrew this report; nothing changed."
       },
@@ -20164,7 +20201,9 @@
       "catatUangBatal": "Cancel",
       "catatUangKirim": "Record refund",
       "fotoStruk": "Photo of the refund slip",
-      "kurangFotoStruk": "Take a photo of the refund slip."
+      "kurangFotoStruk": "Take a photo of the refund slip.",
+      "uangKetDibeliSpg": "The office rejected this report although the money was already refunded. You have covered that money.",
+      "catatUangPeringatanDitolak": "The office has rejected this report. Money the cashier already refunded becomes your charge at once — deducted from commission, then from salary — and the goods stay set aside until the office decides."
     }
   },
   "pwaPenjualan": {
@@ -21051,7 +21090,7 @@
       "sudahDibayar": "Some commission is already paid — cannot be locked again.",
       "belumDicek": "The report has not been checked."
     },
-    "berbeda": "Today's calculation differs from the set figure — receipts or returns came in afterwards, or it was set under the old rule. When marked paid, today's per-SPG commission is what is paid; the set figure stays in the audit trail.",
+    "berbeda": "Today's calculation differs from the set figure — receipts, returns or the salary basis (schedule, store check-in record, leave) changed afterwards. When marked paid, today's figure is what is paid; the set figure stays in the audit trail.",
     "berbedaDibayar": "Today's calculation differs from what was paid. Each SPG's difference goes into her next payout as a correction; rows not yet paid are paid at today's per-SPG commission.",
     "kolom": {
       "spg": "SPG",
@@ -21094,7 +21133,7 @@
       "dikunci": "Official figures locked {tanggal} — that is the report's check.",
       "bayarDiSiklus": "Salary & commission can be marked paid here or in its consignment cycle.",
       "tanpaBaris": "This cycle has no SPG pay rows.",
-      "berbeda": "Today's calculation differs from the locked figures — phone receipts or returns came in after the lock, or the cycle was locked under the old rule (item rate, equal split). Rows not yet paid are paid at today's per-SPG commission; there is no need to unlock.",
+      "berbeda": "Today's calculation differs from the locked figures — phone receipts, returns or the salary basis changed after the lock. Rows not yet paid are paid at today's figure; there is no need to unlock.",
       "berbedaDibayar": "Today's calculation differs from what was paid. Each SPG's difference — including a seller whose receipts came in after the lock — goes into her next payout as a correction."
     },
     "err": {
@@ -21145,7 +21184,7 @@
       "penerima": "{n} SPG(s)",
       "peserta": "{n} salaried SPG"
     },
-    "tanpaTarifCatatan": "{pcs} pieces have no commission rate yet (item without a category, or a category without a rate), so they earn 0.",
+    "tanpaTarifCatatan": "{pcs} pieces have no commission rate yet (the item had no category when sold, or its category has no rate), so they earn 0 for now. Once the item is given a category, those sales take it and the commission follows.",
     "konsiTunggu": {
       "isi": "Consignment store: checked by locking the official figures in its cycle.",
       "buka": "Open cycle",
@@ -21334,7 +21373,7 @@
       "baris": "{nama}: {pcs} pieces",
       "sesudah": "{pcs} pieces have no item category — their commission follows once the category is set."
     },
-    "luarRadius": "{n} check-ins outside the store radius — check before paying.",
+    "luarRadius": "Check-ins outside the store radius: {n, plural, one {# day} other {# days}} ({tanggal}) — still counted as present; check before paying.",
     "gaji": {
       "rumus": "Salary {bulanan} ÷ {pembagi} days = {harian}/day",
       "tidakMasuk": "Absent {n} days: −{jumlah}",
@@ -21402,8 +21441,11 @@
         "SHIFT_TIDAK_DIKENAL": "Unknown shift.",
         "TANPA_AKSES": "You may not do this.",
         "INPUT_TIDAK_SAH": "Invalid input.",
-        "GAGAL": "Could not save. Try again."
-      }
+        "GAGAL": "Could not save. Try again.",
+        "BELUM_DIAJUKAN_SPG": "This schedule was last changed by the office and has not been submitted by the SPG, so the office cannot approve it. The SPG must submit it again from her phone; if she can no longer submit it (the month has passed or she has left), that month is paid from the store check-in record."
+      },
+      "diubahKantor": "Changed by the office — waiting for the SPG to submit again",
+      "keCatatanHadir": "The SPG can no longer submit this schedule — that month is paid from the store check-in record."
     },
     "utang": {
       "judul": "Debts of SPGs who have left",
@@ -21507,7 +21549,8 @@
         "TIDAK_ADA_KOREKSI_PLUS": "There is no plus correction to pay out.",
         "TANPA_AKSES": "You may not do this.",
         "INPUT_TIDAK_SAH": "Invalid input.",
-        "GAGAL": "Could not save. Try again."
+        "GAGAL": "Could not save. Try again.",
+        "BEBAN_SUDAH_DIPUTUSKAN": "The goods of a buyer-return charge settled by this payment have already been decided — this payment can no longer be cancelled."
       }
     }
   },
@@ -22443,8 +22486,12 @@
         "ALASAN_TERLALU_PANJANG": "The reason is too long (max. 300 characters).",
         "SUDAH_DIBAYAR": "That month's pay has been paid, so the schedule cannot be reopened.",
         "PEMOHON_SAMA": "An SPG cannot approve her own schedule.",
-        "GAGAL": "Could not save. Try again."
-      }
+        "GAGAL": "Could not save. Try again.",
+        "BELUM_DIAJUKAN_SPG": "This schedule was last changed by the office and has not been submitted by the SPG, so the office cannot approve it. The SPG must submit it again from her phone; if she can no longer submit it (the month has passed or she has left), that month is paid from the store check-in record."
+      },
+      "diubahKantor": "The office changed this schedule after you submitted it. Check the days, then press Submit to the office again so the office can approve it.",
+      "menungguAjuanSpg": "Changed by the office — waiting for the SPG to submit again",
+      "keCatatanHadir": "The SPG can no longer submit this schedule — that month is paid from the store check-in record."
     }
   },
   "sizeCharts": {
@@ -23593,7 +23640,7 @@
       "SPG": "Deducted in full from the SPG's commission in the next payout; if the commission is short, from her salary.",
       "SALES": "Mark as deducted in Reports → Salesperson commission.",
       "ELORAE": "Written off.",
-      "EKSPEDISI": "Settled once finance checks the carrier's claim payment."
+      "EKSPEDISI": "Settled once an admin checks the carrier's claim payment."
     },
     "ref": {
       "ConsignmentCycle": "consignment cycle charge",
@@ -23800,7 +23847,7 @@
       "dicekOleh": "Checked as valid by {oleh} · {pada}",
       "ditolakOleh": "Rejected, recorded by {oleh} · {pada}",
       "pencatatTidakMemeriksa": "You recorded this payment — someone else checks it.",
-      "menungguCek": "Waiting for finance to match the money against the bank statement.",
+      "menungguCek": "Waiting for an admin to match the money against the bank statement.",
       "ditolakLanjut": "The carrier rejected this claim. Choose another bearer through “Change decision”.",
       "caraBayar": {
         "transfer": "Transfer",
@@ -23824,7 +23871,7 @@
       "kurangNilai": "Enter a claim value above zero.",
       "kurangNilaiSama": "The value is the same as now.",
       "judulCATAT": "Record the claim payment",
-      "isiCATAT": "The carrier paid the {nilai} claim. The money only counts once finance matches it against the bank statement.",
+      "isiCATAT": "The carrier paid the {nilai} claim. The money only counts once an admin matches it against the bank statement.",
       "judulTOLAK": "Claim rejected by the carrier",
       "isiTOLAK": "Record why the carrier rejected the {nilai} claim. Then choose another bearer through “Change decision”.",
       "judulPERIKSA": "Check the claim payment",
@@ -23836,7 +23883,7 @@
       "simpanPERIKSA": "Save check result",
       "simpanUBAH_NILAI": "Save value",
       "ok": {
-        "CATAT": "Claim payment recorded — waiting for the finance check.",
+        "CATAT": "Claim payment recorded — waiting for an admin check.",
         "TOLAK": "Claim rejection recorded.",
         "SAH": "Claim payment valid — the carrier's share is settled.",
         "KEMBALIKAN": "Claim payment returned for revision.",
@@ -24063,8 +24110,12 @@
       "ALASAN_GANTI_WAJIB": "A reason for replacing the old report is required. Delete this and record it again.",
       "TIDAK_DITEMUKAN": "What this refers to can no longer be found at the office (it may have been cancelled). Delete it from this phone and ask the office.",
       "BUKAN_MILIK": "What this refers to is not yours or your store's.",
-      "TIDAK_DISETUJUI": "The report was rejected or withdrawn by the office, so this was not recorded. Contact the office.",
-      "SUDAH_DICATAT": "Already recorded earlier with different details (from another phone or the office). Delete it from this phone."
+      "TIDAK_DISETUJUI": "The report was withdrawn before this was recorded, so this was not recorded. The office has been told.",
+      "SUDAH_DICATAT": "Already recorded earlier with different details (from another phone or the office). Delete it from this phone.",
+      "POTONG_SUDAH_DILAPORKAN_ULANG": "The goods in this report were already reported again in another report, so the refund was not recorded. The office has been told, with the slip photo; contact the office.",
+      "SPG_BERHENTI": "You no longer work as an SPG and this record was made after your last day, so it was not saved. Contact the office.",
+      "CATATAN_STOK_TIDAK_COCOK": "The receipt cannot be recorded because this shipment's stock records do not match. Sending it again will not help — contact the office.",
+      "FOTO_KEADAAN": "The report was already rejected, cancelled or closed at the office, so its photo is no longer accepted. Delete it from this phone, then ask the office."
     }
   },
   "bantuan": {
@@ -24223,8 +24274,8 @@
         "keterangan": "Approves or rejects salespeople's orders, sets appealed prices, releases pre-orders, approves goods exchanges, changes Settings → Salesman and opens the salesman commission report."
       },
       "field_sales_orders_deliver": {
-        "label": "Record putus deliveries",
-        "keterangan": "Records partial or full deliveries, prints warehouse and billing notes, closes an order's remainder and records proof of delivery."
+        "label": "Putus notas and order remainders",
+        "keterangan": "Closes a putus order's remainder, prints warehouse and billing notes, corrects nota dates and records proof of delivery. Shipments (and their billing notes) are created with the Ship deliveries permission."
       },
       "stores_view": {
         "label": "View stores",
@@ -24680,7 +24731,7 @@
       },
       "goods_receipts_confirm_no_po": {
         "label": "Confirm goods receipts without a PO",
-        "keterangan": "Confirms or declines a goods receipt (GRN) recorded without a PO. Until confirmed its goods are not in stock and owe the supplier nothing; a declined one is never processed. Approval — admin only by default."
+        "keterangan": "Confirms a goods receipt (GRN) recorded without a PO. Until confirmed its goods are not in stock and owe the supplier nothing. Approval — admin only by default."
       },
       "spg_schedules_approve": {
         "label": "Approve SPG monthly schedules",
@@ -30352,7 +30403,9 @@
       "putuskanBarangIsi": "The SPG has compensated {jumlah}. Choose once.",
       "putuskanBarangCatatan": "Note (optional)",
       "putuskanBarangSekali": "This decision cannot be changed.",
-      "okPutuskanBarang": "Goods decision saved."
+      "okPutuskanBarang": "Goods decision saved.",
+      "strukTidakTercatatIsi": "The SPG recorded that the cashier refunded the shopper, but the refund was not recorded on this report — the report had already been withdrawn, or its pieces were already in another report. The money is not charged in the system; follow it up with the SPG.",
+      "strukTidakTercatatLabel": "Unrecorded slip · sent {pada}"
     },
     "err": {
       "TIDAK_DITEMUKAN": "Report not found.",
@@ -30373,7 +30426,7 @@
       "BUKAN_DITOLAK": "This report is not rejected.",
       "TANPA_BEBAN": "This report has no SPG charge.",
       "SUDAH_DIPOTONG": "Something has already been taken from the SPG for this charge, so it can no longer be changed or cancelled.",
-      "SUDAH_DIUTANGKAN": "This charge was already moved to SPG debt at her final payment, so the rejection cannot be reversed from here.",
+      "SUDAH_DIUTANGKAN": "This charge was already moved to SPG debt at her final payment. A rejection whose charge has become SPG debt cannot be reversed in the system yet, even when nothing has been paid on that debt.",
       "BARANG_SUDAH_DIPUTUSKAN": "The goods were already decided.",
       "BEBAN_BELUM_LUNAS": "The SPG charge is not paid yet — the goods can be decided only after the SPG has fully compensated.",
       "CATATAN_TERLALU_PANJANG": "The note is too long (at most 500 characters).",
@@ -30402,12 +30455,6 @@
         "BATAL": "Cancelled"
       }
     }
-  },
-  "isianMarkupMargin": {
-    "markup": "Markup (%)",
-    "margin": "Margin (%)",
-    "placeholderBawaan": "Default {nilai}",
-    "dihitungDari": "Calculated from the {dasar, select, MARKUP {markup} other {margin}}"
   },
   "komisiSalesmanRetur": {
     "kolom": "Return difference",

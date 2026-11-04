@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dariNrt, ringkasKerjaRetur } from "./return-queries";
+import { adaSusulanSesudahLapor, dariNrt, ringkasKerjaRetur } from "./return-queries";
 
 /*
  * Baris daftar kerja retur, murni (tanpa basis data). Dulu nilai fisiknya hanya
@@ -104,6 +104,26 @@ describe("dariNrt — giliran membaca hasil cek sales pemegang toko", () => {
     expect(b.giliran).toBe("gudang");
   });
 
+  it("hitungan yatim yang dihitung SEBELUM laporan tetapi DIJADIKAN susulan sesudahnya terhitung 'sesudah laporan' → giliran sales lagi", () => {
+    const b = dariNrt(
+      nota({
+        charges: beban("DITEMUKAN", siang),
+        followUps: [{ physicalAmount: 50_000, createdAt: pagi, dijodohkanAt: new Date(siang.getTime() + 60_000) }],
+      }),
+    );
+    expect(b.giliran).toBe("sales");
+  });
+
+  it("hitungan yatim yang dihitung DAN dijadikan susulan sebelum laporan tetap 'sebelum laporan' → giliran gudang", () => {
+    const b = dariNrt(
+      nota({
+        charges: beban("DITEMUKAN", siang),
+        followUps: [{ physicalAmount: 50_000, createdAt: pagi, dijodohkanAt: new Date(pagi.getTime() + 60_000) }],
+      }),
+    );
+    expect(b.giliran).toBe("gudang");
+  });
+
   it("tidak ditemukan → giliran kantor memutuskan", () => {
     expect(dariNrt(nota({ charges: beban("TIDAK_DITEMUKAN", pagi) })).giliran).toBe("keuangan");
   });
@@ -120,5 +140,39 @@ describe("dariNrt — giliran membaca hasil cek sales pemegang toko", () => {
     expect(b.giliran).toBe("tidak_ada");
     expect(b.cekSelisih).toBe("TIDAK_DITEMUKAN");
     expect(b.penanggung).toBe("GUDANG");
+  });
+});
+
+/*
+ * Aturan giliran yang sama dipakai HP pemegang toko (`selisihReturSaya`): kalau kantor bilang
+ * "giliran sales" tetapi HP tidak menampilkan tombol Ditemukan / Tidak ditemukan, pemegang disuruh
+ * melapor tanpa jalan untuk melapor.
+ */
+describe("adaSusulanSesudahLapor — satu aturan untuk daftar kantor dan HP pemegang", () => {
+  const sore = new Date("2026-11-02T09:00:00.000Z");
+
+  it("belum dilapor → tidak pernah 'sesudah laporan'", () => {
+    expect(adaSusulanSesudahLapor([{ createdAt: sore }], null)).toBe(false);
+  });
+
+  it("tanpa susulan → false", () => {
+    expect(adaSusulanSesudahLapor([], siang)).toBe(false);
+  });
+
+  it("dicatat sesudah laporan → true; dicatat sebelum laporan → false", () => {
+    expect(adaSusulanSesudahLapor([{ createdAt: sore }], siang)).toBe(true);
+    expect(adaSusulanSesudahLapor([{ createdAt: pagi }], siang)).toBe(false);
+  });
+
+  it("dicatat sebelum laporan tetapi dijadikan susulan sesudahnya → true", () => {
+    expect(adaSusulanSesudahLapor([{ createdAt: pagi, dijodohkanAt: sore }], siang)).toBe(true);
+  });
+
+  it("dijadikan susulan yang (tak mungkin) lebih awal dari pencatatannya tidak memundurkan waktunya", () => {
+    expect(adaSusulanSesudahLapor([{ createdAt: sore, dijodohkanAt: pagi }], siang)).toBe(true);
+  });
+
+  it("tepat pada saat laporan bukan 'sesudah'", () => {
+    expect(adaSusulanSesudahLapor([{ createdAt: siang, dijodohkanAt: null }], siang)).toBe(false);
   });
 });

@@ -174,7 +174,8 @@ export function muatanReturPembeli(
 }
 
 /**
- * Muatan `catatUangDikembalikanAction` dari antrean: laporan yang sudah disetujui kantor, foto
+ * Muatan `catatUangDikembalikanAction` dari antrean: laporan retur pembeli (penulisnya yang
+ * memutuskan menurut status — disetujui, ditolak, atau ditarik sesudah uangnya dikembalikan), foto
  * struk yang sudah terunggah, dan jam uangnya dikembalikan di HP (server menjepitnya).
  */
 export function muatanUangKembali(r: UangKembaliBaru, fotoStrukKey: string) {

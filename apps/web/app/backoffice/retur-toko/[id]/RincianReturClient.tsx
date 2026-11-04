@@ -207,6 +207,9 @@ export function RincianReturClient({
   const [setujuSiklus, setSetujuSiklus] = useState(false);
   const [susulanTerbuka, setSusulanTerbuka] = useState(false);
   const [yatimId, setYatimId] = useState('');
+  // Sama untuk penerimaan tanpa toko yang dijadikan susulan: ia mendapat toko nota ini.
+  const [siklusSusulan, setSiklusSusulan] = useState<string[] | null>(null);
+  const [setujuSiklusSusulan, setSetujuSiklusSusulan] = useState(false);
 
   const b = data.baris;
   /* Orang penanggung saran: pemegang toko pada tanggal nota retur (P85) — kalau ia
@@ -846,6 +849,8 @@ export function RincianReturClient({
                       title={tindakLanjut.calonYatim.length === 0 ? t('tindakLanjut.tanpaCalonYatim') : undefined}
                       onClick={() => {
                         setYatimId('');
+                        setSiklusSusulan(null);
+                        setSetujuSiklusSusulan(false);
                         setSusulanTerbuka(true);
                       }}
                     >
@@ -991,7 +996,15 @@ export function RincianReturClient({
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="susulan-yatim">{t('tindakLanjut.jadikanPilih')}</Label>
-            <Select value={yatimId} onValueChange={setYatimId}>
+            <Select
+              value={yatimId}
+              onValueChange={(v) => {
+                // Penerimaan lain bisa jatuh di bulan lain: konfirmasi siklusnya diminta ulang.
+                setYatimId(v);
+                setSiklusSusulan(null);
+                setSetujuSiklusSusulan(false);
+              }}
+            >
               <SelectTrigger id="susulan-yatim">
                 <SelectValue placeholder={t('tindakLanjut.jadikanPlaceholder')} />
               </SelectTrigger>
@@ -1003,12 +1016,36 @@ export function RincianReturClient({
                 ))}
               </SelectContent>
             </Select>
+            {siklusSusulan && (
+              <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                <p>{t('tindakLanjut.jadikanSiklusTerkunci', { cycles: siklusSusulan.join(', ') })}</p>
+                <label className="flex items-start gap-2">
+                  <Checkbox checked={setujuSiklusSusulan} onCheckedChange={(v) => setSetujuSiklusSusulan(v === true)} />
+                  <span>{t('tindakLanjut.jadikanSiklusSetuju')}</span>
+                </label>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
-              disabled={pending || yatimId === ''}
+              disabled={pending || yatimId === '' || (siklusSusulan !== null && !setujuSiklusSusulan)}
               onClick={() =>
-                jalankan(() => jadikanSusulanAction(yatimId, b.id), t('tindakLanjut.okDijadikan'), () => setSusulanTerbuka(false))
+                startTransition(async () => {
+                  const hasil = await jadikanSusulanAction(yatimId, b.id, setujuSiklusSusulan);
+                  if (hasil.ok) {
+                    toast.success(t('tindakLanjut.okDijadikan'));
+                    setSusulanTerbuka(false);
+                    setSiklusSusulan(null);
+                    setSetujuSiklusSusulan(false);
+                    router.refresh();
+                    return;
+                  }
+                  if (hasil.kode === 'SIKLUS_TERKUNCI' && hasil.noKonsi) {
+                    setSiklusSusulan(hasil.noKonsi);
+                    return;
+                  }
+                  toast.error(t(`err${hasil.kode}` as never, { docNo: '' } as never));
+                })
               }
             >
               <Link2 className="mr-1.5 h-4 w-4" />

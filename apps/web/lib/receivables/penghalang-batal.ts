@@ -3,11 +3,17 @@ import type { prisma, Prisma } from "@elorae/db";
 /**
  * Yang menghalangi sebuah piutang dibatalkan.
  *
- * Dipakai SETIAP jalur yang membatalkan piutang (status VOIDED), supaya aturannya
- * satu: membuka kunci siklus konsinyasi (`bukaKunci`, tagihan siklusnya) dan
- * "tidak jadi dikirim" pada pengiriman putus (notanya). Piutang yang sudah
- * disentuh uang toko tidak boleh lenyap diam-diam — uangnya akan menunjuk
- * tagihan yang sudah tidak ada.
+ * Dipakai SETIAP jalur yang membatalkan piutang (status VOIDED): membuka kunci siklus
+ * konsinyasi (`bukaKunci`, tagihan siklusnya) dan "tidak jadi dikirim" pada pengiriman putus
+ * (notanya, lewat `periksaNotaBolehBatal`). Piutang yang sudah disentuh uang toko tidak boleh
+ * lenyap diam-diam — uangnya akan menunjuk tagihan yang sudah tidak ada.
+ *
+ * Ini batas BAWAH bersama, bukan seluruh aturan nota putus: `periksaNotaBolehBatal`
+ * (`lib/field-sales/delivery/koreksi-nota.ts`) lebih dulu menjalankan `penghalangBatalNota`, yang
+ * juga menolak BKM DITOLAK serta setoran penagih dan pelunasan toko berstatus APA PUN (P16, P33a:
+ * "selama nota itu punya BKM, diperiksa atau belum"). Di sini hanya BKM DIKIRIM/TERVERIFIKASI
+ * dan setoran/pelunasan PENDING; membuka kunci siklus konsi hanya memakai penghalang bersama ini.
+ * Jangan melonggarkan aturan nota supaya sama dengan yang di sini.
  *
  * Diperiksa BERURUTAN, yang pertama ditemukan dikembalikan:
  * 1. `ADA_BKM` — BKM DIKIRIM atau TERVERIFIKASI menautkannya. Diperiksa atau

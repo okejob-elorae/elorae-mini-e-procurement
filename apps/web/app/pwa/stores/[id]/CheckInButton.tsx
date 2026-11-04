@@ -217,6 +217,7 @@ export function CheckInButton({ storeId, storeName = null, autoCloseStoreName, k
             buangTitipan();
             if (result.code === "NOT_FOUND") setError(t("storeInactive"));
             else if (result.code === "STORE_NOT_ASSIGNED") setError(t("storeNotAssigned"));
+            else if (result.code === "SPG_BERHENTI") setError(t("spgBerhenti"));
             else if (result.code === "DI_LUAR_RADIUS") {
               const pesan = [t("diLuarRadius", { jarak: result.jarakMeter, radius: result.radiusMeter })];
               if (result.akurasiMeter !== null && result.akurasiMeter > AKURASI_PERLU_DISEBUT) {

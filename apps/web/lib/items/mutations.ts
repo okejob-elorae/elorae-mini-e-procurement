@@ -32,6 +32,7 @@ import {
   JEJAK_HARGA_JUBELIO,
 } from "@/lib/jubelio/harga/aturan";
 import { createProductPushRow } from "@/lib/jubelio/product-push";
+import { JEJAK_KATEGORI_BARANG } from "@/lib/spg/kategori-saat-jual";
 
 /** Batas kolom `Item.additionalCost` (Decimal(15,2)). */
 const BIAYA_TAMBAHAN_MAKS = 9_999_999_999_999.99;
@@ -410,14 +411,22 @@ export async function updateItem(
       commissionPerPcs: true,
       salesChannel: true,
       priceRuleBasis: true,
+      targetMarginPercent: true,
       jubelioConfirmedPrice: true,
       jubelioCreateRequestedAt: true,
       jubelioCreateRequestedById: true,
     },
   });
   if (!existing) throw new Error('Item not found');
-  // Persen yang dikirim tanpa dasarnya diperiksa dengan dasar yang tersimpan.
+  // Persen yang dikirim tanpa dasarnya diperiksa dengan dasar tersimpan; dasar yang dikirim tanpa
+  // persennya memeriksa persen TERSIMPAN dengan dasar baru (R14).
   if (priceRuleBasis === undefined) periksaPersenAturan(rest.targetMarginPercent, existing.priceRuleBasis);
+  else if (rest.targetMarginPercent === undefined) {
+    periksaPersenAturan(
+      existing.targetMarginPercent == null ? null : Number(existing.targetMarginPercent),
+      priceRuleBasis,
+    );
+  }
   const effectiveCategoryId =
     rest.categoryId !== undefined ? rest.categoryId || null : existing.categoryId;
   const categoryCode = await resolveCategoryCode(effectiveCategoryId);
@@ -506,6 +515,28 @@ export async function updateItem(
     }
     // Penonaktifan / pengaktifan di Jubelio: satu kiriman produk, lahir bersama perubahan saluran.
     if (saluran.kiriman) kirimanSaluran = { outboxId: (await createProductPushRow(client, id, opsi.olehUserId ?? null)).id };
+  }
+
+  /*
+   * Jejak perubahan kategori (P8/P69): nota SPG dari antrean HP yang sampai sesudah perubahan ini
+   * membaca kategori yang berlaku saat terjualnya dari baris ini (`jejakKategoriSesudah`,
+   * `lib/spg/kategori-saat-jual.ts`). Ditulis di transaksi yang sama, membandingkan kategori yang
+   * benar-benar tersimpan — formulir yang mengosongkan kategori juga tercatat. Ini satu-satunya
+   * penulis yang MENGUBAH `Item.categoryId`; barang baru (formulir, impor, Jubelio) tidak punya
+   * penjualan sebelum dibuat, jadi tidak perlu jejak.
+   */
+  const kategoriSebelum = existing.categoryId || null;
+  const kategoriSesudah = item.categoryId || null;
+  if (opsi.olehUserId && kategoriSebelum !== kategoriSesudah) {
+    await client.auditLog.create({
+      data: {
+        userId: opsi.olehUserId,
+        action: JEJAK_KATEGORI_BARANG,
+        entityType: "Item",
+        entityId: id,
+        changes: { before: { categoryId: kategoriSebelum }, after: { categoryId: kategoriSesudah } },
+      },
+    });
   }
 
   // Penjualan SPG yang tercatat sebelum barangnya punya kategori diisi kategori ini, sekali.

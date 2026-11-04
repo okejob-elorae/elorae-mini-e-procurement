@@ -37,23 +37,33 @@ describe("konfirmasiHargaJubelioAction", () => {
     ["tanpa izin konfirmasi harga", sesi(["settings_security:manage", "items:edit", "jubelio_admin:view"])],
   ])("%s → TANPA_AKSES, penulis tidak dipanggil", async (_label, s) => {
     vi.mocked(auth).mockResolvedValue(s as never);
-    expect(await konfirmasiHargaJubelioAction([{ itemId: "i1", hargaErp: "100.00" }])).toEqual({ ok: false, code: "TANPA_AKSES" });
+    expect(await konfirmasiHargaJubelioAction([{ itemId: "i1", hargaErp: "100.00", berubahPada: null }])).toEqual({ ok: false, code: "TANPA_AKSES" });
     expect(konfirmasiHargaJubelio).not.toHaveBeenCalled();
   });
 
   it("admin (wildcard) boleh", async () => {
     vi.mocked(auth).mockResolvedValue(sesi(["*"]));
-    expect(await konfirmasiHargaJubelioAction([{ itemId: "i1", hargaErp: "100.00" }])).toMatchObject({ ok: true });
+    expect(await konfirmasiHargaJubelioAction([{ itemId: "i1", hargaErp: "100.00", berubahPada: null }])).toMatchObject({ ok: true });
   });
 
   it.each([
-    ["bukan larik", { itemId: "i1", hargaErp: "100.00" }],
+    ["bukan larik", { itemId: "i1", hargaErp: "100.00", berubahPada: null }],
     ["larik kosong", []],
-    ["lebih dari 200 baris", Array.from({ length: 201 }, (_, i) => ({ itemId: `i${i}`, hargaErp: "100.00" }))],
-    ["harga bukan teks angka", [{ itemId: "i1", hargaErp: 100 }]],
-    ["harga ilmiah", [{ itemId: "i1", hargaErp: "1e5" }]],
-    ["id kosong", [{ itemId: "", hargaErp: "100.00" }]],
-    ["id dobel", [{ itemId: "i1", hargaErp: "100.00" }, { itemId: "i1", hargaErp: "100.00" }]],
+    ["lebih dari 200 baris", Array.from({ length: 201 }, (_, i) => ({ itemId: `i${i}`, hargaErp: "100.00", berubahPada: null }))],
+    ["harga bukan teks angka", [{ itemId: "i1", hargaErp: 100, berubahPada: null }]],
+    ["harga ilmiah", [{ itemId: "i1", hargaErp: "1e5", berubahPada: null }]],
+    ["id kosong", [{ itemId: "", hargaErp: "100.00", berubahPada: null }]],
+    [
+      "id dobel",
+      [
+        { itemId: "i1", hargaErp: "100.00", berubahPada: null },
+        { itemId: "i1", hargaErp: "100.00", berubahPada: null },
+      ],
+    ],
+    // P75: waktu bacaan Jubelio yang ditampilkan halaman wajib ikut (null bila tidak ada).
+    ["tanpa waktu bacaan Jubelio", [{ itemId: "i1", hargaErp: "100.00" }]],
+    ["waktu bacaan tak terbaca", [{ itemId: "i1", hargaErp: "100.00", berubahPada: "kemarin" }]],
+    ["waktu bacaan bukan teks", [{ itemId: "i1", hargaErp: "100.00", berubahPada: 5 }]],
   ])("%s → ISIAN_TIDAK_SAH", async (_label, isian) => {
     expect(await konfirmasiHargaJubelioAction(isian)).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
     expect(konfirmasiHargaJubelio).not.toHaveBeenCalled();
@@ -61,7 +71,7 @@ describe("konfirmasiHargaJubelioAction", () => {
 
   it("tanpa pengaturan bawaan kirim produk → BAWAAN_BELUM_ADA", async () => {
     vi.mocked(prisma.jubelioPushDefaults.count).mockResolvedValue(0 as never);
-    expect(await konfirmasiHargaJubelioAction([{ itemId: "i1", hargaErp: "100.00" }])).toMatchObject({ ok: false, code: "BAWAAN_BELUM_ADA" });
+    expect(await konfirmasiHargaJubelioAction([{ itemId: "i1", hargaErp: "100.00", berubahPada: null }])).toMatchObject({ ok: false, code: "BAWAAN_BELUM_ADA" });
     expect(konfirmasiHargaJubelio).not.toHaveBeenCalled();
   });
 
@@ -69,12 +79,14 @@ describe("konfirmasiHargaJubelioAction", () => {
     vi.mocked(konfirmasiHargaJubelio)
       .mockResolvedValueOnce({ hasil: "DIKONFIRMASI", jenis: "UBAH", outboxId: "row-a" })
       .mockResolvedValueOnce({ hasil: "HARGA_BERUBAH" })
-      .mockResolvedValueOnce({ hasil: "DIKONFIRMASI", jenis: "BARU", outboxId: "row-c" });
+      .mockResolvedValueOnce({ hasil: "DIKONFIRMASI", jenis: "BARU", outboxId: "row-c" })
+      .mockResolvedValueOnce({ hasil: "TERBACA_BERUBAH" });
 
     const r = await konfirmasiHargaJubelioAction([
-      { itemId: "a", hargaErp: "100.00" },
-      { itemId: "b", hargaErp: null },
-      { itemId: "c", hargaErp: "150000" },
+      { itemId: "a", hargaErp: "100.00", berubahPada: "2026-11-03T01:00:00.000Z" },
+      { itemId: "b", hargaErp: null, berubahPada: null },
+      { itemId: "c", hargaErp: "150000", berubahPada: null },
+      { itemId: "d", hargaErp: "100.00", berubahPada: "2026-11-03T02:00:00.000Z" },
     ]);
 
     expect(r).toEqual({
@@ -83,12 +95,14 @@ describe("konfirmasiHargaJubelioAction", () => {
         { itemId: "a", hasil: "DIKONFIRMASI" },
         { itemId: "b", hasil: "HARGA_BERUBAH" },
         { itemId: "c", hasil: "DIKONFIRMASI" },
+        { itemId: "d", hasil: "TERBACA_BERUBAH" },
       ],
     });
     expect(vi.mocked(konfirmasiHargaJubelio).mock.calls.map(([isi]) => isi)).toEqual([
-      { itemId: "a", hargaErpDiharapkan: "100.00", olehUserId: "u1" },
-      { itemId: "b", hargaErpDiharapkan: null, olehUserId: "u1" },
-      { itemId: "c", hargaErpDiharapkan: "150000", olehUserId: "u1" },
+      { itemId: "a", hargaErpDiharapkan: "100.00", berubahPadaDiharapkan: "2026-11-03T01:00:00.000Z", olehUserId: "u1" },
+      { itemId: "b", hargaErpDiharapkan: null, berubahPadaDiharapkan: null, olehUserId: "u1" },
+      { itemId: "c", hargaErpDiharapkan: "150000", berubahPadaDiharapkan: null, olehUserId: "u1" },
+      { itemId: "d", hargaErpDiharapkan: "100.00", berubahPadaDiharapkan: "2026-11-03T02:00:00.000Z", olehUserId: "u1" },
     ]);
     expect(vi.mocked(fireProductPushNow).mock.calls).toEqual([
       ["row-a", "u1"],
@@ -97,7 +111,7 @@ describe("konfirmasiHargaJubelioAction", () => {
   });
 
   it("di atas 10 konfirmasi tidak ada kiriman langsung — poller yang mengambil", async () => {
-    const isian = Array.from({ length: 11 }, (_, i) => ({ itemId: `i${i}`, hargaErp: "100.00" }));
+    const isian = Array.from({ length: 11 }, (_, i) => ({ itemId: `i${i}`, hargaErp: "100.00", berubahPada: null }));
     const r = await konfirmasiHargaJubelioAction(isian);
     expect(r.ok && r.data).toHaveLength(11);
     expect(fireProductPushNow).not.toHaveBeenCalled();
@@ -107,23 +121,46 @@ describe("konfirmasiHargaJubelioAction", () => {
 describe("kembalikanHargaErpAction", () => {
   it("digerbangi izin yang sama", async () => {
     vi.mocked(auth).mockResolvedValue(sesi(["items:edit"]));
-    expect(await kembalikanHargaErpAction({ itemId: "i1", hargaErp: "100.00" })).toEqual({ ok: false, code: "TANPA_AKSES" });
+    expect(await kembalikanHargaErpAction({ itemId: "i1", hargaErp: "100.00", berubahPada: null })).toEqual({ ok: false, code: "TANPA_AKSES" });
     expect(kembalikanHargaErp).not.toHaveBeenCalled();
   });
 
   it("menolak isian yang salah bentuk", async () => {
-    expect(await kembalikanHargaErpAction({ itemId: "i1", hargaErp: "-5" })).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
+    expect(await kembalikanHargaErpAction({ itemId: "i1", hargaErp: "-5", berubahPada: null })).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
     expect(await kembalikanHargaErpAction(null)).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
+    // P75: waktu bacaan Jubelio yang ditampilkan halaman wajib ikut.
+    expect(await kembalikanHargaErpAction({ itemId: "i1", hargaErp: "100.00" })).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
+    expect(await kembalikanHargaErpAction({ itemId: "i1", hargaErp: "100.00", berubahPada: "kemarin" })).toMatchObject({
+      ok: false,
+      code: "ISIAN_TIDAK_SAH",
+    });
+    expect(kembalikanHargaErp).not.toHaveBeenCalled();
   });
 
   it("kembalikan: pelaku dari sesi, kiriman langsung bila berhasil", async () => {
     vi.mocked(kembalikanHargaErp).mockResolvedValue({ hasil: "DIKEMBALIKAN", outboxId: "row-r" });
-    expect(await kembalikanHargaErpAction({ itemId: "i1", hargaErp: "120000.00", olehUserId: "penyusup" })).toEqual({
+    expect(
+      await kembalikanHargaErpAction({ itemId: "i1", hargaErp: "120000.00", berubahPada: "2026-11-03T01:00:00.000Z", olehUserId: "penyusup" }),
+    ).toEqual({
       ok: true,
       data: { hasil: "DIKEMBALIKAN", outboxId: "row-r" },
     });
-    expect(kembalikanHargaErp).toHaveBeenCalledWith({ itemId: "i1", hargaErpDiharapkan: "120000.00", olehUserId: "u1" });
+    expect(kembalikanHargaErp).toHaveBeenCalledWith({
+      itemId: "i1",
+      hargaErpDiharapkan: "120000.00",
+      berubahPadaDiharapkan: "2026-11-03T01:00:00.000Z",
+      olehUserId: "u1",
+    });
     expect(fireProductPushNow).toHaveBeenCalledWith("row-r", "u1");
+  });
+
+  it("ditolak penulis karena bacaan Jubelio berubah: hasilnya diteruskan, tidak ada kiriman", async () => {
+    vi.mocked(kembalikanHargaErp).mockResolvedValue({ hasil: "TERBACA_BERUBAH" });
+    expect(await kembalikanHargaErpAction({ itemId: "i1", hargaErp: "120000.00", berubahPada: null })).toEqual({
+      ok: true,
+      data: { hasil: "TERBACA_BERUBAH" },
+    });
+    expect(fireProductPushNow).not.toHaveBeenCalled();
   });
 });
 

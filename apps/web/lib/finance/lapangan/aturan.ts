@@ -250,6 +250,12 @@ function barisPersediaan(
  * Nota bernilai nol atau kurang tidak menjadi piutang (`buatPiutangNota`), jadi
  * juga tidak menyentuh `AR_STORE` di sini. Nota yang dibatalkan tidak memanggil
  * ini sama sekali: sasarannya kosong (`selaraskanJurnalNota`).
+ *
+ * Nota yang SUDAH terposting (`ppnTerposting`) memegang pembagian PPN jurnal
+ * pertamanya: piutang sama dengan yang terposting → PPN-nya tetap; nota yang
+ * dikoreksi → PPN terposting diskalakan ke piutang barunya (rupiah penuh,
+ * seperti Coretax). Pengaturan PPN yang diubah kemudian tidak menggeser PPN
+ * nota yang sudah dijurnal.
  */
 export function barisNota(b: {
   total: number;
@@ -257,13 +263,28 @@ export function barisNota(b: {
   tanggal: Date;
   pengaturanPpn: PengaturanPpn;
   hpp: ReadonlyArray<{ tipeBarang: string | null | undefined; nilai: number }>;
+  /**
+   * Pembagian PPN generasi yang sudah terposting (sen): Σ AR_STORE dan Σ PPN_KELUARAN (positif).
+   * Ada → PPN nota yang dikoreksi atau diselaraskan ulang mengikuti bagian itu, bukan pengaturan
+   * PPN hari ini (dibekukan sejak jurnal pertama).
+   */
+  ppnTerposting?: { arSen: number; ppnSen: number } | null;
 }): BarisBertanda[] {
   const baris: BarisBertanda[] = [];
   if (keSen(b.total) > 0) {
     const p = pisahPpn(b.total, { pengaturan: b.pengaturanPpn, tanggal: b.tanggal });
-    baris.push({ role: "AR_STORE", sen: keSen(p.total), storeId: b.storeId });
-    baris.push({ role: "SALES_REVENUE", sen: -keSen(p.dpp), channel: PUTUS, storeId: b.storeId });
-    if (keSen(p.ppn) !== 0) baris.push({ role: "PPN_KELUARAN", sen: -keSen(p.ppn) });
+    const beku = b.ppnTerposting;
+    if (!beku || beku.arSen <= 0) {
+      baris.push({ role: "AR_STORE", sen: keSen(p.total), storeId: b.storeId });
+      baris.push({ role: "SALES_REVENUE", sen: -keSen(p.dpp), channel: PUTUS, storeId: b.storeId });
+      if (keSen(p.ppn) !== 0) baris.push({ role: "PPN_KELUARAN", sen: -keSen(p.ppn) });
+    } else {
+      const arSen = keSen(p.total);
+      const ppnSen = arSen === beku.arSen ? beku.ppnSen : Math.round((arSen * beku.ppnSen) / beku.arSen / 100) * 100;
+      baris.push({ role: "AR_STORE", sen: arSen, storeId: b.storeId });
+      baris.push({ role: "SALES_REVENUE", sen: -(arSen - ppnSen), channel: PUTUS, storeId: b.storeId });
+      if (ppnSen !== 0) baris.push({ role: "PPN_KELUARAN", sen: -ppnSen });
+    }
   }
   const keluar = barisPersediaan(b.hpp, -1);
   const hpp = -jumlahSen(keluar);

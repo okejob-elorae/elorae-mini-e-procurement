@@ -25,11 +25,14 @@ import {
 import { BarisHitungBarang, BarisHitungRol } from "./BarisHitungButa";
 import { isianAwalBarang, isianKembaran, kembaranBaris, type BarisHitungGudang } from "./baris-kembar";
 import { masihMenghitung } from "../../angka-sistem";
+import { KartuGrnTanpaPoMenunggu } from "../KartuGrnTanpaPoMenunggu";
 import { useBarcodeWedgeScanner } from "@/hooks/use-barcode-wedge-scanner";
 import {
+  getGrnTanpaPoMenungguUntukOpname,
   getOpnameById,
   updateOpnameCounts,
   updateOpnameRollCounts,
+  type GrnTanpaPoMenunggu,
 } from "@/app/actions/stock-opname";
 
 type OpnameDetail = NonNullable<Awaited<ReturnType<typeof getOpnameById>>>;
@@ -52,6 +55,7 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
   const [itemCounts, setItemCounts] = useState<Record<string, string>>({});
   const [rollCounts, setRollCounts] = useState<Record<string, string>>({});
   const [highlightedRowId, setHighlightedRowId] = useState<string | null>(null);
+  const [grnMenunggu, setGrnMenunggu] = useState<GrnTanpaPoMenunggu[]>([]);
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
 
   const registerRowRef = useCallback((rowId: string, el: HTMLTableRowElement | null) => {
@@ -94,8 +98,16 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getOpnameById(opnameId);
+      // Peringatan GRN tanpa PO yang menunggu tidak boleh menghalangi hitungan bila gagal dimuat.
+      const [data, grn] = await Promise.all([
+        getOpnameById(opnameId),
+        getGrnTanpaPoMenungguUntukOpname().catch((e: unknown) => {
+          console.error(e);
+          return [] as GrnTanpaPoMenunggu[];
+        }),
+      ]);
       setOpname(data);
+      setGrnMenunggu(grn);
       if (data?.scope === "FABRIC" && Array.isArray(data.rolls)) {
         const init: Record<string, string> = {};
         for (const r of data.rolls as Array<{ id: string; countedLength?: number | null }>) {
@@ -290,6 +302,8 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
           <Button variant="outline">{t("back")}</Button>
         </Link>
       </div>
+
+      <KartuGrnTanpaPoMenunggu grn={grnMenunggu} />
 
       <Card>
         <CardContent className="pt-6">

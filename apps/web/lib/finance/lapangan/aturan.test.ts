@@ -139,6 +139,32 @@ describe("nota tagihan putus", () => {
     });
   });
 
+  it("nota yang sudah terposting memegang pembagian PPN-nya: pengaturan baru tidak menggesernya, koreksi menskalakannya", () => {
+    const terposting = { arSen: 111_000_000, ppnSen: 11_000_000 };
+    // Pengaturan PPN berubah ke non-PKP sesudah dijurnal PKP: total sama → PPN tetap.
+    const sama = barisNota({ total: 1_110_000, storeId: "t1", tanggal: HARI, pengaturanPpn: NON_PKP, hpp: [], ppnTerposting: terposting });
+    expect(jumlahSen(sama)).toBe(0);
+    expect(peta(sama)).toEqual({
+      "AR_STORE|t1|": 1_110_000,
+      "SALES_REVENUE|t1|PUTUS": -1_000_000,
+      "PPN_KELUARAN||": -110_000,
+    });
+    // Dikoreksi ke separuhnya: PPN terposting diskalakan ke piutang baru, rupiah penuh.
+    const separuh = barisNota({ total: 555_000, storeId: "t1", tanggal: HARI, pengaturanPpn: NON_PKP, hpp: [], ppnTerposting: terposting });
+    expect(jumlahSen(separuh)).toBe(0);
+    expect(peta(separuh)).toEqual({
+      "AR_STORE|t1|": 555_000,
+      "SALES_REVENUE|t1|PUTUS": -500_000,
+      "PPN_KELUARAN||": -55_000,
+    });
+    // Dijurnal non-PKP tetap non-PKP walau pengaturannya sekarang PKP.
+    const nonPkp = barisNota({ total: 500_000, storeId: "t1", tanggal: HARI, pengaturanPpn: PKP, hpp: [], ppnTerposting: { arSen: 50_000_000, ppnSen: 0 } });
+    expect(peta(nonPkp)).toEqual({
+      "AR_STORE|t1|": 500_000,
+      "SALES_REVENUE|t1|PUTUS": -500_000,
+    });
+  });
+
   it("nota bernilai nol (hanya bonus) tidak menyentuh piutang — HPP tetap keluar", () => {
     const b = barisNota({ total: 0, storeId: "t1", tanggal: HARI, pengaturanPpn: NON_PKP, hpp: [{ tipeBarang: "FINISHED_GOOD", nilai: 10_000 }] });
     expect(peta(b)).toEqual({ "COGS|t1|PUTUS": 10_000, "INVENTORY_FG||": -10_000 });
