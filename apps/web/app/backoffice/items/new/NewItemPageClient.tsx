@@ -4,14 +4,24 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { ItemForm } from '@/components/forms/ItemForm';
+import { PageHeader } from '@/components/ui/page-header';
 import { createItem, saveConsumptionRules } from '@/app/actions/items';
 import type { ItemFormData } from '@/lib/items/mutations';
+import type { AturanHarga } from "@/lib/items/rekomendasi-harga";
 import { toast } from 'sonner';
-import { ItemType } from '@/lib/constants/enums';
 
-export function NewItemPageClient() {
+export function NewItemPageClient({
+  bawaanRekomendasi,
+  bolehSimpan = true,
+}: {
+  /** Pasangan markup/margin dan bantalan margin bawaan (Pengaturan Jubelio) untuk rekomendasi harga. */
+  bawaanRekomendasi?: { aturan: AturanHarga | null; biaya: number | null };
+  /** items:create — kunci centang saluran bila simpan tidak boleh. */
+  bolehSimpan?: boolean;
+}) {
   const router = useRouter();
-  const tItems = useTranslations("items");
+  const tItems = useTranslations('items');
+  const tDetail = useTranslations('itemDetail');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (
@@ -36,10 +46,10 @@ export function NewItemPageClient() {
       if (consumptionRules && consumptionRules.length > 0) {
         await saveConsumptionRules(item.id, consumptionRules);
       }
-      toast.success('Item created successfully');
+      toast.success(tDetail('dibuat'));
       router.push(`/backoffice/items/${item.id}`);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Failed to create item';
+      const message = error instanceof Error ? error.message : tDetail('gagalBuat');
       toast.error(message);
     } finally {
       setIsLoading(false);
@@ -48,11 +58,8 @@ export function NewItemPageClient() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Create New Item</h1>
-        <p className="text-muted-foreground">Add a new item to your catalog</p>
-      </div>
-      <ItemForm onSubmit={handleSubmit} isLoading={isLoading} />
+      <PageHeader title={tItems('newPage.title')} />
+      <ItemForm onSubmit={handleSubmit} isLoading={isLoading} bawaanRekomendasi={bawaanRekomendasi} bolehSimpan={bolehSimpan} />
     </div>
   );
 }

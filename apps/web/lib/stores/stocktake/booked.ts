@@ -42,12 +42,15 @@ export type CountMomentLine = { key: string; itemId: string; variantSku: string;
  * for a line counted before it. Callers pass counted lines only, so a row for an uncounted item
  * never reaches a figure either way.
  *
- * Excluded likewise: a konsi transfer's store row whose delivery shipment's `deliveredAt`
- * is on or before the line's moment. An offline completion stamps `deliveredAt` from the
- * device (up to three days back), while the transfer and its +q row are written only when the
- * completion syncs, so a shelf counted between the two already holds the delivered units. The
- * transfer stamps its own id as `refId`. A legacy transfer with no shipment is never excluded,
- * and neither is one whose goods were delivered after the line's moment.
+ * Excluded likewise: a konsi transfer's store row whose transfer was RECEIVED at the store
+ * (`KonsiTransfer.receivedAt`) on or before the line's moment. A konsi shipment's goods sit on
+ * no store balance while the transfer is IN_TRANSIT — they are neither counted nor shrinkage —
+ * and land on StoreStock only when the store receives them. An offline receipt stamps
+ * `receivedAt` from the device's capture time, while the +q row is written only when the receipt
+ * syncs, so a shelf counted between the two already holds the received units. A transfer the old
+ * image wrote at completion (no `receivedAt`) falls back to its shipment's `deliveredAt`, which
+ * was the moment it moved under that rule. The transfer stamps its own id as `refId`. A legacy
+ * transfer with neither is never excluded, and neither is one received after the line's moment.
  *
  * Never re-applied: an earlier count's own `StoreStocktake` rows. That approval SET the
  * balance to what its own count saw, so it is never a movement this count's shelf missed. A
@@ -80,11 +83,15 @@ export async function sumMovementsSinceCountCents(
   const transferMovedAtMs = new Map(transfers.map((t) => [t.id, t.movedAt.getTime()]));
   const konsiTransferIds = Array.from(new Set(postCount.filter((r) => r.refType === "KonsiTransfer").map((r) => r.refId)));
   const konsiTransfers = konsiTransferIds.length > 0
-    ? await tx.konsiTransfer.findMany({ where: { id: { in: konsiTransferIds } }, select: { id: true, shipment: { select: { deliveredAt: true } } } })
+    ? await tx.konsiTransfer.findMany({
+      where: { id: { in: konsiTransferIds } },
+      select: { id: true, receivedAt: true, shipment: { select: { deliveredAt: true } } },
+    })
     : [];
-  const konsiDeliveredAtMs = new Map<string, number>();
+  const konsiReceivedAtMs = new Map<string, number>();
   for (const t of konsiTransfers) {
-    if (t.shipment?.deliveredAt) konsiDeliveredAtMs.set(t.id, t.shipment.deliveredAt.getTime());
+    const sampai = t.receivedAt ?? t.shipment?.deliveredAt ?? null;
+    if (sampai) konsiReceivedAtMs.set(t.id, sampai.getTime());
   }
 
   const rowsByKey = new Map<string, typeof postCount>();
@@ -103,7 +110,7 @@ export async function sumMovementsSinceCountCents(
       if (r.refType === "StoreStocktake") continue;
       if (r.refType === "FieldReturn" && (returRaisedAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
       if (r.refType === "StoreTransfer" && (transferMovedAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
-      if (r.refType === "KonsiTransfer" && (konsiDeliveredAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
+      if (r.refType === "KonsiTransfer" && (konsiReceivedAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
       cents += Math.round(r.qty.toNumber() * 100);
     }
     centsByKey.set(l.key, cents);

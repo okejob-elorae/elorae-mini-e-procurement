@@ -70,6 +70,11 @@ type Props = {
   settlement: SettlementApprovalDetail;
   /* Holds `journals:view`? The journal-gap alert's mapping link is gated on it. */
   canViewAccountMapping: boolean;
+  /*
+   * Holds `payments:verify`? Approve, reject and the journal retry all call actions that enforce it;
+   * a collections manager without it reads the document but gets none of those controls.
+   */
+  canVerify: boolean;
 };
 
 const QUEUE_PATH = "/backoffice/finance/pelunasan";
@@ -183,7 +188,7 @@ function TotalRow({
   );
 }
 
-export function SettlementApprovalClient({ settlement: s, canViewAccountMapping }: Props) {
+export function SettlementApprovalClient({ settlement: s, canViewAccountMapping, canVerify }: Props) {
   const t = useTranslations("financeStoreSettlements");
   const tCommon = useTranslations("common");
   const tMapping = useTranslations("financeAccountMapping");
@@ -508,7 +513,7 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
   }
 
   return (
-    <div className={cn("space-y-6", isPending && "pb-40 lg:pb-6")}>
+    <div className={cn("space-y-6", isPending && canVerify && "pb-40 lg:pb-6")}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
           <Button variant="ghost" size="sm" className="-ml-2 h-10" asChild>
@@ -599,15 +604,17 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
               </p>
             )}
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                className="h-10"
-                disabled={postingJournals}
-                onClick={() => void handlePostJournals()}
-              >
-                {postingJournals && <Loader2 className="h-4 w-4 animate-spin" />}
-                {t("journalGapButton")}
-              </Button>
+              {canVerify && (
+                <Button
+                  variant="outline"
+                  className="h-10"
+                  disabled={postingJournals}
+                  onClick={() => void handlePostJournals()}
+                >
+                  {postingJournals && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {t("journalGapButton")}
+                </Button>
+              )}
               {mappingCanHelp && canViewAccountMapping && (
                 <Button variant="outline" className="h-10" asChild>
                   <Link href={ACCOUNT_MAPPING_PATH}>
@@ -927,7 +934,11 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
         </div>
       </div>
 
-      {isPending && (
+      {isPending && !canVerify && (
+        <p className="text-sm text-muted-foreground">{t("verifyPermissionHint")}</p>
+      )}
+
+      {isPending && canVerify && (
         /**
          * `pr-28` (112px) is not decoration: `components/QuickActionFAB.tsx` is `fixed bottom-6
          * right-6 z-50` with an `h-14 w-14` button, so it occupies 24-80px from both the bottom and

@@ -2,9 +2,38 @@ import { resolveVariantAxes } from '@elorae/db/variant-axes';
 
 export type ItemVariantRow = Record<string, string>;
 
+/**
+ * Baris varian sebuah barang. Toleran terhadap dua bentuk data lama yang nyata
+ * (2026-10-03): varian yang tersimpan sebagai TEKS JSON alih-alih larik, dan
+ * kunci berhuruf besar ("SKU", "Barcode"). Tanpa ini layar jual, minta kiriman,
+ * dan katalog menganggap barang itu tanpa varian, sementara Info produk dan
+ * analisa (yang membaca lewat `bacaVarian`) melihat ukurannya.
+ */
 export function parseItemVariants(raw: unknown): ItemVariantRow[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((v): v is ItemVariantRow => v != null && typeof v === 'object' && !Array.isArray(v));
+  let v = raw;
+  if (typeof v === 'string') {
+    try {
+      v = JSON.parse(v);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((r): r is ItemVariantRow => r != null && typeof r === 'object' && !Array.isArray(r))
+    .map((r) => {
+      const baris = r as Record<string, unknown>;
+      if (baris.sku !== undefined && baris.barcode !== undefined) return r;
+      const salin: Record<string, unknown> = { ...baris };
+      for (const [k, nilai] of Object.entries(baris)) {
+        const kecil = k.toLowerCase();
+        if ((kecil === 'sku' || kecil === 'barcode') && salin[kecil] === undefined) {
+          salin[kecil] = nilai;
+          delete salin[k];
+        }
+      }
+      return salin as ItemVariantRow;
+    });
 }
 
 const NO_COLORS = new Map<string, string>();

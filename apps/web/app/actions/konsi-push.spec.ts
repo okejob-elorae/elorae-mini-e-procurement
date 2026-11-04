@@ -107,7 +107,12 @@ d("createKonsiPushOrderAction (test bed only)", () => {
   }, SLOW);
 
   describe("credit limit", () => {
-    /* An APPROVED putus order with nothing delivered puts its whole total on the store's exposure; tracked so the fixture teardown removes it. */
+    /*
+     * An APPROVED putus order with nothing delivered puts its whole total on the store's exposure.
+     * Exposure is read from its open LINES (`nilaiBelumDinota`, Q10), so it carries one open line
+     * worth the whole total — a line-less order would add Rp 0. It is tracked so the fixture
+     * teardown removes its lines and the order (by orderId, through seededId).
+     */
     const overLimit = async () => {
       const order = await prisma.fieldSalesOrder.create({
         data: {
@@ -118,6 +123,11 @@ d("createKonsiPushOrderAction (test bed only)", () => {
           status: "APPROVED",
           subtotal: 500000,
           total: 500000,
+          lines: {
+            create: [
+              { itemId: state.itemId, variantSku: "", productName: "X", qty: 1, unitPrice: 500000, lineTotal: 500000, deliveredQty: 0 },
+            ],
+          },
         },
       });
       state.orderIds.push(order.id);
@@ -135,6 +145,8 @@ d("createKonsiPushOrderAction (test bed only)", () => {
           exposure: { receivableOutstanding: 0, undeliveredOrderResidual: 500000, total: 500000 },
           creditLimit: 100000,
           orderTotal: 0,
+          /* The store carries its own limit, so the refusal names it as the store's figure. */
+          sumber: "TOKO",
         },
       });
       expect(await pushedOrders()).toBe(0);

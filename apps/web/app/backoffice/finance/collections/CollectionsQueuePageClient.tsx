@@ -7,7 +7,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
 import { AlertCircle, HandCoins } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -236,15 +236,13 @@ export function CollectionsQueuePageClient(props: Props) {
               emptyMessage={t("collectorSearchEmpty")}
               triggerClassName="h-10 w-full sm:w-[220px]"
             />
-            <Input
-              type="date"
+            <TanggalInput
               value={props.dateFrom}
               onChange={(e) => pushParams({ from: e.target.value || undefined })}
               className="h-10 w-full sm:w-[160px]"
               aria-label={t("fromLabel")}
             />
-            <Input
-              type="date"
+            <TanggalInput
               value={props.dateTo}
               onChange={(e) => pushParams({ to: e.target.value || undefined })}
               className="h-10 w-full sm:w-[160px]"

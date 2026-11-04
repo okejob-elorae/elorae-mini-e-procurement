@@ -1,9 +1,16 @@
-import { prisma, type Prisma } from '@elorae/db';
+import { isiKategoriPenjualanSpg, prisma, Prisma, sqlId } from "@elorae/db";
 import { generateSKU } from '@/lib/sku-generator';
 import { unknownVariantColors, validateAndNormalizeVariants } from '@/lib/items/normalize-variants';
 import { loadColorIndex } from '@/lib/items/variant-colors';
 import { parseItemVariants } from "@/lib/items/variants";
-import { ColorsNotInMasterError, ItemSkuExistsError } from "@/lib/items/save-refusals";
+import {
+  ColorsNotInMasterError,
+  ItemSkuExistsError,
+  SalesChannelCannotActivateError,
+  SalesChannelCannotDeactivateError,
+  SalesChannelPushInFlightError,
+  SalesChannelRequiredError,
+} from "@/lib/items/save-refusals";
 import {
   findVariantSkuCollisions,
   loadOtherItemsForCollisions,
@@ -12,6 +19,62 @@ import {
   VariantBarcodeTakenError,
   VariantSkuTakenError,
 } from "@/lib/items/variant-sku-collisions";
+import { bacaInfoProduk, periksaInfoProduk, type InfoProdukBarang } from "./info-produk";
+import { bacaKgPerRoll, periksaKgPerRoll } from "./kg-per-roll";
+import { bacaKomisiPerPcs, periksaKomisiPerPcs } from "./komisi-spg";
+import { aturanHargaSah, type DasarAturanHarga } from "./rekomendasi-harga";
+import { bacaSaluranJual, dijualDiMarketplace, JEJAK_SALURAN_JUAL, type SaluranJual } from "./saluran-jual";
+import { dataPengajuanJubelio } from "@/lib/jubelio/harga/pengajuan";
+import {
+  alasanTidakBisaDiaktifkan,
+  alasanTidakBisaDinonaktifkan,
+  hargaKeTeks,
+  JEJAK_HARGA_JUBELIO,
+} from "@/lib/jubelio/harga/aturan";
+import { createProductPushRow } from "@/lib/jubelio/product-push";
+import { JEJAK_KATEGORI_BARANG } from "@/lib/spg/kategori-saat-jual";
+
+/** Batas kolom `Item.additionalCost` (Decimal(15,2)). */
+const BIAYA_TAMBAHAN_MAKS = 9_999_999_999_999.99;
+
+/**
+ * Margin / biaya tambahan dari kiriman formulir: tidak ada = tidak disentuh
+ * (`undefined`), kosong = dikosongkan (`null`), bukan angka = NaN (ditolak
+ * `validateItemPayload`, bukan diam-diam dijadikan 0).
+ */
+function bacaAngkaRekomendasi(val: unknown): number | null | undefined {
+  if (val === undefined) return undefined;
+  if (val === null || (typeof val === 'string' && val.trim() === '')) return null;
+  const n = typeof val === 'number' ? val : typeof val === 'string' ? Number(val.trim().replace(',', '.')) : Number.NaN;
+  return Number.isFinite(n) ? n : Number.NaN;
+}
+
+/** Saluran jual dari kiriman formulir: tidak ada / kosong = tidak disentuh; nilai asing ditolak. */
+function bacaSaluranKiriman(val: unknown): SaluranJual | undefined {
+  if (val === undefined || val === null || val === "") return undefined;
+  const saluran = bacaSaluranJual(val);
+  if (!saluran) throw new Error("salesChannel: Saluran jual tidak sah");
+  return saluran;
+}
+
+/** Dasar persen rekomendasi (markup/margin): tidak ada = tidak disentuh; selain MARKUP/MARGIN ditolak. */
+function bacaDasarKiriman(val: unknown): DasarAturanHarga | undefined {
+  if (val === undefined || val === null || val === "") return undefined;
+  if (val === "MARKUP" || val === "MARGIN") return val;
+  throw new Error("priceRuleBasis: Dasar aturan harga tidak sah");
+}
+
+/** Persen rekomendasi di dalam batas dasarnya (markup 0–999,99; margin 0–99,99). */
+function periksaPersenAturan(persen: number | null | undefined, dasar: DasarAturanHarga) {
+  if (persen == null) return;
+  if (!aturanHargaSah({ dasar, persen })) {
+    throw new Error(
+      dasar === "MARGIN"
+        ? "targetMarginPercent: Margin harus 0 sampai 99,99"
+        : "targetMarginPercent: Markup harus 0 sampai 999,99",
+    );
+  }
+}
 
 export type ItemFormData = {
   sku?: string;
@@ -24,12 +87,33 @@ export type ItemFormData = {
   variants?: Array<Record<string, string>>;
   reorderPoint?: number;
   overReceiveThreshold?: number;
+  /** Harga jual — selalu diketik pengguna; sistem tidak pernah menghitung atau menimpanya. */
   sellingPrice?: number;
-  targetMarginPercent?: number;
-  additionalCost?: number;
+  /**
+   * Persen rekomendasi (markup ATAU margin, dasarnya di `priceRuleBasis`) dan bantalan margin per
+   * pcs (barang jadi) — HANYA bahan rekomendasi harga (`lib/items/rekomendasi-harga.ts`);
+   * menyimpannya tidak pernah mengubah harga jual. `undefined` = tidak disentuh, `null` = dikosongkan.
+   */
+  targetMarginPercent?: number | null;
+  additionalCost?: number | null;
+  /** Dasar `targetMarginPercent` (P4); barang jadi saja, `undefined` = tidak disentuh. */
+  priceRuleBasis?: DasarAturanHarga;
+  /**
+   * Di mana barang jadi dijual (P3): Marketplace saja, Toko offline saja, atau keduanya. Wajib
+   * untuk barang jadi baru; `undefined` saat mengubah = tidak disentuh.
+   */
+  salesChannel?: SaluranJual;
   /** Optional Pantone of a colour-specific material; finished goods carry colour per variant instead. */
   pantoneTcx?: string | null;
-};
+  /** Bahan bersatuan kg: kg per roll (kolom Roll di PO). `undefined` = tidak disentuh. */
+  kgPerRoll?: number | null;
+  /**
+   * Komisi SPG per pcs (barang jadi) — kolom lama, bukan sumber angka komisi sejak
+   * 2026-11-01 (tarif per kategori). Formulir barang tidak lagi mengirimnya.
+   * `undefined` = tidak disentuh; `null`/kosong = 0.
+   */
+  commissionPerPcs?: number | null;
+} & InfoProdukBarang;
 
 export type SerializedItem = {
   id: string;
@@ -42,8 +126,6 @@ export type SerializedItem = {
   reorderPoint: number | null;
   overReceiveThreshold: number | null;
   sellingPrice: number | null;
-  targetMarginPercent: number | null;
-  additionalCost: number | null;
   [k: string]: unknown;
 };
 
@@ -64,15 +146,23 @@ function validateItemPayload(p: ReturnType<typeof normalizeItemPayload>): assert
   if (p.sellingPrice != null && (Number.isNaN(p.sellingPrice) || p.sellingPrice < 0)) {
     throw new Error('sellingPrice: Must be 0 or greater');
   }
-  if (
-    p.targetMarginPercent != null &&
-    (Number.isNaN(p.targetMarginPercent) || p.targetMarginPercent < 0)
-  ) {
-    throw new Error('targetMarginPercent: Must be 0 or greater');
+  periksaPersenAturan(p.targetMarginPercent, p.priceRuleBasis ?? "MARKUP");
+  if (p.additionalCost != null && !(p.additionalCost >= 0 && p.additionalCost <= BIAYA_TAMBAHAN_MAKS)) {
+    throw new Error("additionalCost: Biaya tambahan harus 0 atau lebih");
   }
-  if (p.additionalCost != null && (Number.isNaN(p.additionalCost) || p.additionalCost < 0)) {
-    throw new Error('additionalCost: Must be 0 or greater');
-  }
+  const infoProduk = periksaInfoProduk(p);
+  if (infoProduk) throw new Error(infoProduk);
+  const kgPerRoll = periksaKgPerRoll(p.kgPerRoll);
+  if (kgPerRoll) throw new Error(kgPerRoll);
+  const komisi = periksaKomisiPerPcs(p.commissionPerPcs ?? undefined, p.type);
+  if (komisi) throw new Error(komisi);
+}
+
+/** Tabel ukuran yang dipilih harus ada (kosong = ikut bawaan kategori). */
+async function pastikanTabelUkuran(client: Prisma.TransactionClient | typeof prisma, sizeChartId: string | null | undefined) {
+  if (!sizeChartId) return;
+  const ada = await client.sizeChart.findUnique({ where: { id: sizeChartId }, select: { id: true } });
+  if (!ada) throw new Error("sizeChartId: Tabel ukuran tidak ditemukan");
 }
 
 async function resolveCategoryCode(categoryId: string | null | undefined): Promise<string | null> {
@@ -104,13 +194,6 @@ export function normalizeItemPayload(data: unknown): ItemFormData {
     sellingPrice === undefined || sellingPrice === null || sellingPrice === ''
       ? undefined
       : Number(sellingPrice);
-  const parseOptionalNonNegative = (val: unknown): number | undefined => {
-    if (val === undefined || val === null || val === '') return undefined;
-    const n = Number(val);
-    return Number.isNaN(n) || n < 0 ? undefined : n;
-  };
-  const targetMarginPercentNum = parseOptionalNonNegative(raw.targetMarginPercent);
-  const additionalCostNum = parseOptionalNonNegative(raw.additionalCost);
   const variants = Array.isArray(raw.variants)
     ? (raw.variants as Array<Record<string, unknown>>).map((record) => {
         const out: Record<string, string> = {};
@@ -137,13 +220,19 @@ export function normalizeItemPayload(data: unknown): ItemFormData {
       sellingPriceNum !== undefined && !Number.isNaN(sellingPriceNum) && sellingPriceNum >= 0
         ? sellingPriceNum
         : undefined,
-    targetMarginPercent: targetMarginPercentNum,
-    additionalCost: additionalCostNum,
+    // Bahan rekomendasi harga saja (barang jadi); tidak pernah menggeser harga jual.
+    targetMarginPercent: raw.type === 'FINISHED_GOOD' ? bacaAngkaRekomendasi(raw.targetMarginPercent) : undefined,
+    additionalCost: raw.type === 'FINISHED_GOOD' ? bacaAngkaRekomendasi(raw.additionalCost) : undefined,
+    priceRuleBasis: raw.type === "FINISHED_GOOD" ? bacaDasarKiriman(raw.priceRuleBasis) : undefined,
+    salesChannel: raw.type === "FINISHED_GOOD" ? bacaSaluranKiriman(raw.salesChannel) : undefined,
     sku: raw.sku != null ? String(raw.sku) : undefined,
     pantoneTcx:
       raw.type !== 'FINISHED_GOOD' && typeof raw.pantoneTcx === 'string' && raw.pantoneTcx.trim()
         ? raw.pantoneTcx.trim()
         : null,
+    ...bacaInfoProduk(raw),
+    kgPerRoll: bacaKgPerRoll(raw.kgPerRoll),
+    commissionPerPcs: bacaKomisiPerPcs(raw.commissionPerPcs),
   };
 }
 
@@ -167,8 +256,6 @@ function serializeSingleItem(item: {
   reorderPoint?: unknown;
   overReceiveThreshold?: unknown;
   sellingPrice?: unknown;
-  targetMarginPercent?: unknown;
-  additionalCost?: unknown;
   createdAt?: Date;
   updatedAt?: Date;
   isActive?: boolean;
@@ -188,9 +275,6 @@ function serializeSingleItem(item: {
     overReceiveThreshold:
       item.overReceiveThreshold != null ? Number(item.overReceiveThreshold) : null,
     sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : null,
-    targetMarginPercent:
-      item.targetMarginPercent != null ? Number(item.targetMarginPercent) : null,
-    additionalCost: item.additionalCost != null ? Number(item.additionalCost) : null,
     createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
     updatedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : item.updatedAt,
     isActive: item.isActive,
@@ -209,10 +293,17 @@ async function assertColorsInMaster(
   }
 }
 
-export async function createItem(data: ItemFormData) {
+/**
+ * Barang jadi baru wajib memilih saluran jualnya (jawaban pemilik P3, 2026-11-02). Yang dijual di
+ * Marketplace (saja atau keduanya) DIAJUKAN ke Jubelio di transaksi pembuatnya: ia menunggu di
+ * Jubelio → Konfirmasi harga dan baru dibuat di Jubelio sesudah harganya dikonfirmasi. "Toko
+ * offline saja" tidak pernah diajukan (P3a). Tidak ada kiriman produk dari sini.
+ */
+export async function createItem(data: ItemFormData, opsi: { olehUserId?: string | null } = {}) {
   const normalized = normalizeItemPayload(data);
   validateItemPayload(normalized);
-  const { sku: inputSku, ...rest } = normalized;
+  const { sku: inputSku, salesChannel, priceRuleBasis, ...rest } = normalized;
+  if (rest.type === "FINISHED_GOOD" && !salesChannel) throw new SalesChannelRequiredError();
 
   await assertPantoneExists(rest.pantoneTcx);
   const finalSku = inputSku?.trim() || (await generateSKU(rest.type));
@@ -229,6 +320,7 @@ export async function createItem(data: ItemFormData) {
     fixedAxes: rest.type === 'FINISHED_GOOD',
   });
   if (rest.type === 'FINISHED_GOOD') await assertColorsInMaster(normalizedVariants);
+  await pastikanTabelUkuran(prisma, rest.sizeChartId);
 
   const item = await prisma.$transaction(async (tx) => {
     const others = await loadOtherItemsForCollisions(tx);
@@ -251,8 +343,13 @@ export async function createItem(data: ItemFormData) {
         reorderPoint: rest.reorderPoint ?? null,
         overReceiveThreshold: rest.overReceiveThreshold ?? null,
         sellingPrice: rest.sellingPrice ?? null,
-        targetMarginPercent: rest.targetMarginPercent ?? null,
-        additionalCost: rest.additionalCost ?? null,
+        // Kolom wajib: `null` dari isian sudah menjadi 0 di `normalizeItemPayload`.
+        commissionPerPcs: rest.commissionPerPcs ?? undefined,
+        ...(rest.type === "FINISHED_GOOD" && salesChannel ? { salesChannel } : {}),
+        ...(priceRuleBasis ? { priceRuleBasis } : {}),
+        ...(rest.type === "FINISHED_GOOD" && dijualDiMarketplace(salesChannel)
+          ? dataPengajuanJubelio(opsi.olehUserId ?? null)
+          : {}),
       },
     });
 
@@ -272,34 +369,64 @@ export async function createItem(data: ItemFormData) {
   return { item, serialized: serializeSingleItem(item) };
 }
 
+/**
+ * Mengunci baris barang untuk ubahan ini (`SELECT … FOR UPDATE`, kedua dialek) — pernyataan
+ * PERTAMA transaksi `updateItem`, supaya saluran jual, tanda pengajuan, pemetaan, kiriman yang
+ * berjalan dan harga terkonfirmasi dibaca SESUDAH penulis harga Jubelio lain selesai dengan barang
+ * yang sama. Dibangun utuh dengan `Prisma.sql` dan diserahkan sebagai satu argumen.
+ */
+export async function kunciBarangUntukUbah(tx: Prisma.TransactionClient, id: string): Promise<boolean> {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>(
+    Prisma.sql`SELECT ${sqlId("id")} FROM ${sqlId("Item")} WHERE ${sqlId("id")} = ${id} FOR UPDATE`,
+  );
+  return rows.length > 0;
+}
+
 export async function updateItem(
   tx: Prisma.TransactionClient,
   id: string,
   data: ItemFormData,
+  opsi: { olehUserId?: string | null } = {},
 ) {
   const client = tx;
   const normalized = normalizeItemPayload(data);
   validateItemPayload(normalized);
-  const { sku, ...rest } = normalized;
+  const { sku, salesChannel, priceRuleBasis, ...rest } = normalized;
   void sku;
   await assertPantoneExists(rest.pantoneTcx);
 
+  await kunciBarangUntukUbah(client, id);
   const existing = await client.item.findUnique({
     where: { id },
     select: {
       sku: true,
+      source: true,
       categoryId: true,
       nameId: true,
       nameEn: true,
       description: true,
       sellingPrice: true,
-      targetMarginPercent: true,
-      additionalCost: true,
       variants: true,
       isActive: true,
+      commissionPerPcs: true,
+      salesChannel: true,
+      priceRuleBasis: true,
+      targetMarginPercent: true,
+      jubelioConfirmedPrice: true,
+      jubelioCreateRequestedAt: true,
+      jubelioCreateRequestedById: true,
     },
   });
   if (!existing) throw new Error('Item not found');
+  // Persen yang dikirim tanpa dasarnya diperiksa dengan dasar tersimpan; dasar yang dikirim tanpa
+  // persennya memeriksa persen TERSIMPAN dengan dasar baru (R14).
+  if (priceRuleBasis === undefined) periksaPersenAturan(rest.targetMarginPercent, existing.priceRuleBasis);
+  else if (rest.targetMarginPercent === undefined) {
+    periksaPersenAturan(
+      existing.targetMarginPercent == null ? null : Number(existing.targetMarginPercent),
+      priceRuleBasis,
+    );
+  }
   const effectiveCategoryId =
     rest.categoryId !== undefined ? rest.categoryId || null : existing.categoryId;
   const categoryCode = await resolveCategoryCode(effectiveCategoryId);
@@ -326,6 +453,19 @@ export async function updateItem(
     const updateBarcodeCollisions = findVariantBarcodeCollisions(others, { barcodes: wantedBarcodes });
     if (updateBarcodeCollisions.length > 0) throw new VariantBarcodeTakenError(updateBarcodeCollisions);
   }
+  await pastikanTabelUkuran(client, rest.sizeChartId);
+
+  const saluran = await rencanaSaluranJual(client, {
+    id,
+    barangJadi: rest.type === "FINISHED_GOOD",
+    sebelum: existing.salesChannel,
+    sesudah: salesChannel,
+    sumber: existing.source,
+    kategoriId: effectiveCategoryId,
+    hargaTerkonfirmasi: hargaKeTeks(existing.jubelioConfirmedPrice),
+    diajukanPada: existing.jubelioCreateRequestedAt,
+    olehUserId: opsi.olehUserId ?? null,
+  });
 
   const item = await client.item.update({
     where: { id },
@@ -336,22 +476,96 @@ export async function updateItem(
       reorderPoint: rest.reorderPoint ?? null,
       overReceiveThreshold: rest.overReceiveThreshold ?? null,
       sellingPrice: rest.sellingPrice ?? null,
-      targetMarginPercent: rest.targetMarginPercent ?? null,
-      additionalCost: rest.additionalCost ?? null,
+      commissionPerPcs: rest.commissionPerPcs ?? undefined,
+      ...(priceRuleBasis ? { priceRuleBasis } : {}),
+      ...saluran.dataBarang,
     },
   });
+
+  let kirimanSaluran: { outboxId: string } | null = null;
+  if (saluran.berubah) {
+    if (saluran.pengajuan === "DIBATALKAN" && opsi.olehUserId) {
+      await client.auditLog.create({
+        data: {
+          userId: opsi.olehUserId,
+          action: JEJAK_HARGA_JUBELIO.PENGAJUAN_DIBATALKAN,
+          entityType: "Item",
+          entityId: id,
+          changes: {
+            before: {
+              jubelioCreateRequestedAt: existing.jubelioCreateRequestedAt?.toISOString() ?? null,
+              jubelioCreateRequestedById: existing.jubelioCreateRequestedById,
+            },
+            after: { jubelioCreateRequestedAt: null, jubelioCreateRequestedById: null },
+            sebab: "SALURAN_OFFLINE",
+          },
+        },
+      });
+    }
+    if (opsi.olehUserId) {
+      await client.auditLog.create({
+        data: {
+          userId: opsi.olehUserId,
+          action: JEJAK_SALURAN_JUAL,
+          entityType: "Item",
+          entityId: id,
+          changes: { before: existing.salesChannel, after: salesChannel ?? null, pengajuan: saluran.pengajuan, kiriman: saluran.kiriman },
+        },
+      });
+    }
+    // Penonaktifan / pengaktifan di Jubelio: satu kiriman produk, lahir bersama perubahan saluran.
+    if (saluran.kiriman) kirimanSaluran = { outboxId: (await createProductPushRow(client, id, opsi.olehUserId ?? null)).id };
+  }
+
+  /*
+   * Jejak perubahan kategori (P8/P69): nota SPG dari antrean HP yang sampai sesudah perubahan ini
+   * membaca kategori yang berlaku saat terjualnya dari baris ini (`jejakKategoriSesudah`,
+   * `lib/spg/kategori-saat-jual.ts`). Ditulis di transaksi yang sama, membandingkan kategori yang
+   * benar-benar tersimpan — formulir yang mengosongkan kategori juga tercatat. Ini satu-satunya
+   * penulis yang MENGUBAH `Item.categoryId`; barang baru (formulir, impor, Jubelio) tidak punya
+   * penjualan sebelum dibuat, jadi tidak perlu jejak.
+   */
+  const kategoriSebelum = existing.categoryId || null;
+  const kategoriSesudah = item.categoryId || null;
+  if (opsi.olehUserId && kategoriSebelum !== kategoriSesudah) {
+    await client.auditLog.create({
+      data: {
+        userId: opsi.olehUserId,
+        action: JEJAK_KATEGORI_BARANG,
+        entityType: "Item",
+        entityId: id,
+        changes: { before: { categoryId: kategoriSebelum }, after: { categoryId: kategoriSesudah } },
+      },
+    });
+  }
+
+  // Penjualan SPG yang tercatat sebelum barangnya punya kategori diisi kategori ini, sekali.
+  if (item.categoryId) await isiKategoriPenjualanSpg(client, { itemId: id, categoryId: item.categoryId, waktu: new Date() });
+
+  // Kolom lama komisi SPG per pcs: kalau ada pemanggil yang masih mengubahnya,
+  // perubahannya tetap tercatat di transaksi yang sama.
+  const komisiLama = Number(existing.commissionPerPcs ?? 0);
+  if (opsi.olehUserId && rest.commissionPerPcs != null && rest.commissionPerPcs !== komisiLama) {
+    await client.auditLog.create({
+      data: {
+        userId: opsi.olehUserId,
+        action: 'ITEM_SPG_COMMISSION_CHANGED',
+        entityType: 'Item',
+        entityId: id,
+        changes: { before: { commissionPerPcs: komisiLama }, after: { commissionPerPcs: rest.commissionPerPcs } },
+      },
+    });
+  }
 
   return {
     item,
     serialized: serializeSingleItem(item),
+    kirimanSaluran,
     before: {
       nameId: existing.nameId,
       nameEn: existing.nameEn,
       description: existing.description,
       sellingPrice: existing.sellingPrice == null ? null : Number(existing.sellingPrice),
-      targetMarginPercent:
-        existing.targetMarginPercent == null ? null : Number(existing.targetMarginPercent),
-      additionalCost: existing.additionalCost == null ? null : Number(existing.additionalCost),
       variants: (existing.variants as Array<Record<string, string>> | null) ?? null,
       isActive: existing.isActive,
     },
@@ -360,13 +574,93 @@ export async function updateItem(
       nameEn: item.nameEn,
       description: item.description,
       sellingPrice: item.sellingPrice == null ? null : Number(item.sellingPrice),
-      targetMarginPercent:
-        item.targetMarginPercent == null ? null : Number(item.targetMarginPercent),
-      additionalCost: item.additionalCost == null ? null : Number(item.additionalCost),
       variants: (item.variants as Array<Record<string, string>> | null) ?? null,
       isActive: item.isActive,
     },
   };
+}
+
+type RencanaSaluran = {
+  berubah: boolean;
+  dataBarang: Prisma.ItemUncheckedUpdateInput;
+  pengajuan: "DIAJUKAN" | "DIBATALKAN" | null;
+  kiriman: "NONAKTIFKAN" | "AKTIFKAN" | null;
+};
+
+/**
+ * Perubahan saluran jual barang jadi yang sudah ada (jawaban pemilik P3/P3a/P72/P76, 2026-11-02),
+ * dibaca SESUDAH baris barangnya dikunci:
+ * - saluran sama → tidak ada apa-apa;
+ * - kiriman produk masih PENDING/PROCESSING → ditolak (sama dengan `SEDANG_DIKIRIM` di pengajuan):
+ *   konfirmasi yang baru saja dibuat tidak boleh terlewat diam-diam;
+ * - sudah di Jubelio → "Toko offline saja": dinonaktifkan di Jubelio dengan SATU kiriman (P72),
+ *   ditolak dengan sebabnya bila kiriman itu tidak bisa dibuat (tanpa harga terkonfirmasi, kategori
+ *   belum dipetakan, bawaan kiriman belum ada);
+ * - belum di Jubelio → "Toko offline saja": pengajuannya ditutup (P3a);
+ * - "Toko offline saja" → Marketplace/Keduanya: yang sudah di Jubelio diaktifkan lagi dengan satu
+ *   kiriman (ditolak bila kategori/bawaan belum ada), barang jadi ERP yang belum di Jubelio diajukan;
+ * - Marketplace ↔ Keduanya: tidak ada akibat ke Jubelio.
+ */
+async function rencanaSaluranJual(
+  tx: Prisma.TransactionClient,
+  i: {
+    id: string;
+    barangJadi: boolean;
+    sebelum: SaluranJual;
+    sesudah: SaluranJual | undefined;
+    sumber: "ERP" | "JUBELIO_INGEST";
+    kategoriId: string | null;
+    hargaTerkonfirmasi: string | null;
+    diajukanPada: Date | null;
+    olehUserId: string | null;
+  },
+): Promise<RencanaSaluran> {
+  const tetap: RencanaSaluran = { berubah: false, dataBarang: {}, pengajuan: null, kiriman: null };
+  if (!i.barangJadi || i.sesudah === undefined || i.sesudah === i.sebelum) return tetap;
+
+  const [jumlahPeta, jumlahDikirim] = await Promise.all([
+    tx.jubelioProductMapping.count({ where: { itemId: i.id } }),
+    tx.jubelioOutbox.count({ where: { entityType: "product_push", entityId: i.id, status: { in: ["PENDING", "PROCESSING"] } } }),
+  ]);
+  if (jumlahDikirim > 0) throw new SalesChannelPushInFlightError();
+  const terpetakan = jumlahPeta > 0;
+  const dataBarang: Prisma.ItemUncheckedUpdateInput = { salesChannel: i.sesudah };
+
+  const syaratKiriman = async () => ({
+    kategoriTerpetakan: i.kategoriId
+      ? (await tx.jubelioCategoryMapping.count({ where: { itemCategoryId: i.kategoriId } })) > 0
+      : false,
+    bawaanAda: (await tx.jubelioPushDefaults.count()) > 0,
+  });
+
+  if (i.sesudah === "OFFLINE") {
+    if (terpetakan) {
+      const alasan = alasanTidakBisaDinonaktifkan({ hargaTerkonfirmasi: i.hargaTerkonfirmasi, ...(await syaratKiriman()) });
+      if (alasan) throw new SalesChannelCannotDeactivateError(alasan);
+      return { berubah: true, dataBarang, pengajuan: null, kiriman: "NONAKTIFKAN" };
+    }
+    if (i.diajukanPada) {
+      return {
+        berubah: true,
+        dataBarang: { ...dataBarang, jubelioCreateRequestedAt: null, jubelioCreateRequestedById: null },
+        pengajuan: "DIBATALKAN",
+        kiriman: null,
+      };
+    }
+    return { berubah: true, dataBarang, pengajuan: null, kiriman: null };
+  }
+
+  if (i.sebelum === "OFFLINE") {
+    if (terpetakan) {
+      const alasan = alasanTidakBisaDiaktifkan(await syaratKiriman());
+      if (alasan) throw new SalesChannelCannotActivateError(alasan);
+      return { berubah: true, dataBarang, pengajuan: null, kiriman: "AKTIFKAN" };
+    }
+    if (i.sumber === "ERP" && !i.diajukanPada) {
+      return { berubah: true, dataBarang: { ...dataBarang, ...dataPengajuanJubelio(i.olehUserId) }, pengajuan: "DIAJUKAN", kiriman: null };
+    }
+  }
+  return { berubah: true, dataBarang, pengajuan: null, kiriman: null };
 }
 
 export const ITEM_DELETE_BLOCKED = "ITEM_DELETE_BLOCKED";

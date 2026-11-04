@@ -7,7 +7,8 @@ import { getNotificationHref } from "../notifications/navigation";
 export type ParsedPushPayload = { title: string; body: string; url: string; tag?: string };
 
 const FALLBACK_TITLE = "Elorae";
-const FALLBACK_URL = "/pwa/notifications";
+/* Kabar, the phone's one notification list (`/pwa/notifications` only redirects there). */
+const FALLBACK_URL = "/pwa/kabar";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -29,7 +30,9 @@ function isSafePath(href: string | null): href is string {
  * `{ notification?: { title?, body? }, data?: Record<string, string>, fcmMessageId? }` — into
  * what the service worker shows. Never throws: Chrome's `userVisibleOnly` contract means every
  * push must show a notification, so a shape this does not recognise still yields a fallback
- * title that opens the notification list.
+ * title that opens Kabar. A type with a phone screen opens it through
+ * `getNotificationHref(type, data, "pwa")`, which answers field-staff kabar (`tautanKabar`) and
+ * the team's types alike, and never an office page.
  */
 export function parsePushPayload(raw: unknown): ParsedPushPayload {
   const root = asRecord(raw);

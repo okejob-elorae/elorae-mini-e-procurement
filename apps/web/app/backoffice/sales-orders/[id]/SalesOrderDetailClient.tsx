@@ -5,10 +5,12 @@ import { useTranslations, useLocale } from "next-intl";
 import { ArrowLeft } from "lucide-react";
 import type { SalesOrderDetail, SalesOrderItemRow } from "@/lib/sales-orders/queries";
 import { CHANNEL_BADGE, STATUS_BADGE } from "@/lib/sales-orders/badges";
-import { formatIDR, formatDateTime } from "@/lib/sales-orders/format";
+import { formatIDR } from "@/lib/sales-orders/format";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FulfillmentCard } from "./FulfillmentCard";
 import { ReturnsCard, type SalesOrderReturnSummaryRow } from "./ReturnsCard";
@@ -63,7 +65,10 @@ export function SalesOrderDetailClient({
         <Button variant="ghost" size="sm" asChild>
           <Link href="/backoffice/sales-orders"><ArrowLeft className="h-4 w-4 mr-2" />{t("detail.back")}</Link>
         </Button>
-        <h1 className="text-2xl font-semibold font-mono">{order.salesorderNo}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-semibold font-mono">{order.salesorderNo}</h1>
+          <TombolBantuan judul={order.salesorderNo} />
+        </div>
         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${CHANNEL_BADGE[order.channel].tailwindClass}`}>
           {t(`channel.${CHANNEL_BADGE[order.channel].labelKey}` as never)}
         </span>
@@ -138,9 +143,9 @@ export function SalesOrderDetailClient({
 
         <Card className="p-4 space-y-2">
           <h2 className="font-semibold">{t("detail.section.orderMeta")}</h2>
-          <Field label={t("detail.field.transactionDate")} value={formatDateTime(order.transactionDate, locale)} />
+          <Field label={t("detail.field.transactionDate")} value={formatDisplayDateTime(order.transactionDate, locale)} />
           <Field label={t("detail.field.paymentMethod")} value={order.paymentMethod} />
-          <Field label={t("detail.field.paymentDate")} value={order.paymentDate ? formatDateTime(order.paymentDate, locale) : null} />
+          <Field label={t("detail.field.paymentDate")} value={order.paymentDate ? formatDisplayDateTime(order.paymentDate, locale) : null} />
           <Field label={t("detail.field.courier")} value={order.courier} />
           <Field label={t("detail.field.trackingNumber")} value={order.trackingNumber} />
           {order.packingVideoUrl ? (
@@ -196,7 +201,7 @@ export function SalesOrderDetailClient({
                       ? <Link href={`/backoffice/items/${it.itemId}`} className="hover:underline">{it.jubelioItemCode}</Link>
                       : it.jubelioItemCode}
                   </TableCell>
-                  <TableCell>{it.productName}</TableCell>
+                  <TableCell className="min-w-[12rem] whitespace-normal">{it.productName}</TableCell>
                   <TableCell className="text-right">{it.qty}</TableCell>
                   <TableCell className="text-right">{formatIDR(it.unitPrice)}</TableCell>
                   <TableCell className="text-right">{formatIDR(it.discAmount)}</TableCell>
@@ -246,14 +251,21 @@ export function SalesOrderDetailClient({
           </div>
         </Card>
 
-        <Card className="p-4 space-y-2">
-          <h2 className="font-semibold">{t("detail.section.rawStatus")}</h2>
-          <Field label={t("detail.field.channelStatus")} value={order.channelStatus} />
-          <Field label={t("detail.field.internalStatus")} value={order.internalStatus} />
-          <Field label={t("detail.field.wmsStatus")} value={order.wmsStatus} />
-          <Field label={t("detail.field.isCanceled")} value={order.isCanceled ? t("yes") : t("no")} />
-          <Field label={t("detail.field.isPaid")} value={order.isPaid ? t("yes") : t("no")} />
-          <Field label={t("detail.field.markedAsComplete")} value={order.markedAsComplete ? t("yes") : t("no")} />
+        {/* Kode sistem Jubelio (mis. READY_TO_SHIP / PROCESSING / SHIPPED) tampak saling
+            bertentangan di samping lencana yang sudah diterjemahkan — dilipat sebagai detail teknis. */}
+        <Card className="p-4">
+          <details>
+            <summary className="cursor-pointer font-semibold">{t("detail.section.detailTeknis")}</summary>
+            <p className="mt-2 text-xs text-muted-foreground">{t("detail.section.detailTeknisKet")}</p>
+            <div className="mt-3 space-y-2">
+              <Field label={t("detail.field.channelStatus")} value={order.channelStatus} />
+              <Field label={t("detail.field.internalStatus")} value={order.internalStatus} />
+              <Field label={t("detail.field.wmsStatus")} value={order.wmsStatus} />
+              <Field label={t("detail.field.isCanceled")} value={order.isCanceled ? t("yes") : t("no")} />
+              <Field label={t("detail.field.isPaid")} value={order.isPaid ? t("yes") : t("no")} />
+              <Field label={t("detail.field.markedAsComplete")} value={order.markedAsComplete ? t("yes") : t("no")} />
+            </div>
+          </details>
         </Card>
       </div>
 

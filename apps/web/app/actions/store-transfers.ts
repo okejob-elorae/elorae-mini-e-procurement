@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { createStoreTransfer, approveStoreTransfer, cancelStoreTransfer } from "@/lib/stores/transfer/writer";
@@ -103,15 +104,16 @@ export async function createStoreTransferAction(
 
 /**
  * Approves a transfer, moving stock out of the source and into the destination in one
- * transaction (see `approveStoreTransfer`). `stores:manage`, same as the create side and the
- * store stocktake approve action — this repo does not seed RBAC rows on deploy, and reusing an
- * existing, already-seeded permission means this screen needs no post-merge SQL step at all.
+ * transaction (see `approveStoreTransfer`). `store_transfers:approve`, the same code as the SPG
+ * transfer approval (`app/actions/spg-mutasi.ts`): approving is a manager decision (owner,
+ * 2026-11-01), so it no longer rides on `stores:manage`. Its Permission row is hand-seeded by
+ * `seed-max-features-permissions.sql`; ADMIN passes regardless through the code wildcard.
  */
 export async function approveStoreTransferAction(transferId: string): Promise<StoreTransferActionResult> {
   try {
     const session = await auth();
     const permissions = session?.user?.permissions ?? [];
-    if (!session?.user?.id || !hasPermission(permissions, PERMISSIONS.STORES_MANAGE)) {
+    if (!session?.user?.id || !hasPermission(permissions, PERMISSIONS.STORE_TRANSFERS_APPROVE)) {
       return { ok: false, code: "FORBIDDEN" };
     }
     if (typeof transferId !== "string" || transferId === "") return { ok: false, code: "INVALID_REQUEST" };
@@ -128,18 +130,27 @@ export async function approveStoreTransferAction(transferId: string): Promise<St
 
 /**
  * Cancels a PENDING transfer — no stock has moved yet, so this is a pure status flip (see
- * `cancelStoreTransfer`'s doc comment for why it moves nothing). Same `stores:manage` gate as
- * create/approve; the writer's own CAS is what actually stops this from ever reaching an
- * APPROVED transfer, regardless of what this action or the UI ever check.
+ * `cancelStoreTransfer`'s doc comment for why it moves nothing). Every transfer is PENDING until
+ * approved, so cancelling someone else's is the reject half of the approval and takes
+ * `store_transfers:approve` (owner, 2026-11-01). A `stores:manage` holder may still withdraw a
+ * transfer they created themselves — the proposer withdrawing their own proposal, the same as an
+ * SPG cancelling theirs before it ships. The writer's own CAS is what actually stops this from
+ * ever reaching an APPROVED transfer, regardless of what this action or the UI ever check.
  */
 export async function cancelStoreTransferAction(transferId: string): Promise<StoreTransferActionResult> {
   try {
     const session = await auth();
     const permissions = session?.user?.permissions ?? [];
-    if (!session?.user?.id || !hasPermission(permissions, PERMISSIONS.STORES_MANAGE)) {
+    const canApprove = hasPermission(permissions, PERMISSIONS.STORE_TRANSFERS_APPROVE);
+    if (!session?.user?.id || (!canApprove && !hasPermission(permissions, PERMISSIONS.STORES_MANAGE))) {
       return { ok: false, code: "FORBIDDEN" };
     }
     if (typeof transferId !== "string" || transferId === "") return { ok: false, code: "INVALID_REQUEST" };
+    if (!canApprove) {
+      const own = await prisma.storeTransfer.findUnique({ where: { id: transferId }, select: { createdById: true } });
+      if (!own) return { ok: false, code: "NOT_FOUND" };
+      if (own.createdById !== session.user.id) return { ok: false, code: "FORBIDDEN" };
+    }
 
     await cancelStoreTransfer({ transferId, cancelledById: session.user.id });
 

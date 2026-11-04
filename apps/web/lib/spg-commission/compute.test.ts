@@ -393,3 +393,20 @@ describe("summariseRecap", () => {
     expect(summariseRecap(computeCommissionEvents([report()], rates), "2026-12")).toEqual({ rows: [], detail: [], noRate: [], events: [] });
   });
 });
+
+describe("computeCommissionEvents — salesMonth (checked sales reports)", () => {
+  it("earns in the checked month but resolves the rate in the sales month, and carries the sales month on every event", () => {
+    /* Checked in November (rate 1500 from 2026-11) for October sales (rate 1000): the October rate pays. */
+    const events = computeCommissionEvents([report({ approvedAt: NOV, salesMonth: "2026-10" })], rates);
+    expect(events.map((e) => [e.yearMonth, e.salesMonth, e.ratePerPiece, e.amount])).toEqual([
+      ["2026-11", "2026-10", 1000, 3000],
+      ["2026-11", "2026-10", 1000, 1000],
+    ]);
+  });
+
+  it("a report without salesMonth keeps the earning month's rate and carries no salesMonth key", () => {
+    const [event] = computeCommissionEvents([report({ approvedAt: NOV })], rates);
+    expect(event.ratePerPiece).toBe(1500);
+    expect("salesMonth" in event).toBe(false);
+  });
+});

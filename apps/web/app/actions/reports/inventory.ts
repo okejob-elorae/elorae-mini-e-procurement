@@ -4,8 +4,9 @@ import { prisma } from '@elorae/db';
 import { ItemType } from '@elorae/db';
 import * as XLSX from 'xlsx';
 import { toCsv } from "@/lib/reports/csv";
-import { auth } from '@/lib/auth';
-import { requireAnyPermission, PERMISSIONS } from '@/lib/rbac';
+import { barisEksporPersediaan, KOLOM_NILAI_PERSEDIAAN } from '@/lib/laporan/ekspor-laporan';
+import { PERMISSIONS } from '@/lib/rbac';
+import { wajibIzinLaporan } from './penjaga';
 
 export type InventorySnapshotDetail = {
   itemId: string;
@@ -37,11 +38,7 @@ export type InventorySnapshotResult = {
 export async function getInventoryValueSnapshot(
   _asOfDate?: Date
 ): Promise<InventorySnapshotResult> {
-  const session = await auth();
-  requireAnyPermission(session?.user?.permissions ?? [], [
-    PERMISSIONS.INVENTORY_VIEW,
-    PERMISSIONS.DASHBOARD_VIEW,
-  ]);
+  await wajibIzinLaporan(PERMISSIONS.INVENTORY_VIEW, PERMISSIONS.DASHBOARD_VIEW);
   const asOfDate = _asOfDate ? new Date(_asOfDate) : new Date();
   asOfDate.setHours(0, 0, 0, 0);
 
@@ -136,11 +133,7 @@ export async function getCOGSRawVsFinished(): Promise<{
   rawCount: number;
   finishedCount: number;
 }> {
-  const session = await auth();
-  requireAnyPermission(session?.user?.permissions ?? [], [
-    PERMISSIONS.INVENTORY_VIEW,
-    PERMISSIONS.DASHBOARD_VIEW,
-  ]);
+  await wajibIzinLaporan(PERMISSIONS.INVENTORY_VIEW, PERMISSIONS.DASHBOARD_VIEW);
   const rows = await prisma.inventoryValue.findMany({
     where: { qtyOnHand: { gt: 0 } },
     include: {
@@ -176,25 +169,17 @@ export async function getCOGSRawVsFinished(): Promise<{
 export async function exportInventorySnapshotReport(
   format: 'csv' | 'excel'
 ): Promise<{ data: string; filename: string } | { base64: string; filename: string }> {
+  await wajibIzinLaporan(PERMISSIONS.INVENTORY_VIEW);
   const snap = await getInventoryValueSnapshot();
-  const data = snap.details.map((d) => ({
-    SKU: d.sku,
-    Name: d.name,
-    Type: d.type,
-    UOM: d.uomCode,
-    'Qty On Hand': d.qtyOnHand,
-    'Avg Cost': d.avgCost,
-    'Total Value': d.totalValue,
-    '% of Total': Math.round(d.percentageOfTotal * 100) / 100,
-  }));
+  // Kepala kolom dan jenis barang sama dengan layar (Indonesia).
+  const data = barisEksporPersediaan(snap.details);
 
   if (format === 'csv') {
-    const headers = ["SKU", "Name", "Type", "UOM", "Qty On Hand", "Avg Cost", "Total Value", "% of Total"];
-    return { data: toCsv(headers, data), filename: `inventory-snapshot-${Date.now()}.csv` };
+    return { data: toCsv([...KOLOM_NILAI_PERSEDIAAN], data), filename: `nilai-persediaan-${Date.now()}.csv` };
   }
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(data);
-  XLSX.utils.book_append_sheet(wb, ws, 'Inventory Snapshot');
+  const ws = XLSX.utils.json_to_sheet(data, { header: [...KOLOM_NILAI_PERSEDIAAN] });
+  XLSX.utils.book_append_sheet(wb, ws, 'Nilai persediaan');
   const buffer = Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
-  return { base64: buffer.toString('base64'), filename: `inventory-snapshot-${Date.now()}.xlsx` };
+  return { base64: buffer.toString('base64'), filename: `nilai-persediaan-${Date.now()}.xlsx` };
 }

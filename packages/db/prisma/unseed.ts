@@ -15,7 +15,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { createDbAdapter } from "../src/adapter";
 import { PrismaClient, Prisma } from "../generated/prisma/client";
 import { getDatabaseUrl } from "../src/db-connection";
 
@@ -37,7 +37,7 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const adapter = new PrismaMariaDb(databaseUrl);
+const adapter = createDbAdapter(databaseUrl);
 const prisma = new PrismaClient({ adapter });
 
 const EXECUTE = process.argv.includes("--execute");

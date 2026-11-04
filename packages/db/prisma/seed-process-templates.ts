@@ -10,7 +10,7 @@
  * Idempotent: upsert by name with update:{} so re-runs never overwrite admin edits.
  * Does NOT seed SupplierProcess rows — chains are built in Papan Supplier.
  */
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { createDbAdapter } from "../src/adapter";
 import { PrismaClient, type LeadTimeType } from "../generated/prisma/client";
 import { getDatabaseUrl } from "../src/db-connection";
 import { loadDbEnv } from "../src/load-env";
@@ -113,7 +113,7 @@ async function main() {
     );
     process.exit(1);
   }
-  const adapter = new PrismaMariaDb(databaseUrl);
+  const adapter = createDbAdapter(databaseUrl);
   const prisma = new PrismaClient({ adapter });
   try {
     const n = await seedProcessTemplates(prisma);

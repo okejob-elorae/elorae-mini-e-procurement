@@ -788,8 +788,10 @@ d("approveFieldSalesOrder — konsi", () => {
 
   /**
    * Credit exposure on the store without the cost of a delivery or a sell-through invoice: an
-   * APPROVED putus order with nothing delivered counts its whole total as undelivered residual.
-   * It carries no lines, so it reserves nothing, and the storeId teardown above removes it.
+   * APPROVED putus order with nothing delivered counts its whole total as not yet on a nota.
+   * Exposure is read from the order's open LINES (`nilaiBelumDinota`), so it carries one open line
+   * worth its whole total (deliveredQty 0); no reservation is made for it. Every caller seeds the
+   * item first, and the itemId/storeId teardown above removes the line and the order.
    */
   let exposureSeq = 0;
   const seedExposure = (total: number) =>
@@ -802,6 +804,7 @@ d("approveFieldSalesOrder — konsi", () => {
         status: "APPROVED",
         subtotal: total,
         total,
+        lines: { create: [{ itemId, variantSku: "", productName: "X", qty: 1, unitPrice: total, lineTotal: total, deliveredQty: 0 }] },
       },
     });
 

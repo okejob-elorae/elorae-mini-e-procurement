@@ -65,6 +65,7 @@ export const ITEM_IMPORT_ERROR_CODES = [
   "BARCODE_TAKEN",
   "DUPLICATE_IN_FILE",
   "SKU_TAKEN",
+  "SALES_CHANNEL_REQUIRED",
 ] as const;
 
 export type ItemImportErrorCode = (typeof ITEM_IMPORT_ERROR_CODES)[number];
@@ -141,7 +142,9 @@ export type ItemImportCommitResult =
       status: "created";
       items: Array<{ id: string; sku: string; nameId: string }>;
       variantCount: number;
+      /** Where every product of this import is sold (owner answer P3, 2026-11-02). */
+      salesChannel: "MARKETPLACE" | "OFFLINE" | "BOTH";
+      /** True = every created product was requested for Jubelio and waits for price confirmation. */
       jubelioRequested: boolean;
-      jubelioFailed: number;
     }
   | { status: "failed" };

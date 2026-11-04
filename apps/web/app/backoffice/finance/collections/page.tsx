@@ -23,11 +23,17 @@ export default async function CollectionsQueuePage({ searchParams }: PageProps) 
   const session = await auth();
   if (!session) redirect("/login");
 
+  /**
+   * Opened by the collections manager OR the payment verifier (owner, 2026-11-01) — the same pair
+   * the menu shows it to. Verify/reject are `payments:verify`, exactly what `verifyCollectionAction`
+   * and `rejectCollectionAction` enforce; `payments:manage` records office payments and does not
+   * verify. Two codes, so this route is NOT in ROUTE_PERMISSIONS (one code only): the page gates itself.
+   */
   const permissions = session.user.permissions ?? [];
-  if (!hasPermission(permissions, PERMISSIONS.COLLECTIONS_MANAGE)) {
+  const canVerify = hasPermission(permissions, PERMISSIONS.PAYMENTS_VERIFY);
+  if (!canVerify && !hasPermission(permissions, PERMISSIONS.COLLECTIONS_MANAGE)) {
     redirect("/backoffice");
   }
-  const canVerify = hasPermission(permissions, PERMISSIONS.PAYMENTS_MANAGE);
 
   const sp = await searchParams;
   const collectorId = sp.collectorId?.trim() || undefined;

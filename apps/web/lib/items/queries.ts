@@ -1,12 +1,18 @@
 import { prisma } from '@elorae/db';
+import { cariTeks } from "@/lib/db/cari-teks";
 import { ItemType, Prisma } from '@elorae/db';
 import { itemHasSkuVariants } from '@/lib/items/variants';
+import { syaratDijualOffline, type SaluranJual } from "@/lib/items/saluran-jual";
 
 export type ListItemsFilters = {
   type?: ItemType | 'raw';
   categoryId?: string;
   search?: string;
   isActive?: boolean;
+  /** Saringan "Dijual di" daftar barang — selalu barang jadi saja (P3). */
+  salesChannel?: SaluranJual;
+  /** Pemilih jual offline: barang "Marketplace saja" tidak tampil (P3a); barang jadi saja. */
+  dijualOffline?: boolean;
 };
 
 export type ListItemsOpts = {
@@ -69,13 +75,64 @@ export function buildItemsWhere(filters?: ListItemsFilters): Prisma.ItemWhereInp
 
   if (filters?.search) {
     where.OR = [
-      { sku: { contains: filters.search } },
-      { nameId: { contains: filters.search } },
-      { nameEn: { contains: filters.search } },
+      { sku: cariTeks(filters.search) },
+      { nameId: cariTeks(filters.search) },
+      { nameEn: cariTeks(filters.search) },
     ];
   }
 
+  // Saluran jual hanya bermakna untuk barang jadi: kain dan aksesori tidak pernah cocok.
+  const dan: Prisma.ItemWhereInput[] = [];
+  if (filters?.salesChannel) dan.push({ type: ItemType.FINISHED_GOOD, salesChannel: filters.salesChannel });
+  if (filters?.dijualOffline) dan.push({ type: ItemType.FINISHED_GOOD, ...syaratDijualOffline() });
+  if (dan.length > 0) where.AND = dan;
+
   return where;
+}
+
+/**
+ * Kolom `Decimal` milik Item, dalam SATU daftar.
+ *
+ * Serializer di bawah menyebar sisanya dengan `...rest`, jadi kolom Decimal
+ * yang tidak disebut di sini LOLOS MENTAH ke komponen klien dan React menolak
+ * seluruh halamannya — "Decimal objects are not supported". Itu persis yang
+ * terjadi saat `commissionPerPcs` ditambahkan untuk komisi konsinyasi:
+ * type-check lolos, lint lolos, dan halamannya baru pecah saat dibuka.
+ *
+ * Ada tesnya (`serialize.test.ts`) yang membaca daftar kolom Decimal langsung
+ * dari skema Prisma dan gagal kalau ada yang tidak ada di sini — jadi kolom
+ * Decimal berikutnya tidak bisa lolos diam-diam lagi.
+ */
+export const KOLOM_DECIMAL_ITEM = [
+  'reorderPoint',
+  'overReceiveThreshold',
+  'sellingPrice',
+  "jubelioConfirmedPrice",
+  "jubelioObservedPriceMax",
+  "jubelioObservedPriceMin",
+  'targetMarginPercent',
+  'additionalCost',
+  'commissionPerPcs',
+  'kgPerRoll',
+] as const;
+
+/**
+ * Every Decimal column of an Item as a plain number (null stays null).
+ *
+ * Every serializer that spreads an Item into a client payload uses this, so a
+ * new Decimal column only needs adding to `KOLOM_DECIMAL_ITEM`. The inventory
+ * page's two local serializers each converted only three of them and let
+ * `commissionPerPcs` through raw.
+ */
+export function itemDecimalsToNumbers(
+  item: Record<string, unknown>,
+): Record<(typeof KOLOM_DECIMAL_ITEM)[number], number | null> {
+  const angka = {} as Record<(typeof KOLOM_DECIMAL_ITEM)[number], number | null>;
+  for (const k of KOLOM_DECIMAL_ITEM) {
+    const v = item[k];
+    angka[k] = v != null ? toNum(v) : null;
+  }
+  return angka;
 }
 
 function serializeListItemForClient(item: {
@@ -95,13 +152,7 @@ function serializeListItemForClient(item: {
   void _omitFg;
   return {
     ...rest,
-    reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
-    overReceiveThreshold:
-      item.overReceiveThreshold != null ? toNum(item.overReceiveThreshold) : null,
-    sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
-    targetMarginPercent:
-      item.targetMarginPercent != null ? toNum(item.targetMarginPercent) : null,
-    additionalCost: item.additionalCost != null ? toNum(item.additionalCost) : null,
+    ...itemDecimalsToNumbers(item),
     inventoryValue: inv,
   };
 }
@@ -157,15 +208,16 @@ export function serializeItemForClient(item: ItemWithRelations | null) {
   const inv = aggregateInventoryValues(item.inventoryValues);
   const { inventoryValues: _omitInv, ...itemRest } = item;
   void _omitInv;
+  /* Dari daftar yang sama dengan serializer di atas — dua salinan akan
+     menyimpang, dan yang menyimpang adalah yang lupa kolom baru. */
+  const angka: Record<string, number | null> = {};
+  for (const k of KOLOM_DECIMAL_ITEM) {
+    const v = (item as unknown as Record<string, unknown>)[k];
+    angka[k] = v != null ? toNum(v) : null;
+  }
   return {
     ...itemRest,
-    reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
-    overReceiveThreshold:
-      item.overReceiveThreshold != null ? toNum(item.overReceiveThreshold) : null,
-    sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
-    targetMarginPercent:
-      item.targetMarginPercent != null ? toNum(item.targetMarginPercent) : null,
-    additionalCost: item.additionalCost != null ? toNum(item.additionalCost) : null,
+    ...angka,
     inventoryValue: inv,
     createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
     updatedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : item.updatedAt,
@@ -316,9 +368,9 @@ export async function listItemsForSync(filters?: {
   if (filters?.isActive !== undefined) where.isActive = filters.isActive;
   if (filters?.search) {
     where.OR = [
-      { sku: { contains: filters.search } },
-      { nameId: { contains: filters.search } },
-      { nameEn: { contains: filters.search } },
+      { sku: cariTeks(filters.search) },
+      { nameId: cariTeks(filters.search) },
+      { nameEn: cariTeks(filters.search) },
     ];
   }
 

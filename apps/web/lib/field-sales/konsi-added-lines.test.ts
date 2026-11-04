@@ -271,9 +271,22 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
   });
 
   it("a credit-limit refusal leaves no added line, reservation or price behind", async () => {
-    /* An approved putus order with nothing delivered puts its whole total on the store's exposure. */
+    /*
+     * An approved putus order with nothing delivered puts its whole total on the store's exposure.
+     * Exposure is read from its open LINES (`nilaiBelumDinota`), so it carries one open line worth the
+     * whole total; the teardown removes it by `orderId` through `seededId`.
+     */
     const exposureOrder = await prisma.fieldSalesOrder.create({
-      data: { orderNo: `TEST-KAL-EXP-${token}`, orderType: "PUTUS", storeId, salesmanId: userId, status: "APPROVED", subtotal: 500000, total: 500000 },
+      data: {
+        orderNo: `TEST-KAL-EXP-${token}`,
+        orderType: "PUTUS",
+        storeId,
+        salesmanId: userId,
+        status: "APPROVED",
+        subtotal: 500000,
+        total: 500000,
+        lines: { create: [{ itemId, variantSku: "", productName: "X", qty: 1, unitPrice: 500000, lineTotal: 500000, deliveredQty: 0 }] },
+      },
     });
     exposureOrderId = exposureOrder.id;
     await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100000 } });

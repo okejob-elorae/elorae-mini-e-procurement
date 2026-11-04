@@ -132,9 +132,10 @@ d("store stocktake writer (test bed only)", () => {
   /**
    * Five itemMain delivered to the store on a konsi order, in the offline-completion shape: the
    * shipment carries the device's `deliveredAt`, while the transfer's +5 store row lands now, at
-   * sync. A null `deliveredAt` issues a legacy transfer with no shipment at all.
+   * sync. A null `deliveredAt` issues a legacy transfer with no shipment at all. `receivedAt` is
+   * the store receipt's capture time (the new model), absent on a transfer the old image wrote.
    */
-  const deliverKonsi = async (deliveredAt: Date | null) => {
+  const deliverKonsi = async (deliveredAt: Date | null, receivedAt: Date | null = null) => {
     const n = ++stkCounter;
     const order = await prisma.fieldSalesOrder.create({
       data: { orderNo: `KONSI/${tag}/${n}`, storeId, salesmanId: adminId, status: "APPROVED", orderType: "KONSI", subtotal: 0, total: 0 },
@@ -148,10 +149,48 @@ d("store stocktake writer (test bed only)", () => {
       })
       : null;
     const transfer = await prisma.konsiTransfer.create({
-      data: { docNo: `KONSITRF/${tag}/${n}`, orderId: order.id, storeId, transferredById: adminId, shipmentId: shipment?.id ?? null },
+      data: {
+        docNo: `KONSITRF/${tag}/${n}`,
+        orderId: order.id,
+        storeId,
+        transferredById: adminId,
+        shipmentId: shipment?.id ?? null,
+        status: "RECEIVED",
+        receivedAt,
+        receivedById: receivedAt ? adminId : null,
+      },
       select: { id: true },
     });
     await moveAfterCount(itemMainId, 5, "KonsiTransfer", transfer.id);
+  };
+
+  /**
+   * Five itemMain shipped to the store and still on the road: the shipment IN_TRANSIT, its
+   * transfer IN_TRANSIT with one line. Nothing reaches StoreStock or the store ledger until the
+   * store receives it.
+   */
+  const shipKonsiInTransit = async () => {
+    const n = ++stkCounter;
+    const order = await prisma.fieldSalesOrder.create({
+      data: { orderNo: `KONSI/${tag}/${n}`, storeId, salesmanId: adminId, status: "APPROVED", orderType: "KONSI", subtotal: 0, total: 0 },
+      select: { id: true },
+    });
+    konsiOrderIds.push(order.id);
+    const shipment = await prisma.deliveryShipment.create({
+      data: { docNo: `DLV/${tag}/${n}`, orderId: order.id, method: "EXPEDITION", status: "IN_TRANSIT", packedById: adminId, shippedAt: new Date() },
+      select: { id: true },
+    });
+    await prisma.konsiTransfer.create({
+      data: {
+        docNo: `KONSITRF/${tag}/${n}`,
+        orderId: order.id,
+        storeId,
+        transferredById: adminId,
+        shipmentId: shipment.id,
+        status: "IN_TRANSIT",
+        lines: { create: [{ itemId: itemMainId, variantSku: "", productName: "Main", qty: 5, unitCost: 12500 }] },
+      },
+    });
   };
 
   /* A PENDING_VERIFICATION count of one itemMain line, its document and line both stamped at `countedAt`, test-only. */
@@ -993,6 +1032,44 @@ d("store stocktake writer (test bed only)", () => {
     expect(Number(line.appliedQty)).toBe(15);
   });
 
+  it("does not re-apply a konsi transfer the store received before the line was counted, though its row synced after", async () => {
+    /* Shipment delivered 90 minutes ago, received at the store (offline) 60 minutes ago, shelf counted 30 minutes ago holding all 15, receipt synced now. */
+    const id = await countAt(new Date(Date.now() - 30 * 60_000), { itemId: itemMainId, expectedQty: 10, countedQty: 15, reason: "five received" });
+    await deliverKonsi(new Date(Date.now() - 90 * 60_000), new Date(Date.now() - 60 * 60_000));
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ss.qty)).toBe(15);
+    expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+  });
+
+  it("re-applies a konsi transfer the store received after the line was counted, even when its shipment was delivered before", async () => {
+    /* Handed over 90 minutes ago, shelf counted 60 minutes ago at 10 (the goods still unpacked), received 30 minutes ago. */
+    const id = await countAt(new Date(Date.now() - 60 * 60_000), { itemId: itemMainId, expectedQty: 10, countedQty: 10 });
+    await deliverKonsi(new Date(Date.now() - 90 * 60_000), new Date(Date.now() - 30 * 60_000));
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ss.qty)).toBe(15);
+    expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+  });
+
+  it("an in-transit konsi transfer neither blocks the count nor books shrinkage (P26)", async () => {
+    await shipKonsiInTransit();
+    const id = await countAt(new Date(Date.now() - 30 * 60_000), { itemId: itemMainId, expectedQty: 10, countedQty: 10 });
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    /* The five on the road are on no shelf and no balance: the shelf's 10 stands, with no variance row. */
+    expect(Number(ss.qty)).toBe(10);
+    expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+    const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) } });
+    expect(Number(line.appliedQty)).toBe(10);
+  });
+
   it("always re-applies a legacy konsi transfer with no shipment", async () => {
     const id = await countAt(new Date(Date.now() - 30 * 60_000), { itemId: itemMainId, expectedQty: 10, countedQty: 10 });
     await deliverKonsi(null);
@@ -1663,6 +1740,35 @@ d("store stocktake writer (test bed only)", () => {
       await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
 
       await expect(cancelStoreStocktake({ stocktakeId: id, cancelledById: adminId, reason: "too late" })).rejects.toMatchObject({ code: "INVALID_STATE" });
+    });
+
+    // Separate cases: mkStocktake defaults openKey to the store, and only one open count per store is allowed.
+    it("refuses FORBIDDEN inside the transaction when the caller may not cancel a count awaiting approval, and leaves it open", async () => {
+      const id = await mkStocktake({ status: "PENDING_VERIFICATION", lines: [] });
+      await expect(
+        cancelStoreStocktake({ stocktakeId: id, cancelledById: adminId, reason: "x", allowDraft: true, allowPendingVerification: false }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+      expect(st.status).toBe("PENDING_VERIFICATION");
+      expect(st.openKey).not.toBeNull();
+
+      // The permission matching the status read inside the transaction cancels it.
+      await cancelStoreStocktake({ stocktakeId: id, cancelledById: adminId, reason: "x", allowDraft: false, allowPendingVerification: true });
+      expect((await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("CANCELLED");
+    });
+
+    it("refuses FORBIDDEN inside the transaction when the caller may not cancel a DRAFT, and leaves it open", async () => {
+      const id = await mkStocktake({ lines: [] });
+      await expect(
+        cancelStoreStocktake({ stocktakeId: id, cancelledById: adminId, reason: "x", allowDraft: false, allowPendingVerification: true }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+      expect(st.status).toBe("DRAFT");
+      expect(st.openKey).not.toBeNull();
+
+      // A caller without the approval permission can still cancel a DRAFT.
+      await cancelStoreStocktake({ stocktakeId: id, cancelledById: adminId, reason: "x", allowDraft: true, allowPendingVerification: false });
+      expect((await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("CANCELLED");
     });
   });
 });

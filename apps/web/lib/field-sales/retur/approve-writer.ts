@@ -7,12 +7,18 @@ import { FieldReturnError } from "./errors";
 import { allDiscrepantLinesSettled, creditedQtyForLine, LATEST_RESOLUTION_ORDER } from "./variance";
 import { round2 } from "./pricing-rules";
 import { deliveryLineUnitPrice, resolveLinePrice } from "./pricing";
+import { masukkanGudangRusakDariReturLapangan } from "@/lib/spg/gudang-rusak-writer";
 
 /**
  * The point where goods a store sent back physically re-enter sellable stock. Runs inside
  * one serializable transaction: load the retur with its lines and each line's latest
  * resolution, refuse unless every discrepant line is settled, restore sellable units to the
- * main warehouse, route rejected units to the rejected-goods ledger, then stamp APPROVED.
+ * main warehouse, route rejected units onward, then stamp APPROVED.
+ *
+ * Rejected units go to the rejected-goods ledger for a PUTUS store, unchanged. For a KONSI store
+ * they go to Gudang Barang Rusak instead (owner Q25/P23, 2026-11-02 "anda benar"), valued at the
+ * consignment cost at the moment of approval (`masukkanGudangRusakDariReturLapangan`), and nothing
+ * is written to the rejected-goods ledger for them.
  */
 export async function approveFieldReturn(input: {
   returnId: string;
@@ -42,6 +48,7 @@ export async function approveFieldReturn(input: {
             priceSource: true,
             priceDeliveryLineId: true,
             unitPrice: true,
+            item: { select: { nameId: true } },
             resolutions: {
               orderBy: LATEST_RESOLUTION_ORDER,
               take: 1,
@@ -70,6 +77,9 @@ export async function approveFieldReturn(input: {
      * retur can reach PENDING_APPROVAL. The fallback only guards the nullable column type.
      */
     const receivedAt = ret.receivedAt ?? new Date();
+    /* One approval instant: stamped on the retur and used as the konsi cost cut-off below. */
+    const disetujuiPada = new Date();
+    const konsi = ret.store.termsType === "KONSI";
 
     for (const line of ret.lines) {
       const sellableQty = line.sellableQty ?? 0;
@@ -138,7 +148,7 @@ export async function approveFieldReturn(input: {
         });
       }
 
-      if (rejectedQty > 0) {
+      if (rejectedQty > 0 && !konsi) {
         /*
          * variantSku is normalised to null here, not "" — every existing writer of this
          * table passes null, and FieldReturnLine.variantSku defaults to "". Writing "" would
@@ -158,6 +168,24 @@ export async function approveFieldReturn(input: {
           },
         });
       }
+    }
+
+    /* KONSI store: the rejected units enter Gudang Barang Rusak, idempotent per retur line. */
+    if (konsi) {
+      await masukkanGudangRusakDariReturLapangan(tx, {
+        docNo: ret.docNo,
+        olehUserId: input.approvedById,
+        sebelum: disetujuiPada,
+        baris: ret.lines
+          .filter((l) => (l.rejectedQty ?? 0) > 0)
+          .map((l) => ({
+            id: l.id,
+            itemId: l.itemId,
+            variantSku: l.variantSku,
+            productName: l.item?.nameId ?? "",
+            qty: l.rejectedQty ?? 0,
+          })),
+      });
     }
 
     /*
@@ -302,7 +330,7 @@ export async function approveFieldReturn(input: {
      * recomputed on the way out: removing units at the current average leaves the average
      * unchanged, which is standard moving-average behaviour.
      */
-    if (ret.store.termsType === "KONSI") {
+    if (konsi) {
       for (const line of ret.lines) {
         const creditedQty = creditedQtyByLineId.get(line.id) ?? 0;
 
@@ -341,7 +369,7 @@ export async function approveFieldReturn(input: {
       where: { id: ret.id },
       data: {
         status: "APPROVED",
-        approvedAt: new Date(),
+        approvedAt: disetujuiPada,
         approvedById: input.approvedById,
         /* Every addend is already round2'd, but summing several 2dp values can still leave
            sub-cent float residue (the header total is the one authoritative figure here, unlike

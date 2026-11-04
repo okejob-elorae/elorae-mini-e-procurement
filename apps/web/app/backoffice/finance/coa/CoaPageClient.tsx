@@ -62,6 +62,8 @@ import {
 import { ACCOUNT_TYPE_VALUES } from "@/lib/constants/enums";
 import type { AccountType } from "@/lib/constants/enums";
 import { cn } from "@/lib/utils";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { KartuTemplatAkun, type RingkasTemplatAkun } from "./KartuTemplatAkun";
 
 type Props = {
   tree: CoaTreeNodeWithBalance[];
@@ -69,6 +71,8 @@ type Props = {
   canManage: boolean;
   canViewLedger: boolean;
   showBalances: boolean;
+  /** Ringkasan templat bagan akun; null = pembaca tidak berhak memasangnya. */
+  templat?: RingkasTemplatAkun | null;
 };
 
 type CreateDialogState = {
@@ -177,6 +181,7 @@ export function CoaPageClient({
   canManage,
   canViewLedger,
   showBalances,
+  templat = null,
 }: Props) {
   const t = useTranslations("finance.coa");
   const router = useRouter();
@@ -523,7 +528,10 @@ export function CoaPageClient({
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
+          <TombolBantuan judul={t("title")} />
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
@@ -551,6 +559,8 @@ export function CoaPageClient({
           )}
         </div>
       </div>
+
+      {templat ? <KartuTemplatAkun ringkas={templat} /> : null}
 
       <div className="flex flex-col gap-3 sm:flex-row">
         <Input
@@ -755,7 +765,7 @@ export function CoaPageClient({
             <AlertDialogAction
               onClick={handleDeactivate}
               disabled={isPending}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              variant="destructive"
             >
               {t("dialog.deactivate")}
             </AlertDialogAction>

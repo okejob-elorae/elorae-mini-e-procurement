@@ -1,3 +1,5 @@
+import type { RingkasanJadwal } from "@/lib/production/jadwal";
+
 export type PlanStageDetail = {
   id: string;
   name: string;
@@ -13,6 +15,8 @@ export type PlanStageDetail = {
   workOrderStatus: string | null;
   planCmtAllocationId: string | null;
   sortOrder: number;
+  /** Ringkasan jadwal proses tahap (langkah selesai/telat, perkiraan selesai). */
+  jadwal: RingkasanJadwal;
 };
 
 export type PlanCategoryDetail = {
@@ -100,6 +104,8 @@ export type PlanDashboardData = {
     totalVariance: number;
     completionPercent: number;
     completionBand: "red" | "yellow" | "green";
+    /** Σ qty tahap yang punya ≥ 1 PO tidak batal; null bila penonton tidak memegang `purchase_orders:view`. */
+    sudahAdaPo: number | null;
   };
   rows: Array<{
     id: string;
@@ -113,6 +119,8 @@ export type PlanDashboardData = {
     variance: number;
     completionPercent: number;
     completionBand: "red" | "yellow" | "green";
+    /** Qty tahap jenis ini (dan turunannya) yang punya ≥ 1 PO tidak batal; null tanpa izin PO. */
+    sudahAdaPo: number | null;
   }>;
   monthlyTimeline: Array<{ month: number; plan: number; actual: number }>;
   parentChart: Array<{ code: string; name: string; plan: number; actual: number }>;
@@ -131,6 +139,32 @@ export type PlanDashboardData = {
 };
 
 export type ComboboxOption = { value: string; label: string };
+
+/** Isian "Tambah tahap" (Isi Grid / Rincian Plan). */
+export type PlanStageAddData = {
+  name: string;
+  targetQty: number;
+  targetMonth?: number;
+  variantSku?: string;
+  supplierId?: string;
+};
+
+/** Perubahan satu tahap — hanya kolom yang berubah yang dikirim. */
+export type PlanStageUpdateData = Partial<{
+  name: string;
+  targetQty: number;
+  targetMonth: number | null;
+  variantSku: string | null;
+  supplierId: string | null;
+  fabricNotes: string | null;
+  colorNotes: string | null;
+}>;
+
+/** Penangan tahap mengembalikan `true` bila tersimpan (penolakan sudah ditampilkan pemanggil). */
+export type PlanStageHandlers = {
+  onAddStage: (data: PlanStageAddData) => Promise<boolean>;
+  onUpdateStage: (stageId: string, data: PlanStageUpdateData) => Promise<boolean>;
+};
 
 export function formatPlanNumber(value: number) {
   return value.toLocaleString("id-ID");

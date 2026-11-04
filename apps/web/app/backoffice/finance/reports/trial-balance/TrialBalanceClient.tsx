@@ -1,12 +1,14 @@
 "use client";
 
 import { useTransition } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { AlertTriangle, CheckCircle2, Scale } from "lucide-react";
-import type { TrialBalance } from "@/lib/finance/reports/trial-balance";
+import { sisiSaldo, type TrialBalance } from "@/lib/finance/reports/trial-balance";
+import type { AccountType } from "@/lib/constants/enums";
+import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,36 +16,64 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import { ReportExportButtons } from "../ReportExportButtons";
 import { exportTrialBalanceExcel } from "@/app/actions/finance-reports";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { LabelPeriode } from "../LabelPeriode";
+import { SpandukBukuBesar } from "../../_kesiapan/SpandukBukuBesar";
+import { periodeLaporan, type KesiapanBukuBesar } from "../../_kesiapan/kesiapan";
+import type { AksesSpanduk } from "../../_kesiapan/baca";
+import { tautanBukuBesar } from "../../journals/_sumber/tautan";
 
 type Props = {
   report: TrialBalance;
   filters: { from: string; to: string; zero: boolean };
+  /** Hari ini WIB — periode bila isian "sampai" kosong. */
+  hariIni: string;
+  kesiapan: KesiapanBukuBesar | null;
+  akses: AksesSpanduk;
 };
 
-function formatRupiah(value: number): string {
-  return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
+/** Saldo + sisi sebenarnya (D/K), supaya tandanya tidak bergantung pada sisi normal akun. */
+function SelSaldo({ type, nilai, huruf, judul }: { type: AccountType; nilai: number; huruf: { D: string; K: string }; judul: { D: string; K: string } }) {
+  const s = sisiSaldo(type, nilai);
+  return (
+    <span className="inline-flex items-baseline gap-1.5">
+      <span>{rupiahLaporan(s.jumlah)}</span>
+      <span className="w-5 text-left text-xs text-muted-foreground" title={s.sisi ? judul[s.sisi] : undefined}>
+        {s.sisi ? huruf[s.sisi] : ""}
+      </span>
+    </span>
+  );
 }
 
-export function TrialBalanceClient({ report, filters }: Props) {
+export function TrialBalanceClient({ report, filters, hariIni, kesiapan, akses }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("financeReports");
+  const tt = useTranslations("tanggalInput");
   const [isPending, startTransition] = useTransition();
 
-  function pushParam(key: string, value: string | undefined) {
+  function pushParams(updates: Record<string, string | undefined>) {
     const params = new URLSearchParams(sp.toString());
-    if (!value) params.delete(key);
-    else params.set(key, value);
+    for (const [key, value] of Object.entries(updates)) {
+      if (!value) params.delete(key);
+      else params.set(key, value);
+    }
     startTransition(() =>
       router.push(`/backoffice/finance/reports/trial-balance?${params.toString()}`),
     );
   }
+
+  const periode = periodeLaporan({ dari: filters.from, sampai: filters.to }, hariIni);
+  const huruf = { D: t("trialBalance.hurufDebit"), K: t("trialBalance.hurufKredit") };
+  const judulSisi = { D: t("trialBalance.sisiDebit"), K: t("trialBalance.sisiKredit") };
 
   function reset() {
     startTransition(() => router.push("/backoffice/finance/reports/trial-balance"));
@@ -53,8 +83,11 @@ export function TrialBalanceClient({ report, filters }: Props) {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t("trialBalance.pageTitle")}</h1>
-          <p className="text-muted-foreground">{t("trialBalance.subtitle")}</p>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold tracking-tight">{t("trialBalance.pageTitle")}</h1>
+            <TombolBantuan judul={t("trialBalance.pageTitle")} />
+          </div>
+          <LabelPeriode jenis="rentang" dari={periode.dari} sampai={periode.sampai} />
         </div>
         <ReportExportButtons
           onExcel={() =>
@@ -68,22 +101,17 @@ export function TrialBalanceClient({ report, filters }: Props) {
         />
       </div>
 
+      <SpandukBukuBesar kesiapan={kesiapan} akses={akses} />
+
       <Card className="p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.dateFrom")}</label>
-            <Input
-              type="date"
-              value={filters.from}
-              onChange={(e) => pushParam("from", e.target.value || undefined)}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.dateTo")}</label>
-            <Input
-              type="date"
-              value={filters.to}
-              onChange={(e) => pushParam("to", e.target.value || undefined)}
+            <label htmlFor="periode" className="text-xs text-muted-foreground mb-1 block">{tt("periode")}</label>
+            <RentangTanggalInput
+              id="periode"
+              dari={filters.from}
+              sampai={filters.to}
+              onChange={({ dari, sampai }) => pushParams({ from: dari || undefined, to: sampai || undefined })}
             />
           </div>
           <div className="flex items-end gap-2">
@@ -91,7 +119,7 @@ export function TrialBalanceClient({ report, filters }: Props) {
               id="showZero"
               checked={filters.zero}
               disabled={isPending}
-              onCheckedChange={(checked) => pushParam("zero", checked === true ? "1" : undefined)}
+              onCheckedChange={(checked) => pushParams({ zero: checked === true ? "1" : undefined })}
             />
             <Label htmlFor="showZero" className="text-sm font-normal cursor-pointer">
               {t("filter.showZero")}
@@ -128,42 +156,74 @@ export function TrialBalanceClient({ report, filters }: Props) {
                     <TableRow>
                       <TableHead>{t("trialBalance.colCode")}</TableHead>
                       <TableHead>{t("trialBalance.colName")}</TableHead>
+                      <TableHead className="text-right">{t("trialBalance.colOpening")}</TableHead>
                       <TableHead className="text-right">{t("trialBalance.colDebit")}</TableHead>
                       <TableHead className="text-right">{t("trialBalance.colCredit")}</TableHead>
-                      <TableHead className="text-right">{t("trialBalance.colBalance")}</TableHead>
+                      <TableHead className="text-right">{t("trialBalance.colClosing")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {report.rows.map((row) => (
                       <TableRow key={row.accountId}>
                         <TableCell className="whitespace-nowrap font-mono text-xs">{row.code}</TableCell>
-                        <TableCell>{row.name}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatRupiah(row.debit)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatRupiah(row.credit)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatRupiah(row.signed)}</TableCell>
+                        <TableCell className="whitespace-normal min-w-[180px]">
+                          {akses.jurnal ? (
+                            <Link href={tautanBukuBesar(row.accountId, periode)} className="underline underline-offset-4">
+                              {row.name}
+                            </Link>
+                          ) : (
+                            row.name
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          <SelSaldo type={row.type} nilai={row.opening} huruf={huruf} judul={judulSisi} />
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{rupiahLaporan(row.debit)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{rupiahLaporan(row.credit)}</TableCell>
+                        <TableCell className="text-right tabular-nums font-medium">
+                          <SelSaldo type={row.type} nilai={row.closing} huruf={huruf} judul={judulSisi} />
+                        </TableCell>
                       </TableRow>
                     ))}
+                  </TableBody>
+                  <TableFooter>
                     <TableRow className="font-semibold">
-                      <TableCell colSpan={2}>{t("trialBalance.totalRow")}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatRupiah(report.totalDebit)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatRupiah(report.totalCredit)}</TableCell>
+                      <TableCell colSpan={2}>{t("trialBalance.totalMutasi")}</TableCell>
+                      <TableCell />
+                      <TableCell className="text-right tabular-nums">{rupiahLaporan(report.totalDebit)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{rupiahLaporan(report.totalCredit)}</TableCell>
                       <TableCell />
                     </TableRow>
-                  </TableBody>
+                    <TableRow>
+                      <TableCell colSpan={2}>{t("trialBalance.totalSisiDebit")}</TableCell>
+                      <TableCell className="text-right tabular-nums">{rupiahLaporan(report.totalSaldoAwal.debit)} {huruf.D}</TableCell>
+                      <TableCell colSpan={2} />
+                      <TableCell className="text-right tabular-nums">{rupiahLaporan(report.totalSaldoAkhir.debit)} {huruf.D}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={2}>{t("trialBalance.totalSisiKredit")}</TableCell>
+                      <TableCell className="text-right tabular-nums">{rupiahLaporan(report.totalSaldoAwal.kredit)} {huruf.K}</TableCell>
+                      <TableCell colSpan={2} />
+                      <TableCell className="text-right tabular-nums">{rupiahLaporan(report.totalSaldoAkhir.kredit)} {huruf.K}</TableCell>
+                    </TableRow>
+                  </TableFooter>
                 </Table>
               </div>
-              <div
-                className={`mt-4 flex items-start gap-2 rounded-md border p-3 text-sm ${report.isBalanced ? "border-emerald-500/40 text-muted-foreground" : "border-destructive/50 text-destructive"}`}
-              >
-                {report.isBalanced ? (
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                ) : (
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                )}
-                <p>
-                  {report.isBalanced ? t("trialBalance.balancedNote") : t("trialBalance.unbalancedNote")}
-                </p>
-              </div>
+              {/* "Seimbang" pada Rp 0 (baris nol ditampilkan, tanpa saldo awal) bukan hasil pemeriksaan apa pun. */}
+              {(report.totalDebit !== 0 || report.totalCredit !== 0 || report.adaSaldoAwal) && (
+                <div
+                  className={`mt-4 flex items-start gap-2 rounded-md border p-3 text-sm ${report.isBalanced ? "border-emerald-500/40 text-muted-foreground" : "border-destructive/50 text-destructive"}`}
+                >
+                  {report.isBalanced ? (
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                  ) : (
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  )}
+                  <p>
+                    {report.isBalanced ? t("trialBalance.balancedNoteSaldo") : t("trialBalance.unbalancedNoteSaldo")}
+                  </p>
+                </div>
+              )}
             </>
           )}
         </CardContent>

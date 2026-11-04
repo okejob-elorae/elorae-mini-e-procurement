@@ -1,9 +1,50 @@
 import { AdjustmentType, Prisma, type PrismaClient } from "../generated/prisma/client";
+import { sqlId, nowMs } from "./sql-dialect";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
 import type { StockLedgerRefType } from "./stock-ledger-ref";
-import { ledgerTypeForDelta } from "./stock-balance";
+import { ledgerTypeForDelta, moveMainStock } from "./stock-balance";
 import { appendStockLedger } from "./stock-ledger";
 import { InventoryValueMissingError } from "./stock-writer";
+
+/*
+ * The three statements below stay raw SQL (see the comment at each call site:
+ * each folds a guard into the UPDATE so two concurrent writers can't both pass
+ * off one stale read). Raw SQL means dialect matters — see ./sql-dialect for
+ * what id() and nowMs() paper over between MySQL and PostgreSQL.
+ *
+ * The source is a literal, not a bound parameter: PostgreSQL compares an enum column with an
+ * untyped literal, but refuses a text parameter without a cast.
+ */
+function consumeReservationSql(fieldSalesLineId: string, qty: number): Prisma.Sql {
+  return Prisma.sql`
+    UPDATE ${sqlId("StockReservation")}
+    SET ${sqlId("consumedQty")} = ${sqlId("consumedQty")} + ${qty}
+    WHERE ${sqlId("fieldSalesLineId")} = ${fieldSalesLineId}
+      AND ${sqlId("source")} = 'FIELD_SALES'
+      AND ${sqlId("state")} = 'RESERVED'
+      AND ${sqlId("consumedQty")} + ${qty} <= ${sqlId("qty")}
+  `;
+}
+
+function shipInventorySql(invId: string, qty: number, valueDelta: number): Prisma.Sql {
+  return Prisma.sql`
+    UPDATE ${sqlId("InventoryValue")}
+    SET ${sqlId("qtyOnHand")} = ${sqlId("qtyOnHand")} - ${qty},
+        ${sqlId("reservedQty")} = ${sqlId("reservedQty")} - ${qty},
+        ${sqlId("totalValue")} = ${sqlId("totalValue")} - ${valueDelta},
+        ${sqlId("lastUpdated")} = ${nowMs()}
+    WHERE ${sqlId("id")} = ${invId} AND ${sqlId("qtyOnHand")} >= ${qty}
+  `;
+}
+
+function reserveInventorySql(invId: string, qty: number): Prisma.Sql {
+  return Prisma.sql`
+    UPDATE ${sqlId("InventoryValue")}
+    SET ${sqlId("reservedQty")} = ${sqlId("reservedQty")} + ${qty},
+        ${sqlId("lastUpdated")} = ${nowMs()}
+    WHERE ${sqlId("id")} = ${invId} AND (${sqlId("qtyOnHand")} - ${sqlId("reservedQty")}) >= ${qty}
+  `;
+}
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -23,8 +64,12 @@ function hasTx(client: AnyClient): client is PrismaClient {
 }
 
 /**
- * Picks the row EVERY reserve in this file lands on, Jubelio and field sales alike, and is the
- * fallback behind resolveReservedInventory for every consume and release.
+ * Picks the row every FIELD-SALES reserve in this file lands on (reserveFieldSalesOrder,
+ * reserveKonsiFieldSalesOrder) and the row the konsi transfer in pindahkanSatuBaris cuts, and is
+ * the fallback behind resolveReservedInventory for every consume and release, Jubelio included.
+ * Jubelio reserves (reserveOrder) go through barisStokPesanan instead, which must pick the same
+ * variantless row ("" first, then the lowest-id null) so that a Jubelio consume or release falling
+ * back here stays on the row it reserved against. Changing either rule means changing both.
  * Variantless rows may key on null OR "": prefers the exact "" row, then null. A bare OR
  * findFirst can pick the sibling and orphan reservedQty. NULLs are distinct under the unique
  * index, so two null rows can exist; the id tie-break keeps every reserve on one row.
@@ -59,6 +104,51 @@ export async function resolveReservedInventory(
   return findReservationInventory(tx, reservation.itemId, reservation.variantSku);
 }
 
+/*
+ * Baris stok untuk penahanan pesanan marketplace (dan kirim/batalnya).
+ *
+ * Kunci "" = barang tanpa varian; barisnya bisa tersimpan "" (ingest katalog,
+ * GRN) atau null (barang yang dibuat di ERP) — keduanya diterima, "" didahulukan
+ * bila kembar supaya pilihan selalu sama. Varian yang tidak punya baris sendiri
+ * jatuh ke baris gabungan HANYA bila barang itu belum punya baris per-varian
+ * sama sekali (barang buatan ERP yang stoknya masih satu baris); kalau ada baris
+ * per-varian lain, varian itu memang tidak tercatat dan tetap ditolak.
+ * Tidak pernah membuat baris. `kunci` = variantSku yang dicatat di
+ * StockReservation, jadi kirim dan batal mengenai baris yang sama persis.
+ * Untuk kunci "" pilihannya HARUS sama dengan `findReservationInventory`: cadangan
+ * tanpa `inventoryValueId` (atau yang barisnya hilang) jatuh ke sana saat kirim/batal.
+ * Retur marketplace yang diterima (`acceptReturnItem`, sales-return-writer.ts)
+ * memakai aturan yang sama — baris yang dipatok cadangannya bila ada, selain itu
+ * fungsi ini — supaya barang kembali ke baris tempat ia dijual. Varian yang jatuh
+ * ke baris gabungan dicatat berkunci "", sedangkan pemetaan Jubelio-nya tetap per
+ * varian; karena itu retur mengenali barangnya dari baris gabungan yang dipatok,
+ * bukan dari pemetaan berkunci "" (yang memang tidak ada).
+ */
+export async function barisStokPesanan(
+  tx: Prisma.TransactionClient,
+  itemId: string,
+  variantSku: string,
+): Promise<{ id: string; avgCost: Prisma.Decimal; kunci: string } | null> {
+  if (variantSku !== "") {
+    const persis = await tx.inventoryValue.findUnique({
+      where: { itemId_variantSku: { itemId, variantSku } },
+      select: { id: true, avgCost: true },
+    });
+    if (persis) return { ...persis, kunci: variantSku };
+    const perVarian = await tx.inventoryValue.count({
+      where: { itemId, AND: [{ variantSku: { not: null } }, { variantSku: { not: "" } }] },
+    });
+    if (perVarian > 0) return null;
+  }
+  const gabungan = await tx.inventoryValue.findMany({
+    where: { itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+    orderBy: { id: "asc" },
+    select: { id: true, avgCost: true, variantSku: true },
+  });
+  const pilih = gabungan.find((b) => b.variantSku === "") ?? gabungan[0];
+  return pilih ? { id: pilih.id, avgCost: pilih.avgCost, kunci: "" } : null;
+}
+
 export async function reserveOrder(client: AnyClient, input: ReserveOrderInput): Promise<ReserveOrderResult> {
   const run = async (tx: Prisma.TransactionClient): Promise<ReserveOrderResult> => {
     let reserved = 0;
@@ -74,7 +164,7 @@ export async function reserveOrder(client: AnyClient, input: ReserveOrderInput):
         continue;
       }
 
-      const inv = await findReservationInventory(tx, line.itemId, line.variantSku);
+      const inv = await barisStokPesanan(tx, line.itemId, line.variantSku);
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
 
       await tx.stockReservation.create({
@@ -82,7 +172,7 @@ export async function reserveOrder(client: AnyClient, input: ReserveOrderInput):
           salesorderId: input.salesorderId,
           salesorderDetailId: line.salesorderDetailId,
           itemId: line.itemId,
-          variantSku: line.variantSku,
+          variantSku: inv.kunci,
           qty: line.qty,
           state: "RESERVED",
           inventoryValueId: inv.id,
@@ -347,11 +437,7 @@ export async function consumeFieldSalesOrderPartial(
       // on the same fieldSalesLineId can't both pass a stale read (see reserveKonsiFieldSalesOrder
       // for the same idiom against InventoryValue).
       /* No ledger entry: StockReservation is not an inventory balance table. */
-      const affected = await tx.$executeRaw`
-        UPDATE StockReservation
-        SET consumedQty = consumedQty + ${line.qty}
-        WHERE fieldSalesLineId = ${line.fieldSalesLineId} AND source = 'FIELD_SALES' AND state = 'RESERVED' AND consumedQty + ${line.qty} <= qty
-      `;
+      const affected = await tx.$executeRaw(consumeReservationSql(line.fieldSalesLineId, line.qty));
       if (affected === 0) throw new PartialConsumeError("OVER_CONSUME");
 
       // Re-read post-update so fullyConsumed reflects this call's own committed increment,
@@ -387,11 +473,9 @@ export async function consumeFieldSalesOrderPartial(
        * correctly fails instead of both passing off one read and driving stock negative. Also
        * closes the cross-process race the old read-then-write left open.
        */
-      const affected = await tx.$executeRaw`
-        UPDATE InventoryValue
-        SET qtyOnHand = qtyOnHand - ${qty}, reservedQty = reservedQty - ${qty}, totalValue = totalValue - ${qty * p.avgCost}, lastUpdated = NOW(3)
-        WHERE id = ${p.invId} AND qtyOnHand >= ${qty}
-      `;
+      const affected = await tx.$executeRaw(
+        shipInventorySql(p.invId, qty, qty * p.avgCost),
+      );
       if (affected === 0) {
         const current = await tx.inventoryValue.findUniqueOrThrow({ where: { id: p.invId }, select: { qtyOnHand: true } });
         shortLines.push({
@@ -505,6 +589,22 @@ export async function releaseFieldSalesOrder(
 
 export type KonsiReserveResult = { reserved: number; skipped: number; shortLines: OversellAlert[] };
 
+/**
+ * The konsi approve path (`approveKonsiOrderInTx`): approve only RESERVES. Stock leaves main when
+ * the delivery shipment is CREATED (the surat jalan, owner answer Q1 2026-11-02) through
+ * `issueKonsiTransfer`, which draws this reservation down line by line and puts the goods into
+ * transit to the store's warehouse; the store receipt then lands them on the store's shelf. A
+ * remainder that never ships is released by closing the order's remainder
+ * (`releaseFieldSalesOrder`), and a door refusal or "tidak jadi dikirim" puts drawn pieces back
+ * through `reopenFieldSalesLineStock`. A RESERVED reservation of this source therefore belongs to
+ * the delivery flow — nothing else may cut stock against it or release it.
+ *
+ * The one other owner of such a reservation is an OLD konsi order approved before the
+ * per-shipment flow reached production (`bacaPesananKonsiCadanganLama` in apps/web): it never
+ * ships, so the store confirming what arrived draws it down through the SAME `issueKonsiTransfer`
+ * (`oldOrderArrival`), and the office's "tidak jadi dikirim" releases the rest through
+ * `releaseFieldSalesOrder` — both in `apps/web/lib/field-sales/konsi-transfer/pesanan-lama-writer.ts`.
+ */
 export async function reserveKonsiFieldSalesOrder(
   client: AnyClient,
   input: { orderNo: string; lines: FieldSalesReservationLine[] },
@@ -526,11 +626,7 @@ export async function reserveKonsiFieldSalesOrder(
       // Atomic guard: only increment if available (qtyOnHand - reservedQty) still covers qty.
       // Prevents the check-then-write race under concurrent approvals.
       /* No ledger entry: a reservation moves no stock. Only qtyOnHand movements are ledger events. */
-      const affected = await tx.$executeRaw`
-        UPDATE InventoryValue
-        SET reservedQty = reservedQty + ${line.qty}, lastUpdated = NOW(3)
-        WHERE id = ${inv.id} AND (qtyOnHand - reservedQty) >= ${line.qty}
-      `;
+      const affected = await tx.$executeRaw(reserveInventorySql(inv.id, line.qty));
       if (affected === 0) {
         shortLines.push({ itemId: line.itemId, variantSku: line.variantSku, available: Number(inv.qtyOnHand) - Number(inv.reservedQty) });
         continue;
@@ -551,4 +647,319 @@ export async function reserveKonsiFieldSalesOrder(
     return { reserved, skipped, shortLines };
   };
   return hasTx(client) ? client.$transaction(run) : run(client);
+}
+
+/*
+ * Toko konsinyasi = gudang lain milik kita (keputusan pemilik): barang keluar dari stok gudang
+ * utama saat DIKIRIM ke toko itu, menjadi stok toko (buku toko / titipan), dan kembali ke gudang
+ * hanya lewat retur (NRI). Penjualan di toko tidak pernah menyentuh gudang utama.
+ *
+ * Pemindahan di bawah ini dipakai kiriman titipan modul konsinyasi (`kirimTitipan`) dan koreksi
+ * kiriman lamanya. Pesanan KONSI salesman TIDAK lewat sini: stoknya pindah lewat alur pengiriman
+ * (lihat `reserveKonsiFieldSalesOrder`).
+ *
+ * Stok bergerak lewat `moveMainStock`, jadi setiap potongan tercatat di buku stok bersama
+ * penyesuaian KONSI_TRANSFER-nya; entri bukunya menunjuk penyesuaian itu (refType
+ * `StockAdjustment`, refId = id penyesuaian). Harga rata-rata TIDAK digeser: pindah gudang bukan
+ * pembelian; nilainya keluar sebesar qty × avgCost saat itu.
+ *
+ * Penjaga: ON_HAND = stok fisik tidak boleh negatif — dijaga atomik oleh lantai `moveMainStock`
+ * (`MainStockNegativeError` membatalkan seluruh dokumen). AVAILABLE (bawaan) juga menolak stok
+ * yang sudah dicadangkan pesanan lain; cadangan tidak terlihat oleh lantai itu, jadi angkanya dibaca
+ * dari baris di transaksi pemanggil — pemanggil wajib serializable (`kirimTitipan` dan koreksi
+ * memakai runSerializable) supaya cadangan baru tidak menyelinap di antara bacaan dan potongan.
+ */
+export type KonsiTransferGuard = "AVAILABLE" | "ON_HAND";
+
+export type KonsiTransferLine = {
+  itemId: string;
+  /** "" = barang tanpa varian; baris persediaan `null` maupun `""` ditemukan. */
+  variantSku: string;
+  qty: number;
+  /** Unik per baris dokumen sumber: kiriman ulang / balapan tidak memotong dua kali. */
+  idempotencyKey: string;
+  docNumber: string;
+  reason: string;
+  externalRef: string;
+  createdById?: string | null;
+};
+
+export type KonsiTransferShortLine = { itemId: string; variantSku: string; requested: number; available: number };
+export type KonsiTransferResult = { transferred: number; skipped: number; shortLines: KonsiTransferShortLine[] };
+
+/** Kunci idempotensi pemindahan satu baris pesanan konsinyasi salesman. */
+export function konsiTransferKeyForLine(fieldSalesLineId: string): string {
+  return `konsi-transfer-line-${fieldSalesLineId}`;
+}
+
+type SatuPindah = { status: "TRANSFERRED" } | { status: "SKIPPED" } | { status: "SHORT"; short: KonsiTransferShortLine };
+
+async function pindahkanSatuBaris(
+  tx: Prisma.TransactionClient,
+  line: KonsiTransferLine,
+  guard: KonsiTransferGuard,
+): Promise<SatuPindah> {
+  const sudah = await tx.stockAdjustment.findUnique({ where: { idempotencyKey: line.idempotencyKey }, select: { id: true } });
+  if (sudah) return { status: "SKIPPED" };
+
+  const inv = await findReservationInventory(tx, line.itemId, line.variantSku);
+  if (!inv) {
+    return { status: "SHORT", short: { itemId: line.itemId, variantSku: line.variantSku, requested: line.qty, available: 0 } };
+  }
+  const prevQty = Number(inv.qtyOnHand);
+  const avgCost = Number(inv.avgCost);
+  const available = guard === "AVAILABLE" ? prevQty - Number(inv.reservedQty) : prevQty;
+  if (available < line.qty) {
+    return { status: "SHORT", short: { itemId: line.itemId, variantSku: line.variantSku, requested: line.qty, available } };
+  }
+  const newQty = prevQty - line.qty;
+
+  const adj = await tx.stockAdjustment.create({
+    data: {
+      docNumber: line.docNumber,
+      itemId: line.itemId,
+      type: AdjustmentType.NEGATIVE,
+      qtyChange: -line.qty,
+      reason: line.reason,
+      prevQty,
+      newQty,
+      prevAvgCost: avgCost,
+      newAvgCost: avgCost,
+      createdById: line.createdById ?? null,
+      source: "KONSI_TRANSFER" satisfies StockAdjustmentSource,
+      idempotencyKey: line.idempotencyKey,
+      externalRef: line.externalRef,
+    },
+    select: { id: true },
+  });
+  // Dipatok ke baris yang baru dibaca: baris tanpa varian bisa tersimpan null DAN "", dan
+  // pencarian ulang di dalam mover bisa jatuh ke kembarannya.
+  await moveMainStock(tx, {
+    itemId: line.itemId,
+    variantSku: line.variantSku,
+    qtyDelta: -line.qty,
+    inventoryValueId: inv.id,
+    unitCost: avgCost,
+    totalCost: -(line.qty * avgCost),
+    totalValue: newQty * avgCost,
+    balanceValue: newQty * avgCost,
+    refType: "StockAdjustment" satisfies StockLedgerRefType,
+    refId: adj.id,
+    refDocNumber: line.docNumber,
+    createdById: line.createdById ?? null,
+  });
+  return { status: "TRANSFERRED" };
+}
+
+/**
+ * Pindahkan stok gudang utama ke toko konsinyasi, satu baris per dokumen sumber.
+ *
+ * Baris yang kurang dikembalikan di `shortLines` dan TIDAK dipotong; baris lain yang sudah
+ * terpotong tetap tertulis di transaksi ini — PEMANGGIL wajib melempar galat bila `shortLines`
+ * tidak kosong, supaya seluruh dokumen batal bersama (pengiriman separuh bukan pengiriman).
+ */
+export async function transferKonsiStock(
+  client: AnyClient,
+  input: { lines: KonsiTransferLine[]; guard?: KonsiTransferGuard },
+): Promise<KonsiTransferResult> {
+  const run = async (tx: Prisma.TransactionClient): Promise<KonsiTransferResult> => {
+    let transferred = 0;
+    let skipped = 0;
+    const shortLines: KonsiTransferShortLine[] = [];
+    for (const line of input.lines) {
+      const h = await pindahkanSatuBaris(tx, line, input.guard ?? "AVAILABLE");
+      if (h.status === "TRANSFERRED") transferred += 1;
+      else if (h.status === "SKIPPED") skipped += 1;
+      else shortLines.push(h.short);
+    }
+    return { transferred, skipped, shortLines };
+  };
+  return hasTx(client) ? client.$transaction(run) : run(client);
+}
+
+/**
+ * Pindahkan baris pesanan konsinyasi salesman yang TIDAK punya cadangan sama sekali.
+ *
+ * Tidak ada alur yang memanggilnya lagi: persetujuan konsinyasi hanya mencadangkan dan stoknya
+ * pindah saat pengiriman selesai (lihat `reserveKonsiFieldSalesOrder`). Baris yang sudah punya
+ * cadangan SELALU dilewati — RESERVED milik alur pengiriman (memotongnya di sini membuat pengiriman
+ * berikutnya ditolak, atau memotong lagi untuk baris yang sebagian sudah dikirim), CONSUMED dan
+ * RELEASED sudah selesai.
+ *
+ * Baris yang dipindah mendapat satu `StockReservation` (FIELD_SALES_KONSI) berstatus CONSUMED
+ * sebagai tanda per baris — `fieldSalesLineId` unik, dan penyesuaian stoknya berkunci
+ * `konsiTransferKeyForLine`, jadi tidak pernah dipotong dua kali.
+ *
+ * `guard`: AVAILABLE (bawaan) menolak bila stok tersedia kurang; ON_HAND hanya menjaga stok fisik
+ * tidak negatif. Pemanggil wajib melempar galat bila `shortLines` tidak kosong (lihat
+ * `transferKonsiStock`).
+ */
+export async function transferKonsiFieldSalesOrder(
+  client: AnyClient,
+  input: { orderNo: string; lines: FieldSalesReservationLine[]; guard?: KonsiTransferGuard; createdById?: string | null },
+): Promise<KonsiTransferResult> {
+  const guard = input.guard ?? "AVAILABLE";
+  const run = async (tx: Prisma.TransactionClient): Promise<KonsiTransferResult> => {
+    let transferred = 0;
+    let skipped = 0;
+    const shortLines: KonsiTransferShortLine[] = [];
+    for (const line of input.lines) {
+      const ada = await tx.stockReservation.findUnique({ where: { fieldSalesLineId: line.fieldSalesLineId }, select: { id: true } });
+      if (ada) {
+        skipped += 1;
+        continue;
+      }
+      const h = await pindahkanSatuBaris(
+        tx,
+        {
+          itemId: line.itemId,
+          variantSku: line.variantSku,
+          qty: line.qty,
+          idempotencyKey: konsiTransferKeyForLine(line.fieldSalesLineId),
+          docNumber: `KONSI-${input.orderNo}-${line.fieldSalesLineId}`,
+          reason: `Kirim konsinyasi ${input.orderNo} (stok pindah ke toko)`,
+          externalRef: `fieldsales:${input.orderNo}`,
+          createdById: input.createdById ?? null,
+        },
+        guard,
+      );
+      if (h.status === "SHORT") {
+        shortLines.push(h.short);
+        continue;
+      }
+      if (h.status === "SKIPPED") {
+        skipped += 1;
+        continue;
+      }
+      await tx.stockReservation.create({
+        data: {
+          source: "FIELD_SALES_KONSI",
+          fieldSalesLineId: line.fieldSalesLineId,
+          itemId: line.itemId,
+          variantSku: line.variantSku,
+          qty: line.qty,
+          consumedQty: line.qty,
+          state: "CONSUMED",
+          resolvedAt: new Date(),
+        },
+      });
+      transferred += 1;
+    }
+    return { transferred, skipped, shortLines };
+  };
+  return hasTx(client) ? client.$transaction(run) : run(client);
+}
+
+/**
+ * A field-sales line's reservation could not be reopened by the asked quantity: it is not this
+ * source's, it is RELEASED (the remainder was closed), or fewer pieces were ever drawn from it than
+ * the caller wants to put back. Nothing was written — the guard sits in the UPDATE itself.
+ */
+export class ReservationReopenError extends Error {
+  constructor(readonly fieldSalesLineId: string) {
+    super(`Reservation of field-sales line ${fieldSalesLineId} cannot be reopened by that quantity`);
+    this.name = "ReservationReopenError";
+  }
+}
+
+export type ReopenFieldSalesLineInput = {
+  fieldSalesLineId: string;
+  source: "FIELD_SALES" | "FIELD_SALES_KONSI";
+  itemId: string;
+  variantSku: string;
+  qty: number;
+  /** The cost the pieces LEFT at (the consume's avgCost / the transfer line's unitCost). */
+  unitCost: number;
+  refType: StockLedgerRefType;
+  refId: string;
+  refDocNumber: string;
+  createdById: string | null;
+};
+
+export type ReopenFieldSalesLineResult = {
+  inventoryValueId: string;
+  prevQty: number;
+  newQty: number;
+  prevAvgCost: number;
+  newAvgCost: number;
+};
+
+/**
+ * Pieces that left the main warehouse for a field-sales line come BACK — refused at the store's
+ * door ("retur langsung", owner P24) or the whole shipment "tidak jadi dikirim" (Q1). The exact
+ * mirror of the consume that sent them out, inside the caller's transaction:
+ *
+ * 1. the reservation's `consumedQty` goes down by `qty` and its state returns to RESERVED, in ONE
+ *    guarded statement (an over-reopen, a RELEASED reservation or another source's row matches
+ *    nothing and refuses with nothing written);
+ * 2. `qtyOnHand` goes up through `moveMainStock`, pinned to the reservation's row, its average
+ *    blended at the cost the pieces left at (from max(prevQty, 0): a negative balance is not stock
+ *    to average against);
+ * 3. `reservedQty` goes up by the same `qty` on the same row immediately after, because the
+ *    reopened pieces are once again reserved for the order line they came from — the line's
+ *    `deliveredQty` is lowered by the caller, so they are its open remainder again, shipped later
+ *    or released by closing the remainder (`releaseFieldSalesOrder`).
+ *
+ * Both consumes decremented `qtyOnHand` and `reservedQty` together, so reopening both together is
+ * what keeps `available = qtyOnHand − reservedQty` unchanged. The caller writes the audit
+ * StockAdjustment (it owns the source spelling and the document number).
+ */
+export async function reopenFieldSalesLineStock(
+  tx: Prisma.TransactionClient,
+  input: ReopenFieldSalesLineInput,
+): Promise<ReopenFieldSalesLineResult> {
+  if (!Number.isInteger(input.qty) || input.qty <= 0) throw new ReservationReopenError(input.fieldSalesLineId);
+  const sourceLiteral = input.source === "FIELD_SALES_KONSI" ? Prisma.sql`'FIELD_SALES_KONSI'` : Prisma.sql`'FIELD_SALES'`;
+  /* No ledger entry: StockReservation is not an inventory balance table. */
+  const affected = await tx.$executeRaw(Prisma.sql`
+    UPDATE ${sqlId("StockReservation")}
+    SET ${sqlId("consumedQty")} = ${sqlId("consumedQty")} - ${input.qty},
+        ${sqlId("state")} = 'RESERVED',
+        ${sqlId("resolvedAt")} = NULL
+    WHERE ${sqlId("fieldSalesLineId")} = ${input.fieldSalesLineId}
+      AND ${sqlId("source")} = ${sourceLiteral}
+      AND ${sqlId("state")} IN ('RESERVED', 'CONSUMED')
+      AND ${sqlId("consumedQty")} >= ${input.qty}
+  `);
+  if (affected === 0) throw new ReservationReopenError(input.fieldSalesLineId);
+
+  const reservation = await tx.stockReservation.findUniqueOrThrow({
+    where: { fieldSalesLineId: input.fieldSalesLineId },
+    select: { inventoryValueId: true },
+  });
+  const inv = await resolveReservedInventory(tx, {
+    itemId: input.itemId,
+    variantSku: input.variantSku,
+    inventoryValueId: reservation.inventoryValueId,
+  });
+  if (!inv) throw new InventoryValueMissingError(input.itemId, input.variantSku);
+
+  const prevQty = Number(inv.qtyOnHand);
+  const prevAvgCost = Number(inv.avgCost);
+  const newQty = prevQty + input.qty;
+  const blendQty = Math.max(prevQty, 0);
+  const newAvgCost = blendQty + input.qty > 0 ? (blendQty * prevAvgCost + input.qty * input.unitCost) / (blendQty + input.qty) : input.unitCost;
+
+  await moveMainStock(tx, {
+    itemId: input.itemId,
+    variantSku: input.variantSku,
+    qtyDelta: input.qty,
+    unitCost: input.unitCost,
+    avgCost: newAvgCost,
+    totalValue: newQty * newAvgCost,
+    totalCost: input.qty * input.unitCost,
+    balanceValue: newQty * newAvgCost,
+    inventoryValueId: inv.id,
+    refType: input.refType,
+    refId: input.refId,
+    refDocNumber: input.refDocNumber,
+    createdById: input.createdById,
+  });
+  /* Same row, immediately after the qtyOnHand move — see the doc above. Not a stock movement. */
+  await tx.inventoryValue.update({
+    where: { id: inv.id },
+    data: { reservedQty: { increment: input.qty }, lastUpdated: new Date() },
+  });
+
+  return { inventoryValueId: inv.id, prevQty, newQty, prevAvgCost, newAvgCost };
 }

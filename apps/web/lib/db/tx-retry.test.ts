@@ -36,6 +36,15 @@ describe("isRetryableTxError", () => {
   it("returns false for an unrelated Prisma code with no deadlock text", () => {
     expect(isRetryableTxError(unrelatedKnownRequestError())).toBe(false);
   });
+
+  it("returns true for a Postgres serialization conflict raised by the driver adapter at COMMIT", () => {
+    const e = Object.assign(new Error("Transaction write conflict"), { name: "DriverAdapterError", cause: { kind: "TransactionWriteConflict" } });
+    expect(isRetryableTxError(e)).toBe(true);
+    const kode = Object.assign(new Error("could not serialize access"), { name: "DriverAdapterError", cause: { originalCode: "40001" } });
+    expect(isRetryableTxError(kode)).toBe(true);
+    const lain = Object.assign(new Error("unique"), { name: "DriverAdapterError", cause: { kind: "UniqueConstraintViolation" } });
+    expect(isRetryableTxError(lain)).toBe(false);
+  });
 });
 
 function p2028(message: string): Prisma.PrismaClientKnownRequestError {

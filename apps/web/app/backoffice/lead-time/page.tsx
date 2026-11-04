@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { PERMISSIONS, hasPermission } from "@/lib/rbac";
-import { LeadTimePageClient } from "./LeadTimePageClient";
+import { LeadTimePageClient, type TabKey } from "./LeadTimePageClient";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +17,12 @@ export default async function LeadTimePage({ searchParams }: PageProps) {
   }
 
   const params = await searchParams;
-  const tab =
-    params.tab === "papan" || params.tab === "sop" ? params.tab : "pustaka";
+  const tab: TabKey =
+    params.tab === "papan" || params.tab === "sop" || params.tab === "hari-kerja" ? params.tab : "pustaka";
   const canManage = hasPermission(session.user.permissions, PERMISSIONS.LEAD_TIME_MANAGE);
+  // Kalender kerja produksi dipakai jadwal tahap: tim plan kerja juga boleh mengaturnya.
+  const bolehAturKalender =
+    canManage || hasPermission(session.user.permissions, PERMISSIONS.PRODUCTION_PLANNING_MANAGE);
 
-  return <LeadTimePageClient initialTab={tab} canManage={canManage} />;
+  return <LeadTimePageClient initialTab={tab} canManage={canManage} bolehAturKalender={bolehAturKalender} />;
 }

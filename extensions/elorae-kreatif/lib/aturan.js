@@ -1,0 +1,686 @@
+// Aturan putaran otomatis — modul MURNI (tanpa chrome.*, tanpa jaringan, waktu dari pemanggil).
+// background.js hanya menjalankan keputusan dari sini, jadi semua cabang bisa dites.
+
+import { dalamJamKerja, jedaAcak, normalHandle } from "./pengurai.js";
+import { cocokDenganUrl, jenisHalaman, kurangWajib, platformData } from "./platform.js";
+
+const DETIK = 1000;
+const MENIT = 60 * DETIK;
+
+/** Bawaan bila /status belum pernah terbaca atau mengirim nilai rusak (sama dengan P4 rancangan). */
+export const PENGATURAN_BAWAAN = Object.freeze({
+  jamMulai: "08:00",
+  jamSelesai: "17:00",
+  jedaMinDetik: 15,
+  jedaMaksDetik: 40,
+  istirahatSetiapMenit: 45,
+  istirahatMinMenit: 5,
+  istirahatMaksMenit: 10,
+});
+
+/** Kunci "satu tugas sekali jalan" dianggap basi (service worker mati di tengah tugas) setelah ini. */
+export const BATAS_KUNCI_MS = 3 * MENIT;
+export const MAKS_GAGAL_BERUNTUN = 3;
+/** Jeda sesudah gagal beruntun bila /status tidak mengirim `pengaturan.jedaOtomatisMenit` (rancangan P5: 60). */
+export const JEDA_GAGAL_BERUNTUN_MS = 60 * MENIT;
+/** Laporan captcha sudah sampai tetapi server tak pernah terlihat menjeda → lanjut setelah ini. */
+export const TENGGANG_LAPOR_MS = 2 * MENIT;
+export const BATAS_TUNGGU_DATA_MS = 8 * DETIK;
+export const BATAS_TUNGGU_ITEMLIST_MS = 10 * DETIK;
+/**
+ * Halaman yang termuat TANPA skrip data sama sekali (terlihat di tab latar 2026-10-09; dugaan:
+ * halaman perantara TikTok yang lalu memuat ulang dirinya) ditunggu lebih lama sebelum dilaporkan.
+ */
+export const BATAS_TUNGGU_TANPA_SKRIP_MS = 25 * DETIK;
+/**
+ * Halaman yang jelas pemeriksaan keamanan TikTok (penanda challenge/waf) tidak ditunggu 25 detik:
+ * di tab latar pemeriksaan itu tidak pernah lolos sendiri (terukur 2026-10-09).
+ */
+export const BATAS_TUNGGU_PEMERIKSAAN_MS = 10 * DETIK;
+
+/** Mundur (menit) saat /tugas tidak memberi tugas. */
+export const MUNDUR_MENIT = Object.freeze({
+  ANTREAN_KOSONG: 5,
+  KUOTA_HABIS: 30,
+  DI_LUAR_JAM: 10,
+  NONAKTIF: 10,
+  DIJEDA: 2,
+});
+
+export const KODE_MASALAH = ["CAPTCHA", "LOGIN", "GAGAL_MUAT", "TIDAK_TERBACA", "TIDAK_DITEMUKAN", "PRIVAT", "DIBLOKIR_TIKTOK"];
+const KODE_KEGAGALAN = ["GAGAL_MUAT", "TIDAK_TERBACA"];
+const KODE_BERHENTI = ["CAPTCHA", "LOGIN"];
+
+function bulatPositif(v) {
+  const n = typeof v === "string" && v.trim() !== "" ? Number(v) : v;
+  return typeof n === "number" && Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+function jamSah(v) {
+  const m = typeof v === "string" ? /^(\d{1,2}):(\d{2})$/.exec(v.trim()) : null;
+  return m && Number(m[1]) <= 24 && Number(m[2]) <= 59 ? v.trim() : undefined;
+}
+
+/** Pengaturan dari /status → nilai yang aman dipakai (rusak → bawaan; min/maks terbalik → ditukar). */
+export function bersihkanPengaturan(p) {
+  const b = PENGATURAN_BAWAAN;
+  const sumber = p && typeof p === "object" ? p : {};
+  const hasil = {
+    jamMulai: jamSah(sumber.jamMulai) ?? b.jamMulai,
+    jamSelesai: jamSah(sumber.jamSelesai) ?? b.jamSelesai,
+    jedaMinDetik: bulatPositif(sumber.jedaMinDetik) ?? b.jedaMinDetik,
+    jedaMaksDetik: bulatPositif(sumber.jedaMaksDetik) ?? b.jedaMaksDetik,
+    istirahatSetiapMenit: bulatPositif(sumber.istirahatSetiapMenit) ?? b.istirahatSetiapMenit,
+    istirahatMinMenit: bulatPositif(sumber.istirahatMinMenit) ?? b.istirahatMinMenit,
+    istirahatMaksMenit: bulatPositif(sumber.istirahatMaksMenit) ?? b.istirahatMaksMenit,
+  };
+  if (hasil.jedaMinDetik > hasil.jedaMaksDetik) {
+    [hasil.jedaMinDetik, hasil.jedaMaksDetik] = [hasil.jedaMaksDetik, hasil.jedaMinDetik];
+  }
+  if (hasil.istirahatMinMenit > hasil.istirahatMaksMenit) {
+    [hasil.istirahatMinMenit, hasil.istirahatMaksMenit] = [hasil.istirahatMaksMenit, hasil.istirahatMinMenit];
+  }
+  return hasil;
+}
+
+export function kunciMasihAktif(kunci, sekarang) {
+  return Boolean(kunci) && Number.isFinite(kunci.sejak) && sekarang - kunci.sejak < BATAS_KUNCI_MS;
+}
+
+function waktuMs(iso) {
+  if (iso === null || iso === undefined || iso === "") return null;
+  const ms = typeof iso === "number" ? iso : Date.parse(iso);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** Server sedang menjeda perangkat ini? `dijedaSampai` di masa depan = ya. */
+export function serverMenjeda(status, sekarang) {
+  const sampai = waktuMs(status?.dijedaSampai);
+  return sampai !== null && sampai > sekarang;
+}
+
+/**
+ * Boleh meminta tugas sekarang? `k` = `{ tersambung, otomatis, status (jawaban /status atau null),
+ * jedaLokal, kunci, jadwal }`. Hasil: `{ langkah: "AMBIL"|"DIAM", keadaan, alasan?, sampai? }`.
+ */
+export function putuskanLangkah(k, sekarang) {
+  const diam = (keadaan, lain = {}) => ({ langkah: "DIAM", keadaan, ...lain });
+  if (!k.tersambung) return diam("BELUM_TERSAMBUNG");
+  if (!k.otomatis) return diam("MATI");
+  if (kunciMasihAktif(k.kunci, sekarang)) return diam("SIBUK");
+  const status = k.status;
+  if (!status) return diam("TAK_TERJANGKAU");
+  // Jeda diperiksa sebelum `aktif`: Elorae mengirim `aktif: false` juga selama perangkat dijeda.
+  if (serverMenjeda(status, sekarang)) {
+    return diam("DIJEDA", { alasan: status.alasanJeda ?? null, sampai: waktuMs(status.dijedaSampai) });
+  }
+  if (status.aktif === false) return diam("NONAKTIF");
+  // "Cek sekarang" dari Elorae: orang sedang menunggu angkanya. Jeda berwaktu karena gagal beruntun,
+  // jam kerja, istirahat, dan mundur karena antrean kosong tidak ditunggu. Captcha/login (perlu
+  // orang di Chrome), kuota, dan jeda acak sesudah tugas (≤ jedaMaksDetik) tetap berlaku.
+  const langsung = Number(status.permintaanLangsung) > 0;
+  const jeda = k.jedaLokal;
+  if (jeda?.tungguServer) return diam("DIJEDA", { alasan: jeda.alasan });
+  if (!langsung && jeda && Number.isFinite(jeda.sampai) && jeda.sampai > sekarang) {
+    return diam("DIJEDA", { alasan: jeda.alasan, sampai: jeda.sampai });
+  }
+  const p = bersihkanPengaturan(status.pengaturan);
+  if (!langsung && !dalamJamKerja(sekarang, p.jamMulai, p.jamSelesai)) return diam("DI_LUAR_JAM");
+  const sisa = status.hariIni?.sisa;
+  if (typeof sisa === "number" && sisa <= 0) return diam("KUOTA_HABIS");
+  const j = k.jadwal ?? {};
+  if (!langsung && Number.isFinite(j.istirahatSampai) && j.istirahatSampai > sekarang) {
+    return diam("ISTIRAHAT", { sampai: j.istirahatSampai });
+  }
+  const tungguMundur = Boolean(j.alasanMundur);
+  if (Number.isFinite(j.berikutnyaAt) && j.berikutnyaAt > sekarang && !(langsung && tungguMundur)) {
+    if (!langsung || j.berikutnyaAt - sekarang <= p.jedaMaksDetik * DETIK) {
+      return diam(j.alasanMundur ?? "MENUNGGU", { sampai: j.berikutnyaAt });
+    }
+  }
+  return { langkah: "AMBIL", keadaan: langsung ? "PERMINTAAN" : "SIAP" };
+}
+
+/**
+ * Perbarui jeda lokal dengan jawaban /status terbaru. Mengembalikan jeda baru atau null (lepas).
+ * - Captcha/login (`tungguServer`): berhenti sampai server menjeda lalu melepasnya. Bila
+ *   laporannya sudah sampai tetapi server tak pernah terlihat menjeda, lepas setelah
+ *   TENGGANG_LAPOR_MS. Laporan yang belum sampai → tetap berhenti (antrean kirim mencoba lagi).
+ * - Jeda berwaktu (3 gagal berturut-turut): lepas begitu waktunya lewat.
+ */
+export function perbaruiJedaLokal(jeda, status, sekarang) {
+  if (!jeda) return null;
+  if (jeda.tungguServer) {
+    if (!status) return jeda;
+    if (serverMenjeda(status, sekarang)) return jeda.terlihatDijeda ? jeda : { ...jeda, terlihatDijeda: true };
+    if (jeda.terlihatDijeda) return null;
+    if (jeda.laporTerkirim && sekarang - jeda.sejak >= TENGGANG_LAPOR_MS) return null;
+    return jeda;
+  }
+  if (!Number.isFinite(jeda.sampai) || jeda.sampai <= sekarang) return null;
+  // Jeda berwaktu (gagal beruntun) juga dipasang Elorae. Bila Elorae sudah terlihat menjeda lalu
+  // tidak lagi — orang menekan Lanjutkan di Pemantauan, atau "Cek sekarang" melepasnya — lepas juga
+  // di sini; tanpa ini ekstensi tetap diam sampai jam jedanya sendiri habis.
+  if (!status) return jeda;
+  if (serverMenjeda(status, sekarang)) return jeda.terlihatDijeda ? jeda : { ...jeda, terlihatDijeda: true };
+  if (jeda.terlihatDijeda) return null;
+  return jeda;
+}
+
+/** Kode /masalah dari status halaman; yang tak dikenal → TIDAK_TERBACA. */
+export function kodeMasalah(status) {
+  return KODE_MASALAH.includes(status) ? status : "TIDAK_TERBACA";
+}
+
+/**
+ * Setelah satu tugas selesai dengan `kode` ("OK" atau kode masalah): hitungan gagal beruntun
+ * dan jeda lokal baru (null = tidak ada jeda baru). `jedaMenit` = `pengaturan.jedaOtomatisMenit`
+ * dari /status; nilai yang bukan angka positif jatuh ke 60 menit.
+ */
+export function setelahTugas(gagalBeruntun, kode, sekarang, jedaMenit) {
+  // Diblokir TikTok: berhenti selama jeda otomatis Elorae. "Cek sekarang" melewatinya (jeda berwaktu),
+  // dan Elorae yang sudah terlihat menjeda lalu melepasnya melepas juga jeda ini.
+  if (kode === "DIBLOKIR_TIKTOK") {
+    return {
+      gagalBeruntun: 0,
+      jedaLokal: {
+        alasan: kode,
+        sejak: sekarang,
+        sampai: sekarang + (Number.isFinite(jedaMenit) && jedaMenit > 0 ? jedaMenit * MENIT : JEDA_GAGAL_BERUNTUN_MS),
+      },
+    };
+  }
+  if (KODE_BERHENTI.includes(kode)) {
+    return {
+      gagalBeruntun: 0,
+      jedaLokal: { alasan: kode, tungguServer: true, sejak: sekarang, terlihatDijeda: false, laporTerkirim: false },
+    };
+  }
+  if (KODE_KEGAGALAN.includes(kode)) {
+    const n = (Number.isInteger(gagalBeruntun) ? gagalBeruntun : 0) + 1;
+    if (n >= MAKS_GAGAL_BERUNTUN) {
+      return {
+        gagalBeruntun: 0,
+        jedaLokal: {
+          alasan: "GAGAL_BERUNTUN",
+          sejak: sekarang,
+          sampai: sekarang + (Number.isFinite(jedaMenit) && jedaMenit > 0 ? jedaMenit * MENIT : JEDA_GAGAL_BERUNTUN_MS),
+        },
+      };
+    }
+    return { gagalBeruntun: n, jedaLokal: null };
+  }
+  return { gagalBeruntun: 0, jedaLokal: null };
+}
+
+// ---------------------------------------------------------------- cek cepat lewat tab TikTok
+
+/**
+ * Cek cepat (v0.9.0): halaman diambil dengan fetch DARI tab TikTok yang sudah dibuka orang — tab
+ * itu sudah lolos pemeriksaan keamanan TikTok, sedangkan tab latar baru tidak pernah lolos
+ * (terukur 2026-10-09: 10 halaman berturut-turut dari satu tab, ±0,5 detik per halaman, tidak ada
+ * yang diblokir). Jeda antar video pendek; istirahat panjang dan jeda 15–40 detik tidak dipakai.
+ */
+export const JEDA_CEPAT_MIN_MS = 1000;
+export const JEDA_CEPAT_MAKS_MS = 2500;
+/** Satu putaran cek cepat berhenti sesudah ini; detak berikutnya melanjutkan. */
+export const MAKS_PUTARAN_CEPAT_MS = 10 * MENIT;
+
+export function jedaCepatMs(rand = Math.random) {
+  const r = Math.min(Math.max(Number(rand()) || 0, 0), 0.999999);
+  return JEDA_CEPAT_MIN_MS + Math.floor(r * (JEDA_CEPAT_MAKS_MS - JEDA_CEPAT_MIN_MS));
+}
+
+/**
+ * Instagram lebih keras terhadap pembacaan otomatis daripada TikTok, dan pembacaannya memakai sesi
+ * Instagram pemilik sendiri: jeda antar posting Instagram lebih panjang (keputusan sementara).
+ */
+export const JEDA_CEPAT_INSTAGRAM_MIN_MS = 5000;
+export const JEDA_CEPAT_INSTAGRAM_MAKS_MS = 10000;
+/** Instagram/YouTube meminta masuk / pemeriksaan: tugas platform itu tidak diminta selama ini (TikTok jalan terus). */
+export const JEDA_PLATFORM_MS = 60 * MENIT;
+
+export function jedaCepatInstagramMs(rand = Math.random) {
+  const r = Math.min(Math.max(Number(rand()) || 0, 0), 0.999999);
+  return JEDA_CEPAT_INSTAGRAM_MIN_MS + Math.floor(r * (JEDA_CEPAT_INSTAGRAM_MAKS_MS - JEDA_CEPAT_INSTAGRAM_MIN_MS));
+}
+
+export function jadwalSetelahTugasCepat(jadwal, sekarang, rand = Math.random, platform = "TIKTOK") {
+  return {
+    ...(jadwal ?? {}),
+    istirahatSampai: null,
+    berikutnyaAt: sekarang + (platform === "INSTAGRAM" ? jedaCepatInstagramMs(rand) : jedaCepatMs(rand)),
+    terakhirKerjaAt: sekarang,
+    alasanMundur: null,
+  };
+}
+
+/**
+ * Tab yang boleh dipakai cek cepat: www.tiktok.com, sudah termuat, tidak dibuang Chrome, dan bukan
+ * tab otomatis ekstensi sendiri (yang itulah yang kena pemeriksaan). Terakhir dibuka dulu.
+ */
+export function pilihTabTikTok(tabs, idOtomatis) {
+  return pilihTabHost(tabs, idOtomatis, "www.tiktok.com");
+}
+
+/** Sama, untuk host lain (www.instagram.com: tab Instagram yang dibuka pemilik dan sudah masuk). */
+export function pilihTabHost(tabs, idOtomatis, host) {
+  const otomatis = new Set(idOtomatis ?? []);
+  return (tabs ?? [])
+    .filter((t) => {
+      if (!t || otomatis.has(t.id) || t.discarded || t.status !== "complete") return false;
+      try {
+        return new URL(t.url ?? "").hostname === host;
+      } catch {
+        return false;
+      }
+    })
+    .sort((x, y) => (y.lastAccessed ?? 0) - (x.lastAccessed ?? 0))
+    .map((t) => t.id);
+}
+
+/**
+ * Platform yang sanggup dikerjakan ekstensi SAAT INI (dikirim ke /tugas dan /status): TikTok selalu;
+ * YouTube selama tidak dijeda di sini (YouTube meminta pemeriksaan robot); Instagram hanya bila ada
+ * tab instagram.com terbuka dan Instagram tidak sedang dijeda di sini (tab itu meminta masuk /
+ * pemeriksaan). Jeda per platform (`jedaPlatform[PLATFORM] = sampai`) tidak menghentikan TikTok.
+ */
+export function platformSanggup({ adaTabInstagram, jedaPlatform }, sekarang) {
+  const dijeda = (p) => Number.isFinite(jedaPlatform?.[p]) && jedaPlatform[p] > sekarang;
+  const hasil = ["TIKTOK"];
+  if (!dijeda("YOUTUBE")) hasil.push("YOUTUBE");
+  if (adaTabInstagram && !dijeda("INSTAGRAM")) hasil.push("INSTAGRAM");
+  return hasil;
+}
+
+/** Jeda per platform yang sudah lewat dibuang. */
+export function rapikanJedaPlatform(jedaPlatform, sekarang) {
+  const hasil = {};
+  for (const [p, sampai] of Object.entries(jedaPlatform ?? {})) if (Number.isFinite(sampai) && sampai > sekarang) hasil[p] = sampai;
+  return hasil;
+}
+
+/** ±15% supaya istirahat tidak jatuh di menit yang sama setiap kali. */
+function goyang(ms, rand) {
+  let r = Number(rand());
+  if (!Number.isFinite(r) || r < 0) r = 0;
+  if (r >= 1) r = 0.999999999;
+  return Math.round(ms * (0.85 + r * 0.3));
+}
+
+/**
+ * Jadwal setelah satu tugas: jeda acak antar tugas, dan istirahat setiap ±`istirahatSetiapMenit`.
+ * Celah lebih lama dari istirahat minimum sejak tugas terakhir (antrean kosong, di luar jam)
+ * dihitung sebagai istirahat — hitungan istirahat dimulai ulang.
+ */
+export function jadwalSetelahTugas(jadwal, pengaturan, sekarang, rand = Math.random) {
+  const p = bersihkanPengaturan(pengaturan);
+  const lama = jadwal ?? {};
+  const setiapMs = p.istirahatSetiapMenit * MENIT;
+  const sesiBaru =
+    !Number.isFinite(lama.terakhirKerjaAt) || sekarang - lama.terakhirKerjaAt > p.istirahatMinMenit * MENIT;
+  let istirahatBerikutAt = lama.istirahatBerikutAt;
+  if (sesiBaru || !Number.isFinite(istirahatBerikutAt)) istirahatBerikutAt = sekarang + goyang(setiapMs, rand);
+  let berikutnyaAt = sekarang + jedaAcak(p.jedaMinDetik, p.jedaMaksDetik, rand) * DETIK;
+  let istirahatSampai = null;
+  if (sekarang >= istirahatBerikutAt) {
+    istirahatSampai = sekarang + jedaAcak(p.istirahatMinMenit, p.istirahatMaksMenit, rand) * MENIT;
+    istirahatBerikutAt = istirahatSampai + goyang(setiapMs, rand);
+    berikutnyaAt = Math.max(berikutnyaAt, istirahatSampai);
+  }
+  return { berikutnyaAt, istirahatBerikutAt, istirahatSampai, terakhirKerjaAt: sekarang, alasanMundur: null };
+}
+
+/** /tugas tidak memberi tugas → mundur sesuai alasan, keadaan ditampilkan dari `alasanMundur`. */
+export function jadwalSetelahAlasan(jadwal, alasan, sekarang) {
+  const menit = MUNDUR_MENIT[alasan] ?? MUNDUR_MENIT.ANTREAN_KOSONG;
+  return { ...(jadwal ?? {}), berikutnyaAt: sekarang + menit * MENIT, alasanMundur: alasan };
+}
+
+/**
+ * Masih menunggu halaman atau kirim sekarang? `status` = jawaban skrip halaman (null bila belum
+ * menjawab), `sejakMs` = sejak tab selesai dimuat.
+ */
+export function putuskanTunggu({ jenis, sejakMs, status, adaItemList, tanpaSkrip = false, pemeriksaan = false }) {
+  if (status === "CAPTCHA") return "KIRIM";
+  if (status !== "OK" && pemeriksaan) return sejakMs >= BATAS_TUNGGU_PEMERIKSAAN_MS ? "KIRIM" : "TUNGGU";
+  if (status === "OK") {
+    if (jenis !== "PROFIL" || adaItemList) return "KIRIM";
+    return sejakMs >= BATAS_TUNGGU_ITEMLIST_MS ? "KIRIM" : "TUNGGU";
+  }
+  const batas = (status === "TIDAK_TERBACA" || status === null) && tanpaSkrip ? BATAS_TUNGGU_TANPA_SKRIP_MS : BATAS_TUNGGU_DATA_MS;
+  return sejakMs >= batas ? "KIRIM" : "TUNGGU";
+}
+
+// ---------------------------------------------------------------- kiriman otomatis panel (D3)
+//
+// Panel di tab TikTok yang dibuka ORANG mengirim pembacaan profil/video ke POST /otomatis tanpa
+// tombol. Elorae yang memutuskan menyimpan atau mengabaikan (DISIMPAN / DIABAIKAN). Ekstensi
+// membatasi satu kiriman per akun/video per 6 jam, dan sakelar di popup bisa mematikannya.
+
+const JAM = 60 * MENIT;
+/** chrome.storage.local: sakelar popup (tidak ada = NYALA), riwayat per kunci, mundur bersama. */
+export const KUNCI_SAKELAR_KIRIM_OTOMATIS = "kirimOtomatisTikTok";
+export const KUNCI_RIWAYAT_KIRIM_OTOMATIS = "riwayatKirimOtomatis";
+export const KUNCI_MUNDUR_KIRIM_OTOMATIS = "mundurKirimOtomatis";
+/** Satu kiriman per akun/video selama ini (rancangan D3). */
+export const JEDA_KIRIM_OTOMATIS_MS = 6 * JAM;
+/** Kiriman yang gagal sampai (jaringan, Elorae galat 5xx, sedang mengirim) boleh dicoba lagi setelah ini. */
+export const JEDA_ULANG_KIRIM_GAGAL_MS = 10 * MENIT;
+/** Elorae menjawab 429 (batas 120 kiriman/jam per perangkat): semua kiriman otomatis berhenti dulu. */
+export const MUNDUR_TERLALU_SERING_MS = 15 * MENIT;
+/** Elorae belum mengenal /otomatis (404, Elorae versi lama): jangan bertanya setiap profil. */
+export const MUNDUR_TITIK_TIDAK_ADA_MS = 60 * MENIT;
+/** Riwayat disimpan paling banyak sekian kunci (yang terbaru); sisanya dibuang. */
+export const MAKS_RIWAYAT_KIRIM = 500;
+/** Hasil yang berlaku 6 jam. MENGIRIM (belum dijawab) dan GAGAL berlaku 10 menit. */
+const HASIL_FINAL = ["DISIMPAN", "DIABAIKAN", "DITOLAK", "MANUAL"];
+
+/** Sakelar "Kirim otomatis saat membuka TikTok": bawaan NYALA; hanya `false` yang mematikan. */
+export function sakelarKirimOtomatis(nilai) {
+  return nilai !== false;
+}
+
+/**
+ * Kunci pembatas: TikTok `PROFIL:<handle>` / `KONTEN:<id video>` (bentuk lama, riwayatnya tetap
+ * berlaku); Instagram/YouTube berawalan platform (`INSTAGRAM:PROFIL:<akun>`, `YOUTUBE:KONTEN:<id>`).
+ * Null bila tidak bisa ditentukan.
+ */
+export function kunciKirimOtomatis(data) {
+  const platform = platformData(data);
+  const awalan = platform === "TIKTOK" ? "" : `${platform}:`;
+  if (data?.jenis === "PROFIL") {
+    const h = normalHandle(data.uniqueId);
+    return h ? `${awalan}PROFIL:${h}` : null;
+  }
+  if (data?.jenis === "KONTEN") {
+    const sah = platform === "TIKTOK" ? /^\d{1,30}$/ : /^[A-Za-z0-9_-]{5,40}$/;
+    return typeof data.videoId === "string" && sah.test(data.videoId) ? `${awalan}KONTEN:${data.videoId}` : null;
+  }
+  return null;
+}
+
+/**
+ * Pembacaan panel sudah lengkap untuk dikirim sendiri? OK, milik halaman `url`, angka wajib ada,
+ * dan untuk profil daftar videonya sudah tertangkap (item_list), tertanam di halaman, atau akunnya
+ * memang tanpa video — tanpa daftar video Elorae tidak bisa menghitung ER maupun mengenali video
+ * yang menandai Elorae.
+ */
+export function bacaanLengkap(hasil, url) {
+  return alasanBelumLengkap(hasil, url) === null;
+}
+
+/**
+ * Kenapa bacaan ini belum boleh dikirim sendiri, atau null bila sudah lengkap. Kode-kodenya
+ * ditampilkan di popup ("Kiriman otomatis terakhir"), jadi kegagalan tidak lagi diam.
+ */
+export function alasanBelumLengkap(hasil, url) {
+  if (hasil?.status !== "OK") return `STATUS_${hasil?.status ?? "KOSONG"}`;
+  if (!hasil.data) return "TANPA_DATA";
+  const kurang = kurangWajib(hasil.data);
+  if (kurang.length > 0) return `KURANG:${kurang.join(",")}`;
+  const target = typeof url === "string" ? jenisHalaman(url) : null;
+  if (!target) return "BUKAN_HALAMAN_AKUN_ATAU_VIDEO";
+  if (!cocokDenganUrl(hasil.data, target)) {
+    const diHalaman = target.jenis === "KONTEN" ? target.videoId : target.handle;
+    const diData = hasil.data.jenis === "KONTEN" ? hasil.data.videoId : normalHandle(hasil.data.uniqueId ?? "");
+    return `BUKAN_MILIK_HALAMAN:${diHalaman ?? "?"}≠${diData || "?"}`;
+  }
+  if (hasil.data.jenis === "PROFIL") {
+    // YouTube: kanal tidak pernah membawa posting (angkanya ringkas) — pengikut saja sudah lengkap.
+    if (platformData(hasil.data) === "YOUTUBE") return null;
+    // Akun tanpa video: TikTok tidak selalu memuat daftar video kosong, jadi angka profilnya cukup.
+    // Instagram: posting hanya tertangkap bila pemilik sudah masuk; tanpa itu tidak dikirim sendiri.
+    const ada = hasil.adaItemList === true || hasil.data.posting.length > 0 || hasil.data.jumlahVideo === 0;
+    return ada ? null : "DAFTAR_VIDEO_BELUM_TERTANGKAP";
+  }
+  return null;
+}
+
+/** chrome.storage.local: keputusan kiriman otomatis terakhir (panel dan service worker), untuk popup. */
+export const KUNCI_KIRIM_OTOMATIS_TERAKHIR = "kirimOtomatisTerakhir";
+
+const TEKS_ALASAN_KIRIM = {
+  BELUM_TERSAMBUNG: "ekstensi belum tersambung ke Elorae",
+  MATI: "sakelar kiriman otomatis mati",
+  SAKELAR_MATI: "sakelar kiriman otomatis mati",
+  TAB_OTOMATIS: "tab ini milik putaran otomatis",
+  SUDAH_DIKIRIM: "sudah dikirim dalam 6 jam terakhir",
+  MUNDUR: "Elorae meminta jeda sebentar",
+  TANPA_KUNCI: "akun atau video tidak dikenali",
+  ATURAN_GAGAL: "modul ekstensi gagal dimuat — muat ulang ekstensi lalu tab ini",
+  LATAR_TIDAK_MENJAWAB: "ekstensi tidak menjawab panel — muat ulang tab ini",
+};
+
+const TEKS_RINCIAN = {
+  DAFTAR_VIDEO_BELUM_TERTANGKAP: "daftar video belum tertangkap",
+  TANPA_DATA: "angka belum terbaca",
+  BUKAN_HALAMAN_AKUN_ATAU_VIDEO: "bukan halaman akun atau video",
+};
+
+function teksRincian(rincian) {
+  if (typeof rincian !== "string" || !rincian) return null;
+  if (TEKS_RINCIAN[rincian]) return TEKS_RINCIAN[rincian];
+  if (rincian.startsWith("STATUS_")) return `halaman terbaca sebagai ${rincian.slice(7)}`;
+  if (rincian.startsWith("KURANG:")) return `angka belum terbaca: ${rincian.slice(7)}`;
+  if (rincian.startsWith("BUKAN_MILIK_HALAMAN:")) return `data milik halaman lain (${rincian.slice(20)})`;
+  return rincian;
+}
+
+function labelKunci(kunci) {
+  if (typeof kunci !== "string") return null;
+  const bagian = kunci.split(":");
+  const [jenis, nilai] = bagian.length === 3 ? bagian.slice(1) : bagian;
+  if (!nilai) return null;
+  return jenis === "PROFIL" ? `@${nilai}` : `video ${nilai}`;
+}
+
+/** Catatan `KUNCI_KIRIM_OTOMATIS_TERAKHIR` → satu kalimat untuk popup, atau null. */
+export function teksKirimOtomatisTerakhir(catatan, sekarang = Date.now()) {
+  if (!catatan || typeof catatan !== "object" || typeof catatan.alasan !== "string") return null;
+  let isi;
+  if (catatan.alasan === "DIKIRIM") {
+    if (catatan.hasil === "DISIMPAN") isi = "tersimpan di Elorae";
+    else if (catatan.hasil === "DIABAIKAN") isi = "diabaikan Elorae: akun belum ada di Elorae dan tidak menandai Elorae";
+    else isi = `ditolak Elorae (${catatan.hasil ?? "?"})`;
+  } else if (catatan.alasan === "BELUM_LENGKAP") {
+    isi = `belum dikirim: ${teksRincian(catatan.rincian) ?? "bacaan belum lengkap"}`;
+  } else {
+    const dasar = TEKS_ALASAN_KIRIM[catatan.alasan] ?? catatan.alasan;
+    const rinci = !TEKS_ALASAN_KIRIM[catatan.alasan] && catatan.rincian ? ` (${catatan.rincian})` : "";
+    isi = `belum dikirim: ${dasar}${rinci}`;
+  }
+  const label = labelKunci(catatan.kunci);
+  const waktu = Number.isFinite(catatan.at) ? ` (${waktuWib(catatan.at, sekarang)})` : "";
+  return `${label ? `${label} · ` : ""}${isi}${waktu}`;
+}
+
+export function catatanFinal(catatan) {
+  return HASIL_FINAL.includes(catatan?.hasil);
+}
+
+function masaBerlaku(catatan) {
+  return catatanFinal(catatan) ? JEDA_KIRIM_OTOMATIS_MS : JEDA_ULANG_KIRIM_GAGAL_MS;
+}
+
+/**
+ * Riwayat kiriman tanpa catatan yang masa berlakunya sudah lewat (atau rusak, atau dari masa depan
+ * — jam komputer pernah mundur), paling banyak MAKS_RIWAYAT_KIRIM yang terbaru. Selalu objek baru.
+ */
+export function pangkasRiwayatKirim(riwayat, sekarang) {
+  const isi = riwayat && typeof riwayat === "object" && !Array.isArray(riwayat) ? Object.entries(riwayat) : [];
+  const hidup = isi
+    .filter(([, c]) => c && typeof c === "object" && Number.isFinite(c.at) && c.at <= sekarang + MENIT && sekarang - c.at < masaBerlaku(c))
+    .sort((x, y) => y[1].at - x[1].at)
+    .slice(0, MAKS_RIWAYAT_KIRIM);
+  return Object.fromEntries(hidup);
+}
+
+/** Riwayat dengan catatan baru `{ ...catatan, at: sekarang }` untuk `kunci` (sekaligus dipangkas). */
+export function catatKirimOtomatis(riwayat, kunci, catatan, sekarang) {
+  const baru = pangkasRiwayatKirim(riwayat, sekarang);
+  if (kunci) {
+    delete baru[kunci];
+    baru[kunci] = { ...catatan, at: sekarang };
+  }
+  return pangkasRiwayatKirim(baru, sekarang);
+}
+
+/**
+ * Kirim pembacaan panel ini ke /otomatis sekarang? `k` = `{ tersambung, sakelar, tabOtomatis,
+ * hasil (jawaban bacaHalaman), url, riwayat, mundurSampai }`. Hasil `{ kirim: true, kunci }` atau
+ * `{ kirim: false, alasan, kunci?, sebelumnya?, sampai? }` dengan alasan BELUM_TERSAMBUNG | MATI |
+ * TAB_OTOMATIS (tab putaran otomatis melapor lewat /hasil) | BELUM_LENGKAP | SUDAH_DIKIRIM | MUNDUR.
+ */
+export function putuskanKirimOtomatis(k, sekarang) {
+  const tidak = (alasan, lain = {}) => ({ kirim: false, alasan, ...lain });
+  if (!k?.tersambung) return tidak("BELUM_TERSAMBUNG");
+  if (!sakelarKirimOtomatis(k.sakelar)) return tidak("MATI");
+  if (k.tabOtomatis) return tidak("TAB_OTOMATIS");
+  if (!bacaanLengkap(k.hasil, k.url)) return tidak("BELUM_LENGKAP");
+  const kunci = kunciKirimOtomatis(k.hasil.data);
+  if (!kunci) return tidak("BELUM_LENGKAP");
+  const sebelumnya = pangkasRiwayatKirim(k.riwayat, sekarang)[kunci];
+  if (sebelumnya) return tidak("SUDAH_DIKIRIM", { kunci, sebelumnya });
+  if (Number.isFinite(k.mundurSampai) && k.mundurSampai > sekarang) return tidak("MUNDUR", { kunci, sampai: k.mundurSampai });
+  return { kirim: true, kunci };
+}
+
+function bulatNonNegatif(v) {
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : 0;
+}
+
+/**
+ * Jawaban POST /otomatis (bentuk `panggil()` di background.js: `{ json, status }` atau
+ * `{ gagal, status? }`) → `{ catatan, mundurSampai, kabar }`: catatan riwayat untuk kunci itu,
+ * mundur bersama (null = tidak), dan kabar untuk panel (`teksKabarOtomatis`).
+ */
+export function setelahKirimOtomatis(r, sekarang) {
+  const json = r?.json;
+  if (json?.ok === true) {
+    const hasil = json.hasil === "DISIMPAN" ? "DISIMPAN" : "DIABAIKAN";
+    const kol = json.kol && typeof json.kol.nama === "string" ? { id: json.kol.id ?? null, nama: json.kol.nama } : null;
+    const catatan = { hasil, videoMasuk: bulatNonNegatif(json.videoMasuk), brand: bulatNonNegatif(json.brand), ...(kol ? { kol } : {}) };
+    return { catatan, mundurSampai: null, kabar: { ok: true, ...catatan } };
+  }
+  if (r?.gagal === "TERLALU_SERING") {
+    return { catatan: { hasil: "GAGAL", kode: r.gagal }, mundurSampai: sekarang + MUNDUR_TERLALU_SERING_MS, kabar: { ok: false, kode: r.gagal } };
+  }
+  if (r?.gagal === "HTTP") {
+    // Bukan JSON dari Elorae. 404 = Elorae belum punya /otomatis: jangan tanya lagi untuk sementara.
+    const kode = `HTTP_${r.status ?? "?"}`;
+    return { catatan: { hasil: "DITOLAK", kode }, mundurSampai: r.status === 404 ? sekarang + MUNDUR_TITIK_TIDAK_ADA_MS : null, kabar: { ok: false, kode } };
+  }
+  if (r?.gagal) return { catatan: { hasil: "GAGAL", kode: r.gagal }, mundurSampai: null, kabar: { ok: false, kode: r.gagal } };
+  // Elorae menolak dengan alasan (muatan, izin, KOL diblokir, ...): mengulang tidak mengubahnya.
+  const kode = typeof json?.kode === "string" ? json.kode : "DITOLAK";
+  return { catatan: { hasil: "DITOLAK", kode }, mundurSampai: null, kabar: { ok: false, kode } };
+}
+
+/** Kabar dari catatan riwayat yang sudah ada (panel dibuka lagi dalam 6 jam), atau null. */
+export function kabarDariRiwayat(catatan) {
+  if (catatan?.hasil !== "DISIMPAN" && catatan?.hasil !== "MANUAL") return null;
+  return { ok: true, hasil: catatan.hasil, sebelumnyaAt: catatan.at, ...(catatan.kol ? { kol: catatan.kol } : {}) };
+}
+
+/**
+ * Satu baris kecil di panel sesudah kiriman otomatis, atau null (diam): `{ teks, jenis }` dengan
+ * jenis "baik" | "sorot" | "galat". DIABAIKAN, kegagalan jaringan, dan penolakan lain tidak
+ * ditampilkan; yang ditampilkan hanya yang tersimpan dan yang hanya bisa dibereskan orang
+ * (sambungan dicabut, tidak punya izin).
+ */
+export function teksKabarOtomatis(kabar, sekarang = Date.now()) {
+  if (!kabar) return null;
+  if (kabar.ok) {
+    if (Number.isFinite(kabar.sebelumnyaAt)) {
+      return { teks: `Sudah tersimpan di Elorae · ${waktuWib(kabar.sebelumnyaAt, sekarang)}`, jenis: "baik" };
+    }
+    if (kabar.hasil !== "DISIMPAN") return null;
+    if (kabar.videoMasuk > 0) return { teks: `${kabar.videoMasuk} video baru masuk Performa video`, jenis: "sorot" };
+    return { teks: kabar.kol?.nama ? `Tersimpan otomatis untuk ${kabar.kol.nama}` : "Tersimpan otomatis ke Elorae", jenis: "baik" };
+  }
+  if (kabar.kode === "TOKEN_TIDAK_SAH") return { teks: "Kiriman otomatis berhenti: sambungan ke Elorae dicabut. Sambungkan ulang lewat ikon ekstensi.", jenis: "galat" };
+  if (kabar.kode === "TANPA_IZIN") return { teks: "Kiriman otomatis ditolak: orang yang menyambungkan ekstensi ini tidak punya izin mengelola Kreatif.", jenis: "galat" };
+  return null;
+}
+
+// ---------------------------------------------------------------- teks untuk popup
+
+/** "10.05" — jam WIB dengan titik, seperti penulisan jam di Indonesia. */
+export function jamWib(ms) {
+  if (!Number.isFinite(ms)) return "";
+  const menit = (((Math.floor(ms / MENIT) + 7 * 60) % 1440) + 1440) % 1440;
+  const dua = (n) => String(n).padStart(2, "0");
+  return `${dua(Math.floor(menit / 60))}.${dua(menit % 60)}`;
+}
+
+const BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+
+function hariWib(ms) {
+  return Math.floor((ms + 7 * 60 * MENIT) / (1440 * MENIT));
+}
+
+/** "16.00" bila hari WIB-nya sama dengan `sekarang`; selain itu "10 Okt 08.30". */
+export function waktuWib(ms, sekarang = Date.now()) {
+  if (!Number.isFinite(ms)) return "";
+  if (hariWib(ms) === hariWib(sekarang)) return jamWib(ms);
+  const t = new Date(ms + 7 * 60 * MENIT);
+  return `${t.getUTCDate()} ${BULAN[t.getUTCMonth()]} ${jamWib(ms)}`;
+}
+
+const TEKS_ALASAN = {
+  CAPTCHA:
+    "TikTok meminta captcha. Buka TikTok di profil Chrome ini, selesaikan captcha, lalu tekan Lanjutkan di Elorae.",
+  LOGIN: "TikTok meminta masuk (login). Masuk dengan akun TikTok khusus di profil Chrome ini, lalu tekan Lanjutkan di Elorae.",
+  GAGAL_BERUNTUN: "gagal berturut-turut",
+  DIBLOKIR_TIKTOK:
+    "TikTok memasang pemeriksaan keamanan. Muat ulang tab TikTok di Chrome ini (selesaikan puzzle bila muncul), lalu tekan Cek sekarang di Elorae.",
+  MANUAL: "dijeda dari Elorae — lanjutkan di Kreatif → Pemantauan",
+};
+
+export function teksAlasan(alasan) {
+  if (!alasan) return "tanpa keterangan";
+  return TEKS_ALASAN[alasan] ?? String(alasan);
+}
+
+/** Satu baris keadaan untuk popup. `p` = pengaturan (untuk jam kerja). */
+export function teksKeadaan(r, p = PENGATURAN_BAWAAN, sekarang = Date.now()) {
+  const peng = bersihkanPengaturan(p);
+  switch (r?.keadaan) {
+    case "SIAP":
+    case "MENUNGGU":
+      return "Berjalan";
+    case "PERMINTAAN":
+      return "Berjalan — mengerjakan permintaan Cek sekarang dari Elorae";
+    case "SIBUK":
+      return "Berjalan — sedang memeriksa satu halaman";
+    case "CEPAT":
+      return Number.isFinite(r.selesai) && r.selesai > 0
+        ? `Berjalan cepat lewat tab TikTok — ${r.selesai} halaman sudah dicek`
+        : "Berjalan cepat lewat tab TikTok";
+    case "BELUM_TERSAMBUNG":
+      return "Belum tersambung ke Elorae";
+    case "MATI":
+      return "Pemantauan otomatis mati";
+    case "TAK_TERJANGKAU":
+      return "Elorae tidak terjangkau — dicoba lagi setiap menit";
+    case "NONAKTIF":
+      return "Perangkat ini dinonaktifkan di Elorae";
+    case "DIJEDA": {
+      // Jeda manual disimpan Elorae "sampai tahun 2100" — jamnya tidak berarti apa-apa.
+      const tampilSampai = Number.isFinite(r.sampai) && r.alasan !== "MANUAL";
+      const sampai = tampilSampai ? ` (sampai ${waktuWib(r.sampai, sekarang)})` : "";
+      return `Dijeda: ${teksAlasan(r.alasan)}${sampai}`;
+    }
+    case "DI_LUAR_JAM":
+      return `Di luar jam kerja (${peng.jamMulai.replace(":", ".")}–${peng.jamSelesai.replace(":", ".")} WIB)`;
+    case "KUOTA_HABIS":
+      return "Kuota hari ini habis";
+    case "ANTREAN_KOSONG":
+      return "Antrean kosong";
+    case "ISTIRAHAT":
+      return `Istirahat sampai ${waktuWib(r.sampai, sekarang)}`;
+    default:
+      return "—";
+  }
+}

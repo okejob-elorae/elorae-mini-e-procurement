@@ -12,7 +12,19 @@ import { filterStageableSuggestions } from "@/lib/field-sales/stageable-suggesti
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { listShipmentsForOrder, type OrderShipmentSummary } from "@/lib/delivery/shipment-queries";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { muatPanelKredit, type PanelKredit } from "@/lib/field-sales/kredit-panel";
+import { bolehMembacaPiutang } from "@/lib/receivables/izin";
+import { batasKreditBerlaku, lewatBatasNilai } from "@/lib/salesman/kredit";
+import { bacaAturanKreditDb } from "@/lib/salesman/tagihan-toko";
+import {
+  muatKedatanganPesananLama,
+  muatPenerimaToko,
+  muatPesananKonsiCadanganLama,
+} from "@/lib/field-sales/konsi-transfer/pesanan-lama";
 import { FieldSalesOrderDetailClient } from "./FieldSalesOrderDetailClient";
+import type { PesananLamaKantor } from "./KonsiPesananLamaCard";
+import type { KeadaanNotaTampil } from "./DeliveriesCard";
+import { muatTautanPesanan, penagihanSesuaiIzin, type FakturKreditTampil, type PiutangKiriman } from "./tautan-pesanan";
 
 export const dynamic = "force-dynamic";
 
@@ -94,19 +106,35 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
    * re-checks at actual approve time per spec § 4). Degrades to null on failure, same pattern
    * as konsiSuggestions/konsiAssortmentGaps above, so it never takes down Approve/Reject.
    * Mirrors the writer's comparison: a putus order adds its own total, a konsi order is gated on
-   * exposure alone.
+   * exposure alone. The limit comes from the writer's own resolver (`batasKreditBerlaku`), so an
+   * empty limit that follows the Settings default is previewed too, and `sumber` tells the card
+   * where the limit came from.
    */
-  let creditCheck: { exposure: number; limit: number; overLimit: boolean } | null = null;
+  let creditCheck: { exposure: number; limit: number; overLimit: boolean; sumber: "TOKO" | "BAWAAN" } | null = null;
   if (order.status === "PENDING_APPROVAL" && canApprove) {
     try {
       const orderRow = await prisma.fieldSalesOrder.findUnique({ where: { id }, select: { storeId: true } });
       if (orderRow) {
-        const store = await prisma.store.findUnique({ where: { id: orderRow.storeId }, select: { creditLimit: true } });
-        if (store?.creditLimit !== null && store?.creditLimit !== undefined) {
-          const limit = Number(store.creditLimit);
+        const store = await prisma.store.findUnique({
+          where: { id: orderRow.storeId },
+          select: { creditLimit: true, noCreditLimit: true },
+        });
+        const batas = store
+          ? batasKreditBerlaku(
+              {
+                creditLimit: store.creditLimit === null ? null : Number(store.creditLimit),
+                noCreditLimit: store.noCreditLimit,
+                termsType: order.orderType,
+              },
+              await bacaAturanKreditDb(),
+            ).nilai
+          : null;
+        if (batas && (batas.sumber === "TOKO" || batas.sumber === "BAWAAN")) {
+          const limit = batas.nilai;
           const exposure = await computeStoreCreditExposure(prisma, orderRow.storeId);
+          /* A KONSI order whose store limit is empty is not previewed (KONSI_KOSONG, P21). */
           const orderTotal = order.orderType === "PUTUS" ? order.total : 0;
-          creditCheck = { exposure: exposure.total, limit, overLimit: exposure.total + orderTotal > limit };
+          creditCheck = { exposure: exposure.total, limit, overLimit: lewatBatasNilai(exposure.total + orderTotal, limit), sumber: batas.sumber };
         }
       }
     } catch (error) {
@@ -127,9 +155,134 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
     }
   }
 
+  /*
+   * Pesanan konsinyasi LAMA (cadangannya masih ditahan, disetujui sebelum alur per antaran) — atau
+   * yang sudah pernah dikonfirmasi sampai: kartunya menggantikan kartu pengiriman, karena pesanan
+   * ini diselesaikan toko, tidak dikirim. Gagal memuat tidak menjatuhkan halaman: kartu
+   * pengiriman tampil seperti biasa, dan penulis pengiriman tetap menolak pesanan lama.
+   */
+  let pesananLama: PesananLamaKantor | null = null;
+  if (order.orderType === "KONSI" && order.status === "APPROVED") {
+    try {
+      const [lama, kedatangan] = await Promise.all([muatPesananKonsiCadanganLama(prisma, id), muatKedatanganPesananLama(prisma, id)]);
+      if (lama || kedatangan.length > 0) {
+        const storeId =
+          lama?.storeId ?? (await prisma.fieldSalesOrder.findUnique({ where: { id }, select: { storeId: true } }))?.storeId ?? null;
+        const penerima = storeId ? await muatPenerimaToko(prisma, storeId) : null;
+        pesananLama = {
+          menunggu: lama !== null,
+          baris: (lama?.baris ?? []).map((b) => ({ lineId: b.lineId, productName: b.productName, variantSku: b.variantSku, sisa: b.sisa })),
+          penerima: penerima?.penerima ?? "TANPA_PENERIMA",
+          namaPemegang: penerima?.namaPemegang ?? null,
+          kedatangan: kedatangan.map((k) => ({
+            transferId: k.transferId,
+            docNo: k.docNo,
+            createdAt: k.createdAt,
+            oleh: k.oleh,
+            pcs: k.pcs,
+            pcsSesudahOpname: k.pcsSesudahOpname,
+          })),
+        };
+      }
+    } catch (error) {
+      console.error("[field-sales-orders] pesanan konsi lama failed", { orderId: id, error });
+    }
+  }
+
+  /*
+   * Panel kredit (PUTUS saja): catatan saat pesanan dibuat + tagihan toko sekarang.
+   * Sama seperti saran konsinyasi: gagal memuatnya tidak boleh menjatuhkan halaman,
+   * tapi pesanan yang DITAHAN tetap butuh centang di kartu persetujuan — jadi
+   * status ditahan dibaca terpisah dan ikut dikirim walau panelnya gagal.
+   */
+  let kredit: PanelKredit | null = null;
+  if (order.orderType === "PUTUS") {
+    try {
+      kredit = await muatPanelKredit(id);
+    } catch (e) {
+      console.error("[field-sales-orders] muatPanelKredit failed", { orderId: id, error: e });
+    }
+  }
+  const kreditDitahan =
+    kredit?.ditahan ??
+    (order.orderType === "PUTUS" &&
+      (await prisma.fieldSalesOrder.findUnique({ where: { id }, select: { kreditDitahan: true } }))?.kreditDitahan === true);
+
+  /*
+   * Tautan ke penagihan: keadaan piutang sesungguhnya untuk faktur di panel kredit dan untuk
+   * piutang tiap nota pengiriman. Piutang nota hanya dibaca untuk yang boleh membaca piutang.
+   * Gagal memuat tidak menjatuhkan halaman — panel kembali ke kolom lamanya.
+   */
+  const izin = session.user.permissions ?? [];
+  const bolehBukaPiutang = bolehMembacaPiutang(izin);
+  const bolehBukaFakturPajak = hasPermission(izin, PERMISSIONS.TAX_INVOICES_VIEW);
+  let fakturKredit: FakturKreditTampil[] | null = null;
+  let piutangKiriman: Record<string, PiutangKiriman> = {};
+  try {
+    const tautan = await muatTautanPesanan({
+      faktur: kredit?.faktur ?? [],
+      piutangNota: bolehBukaPiutang
+        ? order.deliveries.flatMap((d) => (d.receivable ? [{ deliveryId: d.id, receivableId: d.receivable.id }] : []))
+        : [],
+    });
+    fakturKredit = tautan.faktur;
+    piutangKiriman = tautan.piutangKiriman;
+  } catch (e) {
+    console.error("[field-sales-orders] muatTautanPesanan failed", { orderId: id, error: e });
+  }
+
+  /*
+   * Nota yang dibatalkan atau dikoreksi di penerimaan toko (R22), dibaca langsung: kartu pengiriman
+   * menyembunyikan cetak, ubah tanggal, dan bukti terima nota batal, dan menunjukkan rincian
+   * dikirim / retur langsung / hilang / ditagih nota yang dikoreksi. Gagal memuat tidak menjatuhkan
+   * halaman — server tetap menolak setiap tindakan pada nota batal.
+   */
+  let keadaanNota: Record<string, KeadaanNotaTampil> = {};
+  if (order.orderType === "PUTUS" && order.deliveries.length > 0) {
+    try {
+      const notas = await prisma.fieldSalesDelivery.findMany({
+        where: { orderId: id },
+        select: {
+          id: true,
+          voidedAt: true,
+          voidReason: true,
+          correctedAt: true,
+          lines: { select: { qty: true, returnedQty: true, lostQty: true } },
+        },
+      });
+      keadaanNota = Object.fromEntries(
+        notas.map((n) => {
+          const ditagih = n.lines.reduce((x, l) => x + l.qty, 0);
+          const kembali = n.lines.reduce((x, l) => x + l.returnedQty, 0);
+          const hilang = n.lines.reduce((x, l) => x + l.lostQty, 0);
+          return [
+            n.id,
+            {
+              voidedAt: n.voidedAt?.toISOString() ?? null,
+              voidReason: n.voidReason,
+              correctedAt: n.correctedAt?.toISOString() ?? null,
+              dikirim: ditagih + kembali + hilang,
+              kembali,
+              hilang,
+              ditagih,
+            },
+          ];
+        }),
+      );
+    } catch (e) {
+      console.error("[field-sales-orders] keadaan nota failed", { orderId: id, error: e });
+    }
+  }
+
+  // Faktur pajak dan piutang nota tidak dikirim ke peramban yang tidak boleh membukanya — izin tidak melebar lewat halaman ini.
+  const orderTampil = {
+    ...order,
+    deliveries: penagihanSesuaiIzin(order.deliveries, { piutang: bolehBukaPiutang, fakturPajak: bolehBukaFakturPajak }),
+  };
+
   return (
     <FieldSalesOrderDetailClient
-      order={order}
+      order={orderTampil}
       canApprove={canApprove}
       canOverrideCredit={canOverrideCredit}
       canDeliver={canDeliver}
@@ -139,6 +292,14 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
       konsiAssortmentGaps={konsiAssortmentGaps}
       creditCheck={creditCheck}
       shipments={shipments}
+      pesananLama={pesananLama}
+      kredit={kredit}
+      fakturKredit={fakturKredit}
+      kreditDitahan={kreditDitahan}
+      piutangKiriman={piutangKiriman}
+      keadaanNota={keadaanNota}
+      bolehBukaPiutang={bolehBukaPiutang}
+      bolehBukaFakturPajak={bolehBukaFakturPajak}
     />
   );
 }

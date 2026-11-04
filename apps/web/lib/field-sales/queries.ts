@@ -1,14 +1,24 @@
 import { prisma, Prisma, resolveReservedInventory } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { aggregateInventoryValues } from "@/lib/items/queries";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { matchKey } from "@/lib/items/match-key";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { listAssortmentGaps } from "@/lib/stores/assortment/queries";
 import { outstandingQty } from "./delivery/plan";
-import { deliveredGoodsValue, undeliveredResidual } from "./delivery/undelivered-residual";
+import { nilaiBelumDinota } from "./delivery/undelivered-residual";
 import type { PlanHistory } from "./smart-request/plan";
 import type { TaxInvoiceStatusFilter } from "@/lib/tax-invoices/queries";
+import { lencanaIndenById, type LencanaInden } from "./inden-queries";
 
 export type FieldSalesOrderStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+
+/**
+ * Saringan status di daftar: `REJECTED` = ditolak KANTOR saja, `CANCELLED` = dibatalkan
+ * salesman sendiri (status tersimpan tetap REJECTED, dibedakan `cancelledById`). `AKTIF` =
+ * menunggu + disetujui — pesanan yang dihitung kartu Kinerja sales lapangan.
+ */
+export type FieldSalesOrderStatusFilter = FieldSalesOrderStatus | "CANCELLED" | "AKTIF";
 
 export type FieldSalesOrderType = "PUTUS" | "KONSI";
 
@@ -23,10 +33,15 @@ export type FieldSalesDeliveryLineSummary = {
   orderLineId: string;
   productName: string;
   variantSku: string;
+  /** Pieces billed. What left the warehouse on this nota = `qty + returnedQty + lostQty`. */
   qty: number;
   unitPrice: number | null;
   discountAmount: number;
   lineTotal: number | null;
+  /** Refused at the store's door (retur langsung, P24) and back in the main warehouse. */
+  returnedQty: number;
+  /** Lost on the way (hilang di perjalanan); handled as a lost-goods case, not billed. */
+  lostQty: number;
 };
 
 export type FieldSalesDeliverySummary = {
@@ -40,7 +55,23 @@ export type FieldSalesDeliverySummary = {
   total: number;
   deliveredByName: string;
   taxInvoiceStatus: TaxInvoiceStatusFilter | null;
+  /** Bukti terima digital; null = belum diterima toko. */
+  receivedByName: string | null;
+  receivedAt: Date | null;
+  podPhotoUrl: string | null;
   lines: FieldSalesDeliveryLineSummary[];
+  /** Piutang yang lahir dari nota tagihan ini; null = nota 0 rupiah atau nota lama tanpa piutang. */
+  receivable: { id: string; invoiceNo: string } | null;
+  /** Faktur pajak nota ini (satu per nota); null hanya untuk data rusak. */
+  taxInvoice: { status: TaxInvoiceStatusFilter; invoiceNo: string | null } | null;
+  /**
+   * Nota cancelled — the shipment "tidak jadi dikirim" (P25/P41a) or every piece refused at the
+   * door. Its lines are zeroed, so totals stay right; the paper itself must be withdrawn.
+   */
+  voidedAt: Date | null;
+  voidReason: string | null;
+  /** Nota corrected to what the store actually received (retur langsung / hilang, P24). */
+  correctedAt: Date | null;
 };
 
 export type FieldSalesOrderListItem = {
@@ -54,11 +85,34 @@ export type FieldSalesOrderListItem = {
   total: number;
   createdAt: Date;
   creditHoldAtCreate: boolean;
+  /** Status pengiriman (bermakna untuk PUTUS yang disetujui). */
   deliveryStatus: FieldSalesDeliveryStatus;
+  /** Pesanan jarak jauh (WA/TELEPON/LAINNYA); null/absen = diambil saat kunjungan. */
+  remoteChannel?: string | null;
+  /**
+   * Pre-order (inden): jendelanya, null = pesanan stok siap. Absen = kueri tidak
+   * membacanya. `name` null bila jendelanya sudah tidak ada (tanpa foreign key).
+   */
+  preorder?: (Omit<LencanaInden, "name"> & { name: string | null }) | null;
+  /**
+   * Dibatalkan salesman sendiri (status tetap REJECTED, `cancelledById` terisi) —
+   * bukan ditolak kantor. Absen = kueri tidak membacanya.
+   */
+  dibatalkan?: boolean;
+  /** Pesanan ini menggantikan pesanan lama (salesman mengubah pesanannya). Absen = tidak dibaca. */
+  menggantikan?: TautanPesanan | null;
+  /** Pesanan ini sudah diganti pesanan baru. Absen = tidak dibaca. */
+  digantiDengan?: TautanPesanan | null;
 };
+
+/** Nomor + id pesanan lain, untuk tautan "Menggantikan …" / "Diganti dengan …". */
+export type TautanPesanan = { id: string; orderNo: string };
 
 export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   note: string | null;
+  /** Diisi saat salesman membatalkan (atau mengganti) pesanannya sendiri. */
+  cancelledAt: Date | null;
+  cancelledByName: string | null;
   subtotal: number;
   creditHoldAtCreate: boolean;
   approvedAt: Date | null;
@@ -72,9 +126,13 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   appliedOrderPromoName: string | null;
   deliveries: FieldSalesDeliverySummary[];
   /**
-   * The approve-time transfer of a konsi order approved before stock moved at shipment
-   * completion (`shipmentId: null`) — per-shipment transfers are not surfaced here. `null` for
-   * every konsi order approved since.
+   * The approve-time transfer of a konsi order approved before stock moved per delivery shipment
+   * (`shipmentId: null`). Per-shipment transfers are not surfaced here: since round 4 each one is
+   * written when its shipment is created (IN_TRANSIT, stock out of the main warehouse) and only
+   * reaches the store's stock at the store receipt (RECEIVED), or goes back on a cancel or door
+   * refusal. Neither is an old order's arrival confirmation (`oldOrderArrival`), which also has no
+   * shipment but is not an approve-time transfer and has no surat keluar. `null` for every konsi
+   * order approved since.
    */
   legacyKonsiTransfer: {
     docNo: string;
@@ -99,6 +157,9 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
     requestedUnitPrice: number | null;
     appealReason: string | null;
     addedById: string | null;
+    /** Baris gratis promo bonus (harga 0). */
+    isBonus: boolean;
+    bonusPromoName: string | null;
   }>;
 };
 
@@ -116,6 +177,8 @@ export function serializeListItem(row: {
   salesman: { name: string | null };
   creditHoldAtCreate: boolean;
   deliveryStatus: FieldSalesDeliveryStatus;
+  remoteChannel?: string | null;
+  cancelledById?: string | null;
 }): FieldSalesOrderListItem {
   return {
     id: row.id,
@@ -129,22 +192,95 @@ export function serializeListItem(row: {
     createdAt: row.createdAt,
     creditHoldAtCreate: row.creditHoldAtCreate,
     deliveryStatus: row.deliveryStatus,
+    // Hanya diteruskan bila kuerinya memilih kolom itu (absen ≠ null).
+    ...(row.remoteChannel !== undefined ? { remoteChannel: row.remoteChannel } : {}),
+    ...(row.cancelledById !== undefined ? { dibatalkan: row.status === "REJECTED" && !!row.cancelledById } : {}),
   };
+}
+
+/**
+ * Tautan ganti untuk sekumpulan pesanan, dua kueri paling banyak (bukan per
+ * baris): pesanan lama yang DIGANTIKAN (lewat `replacesOrderId` baris itu) dan
+ * pesanan baru yang MENGGANTI (baris lain yang `replacesOrderId`-nya menunjuk
+ * ke sini — hanya dicari untuk pesanan yang dibatalkan, karena pesanan yang
+ * diganti selalu dibatalkan di transaksi yang sama).
+ */
+export async function petaGanti(
+  rows: ReadonlyArray<{ id: string; replacesOrderId: string | null; cancelledById: string | null }>,
+): Promise<{ menggantikan: Map<string, TautanPesanan>; digantiDengan: Map<string, TautanPesanan> }> {
+  const idLama = Array.from(new Set(rows.map((r) => r.replacesOrderId).filter((x): x is string => !!x)));
+  const idBatal = rows.filter((r) => !!r.cancelledById).map((r) => r.id);
+  const [lama, baru] = await Promise.all([
+    idLama.length > 0
+      ? prisma.fieldSalesOrder.findMany({ where: { id: { in: idLama } }, select: { id: true, orderNo: true } })
+      : Promise.resolve([] as TautanPesanan[]),
+    idBatal.length > 0
+      ? prisma.fieldSalesOrder.findMany({
+          where: { replacesOrderId: { in: idBatal } },
+          select: { id: true, orderNo: true, replacesOrderId: true },
+        })
+      : Promise.resolve([] as Array<TautanPesanan & { replacesOrderId: string | null }>),
+  ]);
+  const lamaById = new Map(lama.map((o) => [o.id, { id: o.id, orderNo: o.orderNo }]));
+  const menggantikan = new Map<string, TautanPesanan>();
+  for (const r of rows) {
+    const t = r.replacesOrderId ? lamaById.get(r.replacesOrderId) : undefined;
+    if (t) menggantikan.set(r.id, t);
+  }
+  const digantiDengan = new Map<string, TautanPesanan>();
+  for (const o of baru) if (o.replacesOrderId) digantiDengan.set(o.replacesOrderId, { id: o.id, orderNo: o.orderNo });
+  return { menggantikan, digantiDengan };
+}
+
+/** Lencana pre-order satu pesanan, dari peta `lencanaIndenById`. */
+function lencanaPesanan(
+  preorderWindowId: string | null,
+  peta: Map<string, LencanaInden>,
+): FieldSalesOrderListItem["preorder"] {
+  if (!preorderWindowId) return null;
+  return peta.get(preorderWindowId) ?? { id: preorderWindowId, name: null, dirilis: false };
 }
 
 export async function listFieldSalesOrders(
   filter: {
-    status?: FieldSalesOrderStatus;
+    status?: FieldSalesOrderStatusFilter;
     search?: string;
     orderType?: FieldSalesOrderType;
     origin?: FieldSalesOrderOrigin;
     storeId?: string;
     deliveryStatus?: DeliveryStatusFilter;
+    /** INDEN = hanya pesanan pre-order; BIASA = hanya pesanan stok siap. */
+    inden?: "INDEN" | "BIASA";
+    /**
+     * Status pengiriman. Hanya pesanan PUTUS yang DISETUJUI yang punya pengiriman — pesanan
+     * menunggu dan konsinyasi juga bernilai bawaan PENDING di kolomnya, jadi keduanya disaring keluar.
+     */
+    kirim?: FieldSalesDeliveryStatus;
+    /** Pembuat pesanan (`?salesman=` dari Kinerja sales lapangan). */
+    salesmanId?: string;
+    /** Batas tanggal dibuat: `createdAt >= dibuatSejak` dan `< dibuatSebelum` (awal hari WIB). */
+    dibuatSejak?: Date;
+    dibuatSebelum?: Date;
   },
   paging: { page: number; pageSize: number },
 ): Promise<{ orders: FieldSalesOrderListItem[]; totalCount: number }> {
   const where: Prisma.FieldSalesOrderWhereInput = {};
-  if (filter.status) where.status = filter.status;
+  const dan: Prisma.FieldSalesOrderWhereInput[] = [];
+  if (filter.status === "CANCELLED") dan.push({ status: "REJECTED", cancelledById: { not: null } });
+  else if (filter.status === "REJECTED") dan.push({ status: "REJECTED", cancelledById: null });
+  else if (filter.status === "AKTIF") dan.push({ status: { in: ["PENDING_APPROVAL", "APPROVED"] } });
+  else if (filter.status) dan.push({ status: filter.status });
+  if (filter.salesmanId) dan.push({ salesmanId: filter.salesmanId });
+  if (filter.dibuatSejak || filter.dibuatSebelum) {
+    dan.push({
+      createdAt: {
+        ...(filter.dibuatSejak ? { gte: filter.dibuatSejak } : {}),
+        ...(filter.dibuatSebelum ? { lt: filter.dibuatSebelum } : {}),
+      },
+    });
+  }
+  if (filter.kirim) dan.push({ deliveryStatus: filter.kirim, status: "APPROVED", orderType: "PUTUS" });
+  if (dan.length > 0) where.AND = dan;
   if (filter.orderType) where.orderType = filter.orderType;
   if (filter.origin) where.origin = filter.origin;
   if (filter.storeId) where.storeId = filter.storeId;
@@ -153,9 +289,11 @@ export async function listFieldSalesOrders(
     where.status = "APPROVED";
     where.deliveryStatus = filter.deliveryStatus === "OPEN" ? { in: ["PENDING", "PARTIAL"] } : filter.deliveryStatus;
   }
+  if (filter.inden === "INDEN") where.preorderWindowId = { not: null };
+  else if (filter.inden === "BIASA") where.preorderWindowId = null;
   if (filter.search && filter.search.trim()) {
     const s = filter.search.trim();
-    where.OR = [{ orderNo: { contains: s } }, { store: { name: { contains: s } } }];
+    where.OR = [{ orderNo: cariTeks(s) }, { store: { name: cariTeks(s) } }];
   }
   const [rows, totalCount] = await Promise.all([
     prisma.fieldSalesOrder.findMany({
@@ -164,15 +302,24 @@ export async function listFieldSalesOrders(
       skip: (paging.page - 1) * paging.pageSize,
       take: paging.pageSize,
       select: {
-        id: true, orderNo: true, orderType: true, origin: true, status: true, total: true, createdAt: true,
-        creditHoldAtCreate: true, deliveryStatus: true,
+        id: true, orderNo: true, orderType: true, origin: true, status: true, total: true, createdAt: true, remoteChannel: true,
+        creditHoldAtCreate: true, preorderWindowId: true, cancelledById: true, replacesOrderId: true, deliveryStatus: true,
         store: { select: { name: true } },
         salesman: { select: { name: true } },
       },
     }),
     prisma.fieldSalesOrder.count({ where }),
   ]);
-  return { orders: rows.map(serializeListItem), totalCount };
+  const [jendela, ganti] = await Promise.all([lencanaIndenById(rows.map((r) => r.preorderWindowId)), petaGanti(rows)]);
+  return {
+    orders: rows.map((r) => ({
+      ...serializeListItem(r),
+      preorder: lencanaPesanan(r.preorderWindowId, jendela),
+      menggantikan: ganti.menggantikan.get(r.id) ?? null,
+      digantiDengan: ganti.digantiDengan.get(r.id) ?? null,
+    })),
+    totalCount,
+  };
 }
 
 export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrderDetail | null> {
@@ -183,14 +330,15 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
       creditHoldAtCreate: true,
       approvedAt: true, rejectedAt: true, rejectReason: true, createdAt: true,
       closedAt: true, closeReason: true,
-      orderDiscountAmount: true, appliedOrderPromoId: true, deliveryStatus: true,
+      orderDiscountAmount: true, appliedOrderPromoId: true, deliveryStatus: true, remoteChannel: true,
+      preorderWindowId: true, cancelledById: true, cancelledAt: true, replacesOrderId: true,
       store: { select: { name: true, markupPercent: true, paymentTempo: true } },
       salesman: { select: { name: true } },
       lines: {
         select: {
           id: true, itemId: true, productName: true, variantSku: true, qty: true, unitPrice: true, lineTotal: true,
           discountAmount: true, appliedPromoId: true, requestedUnitPrice: true, appealReason: true,
-          deliveredQty: true, cancelledQty: true, addedById: true,
+          deliveredQty: true, cancelledQty: true, addedById: true, isBonus: true, bonusPromoId: true,
           item: { select: { variants: true } },
         },
       },
@@ -199,18 +347,21 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         select: {
           id: true, docNo: true, deliveredAt: true, invoiceDate: true, dueDate: true,
           subtotal: true, discountAmount: true, total: true,
+          receivedByName: true, receivedAt: true, podPhotoUrl: true,
+          voidedAt: true, voidReason: true, correctedAt: true,
           deliveredBy: { select: { name: true } },
-          taxInvoice: { select: { status: true } },
+          receivable: { select: { id: true, invoiceNo: true } },
+          taxInvoice: { select: { status: true, invoiceNo: true } },
           lines: {
             select: {
               id: true, orderLineId: true, productName: true, variantSku: true, qty: true,
-              unitPrice: true, discountAmount: true, lineTotal: true,
+              unitPrice: true, discountAmount: true, lineTotal: true, returnedQty: true, lostQty: true,
             },
           },
         },
       },
       konsiTransfers: {
-        where: { shipmentId: null },
+        where: { shipmentId: null, oldOrderArrival: false },
         orderBy: { createdAt: "asc" },
         select: {
           docNo: true,
@@ -256,15 +407,29 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
   };
 
   const promoIds = Array.from(
-    new Set([row.appliedOrderPromoId, ...row.lines.map((l) => l.appliedPromoId)].filter((v): v is string => v !== null)),
+    new Set(
+      [row.appliedOrderPromoId, ...row.lines.map((l) => l.appliedPromoId), ...row.lines.map((l) => l.bonusPromoId)].filter(
+        (v): v is string => v !== null,
+      ),
+    ),
   );
   const promos = promoIds.length > 0
     ? await prisma.promo.findMany({ where: { id: { in: promoIds } }, select: { id: true, name: true } })
     : [];
   const promoNameById = new Map(promos.map((p) => [p.id, p.name]));
+  const [jendela, ganti, pembatal] = await Promise.all([
+    lencanaIndenById([row.preorderWindowId]),
+    petaGanti([row]),
+    row.cancelledById ? prisma.user.findUnique({ where: { id: row.cancelledById }, select: { name: true, email: true } }) : null,
+  ]);
 
   return {
     ...serializeListItem(row),
+    preorder: lencanaPesanan(row.preorderWindowId, jendela),
+    menggantikan: ganti.menggantikan.get(row.id) ?? null,
+    digantiDengan: ganti.digantiDengan.get(row.id) ?? null,
+    cancelledAt: row.cancelledAt,
+    cancelledByName: row.cancelledById ? (pembatal?.name ?? pembatal?.email ?? "—") : null,
     note: row.note,
     subtotal: toNum(row.subtotal),
     creditHoldAtCreate: row.creditHoldAtCreate,
@@ -301,6 +466,9 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
       total: toNum(d.total),
       deliveredByName: d.deliveredBy.name ?? "—",
       taxInvoiceStatus: d.taxInvoice?.status ?? null,
+      receivedByName: d.receivedByName,
+      receivedAt: d.receivedAt,
+      podPhotoUrl: d.podPhotoUrl,
       lines: d.lines.map((dl) => ({
         id: dl.id,
         orderLineId: dl.orderLineId,
@@ -310,7 +478,14 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         unitPrice: dl.unitPrice === null ? null : toNum(dl.unitPrice),
         discountAmount: toNum(dl.discountAmount),
         lineTotal: dl.lineTotal === null ? null : toNum(dl.lineTotal),
+        returnedQty: dl.returnedQty,
+        lostQty: dl.lostQty,
       })),
+      receivable: d.receivable ? { id: d.receivable.id, invoiceNo: d.receivable.invoiceNo } : null,
+      taxInvoice: d.taxInvoice ? { status: d.taxInvoice.status, invoiceNo: d.taxInvoice.invoiceNo } : null,
+      voidedAt: d.voidedAt,
+      voidReason: d.voidReason,
+      correctedAt: d.correctedAt,
     })),
     lines: row.lines.map((l) => {
       const qty = l.qty;
@@ -328,10 +503,13 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         outstanding: outstandingQty({ qty: l.qty, deliveredQty: l.deliveredQty, cancelledQty: l.cancelledQty }),
         discountAmount,
         appliedPromoName: l.appliedPromoId ? promoNameById.get(l.appliedPromoId) ?? null : null,
-        belowCost: row.orderType === "PUTUS" && qty > 0 && netUnit < avgCost,
+        // Barang bonus memang gratis — bukan "di bawah modal" karena promo potongan.
+        belowCost: row.orderType === "PUTUS" && !l.isBonus && qty > 0 && netUnit < avgCost,
         requestedUnitPrice: l.requestedUnitPrice === null ? null : toNum(l.requestedUnitPrice),
         appealReason: l.appealReason,
         addedById: l.addedById,
+        isBonus: l.isBonus,
+        bonusPromoName: l.bonusPromoId ? promoNameById.get(l.bonusPromoId) ?? null : null,
       };
     }),
   };
@@ -348,16 +526,26 @@ export type StoreOrderSummaryRow = {
 
 /**
  * `total` is the order's EFFECTIVE value, not the raw `FieldSalesOrder.total`, for an APPROVED
- * putus order: what its deliveries billed (their whole-rupiah `total`s) plus the still-open
- * undelivered remainder, so a remainder-closed order counts only what was delivered. The remainder
- * is measured the way credit exposure measures it (exact delivered goods values through
- * `undeliveredResidual`) and is zero once the order is CLOSED. Konsi and not-yet-approved orders
- * keep the order's own total.
+ * putus order: what its notas bill the store (their whole-rupiah `total`s, as corrected) plus the
+ * value still on NO nota, so a remainder-closed order counts only what was delivered. The
+ * remainder is measured the way credit exposure and the dashboard measure it — the order's own
+ * open LINE quantity through `nilaiBelumDinota` — and is zero once the order is CLOSED. Reading the
+ * lines, never the delivery rows, is what keeps a corrected or voided nota right: pieces lost in
+ * transit lower the nota but keep `deliveredQty` (P24), so they count nowhere; pieces refused at the
+ * door, and every piece of a voided nota (P16/P25), reopen on the order and count as still to
+ * deliver. Konsi and not-yet-approved orders keep the order's own total.
  */
 export async function getStoreOrderSummary(storeId: string): Promise<StoreOrderSummaryRow[]> {
   const rows = await prisma.fieldSalesOrder.findMany({
     where: { storeId, status: { not: "REJECTED" } },
-    orderBy: { createdAt: "desc" },
+    /*
+     * `createdAt` alone is not a total order. It has millisecond resolution, so
+     * two orders taken in the same tick tie and the database is free to return
+     * them either way — which means the "5 newest" window itself can differ
+     * between two identical calls. `orderNo` breaks the tie deterministically
+     * because it is unique and monotonic within its prefix.
+     */
+    orderBy: [{ createdAt: "desc" }, { orderNo: "desc" }],
     take: 5,
     select: {
       id: true,
@@ -365,16 +553,11 @@ export async function getStoreOrderSummary(storeId: string): Promise<StoreOrderS
       orderType: true,
       status: true,
       total: true,
+      orderDiscountAmount: true,
       deliveryStatus: true,
       createdAt: true,
-      deliveries: {
-        select: {
-          total: true,
-          subtotal: true,
-          discountAmount: true,
-          lines: { select: { discountAmount: true } },
-        },
-      },
+      lines: { select: { qty: true, deliveredQty: true, cancelledQty: true, lineTotal: true, discountAmount: true } },
+      deliveries: { select: { total: true } },
     },
   });
   return rows.map(r => {
@@ -382,16 +565,17 @@ export async function getStoreOrderSummary(storeId: string): Promise<StoreOrderS
     const delivered = r.deliveries.reduce((sum, d) => sum + Number(d.total), 0);
     const residual = r.deliveryStatus === "CLOSED"
       ? 0
-      : undeliveredResidual(
-        Number(r.total),
-        r.deliveries.map((d) =>
-          deliveredGoodsValue({
-            subtotal: Number(d.subtotal),
-            discountAmount: Number(d.discountAmount),
-            lineDiscounts: d.lines.map((l) => Number(l.discountAmount)),
-          }),
-        ),
-      );
+      : nilaiBelumDinota({
+        total: Number(r.total),
+        orderDiscountAmount: Number(r.orderDiscountAmount),
+        lines: r.lines.map((l) => ({
+          qty: l.qty,
+          deliveredQty: l.deliveredQty,
+          cancelledQty: l.cancelledQty,
+          lineTotal: Number(l.lineTotal),
+          discountAmount: Number(l.discountAmount),
+        })),
+      });
     return {
       id: r.id,
       orderNo: r.orderNo,
@@ -412,12 +596,16 @@ export type StoreSentItemRow = {
 };
 
 /**
- * Counts what actually reached the store, never what was approved: an approved order can sit
+ * Counts what was SENT to the store, never what was approved: an approved order can sit
  * undelivered, or be partly delivered and have its remainder closed, and neither leaves the
- * warehouse. Putus reads its delivery lines. Konsi has no delivery document — its stock moves
- * through a KonsiTransfer when a delivery shipment completes — so it reads the order lines'
- * `deliveredQty`, which that completion advances. A legacy konsi order the backfill marked
- * delivered carries `deliveredQty = qty`, so it counts in full, as it did before.
+ * warehouse. Sent is not the same as received: goods still on the way count here, because both
+ * documents are written when the shipment is created, not when the store receives it.
+ * - Putus reads its nota lines' billed `qty`: a voided nota ("tidak jadi dikirim") is zeroed, and a
+ *   correction after the door takes off the pieces refused there or lost on the way.
+ * - Konsi has no nota — its stock goes into transit through a KonsiTransfer when the shipment is
+ *   created — so it reads the order lines' `deliveredQty`, which that creation advances and a
+ *   cancel or door refusal takes back. A legacy konsi order the backfill marked delivered carries
+ *   `deliveredQty = qty`, so it counts in full, as it did before.
  */
 export async function getStoreSentItems(storeId: string): Promise<StoreSentItemRow[]> {
   const [deliveredPutus, deliveredKonsi] = await Promise.all([
@@ -506,8 +694,9 @@ export async function sentItemIds(
 }
 
 export async function getSmartRequestHistory(storeId: string, candidateItemIds: string[]): Promise<PlanHistory> {
+  // Baris bonus bukan pilihan toko — tidak dihitung sebagai "pernah dipesan".
   const orderedRows = await prisma.fieldSalesOrderLine.findMany({
-    where: { order: { storeId, status: { not: "REJECTED" } } },
+    where: { isBonus: false, order: { storeId, status: { not: "REJECTED" } } },
     select: { itemId: true },
     distinct: ["itemId"],
   });
@@ -516,7 +705,7 @@ export async function getSmartRequestHistory(storeId: string, candidateItemIds: 
 
   const grouped = await prisma.fieldSalesOrderLine.groupBy({
     by: ["itemId"],
-    where: { order: { storeId, status: "APPROVED" } },
+    where: { isBonus: false, order: { storeId, status: "APPROVED" } },
     _sum: { qty: true },
   });
   const qtyByItem = new Map<string, number>(grouped.map((g) => [g.itemId, g._sum.qty ?? 0]));
@@ -558,7 +747,8 @@ export async function listStoreNeverSentSuggestions(storeId: string): Promise<Ko
    */
   const gapKeys = new Set((await listAssortmentGaps(storeId)).map((g) => `${g.itemId}::${g.variantSku}`));
 
-  const where: Prisma.ItemWhereInput = { isActive: true, type: "FINISHED_GOOD" };
+  /* Konsi goes to stores, so a "Marketplace saja" item is never suggested (owner P3a). Stricter than the writers, so no UNKNOWN_ITEM abort. */
+  const where: Prisma.ItemWhereInput = { isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() };
   /* Prisma's notIn with an empty array is untrustworthy to lean on — skip the filter entirely. */
   if (exclude.size > 0) where.id = { notIn: [...exclude] };
 
@@ -596,7 +786,8 @@ export async function listStoreNeverSentSuggestions(storeId: string): Promise<Ko
          * against a single row chosen by `findReservationInventory`'s findFirst, so the minimum is
          * the only figure guaranteed not to exceed what that reservation can actually satisfy.
          * Summing would offer more than the writer can honor and fail the approval; under-offering
-         * only hides a little stock. Fail-safe direction wins.
+         * only hides a little stock. Fail-safe direction wins. (getFieldSalesOrderById reads the
+         * writer's own row instead, since it needs the exact figure per order line.)
          */
         existing.available = Math.min(existing.available, available);
       } else {
@@ -710,10 +901,12 @@ export async function listStoreGapSuggestions(
    * Same isActive/type filter `listStoreNeverSentSuggestions` applies — a deactivated or
    * raw-material item dropped from the assortment lines table would otherwise still render here
    * as a stageable gap and abort either caller (the order-scoped approve panel or the admin push)
-   * with UNKNOWN_ITEM, since both writers filter on the same two fields.
+   * with UNKNOWN_ITEM, since both writers filter on the same two fields. The sales-channel filter
+   * (owner P3a: a "Marketplace saja" item is never offered to a store) is stricter than the writers,
+   * so it can only drop a row, never abort one.
    */
   const items = await prisma.item.findMany({
-    where: { id: { in: itemIds }, isActive: true, type: "FINISHED_GOOD" },
+    where: { id: { in: itemIds }, isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() },
     select: {
       id: true,
       sellingPrice: true,

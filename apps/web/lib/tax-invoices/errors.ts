@@ -15,3 +15,36 @@ export class TaxInvoiceError extends Error {
     this.name = "TaxInvoiceError";
   }
 }
+
+/** Kode layar untuk nomor seri faktur pajak (NSFP) yang ditolak penulis. */
+export type KodeNomorFaktur = "NOMOR_FAKTUR_GANDA" | "NOMOR_FAKTUR_FORMAT";
+
+export type PenolakanNomorFaktur = {
+  code: KodeNomorFaktur;
+  /**
+   * Hanya pada NOMOR_FAKTUR_GANDA: dokumen yang sudah memegang nomor itu — nota
+   * pengiriman, atau laporan sell-through konsi. Paling banyak satu yang terisi.
+   */
+  dipakaiDeliveryId: string | null;
+  dipakaiSellThroughId: string | null;
+};
+
+/**
+ * `NomorFakturError` (lib/tax-invoices/writer.ts) membawa `code` INVALID_REQUEST
+ * yang generik; `sebab`-nya yang membedakan format vs ganda. Dibaca dari bentuknya,
+ * bukan lewat `instanceof` kelas penulis, supaya aksi tidak perlu mengimpor penulis
+ * hanya untuk kelas galatnya. Selain itu → null (bukan penolakan nomor).
+ */
+export function penolakanNomorFaktur(e: unknown): PenolakanNomorFaktur | null {
+  if (!(e instanceof TaxInvoiceError) || e.code !== "INVALID_REQUEST") return null;
+  const { sebab, dipakai } = e as TaxInvoiceError & { sebab?: unknown; dipakai?: unknown };
+  if (sebab === "FORMAT") return { code: "NOMOR_FAKTUR_FORMAT", dipakaiDeliveryId: null, dipakaiSellThroughId: null };
+  if (sebab !== "GANDA") return null;
+  const pemegang = typeof dipakai === "object" && dipakai !== null ? (dipakai as Record<string, unknown>) : {};
+  const teks = (v: unknown): string | null => (typeof v === "string" ? v : null);
+  return {
+    code: "NOMOR_FAKTUR_GANDA",
+    dipakaiDeliveryId: teks(pemegang.deliveryId),
+    dipakaiSellThroughId: teks(pemegang.sellThroughId),
+  };
+}

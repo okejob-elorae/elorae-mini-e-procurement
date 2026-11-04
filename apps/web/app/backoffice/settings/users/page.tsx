@@ -1,0 +1,93 @@
+import { redirect } from "next/navigation";
+import { prisma } from "@elorae/db";
+import { auth } from "@/lib/auth";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { bulanGajiDibayar } from "@/lib/spg/gaji-pokok-queries";
+import { perannyaSpg } from "@/lib/users/validasi";
+import { bacaBukaAwal } from "./aturan-pengguna";
+import { PenggunaClient } from "./PenggunaClient";
+
+export const dynamic = "force-dynamic";
+
+type PageProps = {
+  searchParams: Promise<{ baru?: string | string[]; ubah?: string | string[] }>;
+};
+
+/**
+ * Pengaturan → Pengguna: tambah akun (sales, SPG, admin, …), pasang sandi,
+ * ganti peran, dan pilih toko tetap untuk SPG.
+ *
+ * Satu-satunya layar akun sejak Akun Profil ditutup (keputusan pemilik
+ * 2026-11-01); `?baru=1` / `?ubah=<id>` membuka formulirnya langsung, untuk
+ * rute Akun Profil lama yang diteruskan ke sini.
+ */
+export default async function PenggunaPage({ searchParams }: PageProps) {
+  const bukaAwal = bacaBukaAwal(await searchParams);
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTINGS_SECURITY_MANAGE)) redirect("/backoffice/settings");
+  // Peran dibuat dan diubah di Pengaturan → Peran & Izin; tautannya hanya untuk yang boleh membukanya.
+  const bolehLihatPeran = hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTINGS_RBAC_VIEW);
+
+  const [users, roles, stores] = await Promise.all([
+    prisma.user.findMany({
+      orderBy: [{ name: "asc" }, { email: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        roleId: true,
+        assignedStoreId: true,
+        passwordHash: true,
+        spgStartedOn: true,
+        spgEndedOn: true,
+        spgEndedStoreId: true,
+      },
+    }),
+    prisma.roleDefinition.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, isSystem: true, permissions: { select: { permission: { select: { code: true } } } } },
+    }),
+    prisma.store.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true } }),
+  ]);
+  // Bulan kerja yang gajinya sudah dibayar, untuk akun SPG (bertugas atau sudah berhenti): dialog
+  // "SPG berhenti" memberi tahu kalau hari terakhirnya jatuh di bulan itu.
+  const idSpg = users.filter((u) => u.assignedStoreId || u.spgEndedStoreId).map((u) => u.id);
+  const dibayar = await bulanGajiDibayar(prisma, idSpg);
+  // Toko tempat SPG berhenti bisa sudah nonaktif — namanya tetap disebut.
+  const tokoBerhentiIds = [...new Set(users.map((u) => u.spgEndedStoreId).filter((x): x is string => Boolean(x)))];
+  const tokoBerhenti = tokoBerhentiIds.length
+    ? new Map((await prisma.store.findMany({ where: { id: { in: tokoBerhentiIds } }, select: { id: true, name: true } })).map((s) => [s.id, s.name]))
+    : new Map<string, string>();
+
+  return (
+    <PenggunaClient
+      sayaId={session.user.id}
+      bolehLihatPeran={bolehLihatPeran}
+      bukaAwal={bukaAwal}
+      pengguna={users.map((u) => ({
+        id: u.id,
+        nama: u.name ?? "",
+        email: u.email,
+        roleId: u.roleId,
+        tokoId: u.assignedStoreId,
+        // Hanya penanda ada/tidak — hash sandi tidak pernah dikirim ke layar.
+        punyaSandi: u.passwordHash !== null,
+        spgMulai: u.spgStartedOn,
+        spgBerhenti: u.spgEndedOn,
+        spgTokoBerhenti: u.spgEndedStoreId ? (tokoBerhenti.get(u.spgEndedStoreId) ?? null) : null,
+        spgBulanDibayar: [...(dibayar.get(u.id) ?? [])].sort(),
+      }))}
+      peran={roles.map((r) => ({
+        id: r.id,
+        nama: r.name,
+        sistem: r.isSystem,
+        spg: perannyaSpg(
+          r.permissions.map((p) => p.permission.code),
+          r.isSystem,
+        ),
+      }))}
+      toko={stores}
+    />
+  );
+}

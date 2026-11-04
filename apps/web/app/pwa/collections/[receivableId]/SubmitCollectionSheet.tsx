@@ -11,6 +11,7 @@ import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -32,9 +33,11 @@ type ProofState =
   | { status: "error"; file: File; notAssigned?: boolean };
 
 /**
- * The reasons this task's brief names explicitly get their own copy. Every other reason
- * `submitCollectionAction` can return (INVALID_REQUEST, INVALID_AMOUNT, NOT_FOUND — a
- * receivable that got settled/reassigned between page load and submit) falls back to
+ * The reasons this task's brief names explicitly get their own copy, plus `KONSI_LEWAT_BKM`: a
+ * consignment bill is paid only through a BKM (owner decision 2026-10-29, one payment path), and
+ * `submitCollection` refuses it — the salesman is told where to report it instead of a generic
+ * error. Every other reason `submitCollectionAction` can return (INVALID_REQUEST, INVALID_AMOUNT,
+ * NOT_FOUND — a receivable that got settled/reassigned between page load and submit) falls back to
  * `errGeneric`, which is this repo's established fallback-message key (see `pwa.storeChanges`).
  */
 const REASON_KEY: Partial<Record<CollectionActionReason, string>> = {
@@ -43,6 +46,7 @@ const REASON_KEY: Partial<Record<CollectionActionReason, string>> = {
   ALREADY_SETTLED: "errAlreadySettled",
   NOT_ASSIGNED_COLLECTOR: "errNotAssignedCollector",
   INVALID_PROOF: "errInvalidProof",
+  KONSI_LEWAT_BKM: "errKonsiLewatBkm",
 };
 
 function formatRupiah(value: number): string {
@@ -254,9 +258,8 @@ export function SubmitCollectionSheet({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="collection-paid-at">{t("paidAtLabel")}</Label>
-          <Input
+          <TanggalInput
             id="collection-paid-at"
-            type="date"
             className="h-10"
             value={paidAt}
             disabled={isPending}

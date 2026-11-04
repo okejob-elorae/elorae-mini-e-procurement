@@ -615,6 +615,32 @@ d("AR queries — sell-through source (test bed only)", () => {
     expect(sellThroughRow.sourceKind).toBe("SELL_THROUGH");
   });
 
+  it("lists a MANUAL receivable under its own invoice number instead of failing the page", async () => {
+    const manual = await prisma.receivable.create({
+      data: {
+        storeId,
+        invoiceNo: `TEST-ARQ2-INV-${token}`,
+        source: "MANUAL",
+        salesmanId: putusSalesmanId,
+        invoiceDate: new Date("2026-05-25T00:00:00.000+07:00"),
+        dueDate: new Date("2026-06-25T00:00:00.000+07:00"),
+        amount: 700,
+        outstanding: 700,
+        originalAmount: 700,
+        outstandingAmount: 700,
+      },
+    });
+    try {
+      const row = (await listReceivables({ storeId })).rows.find((r) => r.id === manual.id);
+      expect(row).toMatchObject({ docNo: `TEST-ARQ2-INV-${token}`, sourceKind: "INVOICE", salesmanName: `Sales Putus ${token}` });
+      expect((await listReceivables({ storeId, salesmanId: putusSalesmanId })).rows.map((r) => r.id)).toContain(manual.id);
+      expect((await listReceivables({ storeId, search: `TEST-ARQ2-INV-${token}` })).rows.map((r) => r.id)).toEqual([manual.id]);
+      expect((await getReceivable(manual.id))?.source).toMatchObject({ kind: "INVOICE", origin: "MANUAL" });
+    } finally {
+      await prisma.receivable.delete({ where: { id: manual.id } });
+    }
+  });
+
   it("filters by salesmanId across both a delivery's order and a sell-through report's own salesman", async () => {
     const putusFiltered = await listReceivables({ storeId, salesmanId: putusSalesmanId });
     expect(putusFiltered.rows.map((r) => r.id)).toEqual([putusRecId]);
@@ -671,11 +697,24 @@ d("AR queries — sell-through source (test bed only)", () => {
   });
 
   it("getPayment resolves a sell-through allocation's docNo off the report", async () => {
-    const payment = await recordPayment({
-      storeId, paidAt: asOf, method: "CASH", recordedById: putusSalesmanId,
-      amount: 200, allocations: [{ receivableId: sellThroughRecId, amount: 200 }],
+    /*
+     * Seeded as rows, not through `recordPayment`: a sell-through bill is a konsi bill, which that
+     * writer refuses (`KONSI_LEWAT_BKM` — paid only through a BKM). This case is about how a
+     * payment row reads back, so it writes the end state a payment on such a bill would leave.
+     */
+    const payment = await prisma.payment.create({
+      data: {
+        docNo: `TEST-ARQ2-PAY-${token}`, storeId, paidAt: asOf, method: "CASH", amount: 200,
+        recordedById: putusSalesmanId,
+        allocations: { create: [{ receivableId: sellThroughRecId, amount: 200 }] },
+      },
+      select: { id: true },
     });
-    paymentId = payment.paymentId;
+    paymentId = payment.id;
+    await prisma.receivable.update({
+      where: { id: sellThroughRecId },
+      data: { paidAmount: 200, outstandingAmount: 300, status: "PARTIAL" },
+    });
 
     const detail = await getPayment(paymentId);
     expect(detail).not.toBeNull();
@@ -781,6 +820,29 @@ d("AR queries — unpaged allocation candidates (test bed only)", () => {
     expect(ids[0]).toBe(partial.id);
     expect(candidates[0].outstandingAmount).toBe(600);
     expect(ids).not.toContain(paid.id);
+  });
+
+  it("leaves a konsi bill out only when a paying picker asks for it", async () => {
+    /*
+     * A konsi bill is paid only through a BKM, so a payment or offset sheet must not offer it.
+     * It carries an orphan `deliveryId` like its siblings: a DELIVERY-sourced row with no source
+     * id is refused by `Receivable_one_source_check`.
+     */
+    const konsi = await prisma.receivable.create({
+      data: {
+        deliveryId: `cap-${token}-konsi`, storeId, isConsignment: true,
+        invoiceDate: new Date(Date.UTC(2026, 0, 1)),
+        dueDate: new Date(Date.UTC(2025, 11, 1)),
+        originalAmount: 1000, outstandingAmount: 1000,
+        status: "OUTSTANDING",
+      },
+    });
+
+    const all = await listAllocationCandidatesForStore(storeId);
+    expect(all.map((c) => c.id)).toContain(konsi.id);
+    const payable = await listAllocationCandidatesForStore(storeId, { excludeKonsiBills: true });
+    expect(payable).toHaveLength(OPEN_COUNT);
+    expect(payable.map((c) => c.id)).not.toContain(konsi.id);
   });
 
   it("getStorePiutangSummary counts every open receivable and still caps the display rows at take", async () => {

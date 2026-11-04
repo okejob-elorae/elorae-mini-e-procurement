@@ -1,0 +1,38 @@
+{
+  "__DEFAULT_SCOPE__": {
+    "webapp.app-context": { "language": "id-ID", "region": "ID" },
+    "webapp.user-detail": {
+      "userInfo": {
+        "user": {
+          "id": "6912345678901234567",
+          "uniqueId": "Budi.Santoso",
+          "nickname": "Budi Santoso",
+          "secUid": "MS4wLjABAAAAbudiSecUid",
+          "privateAccount": false,
+          "verified": false
+        },
+        "stats": {
+          "followerCount": 15230,
+          "followingCount": 120,
+          "heart": 987654,
+          "heartCount": 987654,
+          "videoCount": 87,
+          "diggCount": 0,
+          "friendCount": 5
+        },
+        "statsV2": {
+          "followerCount": "15230",
+          "followingCount": "120",
+          "heart": "987654",
+          "heartCount": "987654",
+          "videoCount": "87",
+          "diggCount": "0",
+          "friendCount": "5"
+        },
+        "itemList": []
+      },
+      "statusCode": 0,
+      "statusMsg": ""
+    }
+  }
+}

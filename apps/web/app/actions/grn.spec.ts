@@ -9,6 +9,7 @@ const {
   mockUserFindUnique,
   mockTransaction,
   mockRecompute,
+  mockPutuskanTanpaPo,
 } = vi.hoisted(() => ({
     mockAuth: vi.fn(),
     mockUserFindUnique: vi.fn(),
@@ -17,6 +18,7 @@ const {
     mockFindUnique: vi.fn(),
     mockCount: vi.fn(),
     mockRecompute: vi.fn(),
+    mockPutuskanTanpaPo: vi.fn(),
   }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -24,9 +26,12 @@ vi.mock("@elorae/db", () => {
   const model = { findMany: mockFindMany, findUnique: mockFindUnique, count: mockCount };
   class ConcurrentFirstReceiptError extends Error {}
   class MainStockNegativeError extends Error {}
+  class PrismaClientKnownRequestError extends Error {}
   return {
     ConcurrentFirstReceiptError,
     MainStockNegativeError,
+    // `runSerializable` reads the isolation level when its module loads.
+    Prisma: { TransactionIsolationLevel: { Serializable: "Serializable" }, PrismaClientKnownRequestError },
     prisma: {
       gRN: model,
       fabricRoll: model,
@@ -61,6 +66,23 @@ vi.mock("@/lib/inventory/grn-journal", () => ({
 vi.mock("@/lib/leadtime/calculations", () => ({ computeActualLeadDays: vi.fn() }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 vi.mock("@/lib/purchase-orders/payment-due", () => ({ recomputePaymentDueDate: mockRecompute }));
+// PPN at receipt reads the PO and the tax settings; this spec is about the GRN writer around them.
+vi.mock("@/lib/finance/operasional/grn-kapitalisasi-queries", () => ({
+  hitungPpnKapitalisasiGrn: vi.fn(async (_tx: unknown, input: { baris: unknown[] }) => input.baris.map(() => 0)),
+}));
+vi.mock("@/lib/finance/pajak/grn-ppn", () => ({
+  hitungPpnMasukanGrn: vi.fn(async () => ({ ppn: 0, dpp: 0, kenaPpn: new Set<string>(), barisPo: null })),
+  kunciBarisPpn: (itemId: string, variantSku?: string | null) => `${itemId}\t${variantSku ?? ""}`,
+}));
+vi.mock("@/lib/jubelio/antre-push-stok", () => ({ antrekanPushStok: vi.fn(async () => ({})) }));
+vi.mock("@/lib/grn/grn-tanpa-po-writer", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/grn/grn-tanpa-po-writer")>()),
+  putuskanGrnTanpaPo: mockPutuskanTanpaPo,
+}));
+vi.mock("@/lib/finance/jurnal-tertunda", () => ({
+  dokumenJurnal: (sourceType: string, sourceId: string) => ({ sourceType, sourceId }),
+  tandaiJurnalTertundaSelesai: vi.fn(async () => 0),
+}));
 
 import {
   approveGRNByOwner,
@@ -72,15 +94,22 @@ import {
   getGRNs,
   getGrnJournalState,
   getRollsByGrnId,
+  putuskanGrnTanpaPoAction,
 } from "./grn";
 import { calculateMovingAverage, findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { getActorName } from "@/lib/notifications/actor-name";
 import { notifyMaterialArrivedForPo } from "@/lib/notifications/events";
 import { logAudit } from "@/lib/audit";
 import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-journal";
+import { PESAN_PEMILIK_GRN } from "@/app/backoffice/inventory/grn/kode-pemilik";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
+
+const vendorReturnReads: Array<[string, () => Promise<unknown>]> = [
+  ["getGRNs", () => getGRNs()],
+  ["getGRNById", () => getGRNById("g1")],
+];
 
 const inventoryOnlyReads: Array<[string, () => Promise<unknown>]> = [
-  ["getGRNById", () => getGRNById("g1")],
   ["getRollsByGrnId", () => getRollsByGrnId("g1")],
   ["getFabricRollFilterOptions", () => getFabricRollFilterOptions()],
   ["getFabricRolls", () => getFabricRolls()],
@@ -101,13 +130,10 @@ describe("grn read actions gate", () => {
     mockCount.mockResolvedValue(0);
   });
 
-  describe.each([
-    ["getGRNs", () => getGRNs()] as [string, () => Promise<unknown>],
-    ...inventoryOnlyReads,
-  ])("%s", (_name, call) => {
+  describe.each([...vendorReturnReads, ...inventoryOnlyReads])("%s", (_name, call) => {
     it("rejects an unauthenticated caller and runs no query", async () => {
       mockAuth.mockResolvedValue(null);
-      await expect(call()).rejects.toThrow("Forbidden");
+      await expect(call()).rejects.toThrow("Unauthorized");
       assertNoQueryRan();
     });
 
@@ -128,10 +154,13 @@ describe("grn read actions gate", () => {
     });
   });
 
-  it("getGRNs also admits vendor_returns:view, which the vendor-return pages call it under", async () => {
-    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["vendor_returns:view"] } });
-    await expect(getGRNs()).resolves.toBeDefined();
-  });
+  it.each(vendorReturnReads)(
+    "%s also admits vendor_returns:view, which the vendor-return pages call it under",
+    async (_name, call) => {
+      mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["vendor_returns:view"] } });
+      await expect(call()).resolves.toBeDefined();
+    }
+  );
 
   describe("getGRNs search", () => {
     const expectedOr = [
@@ -205,11 +234,11 @@ describe("grn actor trust", () => {
     ["approveGRNByOwner", () => approveGRNByOwner("g1", "u1"), "Only owner/admin can approve over-receive GRN"],
     ["declineGRNByOwner", () => declineGRNByOwner("g1", "u1"), "Only owner/admin can decline over-receive GRN"],
   ] as Array<[string, () => Promise<unknown>, string]>)(
-    "%s runs the role check on the session user",
+    "%s refuses a session without the admin wildcard before any write",
     async (_name, call, message) => {
-      mockUserFindUnique.mockResolvedValue({ role: "WAREHOUSE" });
+      // Owner = system admin: the `*` permission lib/auth.ts grants, read from the session.
+      mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["inventory:manage"] } });
       await expect(call()).rejects.toThrow(message);
-      expect(mockUserFindUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "u1" } }));
       expect(mockTransaction).not.toHaveBeenCalled();
     }
   );
@@ -228,7 +257,6 @@ describe("payment due date wiring", () => {
   });
 
   it("declineGRNByOwner recomputes after the GRN is stamped as declined", async () => {
-    mockUserFindUnique.mockResolvedValue({ role: "ADMIN" });
     vi.mocked(findExistingInventoryValueRow).mockResolvedValue({ qtyOnHand: 10 } as never);
     const tx = {
       gRN: {
@@ -254,7 +282,7 @@ describe("payment due date wiring", () => {
       },
       purchaseOrder: { update: vi.fn().mockResolvedValue({}) },
       pOStatusHistory: { create: vi.fn().mockResolvedValue({}) },
-      vendorBillLine: { groupBy: vi.fn().mockResolvedValue([]) },
+      vendorBillLine: { count: vi.fn().mockResolvedValue(0) },
     };
     mockTransaction.mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx));
 
@@ -271,11 +299,14 @@ describe("payment due date wiring", () => {
       mockRecompute.mock.invocationCallOrder[0]
     );
 
-    // Refused only when live bills would charge for more than stays received (4 here).
-    tx.vendorBillLine.groupBy.mockResolvedValue([{ poItemId: "pi1", _sum: { qty: 5 } }]);
+    // Invoices name receipts (GRN_ITEM lines): refused while any live bill names this GRN, before any write.
+    tx.vendorBillLine.count.mockResolvedValue(1);
     vi.mocked(tx.gRN.update).mockClear();
-    await expect(declineGRNByOwner("g1", "u1")).rejects.toThrow("vendor bills already charge for more");
+    vi.mocked(tx.fabricRoll.deleteMany).mockClear();
+    await expect(declineGRNByOwner("g1", "u1")).rejects.toThrow(PESAN_PEMILIK_GRN.SUDAH_DITAGIH);
+    expect(tx.vendorBillLine.count).toHaveBeenLastCalledWith({ where: { grnId: "g1", bill: { status: { not: "VOID" } } } });
     expect(tx.gRN.update).not.toHaveBeenCalled();
+    expect(tx.fabricRoll.deleteMany).not.toHaveBeenCalled();
   });
 
   describe("createGRN", () => {
@@ -327,6 +358,7 @@ describe("payment due date wiring", () => {
           findUnique: vi
             .fn()
             .mockResolvedValue({ type: "RAW", uomId: "u", overReceiveThreshold: null }),
+          findMany: vi.fn().mockResolvedValue([{ id: "i1", type: "RAW" }]),
         },
         pOItem: {
           findMany: vi
@@ -342,6 +374,11 @@ describe("payment due date wiring", () => {
           update: vi.fn().mockResolvedValue({}),
         },
         pOStatusHistory: { create: vi.fn().mockResolvedValue({}) },
+        // GRN tanpa PO: menunggu konfirmasi admin, dengan satu lonceng di transaksi yang sama (P51a).
+        supplier: { findUnique: vi.fn().mockResolvedValue({ name: "Pemasok uji" }) },
+        adminNotification: {
+          create: vi.fn().mockResolvedValue({ id: "n1", category: "GRN_NO_PO_PENDING", title: "t", message: "m", metadata: {} }),
+        },
       };
     }
 
@@ -367,7 +404,7 @@ describe("payment due date wiring", () => {
       expect(mockRecompute).toHaveBeenCalledWith(tx, "po1");
     });
 
-    it("does not recompute for a GRN without a poId", async () => {
+    it("a GRN without a poId waits for the admin: no recompute, no stock, no journal, one bell in the transaction", async () => {
       const tx = buildTx();
       tx.gRN.create.mockResolvedValue({
         id: "g1",
@@ -380,6 +417,8 @@ describe("payment due date wiring", () => {
         notes: null,
         grnDate: new Date(),
         createdAt: new Date(),
+        requiresNoPoConfirmation: true,
+        noPoConfirmedAt: null,
       });
       mockTransaction.mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx));
 
@@ -389,7 +428,81 @@ describe("payment due date wiring", () => {
       );
 
       expect(result.success).toBe(true);
+      if (result.success) expect(result.grn.menungguKonfirmasi).toBe(true);
+      expect(tx.gRN.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ requiresNoPoConfirmation: true }) })
+      );
       expect(mockRecompute).not.toHaveBeenCalled();
+      expect(calculateMovingAverage).not.toHaveBeenCalled();
+      expect(tx.fabricRoll.createMany).not.toHaveBeenCalled();
+      expect(postGrnJournal).not.toHaveBeenCalled();
+      expect(tx.adminNotification.create).toHaveBeenCalledTimes(1);
+      expect(tx.adminNotification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            category: "GRN_NO_PO_PENDING",
+            metadata: { grnId: "g1", supplierId: "s1", docNumber: expect.stringMatching(/^GRN\//) },
+          }),
+        })
+      );
     });
+
+    it("a GRN with a poId is processed at once and writes no confirmation bell", async () => {
+      const tx = buildTx();
+      mockTransaction.mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx));
+
+      const result = await createGRN(
+        { poId: "po1", supplierId: "s1", items: [{ itemId: "i1", qty: 5, unitCost: 1 }] } as never,
+        "u1"
+      );
+
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.grn.menungguKonfirmasi).toBe(false);
+      expect(calculateMovingAverage).toHaveBeenCalled();
+      expect(tx.adminNotification.create).not.toHaveBeenCalled();
+    });
+  });
+});
+
+/*
+ * Konfirmasi admin atas GRN tanpa PO (keputusan pemilik 2026-11-02, P51a): izinnya
+ * `goods_receipts:confirm_no_po` — yang sama dengan tombolnya — diperiksa SEBELUM penulisnya. Pengelola
+ * gudang (`inventory:manage`) saja tidak bisa mengonfirmasi. Sesudah konfirmasi: push stok lalu jurnal.
+ */
+describe("putuskanGrnTanpaPoAction gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPutuskanTanpaPo.mockResolvedValue({ ok: true, barang: ["i1"], docNumber: "GRN/1" });
+    vi.mocked(postGrnJournal).mockResolvedValue({ ok: true } as never);
+  });
+
+  it("refuses without a session, and never reaches the writer", async () => {
+    mockAuth.mockResolvedValue(null);
+    expect(await putuskanGrnTanpaPoAction("g1", "KONFIRMASI")).toEqual({ ok: false, code: "TANPA_AKSES" });
+    expect(mockPutuskanTanpaPo).not.toHaveBeenCalled();
+  });
+
+  it("inventory:manage alone cannot confirm a GRN without a PO", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["inventory:view", "inventory:manage"] } });
+    expect(await putuskanGrnTanpaPoAction("g1", "KONFIRMASI")).toEqual({ ok: false, code: "TANPA_AKSES" });
+    expect(mockPutuskanTanpaPo).not.toHaveBeenCalled();
+    expect(antrekanPushStok).not.toHaveBeenCalled();
+    expect(postGrnJournal).not.toHaveBeenCalled();
+  });
+
+  it("goods_receipts:confirm_no_po confirms with the session actor, then pushes stock and posts the receipt journal", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["goods_receipts:confirm_no_po"] } });
+    expect(await putuskanGrnTanpaPoAction("g1", "KONFIRMASI")).toEqual({ ok: true, docNumber: "GRN/1" });
+    expect(mockPutuskanTanpaPo).toHaveBeenCalledWith({ grnId: "g1", keputusan: "KONFIRMASI", olehUserId: "u1" });
+    expect(antrekanPushStok).toHaveBeenCalledWith(["i1"], { sumber: "GRN", ref: "GRN/1", userId: "u1" });
+    expect(postGrnJournal).toHaveBeenCalledWith("g1", "u1");
+  });
+
+  it("a writer refusal comes back as its code, with no push and no journal", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["goods_receipts:confirm_no_po"] } });
+    mockPutuskanTanpaPo.mockResolvedValue({ ok: false, kode: "SUDAH_DIPUTUSKAN" });
+    expect(await putuskanGrnTanpaPoAction("g1", "KONFIRMASI")).toEqual({ ok: false, code: "SUDAH_DIPUTUSKAN" });
+    expect(antrekanPushStok).not.toHaveBeenCalled();
+    expect(postGrnJournal).not.toHaveBeenCalled();
   });
 });

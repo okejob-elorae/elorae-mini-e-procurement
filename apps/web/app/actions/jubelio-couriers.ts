@@ -1,8 +1,16 @@
 "use server";
 
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { apiFetch, extractApiMessage } from "@/lib/internal-api";
 import { auth } from "@/lib/auth";
+import { PERMISSIONS, requirePermission } from "@/lib/rbac";
+import {
+  gagalJubelio,
+  galatDariBalasanApi,
+  jalankanAksiJubelio,
+  type HasilJubelio,
+} from "@/app/backoffice/jubelio/galat-jubelio";
 
 export type JubelioCourierRow = {
   id: number;
@@ -10,18 +18,38 @@ export type JubelioCourierRow = {
   syncedAt: Date;
 };
 
+/**
+ * Untuk dialog Kirim pesanan (`getCouriersForShipDialog`): tetap melempar bila
+ * gagal, dan cukup sudah masuk — pengguna gudang tidak punya izin pengaturan.
+ */
 export async function syncJubelioCouriers(): Promise<{ count: number }> {
   const session = await auth();
   if (!session) throw new Error("Unauthorized");
 
+  const r = await sinkronKurir(session.user.id);
+  if (!r.ok) throw new Error(r.rincian ?? r.code);
+  return r.data;
+}
+
+/** Tombol "Sinkron dari Jubelio" di halaman Kurir Jubelio: `{ ok, code }`, tidak melempar. */
+export async function sinkronkanKurirJubelio(): Promise<HasilJubelio<{ count: number }>> {
+  return jalankanAksiJubelio(async () => {
+    const session = await auth();
+    if (!session) return gagalJubelio("TANPA_AKSES");
+    requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
+    return sinkronKurir(session.user.id);
+  });
+}
+
+async function sinkronKurir(userId: string): Promise<HasilJubelio<{ count: number }>> {
   const r = await apiFetch<{ count: number }>("POST", "/jubelio/couriers/sync", {
-    userId: session.user.id,
+    userId,
     body: {},
   });
   if (!r.ok) {
-    throw new Error(extractApiMessage(r.error, `Courier sync failed (${r.status})`));
+    return galatDariBalasanApi(r.status, extractApiMessage(r.error, `Courier sync failed (${r.status})`));
   }
-  return r.data as { count: number };
+  return { ok: true, data: r.data as { count: number } };
 }
 
 export async function listJubelioCouriers(): Promise<JubelioCourierRow[]> {
@@ -62,7 +90,7 @@ export async function listJubelioCouriersPaged(opts: ListCouriersOpts = {}): Pro
 
   const where: Record<string, unknown> = {};
   if (opts.search && opts.search.trim().length > 0) {
-    where.name = { contains: opts.search.trim() };
+    where.name = cariTeks(opts.search.trim());
   }
 
   const [rows, totalCount] = await Promise.all([

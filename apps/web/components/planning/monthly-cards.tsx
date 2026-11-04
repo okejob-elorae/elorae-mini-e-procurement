@@ -90,6 +90,7 @@ export function MonthlyCards({
                       className="h-8 w-8 shrink-0"
                       onClick={() => onResetMonth(month.month)}
                       title={tm("resetToAuto")}
+                      aria-label={tm("resetToAuto")}
                     >
                       <RotateCcw className="h-3 w-3" />
                     </Button>

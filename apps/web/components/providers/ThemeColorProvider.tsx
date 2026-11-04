@@ -3,13 +3,9 @@
 import { useEffect, useLayoutEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { getUserThemePreference } from '@/app/actions/settings/theme';
-import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
-import {
-  applyDefaultTheme,
-  applyThemeFromPantoneSeed,
-  normalizeThemeHexColor,
-} from '@/lib/theme/theme-color';
+import { applyDefaultTheme, applyThemeFromPantoneSeed } from '@/lib/theme/theme-color';
 import { DEFAULT_THEME_PRIMARY_COLOR } from '@/lib/theme/theme-presets';
+import { pasangWarnaEfektif } from '@/lib/theme/pasang-warna';
 import {
   applyCachedThemeFromLocalStorage,
   readThemeFromLocalStorage,
@@ -38,31 +34,12 @@ export function ThemeColorProvider({ children }: { children: React.ReactNode }) 
 
     void getUserThemePreference()
       .then((preference) => {
-        const primaryHex = normalizeThemeHexColor(preference.primaryHex);
-        if (preference.pantoneTcx === null) {
-          applyDefaultTheme();
-          saveThemeToLocalStorage(
-            {
-              primary: DEFAULT_THEME_PRIMARY_COLOR,
-              pantoneTcx: null,
-              seedHex: DEFAULT_THEME_PRIMARY_COLOR,
-            },
-            userId
-          );
-          return;
-        }
-
-        const palette = generatePaletteFromSeed(primaryHex);
-        applyThemeFromPantoneSeed(primaryHex, palette);
-        saveThemeToLocalStorage(
-          {
-            primary: primaryHex,
-            pantoneTcx: preference.pantoneTcx,
-            seedHex: primaryHex,
-            palette,
-          },
-          userId
-        );
+        /*
+         * Yang dipasang warna EFEKTIF (pribadi → perusahaan → bawaan), bukan
+         * warna pribadi. Dulu cabangnya `pantoneTcx === null` = bawaan, yang
+         * membuang warna palet populer (tanpa kode Pantone) setiap muat ulang.
+         */
+        pasangWarnaEfektif(preference.efektif, userId);
       })
       .catch(() => {
         // Keep device / local cache when the server action fails.

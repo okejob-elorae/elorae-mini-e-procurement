@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Gift, Plus } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import type { PromoListItem } from "@/lib/promos/queries";
@@ -15,8 +15,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -26,8 +27,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
+import { formatDisplayDate } from "@/lib/date-only";
 
-type PromoTypeFilter = "ALL" | "PERCENT" | "FIXED" | "TIERED";
+type PromoTypeFilter = "ALL" | "PERCENT" | "FIXED" | "TIERED" | "BONUS";
 type ActiveFilter = "ALL" | "true" | "false";
 
 const TYPE_KEY = { PERCENT: "typePercent", FIXED: "typeFixed", TIERED: "typeTiered" } as const;
@@ -47,6 +49,7 @@ export function PromosPageClient(props: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("promos");
+  const tBonus = useTranslations("promoBonus");
   const locale = useLocale();
   const [, startTransition] = useTransition();
 
@@ -73,14 +76,9 @@ export function PromosPageClient(props: Props) {
     startTransition(() => router.push("/backoffice/promos"));
   }
 
-  const formatDate = (date: Date | null) =>
-    date
-      ? new Intl.DateTimeFormat(locale, {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }).format(date)
-      : null;
+  const formatDate = (date: Date | null) => (date ? formatDisplayDate(date, locale) : null);
+
+  const hasFilter = !!props.search || props.type !== "ALL" || props.active !== "ALL";
 
   const formatWindow = (startsAt: Date | null, endsAt: Date | null) => {
     const start = formatDate(startsAt);
@@ -92,9 +90,9 @@ export function PromosPageClient(props: Props) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-semibold">{t("pageTitle")}</h1>
-          <p className="text-muted-foreground">{t("subtitle")}</p>
+          <TombolBantuan judul={t("pageTitle")} />
         </div>
         <Link href="/backoffice/promos/new">
           <Button>
@@ -105,8 +103,8 @@ export function PromosPageClient(props: Props) {
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <div className="lg:col-span-2">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[16rem] flex-[1_1_20rem]">
             <label className="text-xs text-muted-foreground mb-1 block">{t("search")}</label>
             <Input
               placeholder={t("search")}
@@ -114,7 +112,7 @@ export function PromosPageClient(props: Props) {
               onChange={(e) => setSearchInput(e.target.value)}
             />
           </div>
-          <div>
+          <div className="w-full sm:w-40">
             <label className="text-xs text-muted-foreground mb-1 block">{t("type")}</label>
             <Select value={props.type} onValueChange={(v) => pushParam("type", v === "ALL" ? undefined : v)}>
               <SelectTrigger className="w-full">
@@ -125,10 +123,11 @@ export function PromosPageClient(props: Props) {
                 <SelectItem value="PERCENT">{t("typePercent")}</SelectItem>
                 <SelectItem value="FIXED">{t("typeFixed")}</SelectItem>
                 <SelectItem value="TIERED">{t("typeTiered")}</SelectItem>
+                <SelectItem value="BONUS">{tBonus("jenis")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <div>
+          <div className="w-full sm:w-40">
             <label className="text-xs text-muted-foreground mb-1 block">{t("active")}</label>
             <Select value={props.active} onValueChange={(v) => pushParam("active", v === "ALL" ? undefined : v)}>
               <SelectTrigger className="w-full">
@@ -141,57 +140,72 @@ export function PromosPageClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
-        </div>
-        <div className="mt-3 flex justify-end">
-          <Button variant="outline" onClick={reset}>
+          <Button variant="outline" onClick={reset} className="shrink-0">
             {t("reset")}
           </Button>
         </div>
       </Card>
 
       <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("colName")}</TableHead>
-              <TableHead>{t("colType")}</TableHead>
-              <TableHead>{t("colLevel")}</TableHead>
-              <TableHead>{t("colActive")}</TableHead>
-              <TableHead>{t("colWindow")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {props.promos.length === 0 ? (
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Gift className="h-5 w-5" />
+            {t("listTitle")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                  {t("empty")}
-                </TableCell>
+                <TableHead>{t("colName")}</TableHead>
+                <TableHead>{t("colType")}</TableHead>
+                <TableHead>{t("level")}</TableHead>
+                <TableHead>{t("colActive")}</TableHead>
+                <TableHead>{t("colWindow")}</TableHead>
               </TableRow>
-            ) : (
-              props.promos.map((p) => (
-                <TableRow
-                  key={p.id}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => startTransition(() => router.push(`/backoffice/promos/${p.id}`))}
-                >
-                  <TableCell className="max-w-[240px] truncate">{p.name}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">
-                      {t(TYPE_KEY[p.type as keyof typeof TYPE_KEY] ?? "typePercent")}
-                    </Badge>
+            </TableHeader>
+            <TableBody>
+              {props.promos.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="whitespace-normal py-8 text-center text-muted-foreground">
+                    {hasFilter ? (
+                      <div className="flex flex-col items-center gap-3">
+                        <span>{t("emptyFiltered")}</span>
+                        <Button variant="outline" size="sm" onClick={reset}>
+                          {t("clearFilters")}
+                        </Button>
+                      </div>
+                    ) : (
+                      t("empty")
+                    )}
                   </TableCell>
-                  <TableCell>{t(LEVEL_KEY[p.level as keyof typeof LEVEL_KEY] ?? "levelLine")}</TableCell>
-                  <TableCell>
-                    <Badge variant={p.isActive ? "default" : "secondary"}>
-                      {p.isActive ? t("activeYes") : t("activeNo")}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">{formatWindow(p.startsAt, p.endsAt)}</TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                props.promos.map((p) => (
+                  <TableRow
+                    key={p.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => startTransition(() => router.push(`/backoffice/promos/${p.id}`))}
+                  >
+                    <TableCell className="max-w-[240px] truncate">{p.name}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {p.type === "BONUS" ? tBonus("jenis") : t(TYPE_KEY[p.type as keyof typeof TYPE_KEY] ?? "typePercent")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{t(LEVEL_KEY[p.level as keyof typeof LEVEL_KEY] ?? "levelLine")}</TableCell>
+                    <TableCell>
+                      <Badge variant={p.isActive ? "default" : "secondary"}>
+                        {p.isActive ? t("activeYes") : t("activeNo")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">{formatWindow(p.startsAt, p.endsAt)}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
       </Card>
 
       <Pager

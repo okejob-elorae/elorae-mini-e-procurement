@@ -23,6 +23,8 @@ export default async function StoreStocktakeDetailPage({ params }: PageProps) {
   if (!stocktake) notFound();
 
   const canManage = hasPermission(perms, PERMISSIONS.STORES_MANAGE);
+  /* Approving (and cancelling a count already submitted for approval) is its own code, the same one `approveAction`/`cancelAction` enforce. */
+  const canApproveStocktake = hasPermission(perms, PERMISSIONS.STORE_STOCKTAKES_APPROVE);
 
   /**
    * Only fetched for an APPROVED stocktake of a KONSI store — the only combination the
@@ -42,6 +44,7 @@ export default async function StoreStocktakeDetailPage({ params }: PageProps) {
     <StocktakeDetailClient
       stocktake={stocktake}
       canManage={canManage}
+      canApproveStocktake={canApproveStocktake}
       sellThroughEligibility={sellThroughEligibility}
     />
   );

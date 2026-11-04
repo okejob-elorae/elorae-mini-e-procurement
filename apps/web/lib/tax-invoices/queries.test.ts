@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { listTaxInvoices } from "./queries";
-import { recordFieldSalesDelivery } from "@/lib/field-sales/delivery/writer";
+import { catatNotaUji as recordFieldSalesDelivery } from "@/lib/field-sales/delivery/uji-nota";
 
 /* Stock-mutating (goes through the real delivery writer) — never run against the shared prod DB. */
 const url = process.env.DATABASE_URL ?? "";
@@ -186,6 +186,8 @@ d("listTaxInvoices (test bed only)", () => {
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
+    // Nota = piutang: hapus piutangnya SEBELUM notanya (emulasi relasi 1:1 Prisma gagal pada deleteMany banyak nota).
+    await prisma.receivable.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });

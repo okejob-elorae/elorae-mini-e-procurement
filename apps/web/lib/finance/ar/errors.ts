@@ -17,7 +17,9 @@ export type PaymentErrorCode =
   | "NOT_A_RESIDUE"
   | "PENDING_CLAIM"
   | "METHOD_NOT_ALLOWED"
-  | "INVALID_EVENT_ID";
+  | "INVALID_EVENT_ID"
+  /** A konsi bill (`isKonsiBill`, `lib/finance/collections/phone-scope.ts`): paid only through a BKM. */
+  | "KONSI_LEWAT_BKM";
 
 export class PaymentError extends Error {
   code: PaymentErrorCode;

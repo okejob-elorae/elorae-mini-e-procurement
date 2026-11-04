@@ -22,13 +22,24 @@ import { SALES_RETURN_RECEIVED } from "@/lib/sales-returns/bell-copy";
  */
 const CATEGORY_PERMISSION: Record<string, string> = {
   JOURNAL_PENDING: PERMISSIONS.JOURNALS_MANAGE,
+  // Jurnal manual / pembalik yang menunggu persetujuan orang lain (maker-checker,
+  // lib/finance/jurnal-manual). Pembuatnya ikut menerima — penulisnya yang menolak ia menyetujui.
+  JOURNAL_APPROVAL: PERMISSIONS.JOURNALS_MANAGE,
   PENDING_ORDER_APPROVAL: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
   STORE_CHANGE_REQUEST: PERMISSIONS.STORES_MANAGE,
   TAX_INVOICE_PENDING: PERMISSIONS.TAX_INVOICES_MANAGE,
   FIELD_RETURN_MISMATCH: PERMISSIONS.FIELD_RETURNS_MANAGE,
-  CREDIT_LIMIT_HOLD: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
-  COLLECTION_PENDING_VERIFICATION: PERMISSIONS.PAYMENTS_MANAGE,
-  AR_OVERDUE: PERMISSIONS.COLLECTIONS_MANAGE,
+  // Pesanan yang melewati batas kredit hanya bisa disetujui dengan alasan
+  // override, dan alasan itu hanya diterima dari `field_sales_orders:credit_override`
+  // (`approveFieldSalesOrderAction`). Penyetuju biasa sudah diberi tahu lewat
+  // PENDING_ORDER_APPROVAL.
+  CREDIT_LIMIT_HOLD: PERMISSIONS.FIELD_SALES_ORDERS_CREDIT_OVERRIDE,
+  // Memverifikasi setoran penagih = memeriksa pembayaran (`guardVerify` di
+  // app/actions/collections.ts), bukan `payments:manage` yang mencatatnya.
+  COLLECTION_PENDING_VERIFICATION: PERMISSIONS.PAYMENTS_VERIFY,
+  // Pengingat jatuh tempo kantor punya izinnya sendiri — hanya menerima, bawaannya admin dan Keuangan
+  // (keputusan pemilik 2026-11-02, P48). Mengubah ambangnya adalah `receivables:manage` (Q14).
+  AR_OVERDUE: PERMISSIONS.RECEIVABLES_OVERDUE_REMINDER,
   [PO_PAYMENT_DUE]: PERMISSIONS.PURCHASE_ORDERS_EDIT,
   [SALES_RETURN_RECEIVED]: PERMISSIONS.SALES_RETURNS_DECIDE,
   DELIVERY_COMPLETION_STUCK: PERMISSIONS.DELIVERIES_SHIP,
@@ -38,6 +49,101 @@ const CATEGORY_PERMISSION: Record<string, string> = {
   [KONSI_REPORT_READY]: PERMISSIONS.STORES_MANAGE,
   [KONSI_REPORT_HELD]: PERMISSIONS.STORES_MANAGE,
   [KONSI_REPORT_BLOCKED]: PERMISSIONS.STORES_MANAGE,
+  /*
+   * Giro yang efektif hari ini atau lewat. Yang bisa bertindak adalah yang boleh
+   * memverifikasi klaim (`bolehMemverifikasi` di `lib/receivables/izin.ts`,
+   * `payments:verify`) — hanya mereka yang bisa menandai giro cair atau ditolak bank.
+   */
+  GIRO_JATUH_TEMPO: PERMISSIONS.PAYMENTS_VERIFY,
+  /*
+   * Sales menarik laporannya sendiri (salah toko). Yang perlu tahu adalah yang
+   * memutuskan dokumen itu: pemeriksa pembayaran untuk BKM (`bolehMemverifikasi`,
+   * `payments:verify`), pengelola retur untuk NRT — supaya penarikan tidak
+   * pernah diam-diam.
+   */
+  KLAIM_DIBATALKAN_SALES: PERMISSIONS.PAYMENTS_VERIFY,
+  RETUR_DIBATALKAN_SALES: PERMISSIONS.RECEIVABLES_MANAGE,
+  // Sales meminta koreksi laporan yang sudah diproses — ke yang bisa membetulkannya:
+  // BKM dibatalkan / potongannya ditautkan ulang oleh `payments:verify`
+  // (`batalkanKlaimAction`, `tautkanUlangPotonganAction`).
+  KOREKSI_DIMINTA_BKM: PERMISSIONS.PAYMENTS_VERIFY,
+  KOREKSI_DIMINTA_RETUR: PERMISSIONS.RECEIVABLES_MANAGE,
+  // Calon toko baru dari lapangan — yang bisa menyetujui adalah pengelola master toko.
+  STORE_PROPOSAL: PERMISSIONS.STORES_MANAGE,
+  // Ringkasan harian tim lapangan (18.30 WIB) — untuk yang menyetujui pesanan lapangan.
+  RINGKASAN_SALES_HARIAN: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
+  // Biaya perjalanan: ajuan ke penyetuju (`bolehMenyetujuiBiaya`), yang sudah
+  // disetujui ke keuangan yang membayar (`bolehMembayarBiaya`).
+  EXPENSE_CLAIM_SUBMITTED: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
+  EXPENSE_CLAIM_TO_PAY: PERMISSIONS.JOURNALS_MANAGE,
+  // Tukar barang: ajuan ke penyetuju (`bolehMenyetujuiTukar`), yang sudah
+  // disetujui ke gudang yang menyelesaikan (`bolehMenyelesaikanTukar`).
+  STORE_EXCHANGE_PROPOSED: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
+  STORE_EXCHANGE_TO_COMPLETE: PERMISSIONS.INVENTORY_MANAGE,
+  // Pengajuan izin/sakit/cuti — yang memutuskan adalah penyetuju lapangan.
+  LEAVE_REQUEST_SUBMITTED: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
+  // Mutasi antar toko oleh SPG: ajuan ke yang menyetujui mutasi
+  // (`store_transfers:approve`), selisih ke yang memutuskannya
+  // (`store_transfers:decide_shortfall`) — app/actions/spg-mutasi.ts; yang harus
+  // diterima kantor (toko tujuan tanpa SPG) dan yang macet ke pengelola toko,
+  // yang boleh menerima atas nama toko.
+  STORE_TRANSFER_PROPOSED: PERMISSIONS.STORE_TRANSFERS_APPROVE,
+  STORE_TRANSFER_DISCREPANCY: PERMISSIONS.STORE_TRANSFERS_DECIDE_SHORTFALL,
+  STORE_TRANSFER_TO_RECEIVE: PERMISSIONS.STORES_MANAGE,
+  STORE_TRANSFER_STALE: PERMISSIONS.STORES_MANAGE,
+  // Barang rusak yang tiba di kiriman ke toko SPG — gudang yang memutuskan nasibnya.
+  STORE_RECEIPT_DAMAGED: PERMISSIONS.INVENTORY_MANAGE,
+  // Tukar shift SPG yang sudah disetujui rekannya — pengelola toko yang menyetujui.
+  SPG_SHIFT_SWAP: PERMISSIONS.STORES_MANAGE,
+  // Barang hilang (di toko SPG maupun di perjalanan) yang perlu diputuskan
+  // penanggungnya — yang menetapkan beban adalah `receivables:decide_bearer`
+  // (`bolehMemutuskanBeban`, pemisahan tugas di lib/receivables/izin.ts), bukan
+  // `receivables:manage` yang mencatatnya.
+  STOCK_LOSS_OPEN: PERMISSIONS.RECEIVABLES_DECIDE_BEARER,
+  // Selisih retur toko yang baru muncul, atau yang dilaporkan pemegang toko tidak ditemukan — ke yang
+  // memutuskan penanggungnya. Izinnya dipecah dari barang hilang (keputusan pemilik 2026-11-02, P22).
+  RETUR_SELISIH: PERMISSIONS.STORE_RETURNS_DECIDE_SHORTFALL,
+  // Permintaan stok SPG di toko tanpa salesman pemegang — tidak masuk kotak
+  // masuk HP siapa pun, jadi pengelola toko yang menanganinya.
+  SPG_STOCK_REQUEST_UNHELD: PERMISSIONS.STORES_MANAGE,
+  // Nota retur SPG di toko tanpa salesman pemegang — tidak ada orang lapangan
+  // yang menindaklanjutinya, jadi pengelola retur/piutang yang diberi tahu.
+  RETUR_SPG_TANPA_PEMEGANG: PERMISSIONS.RECEIVABLES_MANAGE,
+  // Laporan retur pembeli SPG — penyetujunya (admin, admin penjualan) yang diberi tahu.
+  RETUR_PEMBELI_MENUNGGU: PERMISSIONS.SPG_RETURNS_APPROVE,
+  /*
+   * Nota tagihan putus yang dibatalkan (tidak jadi dikirim, atau seluruh barang ditolak di pintu) atau
+   * dikoreksi ke jumlah yang diterima toko — Keuangan langsung dikabari supaya kertasnya ditarik dan
+   * kelebihan bayar toko dilaporkan (keputusan pemilik 2026-11-02, P25, P34, P41a). Keuangan memegang
+   * `payments:verify`.
+   */
+  DELIVERY_NOTA_VOIDED: PERMISSIONS.PAYMENTS_VERIFY,
+  DELIVERY_NOTA_CORRECTED: PERMISSIONS.PAYMENTS_VERIFY,
+  // Faktur pajak nota itu sudah bernomor: dibatalkan di Coretax, atau diganti faktur pengganti — ke
+  // pencatat faktur pajak (P25, P34).
+  TAX_INVOICE_NOTA_CHANGED: PERMISSIONS.TAX_INVOICES_MANAGE,
+  // Invoice pemasok yang harganya berbeda dari utang tercatat penerimaannya — ke yang memutuskannya
+  // (P27, P53). Penerimaan itu belum bisa dibayar sebelum diputuskan.
+  VENDOR_BILL_PRICE_DIFFERENCE: PERMISSIONS.VENDOR_BILLS_DECIDE_PRICE,
+  // Permintaan invoice yang 7 hari belum terjawab — ke pencatat tagihan pemasok, yang juga memintanya (P19).
+  SUPPLIER_INVOICE_OVERDUE: PERMISSIONS.VENDOR_BILLS_MANAGE,
+  // Penerimaan barang tanpa PO menunggu konfirmasi admin sebelum diproses (P51a).
+  GRN_NO_PO_PENDING: PERMISSIONS.GOODS_RECEIPTS_CONFIRM_NO_PO,
+  // Jadwal bulanan yang diajukan SPG — ke penyetujunya (P7c).
+  SPG_SCHEDULE_SUBMITTED: PERMISSIONS.SPG_SCHEDULES_APPROVE,
+  /*
+   * Catatan check-in toko SPG (P7d, P7e, P61a): yang perlu dimasukkan dan yang dikembalikan pemeriksa
+   * ke pemasuk catatan; yang baru dimasukkan ke pemeriksanya (bawaannya Keuangan).
+   */
+  SPG_ATTENDANCE_NEEDED: PERMISSIONS.SPG_ATTENDANCE_RECORD,
+  SPG_ATTENDANCE_SUBMITTED: PERMISSIONS.SPG_ATTENDANCE_VERIFY,
+  SPG_ATTENDANCE_RETURNED: PERMISSIONS.SPG_ATTENDANCE_RECORD,
+  // Pembayaran utang SPG yang sudah berhenti menunggu cek mutasi bank (keputusan 11, 2026-10-29), dan
+  // yang dikembalikan pemeriksa ke pencatatnya untuk diperbaiki.
+  SPG_DEBT_PAYMENT_SUBMITTED: PERMISSIONS.PAYMENTS_VERIFY,
+  SPG_DEBT_PAYMENT_RETURNED: PERMISSIONS.SPG_COMMISSION_PAY,
+  // Harga di Jubelio diubah langsung dan berbeda dengan ERP (P2) — ke yang mengonfirmasi harga Jubelio.
+  JUBELIO_PRICE_DIFFERS: PERMISSIONS.JUBELIO_PRICES_CONFIRM,
 };
 
 /**
@@ -79,10 +185,10 @@ export function toFcmData(metadata: unknown): Record<string, string> {
  * each, and firebase-admin retries a connection failure for roughly a minute per recipient, so
  * awaiting it stalls the operation that already committed — a canvasser's thermal nota, a PWA
  * order submit. `void` is safe here specifically because web runs as a long-lived Node process on
- * the VPS, not a serverless runtime that freezes on response. The five cron sweeps —
+ * the VPS, not a serverless runtime that freezes on response. The cron sweeps —
  * `runOverdueSweep`, `runKonsiCountSweep`, `runFulfillmentPushDivergenceSweep`,
- * `runPaymentReminderSweep` and `runSalesReturnBellSweep` — await it deliberately: no user is
- * waiting, and an unawaited batch would stampede FCM.
+ * `runPaymentReminderSweep`, `runSalesReturnBellSweep` and `runInvoiceRequestReminderSweep` — await
+ * it deliberately: no user is waiting, and an unawaited batch would stampede FCM.
  * `reportStuckDeliveryCompletionAction` awaits it too: the PWA's offline completion queue calls it
  * mostly from background sync, but also from the pending screen's Retry, where a salesman is
  * waiting, so it is no precedent for an interactive path.

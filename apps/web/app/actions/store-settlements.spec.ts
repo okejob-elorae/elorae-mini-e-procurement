@@ -16,6 +16,7 @@ const {
   mockPostPaymentReceiptJournal,
   mockRevalidatePath,
   mockNotifySalesman,
+  mockFindSettlement,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockHasPermission: vi.fn(),
@@ -25,6 +26,7 @@ const {
   mockPostPaymentReceiptJournal: vi.fn(),
   mockRevalidatePath: vi.fn(),
   mockNotifySalesman: vi.fn(),
+  mockFindSettlement: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -38,6 +40,10 @@ vi.mock("@/lib/finance/ar/post-ar-journal-safely", () => ({ postArJournalSafely:
 vi.mock("@/lib/finance/ar/payment-journal", () => ({ postPaymentReceiptJournal: mockPostPaymentReceiptJournal }));
 vi.mock("@/lib/finance/ar-settlement/approval-notice", () => ({ notifySalesmanOfApproval: mockNotifySalesman }));
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
+vi.mock("@elorae/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@elorae/db")>();
+  return { ...actual, prisma: { storeSettlement: { findUnique: mockFindSettlement } } };
+});
 
 import { SettlementError } from "@/lib/finance/ar-settlement/errors";
 import { PaymentError } from "@/lib/finance/ar/errors";
@@ -54,17 +60,52 @@ describe("store-settlements approve/reject actions (unit — writers mocked)", (
     mockRevalidatePath.mockReset();
     mockNotifySalesman.mockReset();
     mockNotifySalesman.mockResolvedValue(undefined);
+    mockFindSettlement.mockReset();
+    mockFindSettlement.mockResolvedValue({ salesmanId: "salesman-1" });
 
-    mockAuth.mockResolvedValue({ user: { id: "admin-1", permissions: ["collections:manage"] } });
+    mockAuth.mockResolvedValue({ user: { id: "admin-1", permissions: ["payments:verify"] } });
     mockHasPermission.mockReturnValue(true);
     mockPostArJournalSafely.mockResolvedValue({ ok: true, journalId: "j1", created: true });
   });
 
-  it("approveSettlementAction returns FORBIDDEN without collections:manage", async () => {
+  it("approveSettlementAction returns FORBIDDEN without payments:verify", async () => {
     mockHasPermission.mockReturnValue(false);
     const res = await approveSettlementAction({ settlementId: "s1" });
     expect(res).toEqual({ ok: false, reason: "FORBIDDEN" });
     expect(mockApproveSettlement).not.toHaveBeenCalled();
+  });
+
+  /*
+   * Approving a settlement lowers receivables, so it is payment verification (owner, 2026-10-29):
+   * `payments:verify`, no longer `collections:manage`. Both actions pinned in both directions.
+   */
+  it("pins payments:verify on approve and reject, and refuses a collections:manage holder", async () => {
+    mockApproveSettlement.mockResolvedValue({ ok: true, paymentIds: [] });
+    mockRejectSettlement.mockResolvedValue({ ok: true });
+    mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "payments:verify");
+    expect((await approveSettlementAction({ settlementId: "s1" })).ok).toBe(true);
+    expect((await rejectSettlementAction({ settlementId: "s1", reason: "wrong amount" })).ok).toBe(true);
+    expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), "payments:verify");
+
+    mockApproveSettlement.mockClear();
+    mockRejectSettlement.mockClear();
+    mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "collections:manage");
+    expect(await approveSettlementAction({ settlementId: "s1" })).toEqual({ ok: false, reason: "FORBIDDEN" });
+    expect(await rejectSettlementAction({ settlementId: "s1", reason: "wrong amount" })).toEqual({ ok: false, reason: "FORBIDDEN" });
+    expect(mockApproveSettlement).not.toHaveBeenCalled();
+    expect(mockRejectSettlement).not.toHaveBeenCalled();
+  });
+
+  it("refuses the salesman who submitted the settlement, admin included, before either writer runs", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "salesman-1", permissions: ["*"] } });
+    expect(await approveSettlementAction({ settlementId: "s1" })).toEqual({ ok: false, reason: "SELF_VERIFICATION" });
+    expect(await rejectSettlementAction({ settlementId: "s1", reason: "wrong amount" })).toEqual({
+      ok: false,
+      reason: "SELF_VERIFICATION",
+    });
+    expect(mockFindSettlement).toHaveBeenCalledWith({ where: { id: "s1" }, select: { salesmanId: true } });
+    expect(mockApproveSettlement).not.toHaveBeenCalled();
+    expect(mockRejectSettlement).not.toHaveBeenCalled();
   });
 
   it("approveSettlementAction returns INVALID_REQUEST for a malformed input", async () => {
@@ -166,7 +207,7 @@ describe("store-settlements approve/reject actions (unit — writers mocked)", (
     expect(res).toEqual({ ok: false, reason: "UNEXPECTED" });
   });
 
-  it("rejectSettlementAction returns FORBIDDEN without collections:manage", async () => {
+  it("rejectSettlementAction returns FORBIDDEN without payments:verify", async () => {
     mockHasPermission.mockReturnValue(false);
     const res = await rejectSettlementAction({ settlementId: "s1", reason: "wrong amount" });
     expect(res).toEqual({ ok: false, reason: "FORBIDDEN" });

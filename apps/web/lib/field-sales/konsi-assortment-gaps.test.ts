@@ -497,8 +497,17 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
       method: "EXPEDITION",
       lines: [{ orderLineId: line.id, qty: 6 }],
       packedById: userId,
+      idempotencyKey: `KAG-${token}`,
     });
-    await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: `RESI-KAG-${token}` });
+    /* An EXPEDITION shipment needs resi, weight (P35) and the handover photo (P43) before it ships. */
+    await updateShipmentTracking({
+      shipmentId,
+      carrierName: "JNE",
+      resiNumber: `RESI-KAG-${token}`,
+      weightKg: 1.5,
+      handoverPhotoUrl: "https://r2.example/handover.jpg",
+      handoverPhotoR2Key: `delivery-handover/${shipmentId}/handover.jpg`,
+    });
     await shipDeliveryShipment({ shipmentId, shippedById: userId });
     const shipment = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId }, include: { lines: true } });
     await completeDeliveryShipment({

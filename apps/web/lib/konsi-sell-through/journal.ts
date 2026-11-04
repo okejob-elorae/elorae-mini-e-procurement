@@ -1,6 +1,7 @@
 import { prisma, postJournal, JournalError, Prisma, type PrismaClient } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
 import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { KANAL_JURNAL } from "@/lib/finance/journals/kanal";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -59,6 +60,15 @@ const VOID_DESCRIPTION: Record<SellThroughVoidJournalKind, string> = {
  * Billed units leave inventory as COGS and shrunk units as a variance; unabsorbed surplus units
  * come back into inventory as a variance credit — all at the line's creation-time unit cost.
  * `surplusQty` is optional so a caller that never reads `surplus` need not select it.
+ *
+ * "Inventory" here is INVENTORY_CONSIGNMENT, never the warehouse's INVENTORY. Konsi goods are
+ * debited to INVENTORY_CONSIGNMENT when their delivery shipment completes — one journal per
+ * `KonsiTransfer` (`postJurnalPindahKonsi`, lib/finance/operasional) — so every exit from the store
+ * (sold, shrunk) must credit that same account and every surplus found there must debit it. Crediting
+ * INVENTORY instead would drive the warehouse account negative while INVENTORY_CONSIGNMENT only
+ * ever grew. Lines are tagged with the store, like the move journal's, so the account reads per
+ * store. Reports journaled before this rule credited INVENTORY and keep it: a void mirrors the
+ * posted lines, never this rule.
  */
 export function sellThroughCostTotals(lines: Array<{ billedQty: number; shrinkageQty: number; surplusQty?: number; unitCost: number }>): {
   cogs: number;
@@ -86,6 +96,7 @@ async function loadInvoicedReport(client: AnyClient, id: string) {
     where: { id },
     select: {
       docNo: true,
+      storeId: true,
       status: true,
       baseline: true,
       invoiceDate: true,
@@ -175,6 +186,14 @@ async function voidJournalGaps(id: string, client: AnyClient): Promise<SellThrou
   );
 }
 
+/**
+ * DR the consignment-store receivable / CR SALES_REVENUE at the invoice total. The receivable is
+ * AR_CONSIGNMENT — what a konsi store owes for goods sold off its shelf, the same account the
+ * consignment cycle debits when it locks — kept apart from the putus stores' AR_STORE and from the
+ * marketplace AR. The line is tagged with its role as memo and with the store, so a payment receipt
+ * credits the same account back (`postPaymentReceiptJournal`, `lib/finance/ar/store-receivable-role.ts`)
+ * and the reversal mirrors it per store. Reports journaled before this rule carry AR and keep it.
+ */
 export async function postSellThroughRevenueJournal(id: string, postedById: string, client: AnyClient = prisma): Promise<GenerateAutoJournalResult> {
   const doc = await loadInvoicedReport(client, id);
   if (!doc) return { ok: false, code: "NOTHING_TO_POST" };
@@ -185,8 +204,8 @@ export async function postSellThroughRevenueJournal(id: string, postedById: stri
     SELL_THROUGH_JOURNAL_SOURCE_TYPES.konsi_sell_through_revenue,
     id,
     [
-      { role: "AR", debit: value, credit: 0 },
-      { role: "SALES_REVENUE", debit: 0, credit: value },
+      { role: "AR_CONSIGNMENT", debit: value, credit: 0, memo: "AR_CONSIGNMENT", storeId: doc.storeId },
+      { role: "SALES_REVENUE", debit: 0, credit: value, memo: "SALES_REVENUE", channel: KANAL_JURNAL.KONSINYASI, storeId: doc.storeId },
     ],
     { date: doc.invoiceDate, description: `Nota tagihan konsi ${doc.docNo}`, postedById },
   );
@@ -202,8 +221,8 @@ export async function postSellThroughCogsJournal(id: string, postedById: string,
     SELL_THROUGH_JOURNAL_SOURCE_TYPES.konsi_sell_through_cogs,
     id,
     [
-      { role: "COGS", debit: value, credit: 0 },
-      { role: "INVENTORY", debit: 0, credit: value },
+      { role: "COGS", debit: value, credit: 0, memo: "COGS", channel: KANAL_JURNAL.KONSINYASI, storeId: doc.storeId },
+      { role: "INVENTORY_CONSIGNMENT", debit: 0, credit: value, memo: "INVENTORY_CONSIGNMENT", storeId: doc.storeId },
     ],
     { date: doc.invoiceDate, description: `HPP nota tagihan konsi ${doc.docNo}`, postedById },
   );
@@ -220,13 +239,13 @@ export async function postSellThroughShrinkageJournal(id: string, postedById: st
     id,
     [
       { role: "INVENTORY_VARIANCE", debit: value, credit: 0 },
-      { role: "INVENTORY", debit: 0, credit: value },
+      { role: "INVENTORY_CONSIGNMENT", debit: 0, credit: value, memo: "INVENTORY_CONSIGNMENT", storeId: doc.storeId },
     ],
     { date: doc.invoiceDate, description: `Susut konsi ${doc.docNo}`, postedById },
   );
 }
 
-/* Unabsorbed surplus comes back into inventory against the variance account — the main-opname surplus rule. */
+/* Unabsorbed surplus comes back into the store's consignment inventory against the variance account — the main-opname surplus rule. */
 export async function postSellThroughSurplusJournal(id: string, postedById: string, client: AnyClient = prisma): Promise<GenerateAutoJournalResult> {
   const doc = await loadInvoicedReport(client, id);
   if (!doc) return { ok: false, code: "NOTHING_TO_POST" };
@@ -237,7 +256,7 @@ export async function postSellThroughSurplusJournal(id: string, postedById: stri
     SELL_THROUGH_JOURNAL_SOURCE_TYPES.konsi_sell_through_surplus,
     id,
     [
-      { role: "INVENTORY", debit: value, credit: 0 },
+      { role: "INVENTORY_CONSIGNMENT", debit: value, credit: 0, memo: "INVENTORY_CONSIGNMENT", storeId: doc.storeId },
       { role: "INVENTORY_VARIANCE", debit: 0, credit: value },
     ],
     { date: doc.invoiceDate, description: `Surplus konsi ${doc.docNo}`, postedById },
@@ -246,7 +265,8 @@ export async function postSellThroughSurplusJournal(id: string, postedById: stri
 
 /**
  * Reverses one original journal of a VOIDED report by mirroring it as posted: every line's debit
- * and credit swapped on the same chart account, under the reversal's own source type. It
+ * and credit swapped on the same chart account, store and channel, under the reversal's own source
+ * type. It
  * deliberately bypasses `resolveAccount` — a mapping changed since approve must not send the
  * reversal to a different account than the original hit. A replay is a no-op through the
  * `(sourceType, sourceId)` unique key. NOTHING_TO_POST when the report is not VOIDED or the
@@ -270,7 +290,7 @@ export async function postSellThroughVoidJournal(
   if (!doc || doc.status !== "VOIDED") return { ok: false, code: "NOTHING_TO_POST" };
   const original = await client.journal.findFirst({
     where: { sourceType: SELL_THROUGH_JOURNAL_SOURCE_TYPES[VOID_OF[kind]], sourceId: id },
-    select: { date: true, lines: { select: { chartAccountId: true, debit: true, credit: true, memo: true } } },
+    select: { date: true, lines: { select: { chartAccountId: true, debit: true, credit: true, memo: true, channel: true, storeId: true } } },
   });
   if (!original) return { ok: false, code: "NOTHING_TO_POST" };
   const date = doc.voidedAt !== null && doc.voidedAt > original.date ? doc.voidedAt : original.date;
@@ -285,6 +305,8 @@ export async function postSellThroughVoidJournal(
         debit: Number(l.credit),
         credit: Number(l.debit),
         ...(l.memo ? { memo: l.memo } : {}),
+        ...(l.channel ? { channel: l.channel } : {}),
+        ...(l.storeId ? { storeId: l.storeId } : {}),
       })),
     });
     return { ok: true, journalId: res.journalId, created: res.created };

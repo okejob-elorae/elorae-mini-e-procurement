@@ -1,8 +1,10 @@
 import Dexie, { Table } from 'dexie';
+import type { BarisSimpananDrafGrn } from './grn-draf';
 
 export interface PendingOperation {
   id?: number;
-  type: 'SUPPLIER_CREATE' | 'SUPPLIER_UPDATE' | 'PO_CREATE' | 'GRN_CREATE' | 'WO_CREATE';
+  // GRN sengaja tidak ada: GRN butuh sinyal (lihat `grn-draf.ts`).
+  type: 'SUPPLIER_CREATE' | 'SUPPLIER_UPDATE' | 'PO_CREATE' | 'WO_CREATE';
   payload: any;
   timestamp: Date;
   retries: number;
@@ -64,11 +66,18 @@ export interface PendingPO {
   }>;
   totalAmount: number;
   notes?: string;
+  /** Tahap produksi PO ini (dibuat dari ruang kerja tahap), bila ada. */
+  planStageId?: string;
   status: 'DRAFT' | 'PENDING_SYNC';
   createdAt: Date;
   syncError?: string;
 }
 
+/**
+ * GRN yang dulu "disimpan di perangkat" saat offline. Antrean ini TIDAK PERNAH
+ * dikirim ke server; tidak ada lagi yang menulisnya. Isinya hanya dibaca supaya
+ * formulir GRN bisa memuatnya kembali dan disimpan lewat jalur biasa.
+ */
 export interface PendingGRN {
   localId?: number;
   poId?: string;
@@ -147,6 +156,7 @@ export class EloraeOfflineDB extends Dexie {
   pendingIssues!: Table<PendingMaterialIssue, number>;
   pendingReceipts!: Table<PendingFGReceipt, number>;
   workOrderCache!: Table<WorkOrderCache, string>;
+  drafGRN!: Table<BarisSimpananDrafGrn, string>;
 
   constructor() {
     super('EloraeDB');
@@ -195,6 +205,20 @@ export class EloraeOfflineDB extends Dexie {
       pendingReceipts: '++localId, woId, status, createdAt',
       workOrderCache: 'id, syncedAt',
     });
+    // Versi 6: draf formulir GRN per pengguna (GRN butuh sinyal; draf menjaga isian).
+    this.version(6).stores({
+      pendingOperations: '++id, type, timestamp',
+      suppliers: 'id, type, name, syncAt',
+      items: 'id, sku, type, syncAt',
+      documentQueue: '++id, docType, status, createdAt',
+      uoms: 'id, code',
+      pendingPOs: '++localId, status, createdAt',
+      pendingGRNs: '++localId, status, createdAt',
+      pendingIssues: '++localId, woId, status, createdAt',
+      pendingReceipts: '++localId, woId, status, createdAt',
+      workOrderCache: 'id, syncedAt',
+      drafGRN: 'kunci',
+    });
   }
 }
 
@@ -213,12 +237,15 @@ export async function queueOperation(
   });
 }
 
+/** Operasi yang sudah gagal sebanyak ini tidak dicoba lagi. */
+export const BATAS_ULANG = 3;
+
 // Get pending operations
 export async function getPendingOperations(): Promise<PendingOperation[]> {
-  return await offlineDB.pendingOperations
-    .where('retries')
-    .below(3)
-    .toArray();
+  // `retries` tidak diindeks (lihat `stores`), jadi disaring di sini —
+  // `.where('retries')` melempar SchemaError setiap kali sinyal kembali.
+  const semua = await offlineDB.pendingOperations.toArray();
+  return semua.filter((op) => (op.retries ?? 0) < BATAS_ULANG);
 }
 
 // Remove completed operation
@@ -302,45 +329,16 @@ export async function updatePendingPOError(
   });
 }
 
-// Save GRN locally (offline)
-export async function savePendingGRN(
-  grn: Omit<PendingGRN, 'localId' | 'createdAt'>
-): Promise<number> {
-  return await offlineDB.pendingGRNs.add({
-    ...grn,
-    createdAt: new Date(),
-  });
-}
-
-// Get pending GRNs
+// GRN lama yang belum pernah terkirim (hanya dibaca; tidak ada penulisnya lagi).
 export async function getPendingGRNs(): Promise<PendingGRN[]> {
   return await offlineDB.pendingGRNs
     .orderBy('createdAt')
     .toArray();
 }
 
-// Remove synced GRN
+// Hapus GRN lama: sesudah tersimpan lewat formulir, atau dibuang pengguna.
 export async function removePendingGRN(localId: number): Promise<void> {
   await offlineDB.pendingGRNs.delete(localId);
-}
-
-// Update pending GRN status
-export async function updatePendingGRNStatus(
-  localId: number,
-  status: PendingGRN['status']
-): Promise<void> {
-  await offlineDB.pendingGRNs.update(localId, { status });
-}
-
-// Update pending GRN error
-export async function updatePendingGRNError(
-  localId: number,
-  errorMsg: string
-): Promise<void> {
-  await offlineDB.pendingGRNs.update(localId, {
-    status: 'ERROR',
-    errorMsg,
-  });
 }
 
 // --- Phase 4: Pending material issues ---

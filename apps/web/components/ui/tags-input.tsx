@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -42,7 +43,7 @@ export function TagsInput({
   value,
   onChange,
   onValueChange,
-  placeholder = 'Add tag...',
+  placeholder: placeholderProp,
   disabled = false,
   separator,
   allowDuplicates = false,
@@ -55,6 +56,9 @@ export function TagsInput({
   'aria-label': ariaLabel,
   'aria-describedby': ariaDescribedBy,
 }: TagsInputProps) {
+  // Teks bawaan lewat i18n (dulu "Add tag..." dan "Remove …" berbahasa Inggris).
+  const t = useTranslations('common');
+  const placeholder = placeholderProp ?? t('tambahTagElipsis');
   const [inputValue, setInputValue] = React.useState('');
   const inputRef = React.useRef<HTMLInputElement>(null);
   const separators = React.useMemo(() => normalizeSeparators(separator), [separator]);
@@ -152,7 +156,7 @@ export function TagsInput({
             size="icon-xs"
             className="size-4 rounded-full hover:bg-secondary/80"
             disabled={disabled}
-            aria-label={`Remove ${tag}`}
+            aria-label={t('hapusTagNama', { tag })}
             onClick={() => removeTag(tag)}
           >
             <X className="size-3" />

@@ -61,3 +61,18 @@ describe("opname-detail-utils", () => {
     expect(filterOpnameLines(lines, "variance")[0]?.id).toBe("1");
   });
 });
+
+describe("baris stok gabungan", () => {
+  it("baris tanpa varian dari barang yang juga punya baris varian ditandai; barang tanpa varian tidak", () => {
+    const baris = buildItemLines([
+      { id: "a", itemName: "Celana Kulot", variantSku: null, snapshotQty: 0 },
+      { id: "b", itemName: "Celana Kulot", variantSku: "CLN-28", snapshotQty: 3 },
+      { id: "c", itemName: "Kancing", variantSku: "", snapshotQty: 10 },
+    ]);
+    expect(baris.map((b) => [b.id, b.gabungan ?? false])).toEqual([
+      ["a", true],
+      ["b", false],
+      ["c", false],
+    ]);
+  });
+});

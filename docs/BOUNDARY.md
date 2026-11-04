@@ -388,23 +388,73 @@ The writer helper enforces the state machine (PENDING → PICKED → PACKED → 
 - `JUBELIO_INGEST` — row created/edited by apps/api catalog ingest.
 
 **api** writes `Item` only through the shared helper
-`@elorae/db/item-writer.ts` (`createItemFromIngest`, `updateItemFromIngest`).
-The helper stamps `source = JUBELIO_INGEST` automatically. Direct
-`prisma.item.create` / `prisma.item.update` from apps/api is still forbidden
-(§7).
+`@elorae/db/item-writer.ts` (`createItemFromIngest`, `updateItemFromIngest`,
+plus `recordJubelioPriceOnMapping` and `markJubelioCreateRequested` for the
+Jubelio price state below). `createItemFromIngest` and `updateItemFromIngest`
+stamp `source = JUBELIO_INGEST` automatically; the two price-state helpers
+leave `source` alone. Direct `prisma.item.create` / `prisma.item.update` from
+apps/api is still forbidden (§7).
 
 **web** continues to use `prisma.item.*` directly; rows default to
 `source = ERP`. Migrating web call sites to an `ErpItemWriter` helper is a
 future cleanup, not a prerequisite for ingest.
 
+**Jubelio price state — both services, narrow writers (owner decision
+2026-11-02: the ERP is the price master, and a price reaches Jubelio only after
+it is confirmed in the ERP).** Five `Item` columns record what Jubelio was last
+confirmed to show — `jubelioConfirmedPrice`/`At`/`ById` and the create-request
+marker `jubelioCreateRequestedAt`/`ById` (`JubelioPriceStateField` in
+`@elorae/db/item-writer.ts`). Both services write them, each through a closed
+set of writers:
+
+- **api** writes them only through three `@elorae/db/item-writer.ts` helpers,
+  never through the generic ingest data (`IngestItemCreateData` and
+  `IngestItemUpdateData` Omit all five, so passing one is a type error):
+  - `createItemFromIngest` — at create, records Jubelio's `sell_price` as the
+    confirmed price (`jubelioConfirmedById = NULL`: recorded from Jubelio, not
+    confirmed by a person), and only when that price is > 0;
+  - `recordJubelioPriceOnMapping` — the catalog ingest has just mapped an
+    EXISTING item that holds no confirmed price yet: records Jubelio's price
+    as confirmed and clears a stale create request;
+  - `markJubelioCreateRequested` — the product-push backstop: an unmapped ERP
+    finished good with no confirmed price is turned into a create request
+    instead of being created in Jubelio.
+
+  The last two are single raw `UPDATE`s whose `WHERE` re-checks the state at
+  write time (Prisma `updateMany` is not a compare-and-swap), so neither can
+  overwrite a price an admin confirmed a moment earlier.
+- **web** writes them only through `apps/web/lib/jubelio/harga`:
+  `konfirmasiHargaJubelio`, `kembalikanHargaErp` and `batalkanPengajuanJubelio`
+  (`writer.ts`, each with its `JEJAK_HARGA_JUBELIO` audit row in the same
+  serializable transaction) and `ajukanKeJubelio` (`pengajuan.ts`). The item
+  form and the Master Produk import stamp the request marker by spreading
+  `dataPengajuanJubelio` (also `pengajuan.ts`) into their own `item.create`.
+  No other web path writes these columns, and a price edit never writes
+  `jubelioConfirmedPrice`.
+
+**`sellingPrice` is never written from Jubelio onto an existing item.** Only
+`createItemFromIngest` takes Jubelio's price, for an item the ERP does not have
+yet; `IngestItemUpdateData` Omits `sellingPrice`, and
+`recordJubelioPriceOnMapping` never touches it — this matters because the
+ingest runs on every inbound `product` webhook, not only on Impor katalog. The
+one web writer that sets `sellingPrice` from the confirmed Jubelio price is
+`kembalikanHargaErp`: a person on Jubelio → Konfirmasi harga
+(`jubelio_prices:confirm`) explicitly reverting an unconfirmed ERP change,
+logged as an `ItemPriceChangeLog` `MANUAL_EDIT` row like a typed price. What
+waits for confirmation is derived at read time, never stored
+(`docs/landmines/jubelio.md`).
+
 Backfill in migration `20260525100000_add_item_source`: any pre-existing row
 joined to `JubelioProductMapping` was set to `JUBELIO_INGEST`; all others
 default to `ERP`.
 
-**Conflict policy:** none yet. If both services edit the same item
-near-simultaneously, last-write-wins. Add a policy in the helper when a real
-collision case appears (low probability; ingest is push-button, not
-continuous).
+**Conflict policy:** none yet for the general columns. If both services edit
+the same item near-simultaneously, last-write-wins. Add a policy in the helper
+when a real collision case appears. Note the ingest is no longer push-button
+only — every inbound `product` webhook runs it — so this is less rare than it
+was when written. The Jubelio price-state columns above are the exception:
+their api writers re-check state inside one `UPDATE` and their web writers run
+serializable, so they do not last-write-win.
 
 ---
 

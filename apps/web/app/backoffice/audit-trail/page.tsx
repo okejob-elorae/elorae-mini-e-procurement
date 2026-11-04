@@ -1,20 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import type { GetAuditLogsFilters } from '@/types/audit';
 import { getAuditLogs, getAuditUsers } from '@/app/actions/audit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -24,15 +18,23 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
-import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { ChevronDown, ChevronRight, Loader2, FileDown, Filter, X } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { RentangTanggalInput } from '@/components/ui/rentang-tanggal-input';
+import { PageHeader } from '@/components/ui/page-header';
+import { ChevronDown, ChevronRight, Loader2, FileDown, Filter, ScrollText, X } from 'lucide-react';
+import { useLocale, useMessages, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { toCsv } from "@/lib/reports/csv";
+import { formatDisplayDateTime } from '@/lib/date-only';
+import { keDateLokal } from '@/lib/tanggal-isian';
+import { auditActionLabel, auditEntityLabel } from '@/lib/audit/action-label';
+import { RincianPerubahan } from './RincianPerubahan';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 type AuditLogRow = Awaited<ReturnType<typeof getAuditLogs>>['logs'][number];
+
+const SEMUA = '__all__';
 
 function rowStatus(log: AuditLogRow): 'danger' | 'warning' | 'normal' {
   const action = log.action.toUpperCase();
@@ -71,46 +73,113 @@ function exportToCSV(logs: AuditLogRow[]): string {
   return toCsv(headers, rows);
 }
 
+/** Akhir hari (inklusif) dari "YYYY-MM-DD" di zona peramban. */
+function akhirHari(teks: string): Date | undefined {
+  const d = keDateLokal(teks);
+  if (!d) return undefined;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+}
+
 export default function AuditTrailPage() {
   const tAudit = useTranslations('audit');
-  const { data: _session, status } = useSession();
-  void _session;
+  const tAuditActions = useTranslations('auditActions');
+  const messages = useMessages() as Record<string, unknown>;
+  const locale = useLocale();
+  const { status } = useSession();
   const router = useRouter();
-  const [logs, setLogs] = useState<AuditLogRow[]>([]);
-  const [total, setTotal] = useState(0);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [users, setUsers] = useState<{ id: string; name: string | null; email: string | null }[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [filters, setFilters] = useState<GetAuditLogsFilters>({
-    limit: DEFAULT_PAGE_SIZE,
-    offset: 0,
-  });
+  // Hasil dicatat bersama kunci saringannya; "memuat" = hasil belum untuk saringan sekarang.
+  const [hasil, setHasil] = useState<{ kunci: string; logs: AuditLogRow[]; total: number } | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const loadLogs = async () => {
-    setIsLoading(true);
-    try {
-      const res = await getAuditLogs(filters);
-      setLogs(res.logs);
-      setTotal(res.total);
-    } catch {
-      toast.error('Failed to load audit logs');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // Saringan hidup di URL: bisa dibagikan, dan Kembali dari halaman lain tidak menghapusnya.
+  const pengguna = searchParams?.get('pengguna') ?? '';
+  const aksi = searchParams?.get('aksi') ?? '';
+  const cari = searchParams?.get('cari') ?? '';
+  const dari = searchParams?.get('dari') ?? '';
+  const sampai = searchParams?.get('sampai') ?? '';
+  const halMentah = Number(searchParams?.get('hal') ?? '1');
+  const hal = Number.isInteger(halMentah) && halMentah > 0 ? halMentah : 1;
+  const limit = DEFAULT_PAGE_SIZE;
+
+  const [cariInput, setCariInput] = useState(cari);
+  const kunciSaringan = [pengguna, aksi, cari, dari, sampai, hal].join('|');
+  const isLoading = hasil?.kunci !== kunciSaringan;
+  const logs = hasil?.logs ?? [];
+  const total = hasil?.total ?? 0;
+
+  const filters = useMemo<GetAuditLogsFilters>(
+    () => ({
+      limit,
+      offset: (hal - 1) * limit,
+      userId: pengguna || undefined,
+      action: aksi || undefined,
+      entitySearch: cari || undefined,
+      dateFrom: dari ? keDateLokal(dari) : undefined,
+      dateTo: sampai ? akhirHari(sampai) : undefined,
+    }),
+    [limit, hal, pengguna, aksi, cari, dari, sampai],
+  );
+
+  const setParams = useCallback(
+    (updates: Record<string, string | null>, resetHal = true) => {
+      const next = new URLSearchParams(searchParams?.toString() ?? '');
+      for (const [k, v] of Object.entries(updates)) {
+        if (!v) next.delete(k);
+        else next.set(k, v);
+      }
+      if (resetHal) next.delete('hal');
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [searchParams, pathname, router],
+  );
+
+  // Ketikan pencarian ditulis ke URL setelah jeda, bukan setiap huruf.
+  useEffect(() => {
+    if (cariInput === cari) return;
+    const h = setTimeout(() => setParams({ cari: cariInput.trim() || null }), 300);
+    return () => clearTimeout(h);
+  }, [cariInput, cari, setParams]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.replace('/login');
       return;
     }
-    loadLogs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadLogs and router are stable; filters drive refetch
-  }, [status, filters.userId, filters.action, filters.dateFrom, filters.dateTo, filters.entitySearch, filters.offset, filters.limit]);
+    if (status !== 'authenticated') return;
+    let batal = false;
+    getAuditLogs(filters)
+      .then((res) => {
+        if (!batal) setHasil({ kunci: kunciSaringan, logs: res.logs, total: res.total });
+      })
+      .catch(() => {
+        if (batal) return;
+        setHasil({ kunci: kunciSaringan, logs: [], total: 0 });
+        toast.error(tAudit('trail.loadFailed'));
+      });
+    return () => {
+      batal = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tAudit from useTranslations
+  }, [status, filters, kunciSaringan, router]);
 
   useEffect(() => {
     getAuditUsers().then(setUsers).catch(() => {});
   }, []);
+
+  // Pilihan aksi: setiap kode yang punya label di `auditActions.actions`, berlabel Indonesia.
+  const opsiAksi = useMemo(() => {
+    const kamus = (messages.auditActions as { actions?: Record<string, unknown> } | undefined)?.actions ?? {};
+    const kode = new Set(Object.keys(kamus));
+    if (aksi) kode.add(aksi);
+    const opsi = [...kode]
+      .map((c) => ({ value: c, label: auditActionLabel(tAuditActions, c) }))
+      .sort((a, b) => a.label.localeCompare(b.label, locale));
+    return [{ value: SEMUA, label: tAudit('trail.allActions') }, ...opsi];
+  }, [messages, aksi, tAuditActions, tAudit, locale]);
 
   const handleExport = () => {
     getAuditLogs({ ...filters, limit: 2000, offset: 0 })
@@ -124,8 +193,10 @@ export default function AuditTrailPage() {
         a.click();
         URL.revokeObjectURL(url);
       })
-      .catch(() => toast.error('Export failed'));
+      .catch(() => toast.error(tAudit('trail.exportFailed')));
   };
+
+  const adaSaringan = Boolean(pengguna || aksi || cari || dari || sampai);
 
   if (status === 'loading') {
     return (
@@ -137,138 +208,112 @@ export default function AuditTrailPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Audit Trail</h1>
-        <p className="text-muted-foreground">
-          View and filter system audit logs. Entries are immutable.
-        </p>
-      </div>
+      <PageHeader
+        title={tAudit('trail.judulHalaman')}
+        actions={
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            <FileDown className="mr-1.5 h-3.5 w-3.5" />
+            {tAudit('trail.exportCsv')}
+          </Button>
+        }
+      />
 
       <Card className="border-muted/60 shadow-sm">
         <CardHeader className="pb-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Filter className="h-4 w-4" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">Filters</CardTitle>
-              <CardDescription className="mt-0.5">
-                {tAudit('filterDescription')}
-              </CardDescription>
-            </div>
-          </div>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Filter className="h-4 w-4" />
+            {tAudit('trail.filtersTitle')}
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="space-y-2">
               <Label htmlFor="audit-user" className="text-muted-foreground">
-                User
+                {tAudit('trail.user')}
               </Label>
               <SearchableCombobox
                 id="audit-user"
                 options={[
-                  { value: '__all__', label: 'All users' },
+                  { value: SEMUA, label: tAudit('trail.allUsers') },
                   ...users.map((u) => ({
                     value: u.id,
-                    label: u.name || u.email || u.id,
+                    label: u.name || u.email || tAudit('trail.unnamedUser'),
                   })),
                 ]}
-                value={filters.userId ?? '__all__'}
-                onValueChange={(v) =>
-                  setFilters((f) => ({
-                    ...f,
-                    userId: v === '__all__' ? undefined : v,
-                    offset: 0,
-                  }))
-                }
-                placeholder="All users"
+                value={pengguna || SEMUA}
+                onValueChange={(v) => setParams({ pengguna: v === SEMUA ? null : v })}
+                placeholder={tAudit('trail.allUsers')}
                 triggerClassName="h-9 w-full"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="audit-action" className="text-muted-foreground">
-                Action
+                {tAudit('trail.action')}
               </Label>
-              <Input
+              <SearchableCombobox
                 id="audit-action"
-                placeholder="e.g. VIEW_BANK_ACCOUNT"
-                value={filters.action ?? ''}
-                onChange={(e) =>
-                  setFilters((f) => ({ ...f, action: e.target.value || undefined, offset: 0 }))
-                }
-                className="h-9"
+                options={opsiAksi}
+                value={aksi || SEMUA}
+                onValueChange={(v) => setParams({ aksi: v === SEMUA ? null : v })}
+                placeholder={tAudit('trail.allActions')}
+                searchPlaceholder={tAudit('trail.searchAction')}
+                triggerClassName="h-9 w-full"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="audit-entity" className="text-muted-foreground">
-                Entity search
+                {tAudit('trail.entitySearch')}
               </Label>
               <Input
                 id="audit-entity"
-                placeholder="Entity ID or doc #"
-                value={filters.entitySearch ?? ''}
-                onChange={(e) =>
-                  setFilters((f) => ({ ...f, entitySearch: e.target.value || undefined, offset: 0 }))
-                }
+                placeholder={tAudit('trail.entitySearchPlaceholder')}
+                value={cariInput}
+                onChange={(e) => setCariInput(e.target.value)}
                 className="h-9"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="audit-date-range" className="text-muted-foreground">
-                Date range
+                {tAudit('trail.dateRange')}
               </Label>
-              <DateRangePicker
+              <RentangTanggalInput
                 id="audit-date-range"
-                triggerClassName="h-9"
-                value={{
-                  from: filters.dateFrom,
-                  to: filters.dateTo,
-                }}
-                onChange={(range) =>
-                  setFilters((f) => ({
-                    ...f,
-                    dateFrom: range?.from,
-                    dateTo: range?.to,
-                    offset: 0,
-                  }))
-                }
+                dari={dari}
+                sampai={sampai}
+                onChange={(r) => setParams({ dari: r.dari || null, sampai: r.sampai || null })}
               />
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={() =>
-                setFilters({
-                  limit: DEFAULT_PAGE_SIZE,
-                  offset: 0,
-                  userId: undefined,
-                  action: undefined,
-                  dateFrom: undefined,
-                  dateTo: undefined,
-                  entitySearch: undefined,
-                })
-              }
-            >
-              <X className="mr-1.5 h-3.5 w-3.5" />
-              Clear filters
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleExport} className="ml-auto">
-              <FileDown className="mr-1.5 h-3.5 w-3.5" />
-              Export CSV
-            </Button>
-          </div>
+          {adaSaringan && (
+            <div className="flex justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setCariInput('');
+                  router.replace(pathname, { scroll: false });
+                }}
+              >
+                <X className="mr-1.5 h-3.5 w-3.5" />
+                {tAudit('trail.clearFilters')}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Logs</CardTitle>
-          <CardDescription>
-            {total} entry(ies). Expand row for before/after and details.
-          </CardDescription>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <CardTitle className="flex items-center gap-2">
+              <ScrollText className="h-5 w-5" />
+              {tAudit('trail.logsTitle')}
+            </CardTitle>
+            <span className="text-sm text-muted-foreground">
+              {tAudit('trail.logCount', { total })}
+            </span>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -280,20 +325,21 @@ export default function AuditTrailPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-8"></TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>User</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Entity</TableHead>
-                    <TableHead>ID</TableHead>
-                    <TableHead>IP</TableHead>
+                    <TableHead className="w-8">
+                      <span className="sr-only">{tAudit('trail.expandRow')}</span>
+                    </TableHead>
+                    <TableHead>{tAudit('trail.colTime')}</TableHead>
+                    <TableHead>{tAudit('trail.colUser')}</TableHead>
+                    <TableHead>{tAudit('trail.colAction')}</TableHead>
+                    <TableHead>{tAudit('trail.colEntity')}</TableHead>
+                    <TableHead className="hidden 2xl:table-cell">{tAudit('trail.colIp')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {logs.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                        No audit logs found.
+                      <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                        {tAudit('trail.empty')}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -317,6 +363,11 @@ export default function AuditTrailPage() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
+                                aria-expanded={isExpanded}
+                                aria-label={
+                                  isExpanded ? tAudit('trail.collapseRow') : tAudit('trail.expandRow')
+                                }
+                                title={isExpanded ? tAudit('trail.collapseRow') : tAudit('trail.expandRow')}
                                 onClick={() => setExpandedId(isExpanded ? null : log.id)}
                               >
                                 {isExpanded ? (
@@ -326,49 +377,72 @@ export default function AuditTrailPage() {
                                 )}
                               </Button>
                             </TableCell>
-                            <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
-                              {log.createdAt instanceof Date
-                                ? log.createdAt.toLocaleString()
-                                : new Date(log.createdAt).toLocaleString()}
+                            <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                              {formatDisplayDateTime(log.createdAt, locale)}
                             </TableCell>
-                            <TableCell>
-                              {user?.name || user?.email || log.userId}
+                            <TableCell className="min-w-[120px] max-w-[200px] whitespace-normal break-words">
+                              {user?.name || user?.email || tAudit('trail.unnamedUser')}
                             </TableCell>
-                            <TableCell className="font-medium">{log.action}</TableCell>
-                            <TableCell>{log.entityType}</TableCell>
-                            <TableCell className="font-mono text-xs max-w-[120px] truncate">
-                              {log.entityId}
+                            <TableCell className="min-w-[180px] max-w-[280px] whitespace-normal font-medium">
+                              {auditActionLabel(tAuditActions, log.action, log.entityType)}
                             </TableCell>
-                            <TableCell className="text-muted-foreground text-sm">
+                            <TableCell className="min-w-[140px] max-w-[220px] whitespace-normal">
+                              {auditEntityLabel(tAuditActions, log.entityType)}
+                            </TableCell>
+                            <TableCell className="hidden text-sm text-muted-foreground 2xl:table-cell">
                               {log.ipAddress ?? '—'}
                             </TableCell>
                           </TableRow>
                           {isExpanded && (
                             <TableRow key={`${log.id}-detail`}>
-                              <TableCell colSpan={7} className="bg-muted/50">
-                                <div className="p-4 space-y-2 text-sm">
-                                  {log.sensitiveDataAccessed && (
-                                    <p>
-                                      <span className="font-medium">Sensitive:</span>{' '}
-                                      {log.sensitiveDataAccessed}
-                                    </p>
+                              <TableCell colSpan={6} className="whitespace-normal bg-muted/50">
+                                <div className="space-y-3 p-4 text-sm">
+                                  <RincianPerubahan changes={log.changes} entityType={log.entityType} />
+                                  {(log.reason || log.sensitiveDataAccessed) && (
+                                    <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[auto_1fr]">
+                                      {log.reason && (
+                                        <>
+                                          <dt className="text-muted-foreground">{tAudit('trail.reason')}</dt>
+                                          <dd className="whitespace-pre-wrap break-words">{log.reason}</dd>
+                                        </>
+                                      )}
+                                      {log.sensitiveDataAccessed && (
+                                        <>
+                                          <dt className="text-muted-foreground">{tAudit('trail.sensitive')}</dt>
+                                          <dd>{log.sensitiveDataAccessed}</dd>
+                                        </>
+                                      )}
+                                    </dl>
                                   )}
-                                  {log.reason && (
-                                    <p>
-                                      <span className="font-medium">Reason:</span> {log.reason}
-                                    </p>
-                                  )}
-                                  {log.userAgent && (
-                                    <p>
-                                      <span className="font-medium">User-Agent:</span>{' '}
-                                      <span className="break-all">{log.userAgent}</span>
-                                    </p>
-                                  )}
-                                  {log.changes && (
-                                    <pre className="bg-background p-3 rounded text-xs overflow-auto max-h-48">
-                                      {JSON.stringify(log.changes, null, 2)}
-                                    </pre>
-                                  )}
+                                  {/* Id data, IP, dan perangkat hanya untuk penelusuran teknis — tidak tampil sampai diminta. */}
+                                  <Collapsible>
+                                    <CollapsibleTrigger asChild>
+                                      <Button variant="ghost" size="sm" className="group h-8 px-2 text-muted-foreground">
+                                        <ChevronRight className="mr-1 h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-90" />
+                                        {tAudit('trail.rincianTeknis')}
+                                      </Button>
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent>
+                                      <dl className="mt-1 grid gap-x-4 gap-y-1 sm:grid-cols-[auto_1fr]">
+                                        <dt className="text-muted-foreground">{tAudit('trail.recordId')}</dt>
+                                        <dd className="break-all font-mono text-xs text-muted-foreground">
+                                          {log.entityId}
+                                        </dd>
+                                        {log.ipAddress && (
+                                          <>
+                                            <dt className="text-muted-foreground">{tAudit('trail.colIp')}</dt>
+                                            <dd className="text-muted-foreground">{log.ipAddress}</dd>
+                                          </>
+                                        )}
+                                        {log.userAgent && (
+                                          <>
+                                            <dt className="text-muted-foreground">{tAudit('trail.userAgent')}</dt>
+                                            <dd className="break-all text-xs text-muted-foreground">{log.userAgent}</dd>
+                                          </>
+                                        )}
+                                      </dl>
+                                    </CollapsibleContent>
+                                  </Collapsible>
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -382,16 +456,11 @@ export default function AuditTrailPage() {
             </div>
           )}
           <Pagination
-            page={Math.floor((filters.offset ?? 0) / (filters.limit ?? DEFAULT_PAGE_SIZE)) + 1}
-            totalPages={Math.max(1, Math.ceil(total / (filters.limit ?? DEFAULT_PAGE_SIZE)))}
-            onPageChange={(newPage) =>
-              setFilters((f) => ({
-                ...f,
-                offset: (newPage - 1) * (f.limit ?? DEFAULT_PAGE_SIZE),
-              }))
-            }
+            page={hal}
+            totalPages={Math.max(1, Math.ceil(total / limit))}
+            onPageChange={(newPage) => setParams({ hal: newPage > 1 ? String(newPage) : null }, false)}
             totalCount={total}
-            pageSize={filters.limit ?? DEFAULT_PAGE_SIZE}
+            pageSize={limit}
           />
         </CardContent>
       </Card>

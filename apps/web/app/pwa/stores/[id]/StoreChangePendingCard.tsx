@@ -28,7 +28,7 @@ export function StoreChangePendingCard({ pending }: Props) {
   push(t("fieldLocation"), locLabel(old.lat, old.lng), locLabel(proposed.lat, proposed.lng));
 
   return (
-    <Card className="border-amber-500/40">
+    <Card className="border-amber-500/40 py-0">
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center gap-2 text-sm font-semibold">
           <Clock className="h-4 w-4 text-amber-600" />

@@ -16,15 +16,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatDateOnlyJakarta } from "@/lib/date-only";
-import { computeDueDate } from "@/lib/field-sales/delivery/plan";
-import { parseDateOnlyInput } from "@/app/backoffice/field-sales-orders/[id]/DeliveryFormDialog";
-import {
-  getShipmentAction,
-  completeShipmentAction,
-  type ShipmentActionReason,
-} from "@/app/actions/delivery-shipments";
-import { recordedQtyByShipmentLine, type SerializedReplay } from "@/lib/field-sales/replay-detail";
+import { getShipmentAction, completeShipmentAction } from "@/app/actions/delivery-shipments";
+import { pesanGagalPengiriman } from "@/lib/delivery/pesan-galat";
 
 type Props = {
   shipmentId: string;
@@ -35,8 +28,15 @@ type Props = {
 
 type Line = { id: string; orderLineId: string; productName: string; plannedQty: number };
 
-/** The refusal the inline Alert explains; `replay` rides along only on `REPLAY_MISMATCH`. */
-type Failure = { reason: ShipmentActionReason; replay?: SerializedReplay };
+type Jumlah = { diterima: string; kembali: string; hilang: string };
+
+/**
+ * Who records the store's receipt (`penerimaPod`, read with the shipment): `PENERIMAAN` — this
+ * confirmation is the receipt; `PEMEGANG` — the store's SPG stopped while the goods were on the road
+ * and the holder salesman records the PIC's receipt (P45a), unless a door refusal is recorded or
+ * nothing is handed over; `SERAH_TERIMA` — the handover only (an SPG receives, or the receipt exists).
+ */
+type JenisPod = "PENERIMAAN" | "PEMEGANG" | "SERAH_TERIMA";
 
 /**
  * `loading` and `error` never show the form: with no lines loaded, an empty form reads as "this
@@ -45,37 +45,45 @@ type Failure = { reason: ShipmentActionReason; replay?: SerializedReplay };
  */
 type LoadState = { status: "loading" } | { status: "loaded" } | { status: "error"; reason: "failed" | "notFound" };
 
+const angka = (v: string | undefined) => (v === undefined || v.trim() === "" ? 0 : Number(v));
+
+/**
+ * The expedition's confirmation (owner putus answer 2026-11-02). The nota (putus) and the transfer
+ * (konsi) were written when the shipment was created, so no date is asked here.
+ *
+ * - A store WITH an SPG: one figure per line, "Diserahkan" — the SPG records refused and lost
+ *   pieces on her receive form (P40).
+ * - A store WITHOUT one: this confirmation IS the store's receipt — every planned piece is diterima
+ *   toko, retur langsung (refused at the door) or hilang di perjalanan, and they must add up.
+ * - A store whose SPG stopped while the goods were on the road (P45a): "Diserahkan" plus "Retur
+ *   langsung"; the holder salesman records what the PIC got. A door refusal, or nothing handed over,
+ *   turns this confirmation into the receipt as before (the writer's rule), so the lost column
+ *   appears and the figures must add up.
+ */
 export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone }: Props) {
   const t = useTranslations("deliveryShipments");
-  /* The tempo copy is generic and already lives under the order delivery dialog; reused, not duplicated. */
-  const tOrders = useTranslations("fieldSalesOrders");
+  const tTerima = useTranslations("pwa.spgTerima");
   const [lines, setLines] = useState<Line[]>([]);
-  const [qtyInputs, setQtyInputs] = useState<Record<string, string>>({});
+  const [jumlah, setJumlah] = useState<Record<string, Jumlah>>({});
   const [proofPhotoUrl, setProofPhotoUrl] = useState("");
   const [proofPhotoR2Key, setProofPhotoR2Key] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState("");
-  const [dueDate, setDueDate] = useState("");
   const [isKonsi, setIsKonsi] = useState(false);
-  const [paymentTempo, setPaymentTempo] = useState(0);
-  /* Gates the whole form, and with it the konsi-or-putus block: until the detail arrives, `isKonsi` is a default, not a fact. */
+  const [jenis, setJenis] = useState<JenisPod>("SERAH_TERIMA");
+  /** The store already recorded its receipt (e.g. the SPG refused every piece before the courier confirmed): handing over nothing is valid. */
+  const [sudahDiterima, setSudahDiterima] = useState(false);
+  const [beratKg, setBeratKg] = useState<number | null>(null);
+  const [resi, setResi] = useState("");
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
   const [loadAttempt, setLoadAttempt] = useState(0);
   const detailLoaded = loadState.status === "loaded";
   const [uploading, setUploading] = useState(false);
-  const [failure, setFailure] = useState<Failure | null>(null);
+  /* The last refusal's sentence, kept on screen beside the form (the toast fades). */
+  const [failure, setFailure] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     if (!open) return;
     setFailure(null);
-    setInvoiceDate(formatDateOnlyJakarta(new Date()));
-    /**
-     * Deliberately EMPTY, not today. Pre-filling the due date with the invoice date books every
-     * receivable due the day it is invoiced — a silent default that is wrong for every store on
-     * terms. `DeliveryFormDialog`, the precedent for this same pair of inputs, starts it empty and
-     * gates submit until a human puts a value there.
-     */
-    setDueDate("");
     setProofPhotoUrl("");
     setProofPhotoR2Key("");
     setLoadState({ status: "loading" });
@@ -95,9 +103,20 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
           plannedQty: l.plannedQty,
         }));
         setLines(nextLines);
-        setQtyInputs(Object.fromEntries(nextLines.map((l) => [l.id, String(l.plannedQty)])));
+        setJumlah(Object.fromEntries(nextLines.map((l) => [l.id, { diterima: String(l.plannedQty), kembali: "0", hilang: "0" }])));
         setIsKonsi(detail.orderType === "KONSI");
-        setPaymentTempo(detail.storePaymentTempo);
+        setJenis(
+          detail.sudahDiterimaToko
+            ? "SERAH_TERIMA"
+            : detail.penerimaPod === "KURIR"
+              ? "PENERIMAAN"
+              : detail.penerimaPod === "PEMEGANG"
+                ? "PEMEGANG"
+                : "SERAH_TERIMA",
+        );
+        setSudahDiterima(detail.sudahDiterimaToko);
+        setBeratKg(detail.weightKg);
+        setResi(detail.resiNumber ?? "");
         setLoadState({ status: "loaded" });
       })
       .catch(() => {
@@ -117,83 +136,61 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
       const res = await fetch("/backoffice/api/upload/delivery-proof", { method: "POST", body: formData });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error ?? "Upload failed");
+        toast.error(data.error ?? t("err.UNEXPECTED"));
         return;
       }
       setProofPhotoUrl(data.url);
       setProofPhotoR2Key(data.key);
     } catch {
-      /* The caller is `void handleUpload(file)`, so an unhandled rejection here would be a dead
-       * file input with no explanation — the upload silently never happened. */
       toast.error(t("err.UNEXPECTED"));
     } finally {
       setUploading(false);
     }
   }
 
-  /**
-   * Both dates must parse as a real `YYYY-MM-DD` calendar day and the due date must not precede
-   * the invoice date, mirroring `DeliveryFormDialog`'s `datesValid`. The server re-checks this
-   * independently — a `"use server"` export is a network endpoint — so this gate exists to stop
-   * the operator submitting, not to be the guarantee. A konsi order raises no invoice, so it
-   * skips this gate entirely rather than being asked to fill in dates that are never sent.
-   */
-  const parsedInvoice = parseDateOnlyInput(invoiceDate);
-  const parsedDue = parseDateOnlyInput(dueDate);
-  const datesValid =
-    parsedInvoice !== null && parsedDue !== null && parsedDue.getTime() >= parsedInvoice.getTime();
+  /* PEMEGANG: a door refusal, or nothing handed over, makes this confirmation the store's receipt (the writer's rule). */
+  const adaTolak = lines.some((l) => angka(jumlah[l.id]?.kembali) > 0);
+  const tanpaSerah = lines.length > 0 && lines.every((l) => angka(jumlah[l.id]?.diterima) === 0);
+  const penerimaan = jenis === "PENERIMAAN" || (jenis === "PEMEGANG" && (adaTolak || tanpaSerah));
+  const kolomTolak = penerimaan || jenis === "PEMEGANG";
+  const barisSah = (line: Line) => {
+    const j = jumlah[line.id];
+    if (!j) return false;
+    const nilai = [angka(j.diterima), kolomTolak ? angka(j.kembali) : 0, penerimaan ? angka(j.hilang) : 0];
+    if (nilai.some((n) => !Number.isInteger(n) || n < 0)) return false;
+    if (!penerimaan) return nilai[0] <= line.plannedQty;
+    return nilai[0] + nilai[1] + nilai[2] === line.plannedQty;
+  };
+  const semuaSah = lines.every(barisSah);
+  const adaDiserahkan = lines.some((l) => angka(jumlah[l.id]?.diterima) > 0);
   const canSubmit =
-    detailLoaded && !isPending && !uploading && !!proofPhotoUrl && lines.length > 0 && (isKonsi || datesValid);
+    detailLoaded && !isPending && !uploading && !!proofPhotoUrl && lines.length > 0 && semuaSah && (penerimaan || adaDiserahkan || sudahDiterima);
 
-  /**
-   * Fills the due date from the store's tempo on demand. The server never derives it, so this is
-   * a shortcut for the common case, not a default; the field still starts empty.
-   */
-  function applyTempo(): void {
-    if (!parsedInvoice) return;
-    setDueDate(formatDateOnlyJakarta(computeDueDate(parsedInvoice, paymentTempo)));
+  function ubah(lineId: string, kolom: keyof Jumlah, nilai: string): void {
+    setJumlah((prev) => ({ ...prev, [lineId]: { ...(prev[lineId] ?? { diterima: "0", kembali: "0", hilang: "0" }), [kolom]: nilai } }));
   }
 
   function handleSubmit(): void {
-    /* Submit is disabled until `canSubmit`; the hints beside each control say what is missing. */
     if (!canSubmit) return;
     setFailure(null);
-    const payloadLines = lines.map((line) => ({
-      shipmentLineId: line.id,
-      deliveredQty: Number(qtyInputs[line.id] ?? "0"),
-    }));
+    const payloadLines = lines.map((line) => {
+      const j = jumlah[line.id];
+      return penerimaan
+        ? { shipmentLineId: line.id, deliveredQty: angka(j?.diterima), returnedQty: angka(j?.kembali), lostQty: angka(j?.hilang) }
+        : { shipmentLineId: line.id, deliveredQty: angka(j?.diterima) };
+    });
     startTransition(async () => {
-      /**
-       * try/catch, not a bare await: an unmapped rejection inside a transition is swallowed and
-       * the dialog just sits there with no feedback at all. `mapError` on the action side now
-       * returns a reason for everything it can name; this covers the rest (a dropped connection,
-       * a digest-masked crash).
-       */
       try {
-        const result = await completeShipmentAction({
-          shipmentId,
-          proofPhotoUrl,
-          proofPhotoR2Key,
-          ...(isKonsi ? {} : { invoiceDate, dueDate }),
-          lines: payloadLines,
-        });
+        const result = await completeShipmentAction({ shipmentId, proofPhotoUrl, proofPhotoR2Key, lines: payloadLines });
         if (!result.ok) {
-          toast.error(t(`err.${result.reason}` as any));
-          const replay = result.replay;
-          setFailure({ reason: result.reason, replay });
-          if (result.reason === "REPLAY_MISMATCH" && replay) {
-            /**
-             * The delivery is already recorded, so one more Submit with ITS values completes the
-             * shipment consistently. Filled per shipment line, so an order line two shipment lines
-             * share is not asked for twice.
-             */
-            const recordedQty = recordedQtyByShipmentLine(lines, replay);
-            setQtyInputs(
-              Object.fromEntries(lines.map((l) => [l.id, String(recordedQty.get(l.id) ?? 0)])),
-            );
-            setInvoiceDate(replay.invoiceDate);
-            setDueDate(replay.dueDate);
-          }
+          // TERIMA_GAGAL carries a store-receipt reason code: translated, never shown raw.
+          const pesan = pesanGagalPengiriman(result.reason, result.detail, {
+            teks: (k, v) => t(k as any, v),
+            adaSebab: (k) => tTerima.has(`err.${k}` as any),
+            sebab: (k) => tTerima(`err.${k}` as any),
+          });
+          toast.error(pesan);
+          setFailure(pesan);
           return;
         }
         toast.success(t("complete"));
@@ -205,15 +202,18 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
     });
   }
 
-  const replay = failure?.replay;
-  const recordedQty = replay ? recordedQtyByShipmentLine(lines, replay) : new Map<string, number>();
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("completeTitle")}</DialogTitle>
-          <DialogDescription>{t("completeDescription")}</DialogDescription>
+          <DialogDescription>
+            {jenis === "PEMEGANG"
+              ? t("completePemegangDescription")
+              : penerimaan
+                ? t("completeReceiptDescription")
+                : t("completeDescription")}
+          </DialogDescription>
         </DialogHeader>
         {loadState.status === "loading" && (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
@@ -247,31 +247,16 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
         )}
         {detailLoaded && (
           <div className="space-y-4">
-            {failure && (failure.reason === "REPLAY_MISMATCH" || failure.reason === "RESERVATION_MISMATCH") && (
+            {failure && (
               <Alert variant="destructive">
-                {replay && <AlertTitle>{t("replayTitle", { docNo: replay.docNo })}</AlertTitle>}
                 <AlertDescription>
-                  <p>{t(`err.${failure.reason}` as any)}</p>
-                  {replay && (
-                    <>
-                      <p className="font-medium">{t("replayLinesLabel")}</p>
-                      <ul className="w-full space-y-0.5">
-                        {lines.map((line) => (
-                          <li key={line.id} className="truncate">
-                            {t("replayLine", {
-                              product: line.productName,
-                              qty: recordedQty.get(line.id) ?? 0,
-                            })}
-                          </li>
-                        ))}
-                      </ul>
-                      <p>{t("replayDates", { invoiceDate: replay.invoiceDate, dueDate: replay.dueDate })}</p>
-                      <p>{t("replayHint")}</p>
-                    </>
-                  )}
+                  <p>{failure}</p>
                 </AlertDescription>
               </Alert>
             )}
+            <p className="text-xs text-muted-foreground">
+              {t("completeEvidence", { resi: resi || "—", berat: beratKg === null ? "—" : beratKg.toLocaleString("id-ID") })}
+            </p>
             <div>
               <Label htmlFor="proofPhoto">{t("proofPhoto")}</Label>
               <Input
@@ -292,74 +277,57 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
                 <img src={proofPhotoUrl} alt="" className="mt-2 h-24 w-24 rounded object-cover" />
               )}
             </div>
-            {isKonsi && (
-              <p className="text-sm text-muted-foreground">{t("konsiCompleteNote")}</p>
-            )}
-            {!isKonsi && (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label htmlFor="invoiceDate">{t("invoiceDate")}</Label>
-                  <Input
-                    id="invoiceDate"
-                    type="date"
-                    className="h-10"
-                    value={invoiceDate}
-                    disabled={isPending}
-                    onChange={(e) => setInvoiceDate(e.target.value)}
-                  />
-                  {parsedInvoice === null && (
-                    <p className="text-xs text-muted-foreground">{t("invoiceDateRequired")}</p>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="dueDate">{t("dueDate")}</Label>
-                  <Input
-                    id="dueDate"
-                    type="date"
-                    className="h-10"
-                    value={dueDate}
-                    min={invoiceDate || undefined}
-                    disabled={isPending}
-                    onChange={(e) => setDueDate(e.target.value)}
-                  />
-                  {paymentTempo > 0 && (
-                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                      <span className="text-xs text-muted-foreground">
-                        {tOrders("delivery.tempoHint", { days: paymentTempo })}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-10"
-                        disabled={isPending || parsedInvoice === null}
-                        onClick={applyTempo}
-                      >
-                        {tOrders("delivery.applyTempo")}
-                      </Button>
-                    </div>
-                  )}
-                  {parsedDue === null && <p className="text-xs text-muted-foreground">{t("dueDateRequired")}</p>}
-                  {parsedDue !== null && parsedInvoice !== null && !datesValid && (
-                    <p className="text-xs text-destructive">{t("dueDateBeforeInvoice")}</p>
-                  )}
-                </div>
-              </div>
-            )}
-            <div className="space-y-2">
+            {isKonsi && <p className="text-sm text-muted-foreground">{t("konsiCompleteNote")}</p>}
+            <div className="space-y-3">
               {lines.map((line) => (
-                <div key={line.id} className="flex items-center justify-between gap-2">
-                  <span className="truncate text-sm">{line.productName}</span>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={line.plannedQty}
-                    className="w-24"
-                    value={qtyInputs[line.id] ?? ""}
-                    onChange={(e) => setQtyInputs((prev) => ({ ...prev, [line.id]: e.target.value }))}
-                  />
+                <div key={line.id} className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm">{line.productName}</span>
+                    <span className="text-xs text-muted-foreground">{t("plannedQtyOf", { qty: line.plannedQty })}</span>
+                  </div>
+                  <div className={penerimaan ? "grid grid-cols-3 gap-2" : kolomTolak ? "grid grid-cols-2 gap-2" : "flex justify-end"}>
+                    <div className="space-y-0.5">
+                      <Label className="text-xs text-muted-foreground">{penerimaan ? t("podDiterima") : t("podDiserahkan")}</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={line.plannedQty}
+                        className={kolomTolak ? "" : "w-24"}
+                        value={jumlah[line.id]?.diterima ?? ""}
+                        onChange={(e) => ubah(line.id, "diterima", e.target.value)}
+                      />
+                    </div>
+                    {kolomTolak && (
+                      <div className="space-y-0.5">
+                        <Label className="text-xs text-muted-foreground">{t("podReturLangsung")}</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={line.plannedQty}
+                          value={jumlah[line.id]?.kembali ?? ""}
+                          onChange={(e) => ubah(line.id, "kembali", e.target.value)}
+                        />
+                      </div>
+                    )}
+                    {penerimaan && (
+                      <div className="space-y-0.5">
+                        <Label className="text-xs text-muted-foreground">{t("podHilang")}</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={line.plannedQty}
+                          value={jumlah[line.id]?.hilang ?? ""}
+                          onChange={(e) => ubah(line.id, "hilang", e.target.value)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  {!barisSah(line) && (
+                    <p className="text-xs text-destructive">{penerimaan ? t("err.LINE_UNACCOUNTED") : t("err.OVER_PLANNED")}</p>
+                  )}
                 </div>
               ))}
+              {!penerimaan && !adaDiserahkan && !sudahDiterima && <p className="text-xs text-muted-foreground">{t("err.POD_KOSONG")}</p>}
             </div>
           </div>
         )}

@@ -1,16 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
-import { FileSpreadsheet, Upload, AlertCircle, Loader2 } from "lucide-react";
+import { FileSpreadsheet, Upload, AlertCircle, Loader2, Paperclip } from "lucide-react";
 import type { SettlementListRow } from "@/lib/finance/settlement/queries";
 /* Type-only: erased at compile, so the parser's xlsx dependency never reaches the client bundle. */
 import type { SettlementParseError } from "@/lib/finance/settlement/shopee-settlement-parser";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -29,6 +28,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/pagination";
+import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
+import { BadgeGanda, type UnggahanPertamaTampil } from "./ganda";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 
 const UPLOAD_MARKETPLACES = ["SHOPEE", "TIKTOK"] as const;
 type UploadMarketplace = (typeof UPLOAD_MARKETPLACES)[number];
@@ -39,7 +42,17 @@ type Props = {
   page: number;
   pageSize: number;
   canManage: boolean;
+  /** id settlement → unggahan pertamanya, untuk baris yang kembar. */
+  ganda?: Record<string, UnggahanPertamaTampil>;
 };
+
+/** Jawaban 409 rute unggah: berkas yang sama sudah pernah diunggah. */
+type UploadDuplicateResponse =
+  | {
+      code: "SETTLEMENT_GANDA";
+      pertama: { id: string; fileName: string; uploadedAt: string; uploadedByName: string | null };
+    }
+  | { error: "DUPLICATE_FILE"; settlementId: string };
 
 type UploadSuccessResponse = {
   settlementId: string;
@@ -54,7 +67,7 @@ function formatRupiah(value: number): string {
   return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 }
 
-export function SettlementsPageClient({ items, totalCount, page, pageSize, canManage }: Props) {
+export function SettlementsPageClient({ items, totalCount, page, pageSize, canManage, ganda = {} }: Props) {
   const router = useRouter();
   const t = useTranslations("financeSettlements");
   const locale = useLocale();
@@ -62,25 +75,19 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
 
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [marketplace, setMarketplace] = useState<UploadMarketplace>("SHOPEE");
   const [uploading, setUploading] = useState(false);
   const [uploadErrors, setUploadErrors] = useState<SettlementParseError[] | null>(null);
   const [uploadErrorMessage, setUploadErrorMessage] = useState<string | null>(null);
-  const [duplicateSettlementId, setDuplicateSettlementId] = useState<string | null>(null);
+  const [duplicateOfId, setDuplicateOfId] = useState<string | null>(null);
 
-  const formatDate = (iso: string) =>
-    new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric" }).format(
-      new Date(iso),
-    );
+  const formatDate = (iso: string) => formatDisplayDate(iso, locale);
 
-  const formatDateTime = (iso: string) =>
-    new Intl.DateTimeFormat(locale, {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(iso));
+  const formatDateTime = (iso: string) => formatDisplayDateTime(iso, locale);
+
+  const marketplaceLabel = (m: string): string =>
+    t.has(`marketplaceOption.${m}`) ? t(`marketplaceOption.${m}`) : m;
 
   function goToPage(p: number) {
     startTransition(() => router.push(`/backoffice/finance/settlements?page=${p}`));
@@ -91,7 +98,7 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
     setUploading(true);
     setUploadErrors(null);
     setUploadErrorMessage(null);
-    setDuplicateSettlementId(null);
+    setDuplicateOfId(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -128,9 +135,22 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
       }
 
       if (res.status === 409) {
-        const data = (await res.json().catch(() => ({}))) as { settlementId?: string };
-        if (data.settlementId) setDuplicateSettlementId(data.settlementId);
-        else setUploadErrorMessage(t("uploadDuplicate"));
+        const data = (await res.json().catch(() => null)) as UploadDuplicateResponse | null;
+        if (data && "code" in data && data.code === "SETTLEMENT_GANDA") {
+          setUploadErrorMessage(
+            t("uploadDuplicate", {
+              fileName: data.pertama.fileName,
+              by: data.pertama.uploadedByName ?? t("unknownUploader"),
+              at: formatDateTime(data.pertama.uploadedAt),
+            }),
+          );
+          setDuplicateOfId(data.pertama.id);
+        } else if (data && "settlementId" in data && data.settlementId) {
+          setUploadErrorMessage(t("uploadDuplicateExisting"));
+          setDuplicateOfId(data.settlementId);
+        } else {
+          setUploadErrorMessage(t("uploadFailed"));
+        }
         setFile(null);
         setFileInputKey((k) => k + 1);
         return;
@@ -158,6 +178,7 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
   const statusVariant = (status: string): "default" | "secondary" =>
     status === "MATCHED" || status === "RECONCILED" ? "default" : "secondary";
 
+  // RECONCILED (sudah dijurnal) dulu jatuh ke label "Terproses" — sama dengan baru diunggah.
   const statusLabel = (status: string): string =>
     status === "RECONCILED"
       ? t("statusReconciled")
@@ -169,8 +190,10 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
-          <p className="text-muted-foreground">{t("subtitle")}</p>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold tracking-tight">{t("judulHalaman")}</h1>
+            <TombolBantuan judul={t("judulHalaman")} />
+          </div>
           <p className="text-sm text-muted-foreground">{t("forecastInput")}</p>
         </div>
       </div>
@@ -204,18 +227,44 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-2 flex-1">
-                <label className="text-xs text-muted-foreground">{t("uploadFileLabel")}</label>
-                <Input
+              <div className="grid gap-2 flex-1 min-w-0">
+                <label id="settlement-file-label" className="text-xs text-muted-foreground">
+                  {t("uploadFileLabel")}
+                </label>
+                {/* The native control renders the browser's own "Choose File / No file chosen"
+                    in the browser's language, so it stays hidden behind a translated button. */}
+                <input
                   key={fileInputKey}
+                  ref={fileInputRef}
                   type="file"
+                  className="hidden"
                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   disabled={uploading}
                   onChange={(e) => {
                     setFile(e.target.files?.[0] ?? null);
-                    setDuplicateSettlementId(null);
+                    setDuplicateOfId(null);
                   }}
                 />
+                <div className="flex h-9 min-w-0 items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={uploading}
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-describedby="settlement-file-name"
+                    aria-labelledby="settlement-file-label settlement-file-choose"
+                  >
+                    <Paperclip className="mr-2 h-4 w-4" />
+                    <span id="settlement-file-choose">{t("chooseFile")}</span>
+                  </Button>
+                  <span
+                    id="settlement-file-name"
+                    className="min-w-0 truncate text-sm text-muted-foreground"
+                    title={file?.name}
+                  >
+                    {file ? file.name : t("noFileChosen")}
+                  </span>
+                </div>
               </div>
               <Button onClick={handleUpload} disabled={!file || uploading} className="sm:w-auto">
                 {uploading ? t("uploading") : t("uploadButton")}
@@ -226,29 +275,22 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
               <p className="text-xs text-muted-foreground">{t("tiktokIncludesTokopedia")}</p>
             )}
 
-            {file && !uploading && (
-              <p className="text-xs text-muted-foreground truncate">{t("selectedFile", { name: file.name })}</p>
-            )}
-
             {uploadErrorMessage && (
               <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                <span>{uploadErrorMessage}</span>
-              </div>
-            )}
-
-            {duplicateSettlementId && (
-              <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                <span>
-                  {t("uploadDuplicate")}{" "}
-                  <Link
-                    href={`/backoffice/finance/settlements/${duplicateSettlementId}`}
-                    className="font-medium underline underline-offset-2"
-                  >
-                    {t("uploadDuplicateOpen")}
-                  </Link>
-                </span>
+                <div className="space-y-1">
+                  <span>{uploadErrorMessage}</span>
+                  {duplicateOfId && (
+                    <div>
+                      <Link
+                        href={`/backoffice/finance/settlements/${duplicateOfId}`}
+                        className="font-medium underline underline-offset-2"
+                      >
+                        {t("uploadDuplicateOpen")}
+                      </Link>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -316,10 +358,17 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
                         }
                       >
                         <TableCell className="whitespace-nowrap">
-                          {formatDate(row.periodFromIso)} – {formatDate(row.periodToIso)}
+                          {/* Tautan sungguhan: bisa difokus papan ketik dan dibuka di tab baru; klik baris tetap jalan pintas. */}
+                          <Link
+                            href={`/backoffice/finance/settlements/${row.id}`}
+                            className={TAUTAN_DOKUMEN}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {formatDate(row.periodFromIso)} – {formatDate(row.periodToIso)}
+                          </Link>
                         </TableCell>
-                        <TableCell className="font-medium">{row.marketplace}</TableCell>
-                        <TableCell>{row.seller}</TableCell>
+                        <TableCell className="font-medium">{marketplaceLabel(row.marketplace)}</TableCell>
+                        <TableCell className="whitespace-normal min-w-[120px] max-w-[220px]">{row.seller}</TableCell>
                         <TableCell>
                           {row.checksumOk ? (
                             <Badge variant="secondary">{t("checksumOk")}</Badge>
@@ -343,7 +392,10 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={statusVariant(row.status)}>{statusLabel(row.status)}</Badge>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <Badge variant={statusVariant(row.status)}>{statusLabel(row.status)}</Badge>
+                            {ganda[row.id] && <BadgeGanda pertama={ganda[row.id]} />}
+                          </div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                           {formatDateTime(row.createdAtIso)}

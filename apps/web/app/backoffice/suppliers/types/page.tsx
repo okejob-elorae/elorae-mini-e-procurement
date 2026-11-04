@@ -1,20 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Pencil, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Loader2, Trash2, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/ui/page-header';
 import {
   Dialog,
   DialogContent,
@@ -31,14 +26,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { gayaKeping } from '@/lib/ui/warna-kode';
+import { CategoryBadge } from '@/components/ui/category-badge';
+import { PemilihWarna } from '@/components/ui/pemilih-warna';
+import { warnaOtomatisKategori } from '@/lib/ui/category-color';
+import type { WarnaPantone } from '@/lib/tampilan/warna-pilihan';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,38 +46,51 @@ import {
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Pagination } from '@/components/ui/pagination';
+import { cn } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import type { HasilJenisPemasok } from '@/app/actions/supplier-types';
 
-const schema = z.object({
-  code: z.string().min(1, 'Code is required').max(50),
-  name: z.string().min(1, 'Name is required'),
-  isActive: z.boolean(),
-  // Coerce empty string from number input to undefined so validation passes
-  sortOrder: z.preprocess(
-    (val) => (val === '' || val === undefined ? undefined : Number(val)),
-    z.number().int().optional()
-  ),
-});
+type Translate = ReturnType<typeof useTranslations>;
 
-type FormData = z.infer<typeof schema>;
+function makeSchema(t: Translate) {
+  return z.object({
+    code: z.string().min(1, t('codeRequired')).max(50),
+    name: z.string().min(1, t('nameRequired')),
+    isActive: z.boolean(),
+    // Coerce empty string from number input to undefined so validation passes
+    sortOrder: z.preprocess(
+      (val) => (val === '' || val === undefined ? undefined : Number(val)),
+      z.number().int().optional()
+    ),
+  });
+}
+
+type FormData = z.infer<ReturnType<typeof makeSchema>>;
 
 interface SupplierTypeRecord {
   id: string;
   code: string;
   name: string;
+  color: string | null;
+  colorTcx: string | null;
+  colorPantone?: { name: string } | null;
   isActive: boolean;
   sortOrder: number | null;
   createdAt: string;
   updatedAt: string;
+  _count?: { suppliers: number };
 }
 
 export default function SupplierTypesPage() {
+  const tUi = useTranslations('ui');
+  const tTable = useTranslations('tableHeaders');
   const tSupplierTypes = useTranslations('supplierTypes');
+  const schema = useMemo(() => makeSchema(tSupplierTypes), [tSupplierTypes]);
   const [types, setTypes] = useState<SupplierTypeRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SupplierTypeRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
@@ -100,17 +107,22 @@ export default function SupplierTypesPage() {
     resolver: zodResolver(schema) as any,
     defaultValues: { code: '', name: '', isActive: true, sortOrder: undefined },
   });
+  // Warna Pantone pilihan pemilik; null = otomatis. Dikirim hanya bila disentuh, supaya menyimpan
+  // nama saja tidak pernah mengubah warnanya.
+  const [warna, setWarna] = useState<WarnaPantone | null>(null);
+  const [warnaDisentuh, setWarnaDisentuh] = useState(false);
+  // Hex yang tersimpan sebelum warna dipilih dari Pantone (tanpa kode TCX) — ditampilkan apa adanya.
+  const [warnaLama, setWarnaLama] = useState<string | null>(null);
 
   const isActive = watch('isActive');
+  const namaKetik = watch('name');
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   const fetchTypes = async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams();
-      params.set('page', String(page));
-      params.set('pageSize', String(pageSize));
       const { listSupplierTypesAction } = await import('@/app/actions/supplier-types');
-      const json = await listSupplierTypesAction({ page, pageSize });
+      const json = await listSupplierTypesAction({ page, pageSize, withUsage: true });
       if (json != null && typeof json === 'object' && 'data' in json && 'totalCount' in json) {
         setTypes((Array.isArray(json.data) ? json.data : []) as unknown as SupplierTypeRecord[]);
         setTotalCount(Number(json.totalCount) || 0);
@@ -121,7 +133,7 @@ export default function SupplierTypesPage() {
       }
     } catch (e) {
       console.error(e);
-      toast.error('Failed to load supplier types');
+      toast.error(tSupplierTypes('loadFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -132,9 +144,21 @@ export default function SupplierTypesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchTypes depends on pagination
   }, [page, pageSize]);
 
+  const pesanGagal = (h: Exclude<HasilJenisPemasok, { ok: true }>, kode?: string) =>
+    h.code === 'DUPLICATE_CODE'
+      ? tSupplierTypes('errDuplicate', { code: kode ?? '' })
+      : h.code === 'IN_USE'
+        ? tSupplierTypes('errInUse', { count: h.count ?? 0 })
+        : h.code === 'UNKNOWN_PANTONE'
+          ? tSupplierTypes('errUnknownPantone')
+          : tSupplierTypes('saveFailed');
+
   const openCreate = () => {
     setEditingId(null);
     reset({ code: '', name: '', isActive: true, sortOrder: undefined });
+    setWarna(null);
+    setWarnaDisentuh(false);
+    setWarnaLama(null);
     setIsDialogOpen(true);
   };
 
@@ -146,6 +170,11 @@ export default function SupplierTypesPage() {
       isActive: row.isActive,
       sortOrder: row.sortOrder ?? undefined,
     });
+    setWarna(
+      row.colorTcx && row.color ? { tcx: row.colorTcx, nama: row.colorPantone?.name ?? '', hex: row.color } : null,
+    );
+    setWarnaDisentuh(false);
+    setWarnaLama(row.color && !row.colorTcx ? row.color : null);
     setIsDialogOpen(true);
   };
 
@@ -155,213 +184,308 @@ export default function SupplierTypesPage() {
         createSupplierTypeAction,
         updateSupplierTypeAction,
       } = await import('@/app/actions/supplier-types');
-      if (editingId) {
-        await updateSupplierTypeAction(editingId, data);
-        toast.success('Supplier type updated');
-      } else {
-        await createSupplierTypeAction(data);
-        toast.success('Supplier type created');
+      const isi = warnaDisentuh || !editingId ? { ...data, colorTcx: warna?.tcx ?? null } : data;
+      const hasil = editingId
+        ? await updateSupplierTypeAction(editingId, isi)
+        : await createSupplierTypeAction(isi);
+      if (!hasil.ok) {
+        toast.error(pesanGagal(hasil, data.code.trim().toUpperCase()));
+        return;
       }
+      toast.success(editingId ? tSupplierTypes('updatedToast') : tSupplierTypes('createdToast'));
       setIsDialogOpen(false);
       fetchTypes();
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to save');
+    } catch (e) {
+      console.error(e);
+      toast.error(tSupplierTypes('saveFailed'));
     }
   };
 
   const onDelete = async () => {
-    if (!deleteId) return;
+    if (!deleteTarget) return;
     setIsDeleting(true);
     try {
       const { deleteSupplierTypeAction } = await import('@/app/actions/supplier-types');
-      await deleteSupplierTypeAction(deleteId);
-      toast.success('Supplier type deleted');
-      setDeleteId(null);
+      const hasil = await deleteSupplierTypeAction(deleteTarget.id);
+      if (!hasil.ok) {
+        toast.error(hasil.code === 'FAILED' ? tSupplierTypes('deleteFailed') : pesanGagal(hasil));
+        return;
+      }
+      toast.success(tSupplierTypes('deletedToast'));
+      setDeleteTarget(null);
       fetchTypes();
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to delete');
+    } catch (e) {
+      console.error(e);
+      toast.error(tSupplierTypes('deleteFailed'));
     } finally {
       setIsDeleting(false);
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Supplier Types</h1>
-        <p className="text-muted-foreground">
-          Manage supplier type master data. Types are used when creating or editing suppliers.
-        </p>
-      </div>
+      <PageHeader
+        title={tSupplierTypes('pageTitle')}
+        actions={
+          <Button onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            {tSupplierTypes('newType')}
+          </Button>
+        }
+      />
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Types</CardTitle>
-              <CardDescription>{tSupplierTypes('cardDescription')}</CardDescription>
-            </div>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <Button variant="outline" size="sm" onClick={openCreate}>
-                <Plus className="h-4 w-4 mr-2" />
-                New type
-              </Button>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{editingId ? 'Edit supplier type' : 'New supplier type'}</DialogTitle>
-                  <DialogDescription>
-                    {editingId ? 'Update code, name, and status.' : 'Add a new supplier type.'}
-                  </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="code">Code *</Label>
-                    <Input
-                      id="code"
-                      {...register('code')}
-                      placeholder="e.g. FABRIC"
-                      disabled={!!editingId}
-                    />
-                    {errors.code && (
-                      <p className="text-sm text-destructive">{errors.code.message}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Name *</Label>
-                    <Input id="name" {...register('name')} placeholder="e.g. Fabric" />
-                    {errors.name && (
-                      <p className="text-sm text-destructive">{errors.name.message}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="isActive"
-                      checked={isActive}
-                      onCheckedChange={(v) => setValue('isActive', v)}
-                    />
-                    <Label htmlFor="isActive">Active</Label>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="sortOrder">Sort order (optional)</Label>
-                    <Input
-                      id="sortOrder"
-                      type="number"
-                      {...register('sortOrder')}
-                      placeholder="1"
-                    />
-                    {errors.sortOrder && (
-                      <p className="text-sm text-destructive">{errors.sortOrder.message}</p>
-                    )}
-                  </div>
-                  <DialogFooter>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button type="submit" disabled={isSubmitting}>
-                      {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      {editingId ? 'Update' : 'Create'}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
+          <CardTitle className="flex items-center gap-2">
+            <Tags className="h-5 w-5" />
+            {tSupplierTypes('cardTitle')}
+            {!isLoading ? (
+              <span className="text-sm font-normal text-muted-foreground">
+                · {tSupplierTypes('count', { count: totalCount })}
+              </span>
+            ) : null}
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Sort</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-[80px]">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {types.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">
-                    No supplier types yet. Add one to get started.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                types.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="font-medium">{row.code}</TableCell>
-                    <TableCell>{row.name}</TableCell>
-                    <TableCell>{row.sortOrder ?? '—'}</TableCell>
-                    <TableCell>
-                      {row.isActive ? (
-                        <Badge variant="secondary">Active</Badge>
-                      ) : (
-                        <Badge variant="outline">Inactive</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <span className="sr-only">Open menu</span>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(row)}>
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={() => setDeleteId(row.id)}
-                          >
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : types.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <p className="text-sm text-muted-foreground">{tSupplierTypes('empty')}</p>
+              <Button variant="outline" onClick={openCreate}>
+                <Plus className="mr-2 h-4 w-4" />
+                {tSupplierTypes('newType')}
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{tUi('code')}</TableHead>
+                    <TableHead>{tUi('name')}</TableHead>
+                    <TableHead>{tSupplierTypes('usage')}</TableHead>
+                    {/* Urutan di tengah: angka satu digit yang rata kanan
+                        menempel ke label status di sebelahnya. */}
+                    <TableHead className="text-center">{tSupplierTypes('sort')}</TableHead>
+                    <TableHead>{tTable('status')}</TableHead>
+                    <TableHead className="w-[96px] text-right">{tUi('actions')}</TableHead>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-          <Pagination
-            page={page}
-            totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
-            onPageChange={setPage}
-            totalCount={totalCount}
-            pageSize={pageSize}
-          />
+                </TableHeader>
+                <TableBody>
+                  {types.map((row) => {
+                    const dipakai = row._count?.suppliers ?? 0;
+                    return (
+                      <TableRow key={row.id} className={cn(!row.isActive && 'text-muted-foreground')}>
+                        <TableCell>
+                          {/* Warna diturunkan dari teks kodenya sendiri, jadi kode
+                              yang sama selalu berwarna sama di layar mana pun —
+                              dan kodenya tetap tertulis, jadi warnanya penanda,
+                              bukan satu-satunya pembeda. */}
+                          <span
+                            className="keping-kode inline-flex rounded-md px-2 py-0.5 font-mono text-xs font-semibold"
+                            style={gayaKeping(row.code)}
+                          >
+                            {row.code}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {/* Tampil persis seperti lencananya di daftar pemasok — dengan warna pilihan bila ada. */}
+                          <span className="flex flex-wrap items-center gap-2">
+                            <CategoryBadge label={row.name} warna={row.color} />
+                            {row.colorTcx ? (
+                              <span className="font-mono text-xs text-muted-foreground">
+                                {row.colorTcx} TCX{row.colorPantone?.name ? ` · ${row.colorPantone.name}` : ''}
+                              </span>
+                            ) : null}
+                          </span>
+                        </TableCell>
+                        <TableCell className="tabular-nums text-muted-foreground">
+                          {dipakai > 0 ? tSupplierTypes('usageCount', { count: dipakai }) : tSupplierTypes('usageNone')}
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums">{row.sortOrder ?? '—'}</TableCell>
+                        <TableCell>
+                          {row.isActive ? (
+                            <Badge className="border-emerald-600/25 bg-emerald-600/10 text-emerald-700 hover:bg-emerald-600/15 dark:text-emerald-400">
+                              {tUi('active')}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline">{tUi('inactive')}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {/* Dua tombol yang terlihat, bukan pensil yang diam-diam
+                              membuka menu. Hapus dimatikan untuk jenis yang masih
+                              dipakai, dengan alasannya di tooltip — bukan ditawarkan
+                              lalu ditolak sesudah diklik. */}
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEdit(row)}
+                              aria-label={tSupplierTypes('editAria', { name: row.name })}
+                              title={tUi('edit')}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <span title={dipakai > 0 ? tSupplierTypes('deleteInUse', { count: dipakai }) : tUi('delete')}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => setDeleteTarget(row)}
+                                disabled={dipakai > 0}
+                                aria-label={
+                                  dipakai > 0
+                                    ? tSupplierTypes('deleteInUse', { count: dipakai })
+                                    : tSupplierTypes('deleteAria', { name: row.name })
+                                }
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              {/* Paginasi hanya kalau memang ada halaman kedua — "Halaman 1
+                  dari 1" dengan dua tombol mati hanya menambah kebisingan. */}
+              {totalPages > 1 ? (
+                <Pagination
+                  page={page}
+                  totalPages={totalPages}
+                  onPageChange={setPage}
+                  totalCount={totalCount}
+                  pageSize={pageSize}
+                />
+              ) : null}
+            </>
+          )}
         </CardContent>
       </Card>
 
-      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingId ? tSupplierTypes('editTitle') : tSupplierTypes('createTitle')}</DialogTitle>
+            <DialogDescription>
+              {editingId ? tSupplierTypes('editDescription') : tSupplierTypes('createDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="code">{tUi('code')} *</Label>
+              <Input
+                id="code"
+                {...register('code')}
+                placeholder={tSupplierTypes('codePlaceholder')}
+                disabled={!!editingId}
+                className="font-mono uppercase"
+              />
+              {errors.code ? (
+                <p className="text-sm text-destructive">{errors.code.message}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {editingId ? tSupplierTypes('codeLocked') : tSupplierTypes('codeHelp')}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="name">{tUi('name')} *</Label>
+              <Input id="name" {...register('name')} placeholder={tSupplierTypes('namePlaceholder')} />
+              {errors.name && (
+                <p className="text-sm text-destructive">{errors.name.message}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>{tSupplierTypes('color')}</Label>
+              <div className="flex flex-wrap items-center gap-3">
+                <PemilihWarna
+                  nilai={warna}
+                  bawaan={warnaOtomatisKategori(namaKetik)}
+                  label={tSupplierTypes('color')}
+                  lama={warnaDisentuh ? null : warnaLama}
+                  onPilih={(w) => {
+                    setWarna(w);
+                    setWarnaDisentuh(true);
+                  }}
+                />
+                <CategoryBadge
+                  label={namaKetik || tSupplierTypes('colorPreview')}
+                  warna={warna?.hex ?? (warnaDisentuh ? null : warnaLama)}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">{tSupplierTypes('colorHelp')}</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sortOrder">{tSupplierTypes('sortOrder')}</Label>
+              <Input
+                id="sortOrder"
+                type="number"
+                {...register('sortOrder')}
+                placeholder="1"
+                className="w-32"
+              />
+              {errors.sortOrder ? (
+                <p className="text-sm text-destructive">{errors.sortOrder.message}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">{tSupplierTypes('sortHelp')}</p>
+              )}
+            </div>
+            <div className="flex items-start gap-3 rounded-md border p-3">
+              <Switch
+                id="isActive"
+                checked={isActive}
+                onCheckedChange={(v) => setValue('isActive', v)}
+              />
+              <div className="space-y-0.5">
+                <Label htmlFor="isActive">{tUi('active')}</Label>
+                <p className="text-xs text-muted-foreground">{tSupplierTypes('activeHelp')}</p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsDialogOpen(false)}
+              >
+                {tUi('cancel')}
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {editingId ? tSupplierTypes('updateButton') : tUi('create')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete supplier type?</AlertDialogTitle>
+            <AlertDialogTitle>{tSupplierTypes('deleteTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              This type can only be deleted if no suppliers use it. Are you sure?
+              {tSupplierTypes('deleteBodyNamed', { name: deleteTarget?.name ?? '', code: deleteTarget?.code ?? '' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tUi('cancel')}</AlertDialogCancel>
             <AlertDialogAction
-              onClick={onDelete}
+              onClick={(e) => {
+                // Tetap terbuka sampai hasilnya datang: kalau ditolak, alasannya
+                // tampil dengan dialog yang masih menyebut jenis yang dimaksud.
+                e.preventDefault();
+                onDelete();
+              }}
               disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              variant="destructive"
             >
-              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Delete'}
+              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : tUi('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

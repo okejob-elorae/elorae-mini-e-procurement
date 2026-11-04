@@ -14,20 +14,36 @@ import {
   deactivateStoreAction,
   searchStorePlacesAction,
   getPlaceSearchAvailabilityAction,
+  bacaBatasKreditTokoAction,
+  bacaKelasTokoAction,
 } from "./actions";
 import type { SerpPlaceResult } from "@/lib/geo/serpapi-maps";
 import type { StoreFields } from "@/lib/stores/queries";
+import { DAFTAR_KELAS, type KelasToko } from "@/lib/stores/kelas-toko";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const StoreMapPicker = dynamic(() => import("./StoreMapPicker"), {
   ssr: false,
@@ -42,7 +58,16 @@ type Props = {
   readOnly?: boolean;
   hideHeader?: boolean;
   initial: StoreFields & { isActive: boolean };
+  /** Pilihan area; area nonaktif hanya tampil kalau toko ini masih memakainya. */
+  areas: { id: string; code: string; name: string; isActive: boolean }[];
+  salesmen: { id: string; nama: string }[];
 };
+
+// Radix Select tidak menerima nilai kosong.
+const KOSONG = "__KOSONG__";
+
+const angkaSaja = (s: string) => s.replace(/\D/g, "");
+const kelompokRibuan = new Intl.NumberFormat("id-ID");
 
 function SectionHeader({ title }: { title: string }) {
   return (
@@ -52,11 +77,13 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
-export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false, initial }: Props) {
+export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false, initial, areas, salesmen }: Props) {
   const t = useTranslations("stores.form");
   const tErr = useTranslations("stores.errors");
   const tRoot = useTranslations("stores");
   const tSection = useTranslations("stores.form.sections");
+  const tKredit = useTranslations("stores.kredit");
+  const tKelas = useTranslations("kelasToko.form");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +99,59 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
   const searchSeqRef = useRef(0);
 
   const [form, setForm] = useState<StoreFields>(initial);
+  /*
+   * Batas faktur terbuka yang belum ikut di `initial` (halaman pemanggil belum
+   * mengirimnya) dibaca sendiri bersama batas kreditnya. Selama belum terbaca
+   * kolomnya dikunci dan nilainya `undefined` — penyimpanan membiarkan batas
+   * tersimpan apa adanya.
+   */
+  const [kreditTerbaca, setKreditTerbaca] = useState(mode === "create" || initial.maxOpenInvoices !== undefined);
+  const tanpaBatasKredit = form.noCreditLimit === true;
+
+  useEffect(() => {
+    if (kreditTerbaca || !storeId) return;
+    let batal = false;
+    void bacaBatasKreditTokoAction(storeId).then((r) => {
+      if (batal || !r.ok || !r.data) return;
+      const batas = r.data;
+      setForm((prev) => ({
+        ...prev,
+        creditLimit: batas.creditLimit,
+        maxOpenInvoices: batas.maxOpenInvoices,
+        noCreditLimit: batas.noCreditLimit,
+      }));
+      setKreditTerbaca(true);
+    });
+    return () => {
+      batal = true;
+    };
+  }, [kreditTerbaca, storeId]);
+
+  /*
+   * Kelas toko: sama dengan batas kredit — kalau halaman pemanggil belum
+   * mengirimnya, dibaca sendiri, dan selama belum terbaca pemilihnya dikunci
+   * dan nilainya `undefined` (penyimpanan tidak mengubah kelas tersimpan).
+   * Jarak kunjungan tiap kelas ikut dibaca supaya pilihannya menyebut harinya.
+   */
+  const perluBacaKelas = mode === "edit" && initial.storeClass === undefined;
+  const [kelasTerbaca, setKelasTerbaca] = useState(!perluBacaKelas);
+  const [jarakKelas, setJarakKelas] = useState<{ jarakHari: Record<KelasToko, number>; batasUmum: number } | null>(null);
+
+  useEffect(() => {
+    let batal = false;
+    void bacaKelasTokoAction(perluBacaKelas ? storeId ?? null : null).then((r) => {
+      if (batal || !r.ok || !r.data) return;
+      const d = r.data;
+      setJarakKelas({ jarakHari: d.jarakHari, batasUmum: d.batasUmum });
+      if (perluBacaKelas) {
+        setForm((prev) => ({ ...prev, storeClass: d.storeClass }));
+        setKelasTerbaca(true);
+      }
+    });
+    return () => {
+      batal = true;
+    };
+  }, [perluBacaKelas, storeId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,7 +204,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
       if (!result.ok) {
         if (result.code === "NO_API_KEY") {
           setPlaceSearchConfigured(false);
-          setSearchError(t("searchNoApiKey"));
+          setSearchError(t("searchNoApiKeyV2"));
         } else if (result.code === "FORBIDDEN") {
           setSearchError(tErr("forbidden"));
         } else if (result.code === "EMPTY_QUERY") {
@@ -166,6 +246,11 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
      * applies to PUTUS, sellThroughMethod only to KONSI — so submit must normalise both itself or
      * the writer's assertValidPriceDiscount / assertValidSellThroughMethod rejects an unrelated edit.
      */
+    // Toko konsi wajib punya sales pemegang (P47) — aturan yang sama dengan penulisnya.
+    if (form.termsType === "KONSI" && !form.salesmanId) {
+      setError(tErr("konsiHolderRequired"));
+      return;
+    }
     const payload: StoreFields = {
       ...form,
       priceDiscountPercent: form.termsType === "KONSI" ? null : form.priceDiscountPercent,
@@ -186,6 +271,8 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
         else if (result.code === "invalid_markup_percent") setError(tErr("invalidMarkupPercent"));
         else if (result.code === "konsi_discount_not_allowed") setError(tErr("discountNotAllowedForKonsi"));
         else if (result.code === "sell_through_method_requires_konsi") setError(tErr("sellThroughMethodRequiresKonsi"));
+        else if (result.code === "invalid_ref") setError(tErr("invalidRef"));
+        else if (result.code === "konsi_holder_required") setError(tErr("konsiHolderRequired"));
         else setError(result.message);
         return;
       }
@@ -200,13 +287,17 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
     });
   }
 
+  const [konfirmasiNonaktif, setKonfirmasiNonaktif] = useState(false);
+
   async function onDeactivate() {
     if (!storeId) return;
-    if (!confirm(t("deactivateConfirm"))) return;
+    setKonfirmasiNonaktif(false);
     startTransition(async () => {
       const result = await deactivateStoreAction(storeId);
       if (!result.ok) {
-        setError(result.message);
+        if (result.code === "forbidden") setError(tErr("forbidden"));
+        else if (result.code === "not_found") setError(tErr("notFound"));
+        else setError(result.message);
         return;
       }
       router.push("/backoffice/stores");
@@ -221,7 +312,10 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
     <div className="space-y-4">
       {!hideHeader && (
         <>
-          <h1 className="text-2xl font-bold">{tRoot(mode === "create" ? "new" : "edit")}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold">{tRoot(mode === "create" ? "new" : "edit")}</h1>
+            <TombolBantuan judul={tRoot(mode === "create" ? "new" : "edit")} />
+          </div>
           {readOnly && <p className="text-sm text-muted-foreground">{tRoot("readOnlyBanner")}</p>}
         </>
       )}
@@ -254,6 +348,90 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
                 onChange={(e) => update("name", e.target.value)}
               />
             </div>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* 1b. Area dan sales yang memegangnya — dirotasi di sini atau massal
+            dari daftar toko; setiap perubahan pemegang tercatat di jejak. */}
+        <section className="space-y-4">
+          <SectionHeader title={tSection("assignment")} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="groupId">{t("area")}</Label>
+              <Select
+                value={form.groupId ?? KOSONG}
+                onValueChange={(v) => update("groupId", v === KOSONG ? null : v)}
+                disabled={pending || readOnly}
+              >
+                <SelectTrigger id="groupId" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={KOSONG}>{t("areaNone")}</SelectItem>
+                  {areas
+                    .filter((a) => a.isActive || a.id === form.groupId)
+                    .map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.code} — {a.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="salesmanId">
+                {t("salesman")}
+                {form.termsType === "KONSI" && <span className="ml-1 text-destructive">*</span>}
+              </Label>
+              <Select
+                value={form.salesmanId ?? KOSONG}
+                onValueChange={(v) => update("salesmanId", v === KOSONG ? null : v)}
+                disabled={pending || readOnly}
+              >
+                <SelectTrigger id="salesmanId" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={KOSONG}>{t("salesmanNone")}</SelectItem>
+                  {salesmen.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.nama}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {form.termsType === "KONSI" ? t("salesmanRequiredKonsi") : t("salesmanHint")}
+              </p>
+            </div>
+          </div>
+          {/* Kelas toko menentukan seberapa sering sales diingatkan datang. */}
+          <div className="space-y-1.5 sm:max-w-[calc(50%-0.5rem)]">
+            <Label htmlFor="storeClass">{tKelas("label")}</Label>
+            <Select
+              value={kelasTerbaca ? (form.storeClass ?? KOSONG) : ""}
+              onValueChange={(v) => update("storeClass", v === KOSONG ? null : (v as KelasToko))}
+              disabled={pending || readOnly || !kelasTerbaca}
+            >
+              <SelectTrigger id="storeClass" className="w-full">
+                <SelectValue placeholder={tKelas("memuat")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={KOSONG}>
+                  {jarakKelas ? tKelas("tanpa", { days: jarakKelas.batasUmum }) : tKelas("tanpaTanpaHari")}
+                </SelectItem>
+                {DAFTAR_KELAS.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {jarakKelas
+                      ? tKelas("opsi", { kelas: k, days: jarakKelas.jarakHari[k] })
+                      : tKelas("opsiTanpaHari", { kelas: k })}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{tKelas("bantuan")}</p>
           </div>
         </section>
 
@@ -319,7 +497,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
                 {t("searchOnMap")}
               </Button>
               {placeSearchConfigured === false && (
-                <p className="text-xs text-muted-foreground">{t("searchNoApiKey")}</p>
+                <p className="text-xs text-muted-foreground">{t("searchNoApiKeyV2")}</p>
               )}
             </div>
             {searchError && <p className="text-sm text-destructive">{searchError}</p>}
@@ -580,22 +758,6 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
               </div>
             )}
             <div className="space-y-1.5">
-              <Label htmlFor="creditLimit">{t("creditLimit")}</Label>
-              <Input
-                id="creditLimit"
-                disabled={pending || readOnly}
-                type="number"
-                min={0}
-                step="1000"
-                value={form.creditLimit ?? ""}
-                onChange={(e) =>
-                  update("creditLimit", e.target.value === "" ? null : Number(e.target.value))
-                }
-                placeholder={t("creditLimitPlaceholder")}
-              />
-              <p className="text-xs text-muted-foreground">{t("creditLimitHint")}</p>
-            </div>
-            <div className="space-y-1.5">
               <Label htmlFor="npwp">{t("npwp")}</Label>
               <Input
                 id="npwp"
@@ -606,6 +768,130 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
               />
               <p className="text-xs text-muted-foreground">{t("npwpHint")}</p>
             </div>
+          </div>
+
+          {/* Menentukan boleh-tidaknya potongan PPh 23 di BKM. Milik admin, bukan
+              sales — mengubahnya mengubah berapa yang boleh dipotong dari tagihan. */}
+          <div className="flex items-start gap-3 rounded-lg border p-3">
+            <Switch
+              id="isPkp"
+              disabled={pending || readOnly}
+              checked={form.isPkp}
+              onCheckedChange={(v) => update("isPkp", v)}
+            />
+            <div className="space-y-0.5">
+              <Label htmlFor="isPkp" className="cursor-pointer">
+                {t("isPkp")}
+              </Label>
+              <p className="text-xs text-muted-foreground">{t("isPkpHint")}</p>
+            </div>
+          </div>
+
+          {/* PPN tagihan konsinyasi: hanya toko KONSI. Dibekukan ke siklus saat angkanya dikunci. */}
+          {form.termsType === "KONSI" ? (
+            <div className="flex items-start gap-3 rounded-lg border p-3">
+              <Switch
+                id="consignmentVat"
+                disabled={pending || readOnly}
+                checked={form.consignmentVat ?? false}
+                onCheckedChange={(v) => update("consignmentVat", v)}
+              />
+              <Label htmlFor="consignmentVat" className="cursor-pointer">
+                {t("consignmentVat")}
+              </Label>
+            </div>
+          ) : null}
+
+          {/* Batas kredit berlaku untuk kedua sistem: transfer konsinyasi juga diperiksa terhadap
+              piutang toko yang sudah ada saat disetujui. Batas faktur terbuka hanya untuk toko PUTUS.
+              Kolom kosong ikut bawaan Pengaturan → Salesman (toko putus); "Tanpa batas kredit"
+              mengosongkan dan mengunci keduanya — artinya diputuskan `batasKreditBerlaku`. */}
+          <div className="space-y-3 rounded-lg border p-3">
+            <p className="text-sm font-medium">{tKredit("judul")}</p>
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="noCreditLimit"
+                className="mt-0.5"
+                disabled={pending || readOnly || !kreditTerbaca}
+                checked={form.noCreditLimit === true}
+                onCheckedChange={(v) => {
+                  const tanpa = v === true;
+                  setForm((prev) => ({
+                    ...prev,
+                    noCreditLimit: tanpa,
+                    ...(tanpa ? { creditLimit: null, maxOpenInvoices: null } : {}),
+                  }));
+                }}
+              />
+              <div className="space-y-0.5">
+                <Label htmlFor="noCreditLimit" className="cursor-pointer">
+                  {t("noCreditLimit")}
+                </Label>
+                <p className="text-xs text-muted-foreground">{t("noCreditLimitHint")}</p>
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="creditLimit">{t("creditLimit")}</Label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    Rp
+                  </span>
+                  <Input
+                    id="creditLimit"
+                    type="text"
+                    inputMode="numeric"
+                    className="pl-9 text-right tabular-nums"
+                    disabled={pending || readOnly || !kreditTerbaca || tanpaBatasKredit}
+                    value={
+                      form.creditLimit === null || form.creditLimit === undefined
+                        ? ""
+                        : kelompokRibuan.format(form.creditLimit)
+                    }
+                    placeholder={
+                      !kreditTerbaca
+                        ? tKredit("memuat")
+                        : tanpaBatasKredit
+                          ? t("noCreditLimitPlaceholder")
+                          : form.termsType === "KONSI"
+                            ? t("creditLimitPlaceholderKonsi")
+                            : t("creditLimitPlaceholder")
+                    }
+                    onChange={(e) => {
+                      const digit = angkaSaja(e.target.value).slice(0, 13);
+                      update("creditLimit", digit === "" ? null : Number(digit));
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {form.termsType === "KONSI" ? t("creditLimitHintKonsi") : t("creditLimitHint")}
+                </p>
+              </div>
+              {form.termsType === "PUTUS" ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="maxOpenInvoices">{tKredit("maksFaktur")}</Label>
+                  <Input
+                    id="maxOpenInvoices"
+                    type="text"
+                    inputMode="numeric"
+                    className="tabular-nums"
+                    disabled={pending || readOnly || !kreditTerbaca || tanpaBatasKredit}
+                    value={form.maxOpenInvoices === null || form.maxOpenInvoices === undefined ? "" : String(form.maxOpenInvoices)}
+                    placeholder={
+                      !kreditTerbaca ? tKredit("memuat") : tanpaBatasKredit ? t("noCreditLimitPlaceholder") : tKredit("kosong")
+                    }
+                    onChange={(e) => {
+                      const digit = angkaSaja(e.target.value).slice(0, 5);
+                      update("maxOpenInvoices", digit === "" ? null : Number(digit));
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">{tKredit("bantuan")}</p>
+                </div>
+              ) : null}
+            </div>
+            {form.termsType === "KONSI" ? (
+              <p className="text-xs text-muted-foreground">{tKredit("konsiHanyaBatasNilai")}</p>
+            ) : null}
           </div>
         </section>
 
@@ -631,13 +917,27 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
               <Button
                 type="button"
                 variant="destructive"
-                onClick={onDeactivate}
+                onClick={() => setKonfirmasiNonaktif(true)}
                 disabled={pending}
                 className="ml-auto"
               >
                 {t("deactivate")}
               </Button>
             )}
+            <AlertDialog open={konfirmasiNonaktif} onOpenChange={setKonfirmasiNonaktif}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t("deactivate")}</AlertDialogTitle>
+                  <AlertDialogDescription>{t("deactivateConfirm")}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={() => void onDeactivate()}>
+                    {t("deactivate")}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         )}
         {readOnly && (

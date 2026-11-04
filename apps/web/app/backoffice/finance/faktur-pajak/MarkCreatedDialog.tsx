@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { markCreatedAction } from "@/app/actions/tax-invoices";
-import { looksLikeDjpInvoiceNumber } from "@/lib/tax-invoices/invoice-number-format";
+import { looksLikeDjpInvoiceNumber, periksaFormatNomorFaktur } from "@/lib/tax-invoices/invoice-number-format";
 
 type Row = { id: string; docNo: string; storeId: string; storeNpwp: string | null; total: number | null };
 
@@ -44,6 +44,9 @@ export function MarkCreatedDialog({ row, ppnRatePercent, onClose, onSuccess }: P
     row && row.total !== null ? roundCents((row.total * ppnRatePercent) / 100) : "",
   );
   const [ppnTouched, setPpnTouched] = useState(false);
+  /* The writer's refusal of the number itself (malformed, or already on another nota) belongs
+     under the field, not in a toast that vanishes while the admin is still looking at the number. */
+  const [invoiceNoError, setInvoiceNoError] = useState<string | null>(null);
 
   if (!row) return null;
 
@@ -72,8 +75,14 @@ export function MarkCreatedDialog({ row, ppnRatePercent, onClose, onSuccess }: P
     setPpnAmount(raw === "" ? "" : Number(raw));
   }
 
+  function handleInvoiceNoChange(raw: string): void {
+    setInvoiceNo(raw);
+    setInvoiceNoError(null);
+  }
+
   function handleClose(): void {
     setInvoiceNo("");
+    setInvoiceNoError(null);
     setBuyerNpwp(row?.storeNpwp ?? "");
     setTaxableAmount(row?.total ?? "");
     setPpnAmount(row && row.total !== null ? roundCents((row.total * ppnRatePercent) / 100) : "");
@@ -96,6 +105,14 @@ export function MarkCreatedDialog({ row, ppnRatePercent, onClose, onSuccess }: P
           toast.success(t("markCreatedSuccess"));
           handleClose();
           onSuccess();
+          return;
+        }
+        if (result.code === "NOMOR_FAKTUR_GANDA" || result.code === "NOMOR_FAKTUR_FORMAT") {
+          setInvoiceNoError(
+            result.code === "NOMOR_FAKTUR_GANDA" && result.dipakaiDi
+              ? t("nomorFakturGandaDi", { docNo: result.dipakaiDi })
+              : t(`actionErr.${result.code}`),
+          );
           return;
         }
         toast.error(t(`actionErr.${result.code}`));
@@ -121,10 +138,20 @@ export function MarkCreatedDialog({ row, ppnRatePercent, onClose, onSuccess }: P
               value={invoiceNo}
               disabled={isPending}
               placeholder={t("markCreatedFieldPlaceholder")}
-              onChange={(e) => setInvoiceNo(e.target.value)}
+              aria-invalid={invoiceNoError !== null}
+              aria-describedby={invoiceNoError !== null ? "mc-invoice-no-error" : undefined}
+              onChange={(e) => handleInvoiceNoChange(e.target.value)}
             />
-            {trimmedInvoiceNo !== "" && !looksLikeDjpInvoiceNumber(trimmedInvoiceNo) && (
-              <p className="text-xs text-muted-foreground">{t("markCreatedInvoiceNoFormatHint")}</p>
+            {invoiceNoError !== null ? (
+              <p id="mc-invoice-no-error" role="alert" className="text-sm text-destructive">
+                {invoiceNoError}
+              </p>
+            ) : (
+              /* "Can still be saved" only holds for a number the writer accepts; anything else is refused on submit. */
+              periksaFormatNomorFaktur(trimmedInvoiceNo) &&
+              !looksLikeDjpInvoiceNumber(trimmedInvoiceNo) && (
+                <p className="text-xs text-muted-foreground">{t("markCreatedInvoiceNoFormatHint")}</p>
+              )
             )}
           </div>
 

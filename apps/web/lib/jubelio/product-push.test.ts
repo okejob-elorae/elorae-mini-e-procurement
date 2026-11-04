@@ -11,7 +11,13 @@ vi.mock("@/lib/internal-api", () => ({ apiFetch: vi.fn().mockResolvedValue({}) }
 vi.mock("@/lib/items/jubelio-push-diff", () => ({ hasPushableChange: vi.fn().mockReturnValue(true) }));
 
 import { prisma } from "@elorae/db";
-import { enqueueProductPushOnImageChange, enqueueProductPushOnUpdate } from "./product-push";
+import { apiFetch } from "@/lib/internal-api";
+import {
+  createProductPushRow,
+  enqueueProductPushOnImageChange,
+  enqueueProductPushOnUpdate,
+  fireProductPushNow,
+} from "./product-push";
 import type { PushableSnapshot } from "@/lib/items/jubelio-push-diff";
 
 const snapshot = {} as PushableSnapshot;
@@ -19,6 +25,27 @@ const snapshot = {} as PushableSnapshot;
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(prisma.jubelioOutbox.create).mockResolvedValue({ id: "row-1" } as never);
+});
+
+describe("createProductPushRow", () => {
+  it("writes one product_push row through the client it is given (a confirmation's own transaction)", async () => {
+    const tx = { jubelioOutbox: { create: vi.fn().mockResolvedValue({ id: "row-9" }) } };
+    const row = await createProductPushRow(tx as never, "i1", "u1");
+    expect(row).toEqual({ id: "row-9" });
+    expect(tx.jubelioOutbox.create).toHaveBeenCalledWith({
+      data: { entityType: "product_push", entityId: "i1", payload: {}, enqueuedById: "u1" },
+      select: { id: true },
+    });
+    expect(prisma.jubelioOutbox.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("fireProductPushNow", () => {
+  it("asks apps/api to process the row now and never throws when that fails", async () => {
+    vi.mocked(apiFetch).mockRejectedValueOnce(new Error("down"));
+    expect(() => fireProductPushNow("row-1", null)).not.toThrow();
+    expect(apiFetch).toHaveBeenCalledWith("POST", "/jubelio/outbox/enqueue/row-1", { userId: "" });
+  });
 });
 
 describe.each([
@@ -39,6 +66,13 @@ describe.each([
     expect(prisma.jubelioOutbox.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ entityType: "product_push", entityId: "i1", enqueuedById: "u1" }) }),
     );
+  });
+
+  it("never pushes a Toko offline saja item on an edit, even one Jubelio already has (P3a)", async () => {
+    vi.mocked(prisma.item.findUnique).mockResolvedValue({ id: "i1", type: "FINISHED_GOOD", salesChannel: "OFFLINE" } as never);
+    vi.mocked(prisma.jubelioProductMapping.count).mockResolvedValue(1 as never);
+    await run();
+    expect(prisma.jubelioOutbox.create).not.toHaveBeenCalled();
   });
 
   it("ignores items that are not finished goods", async () => {

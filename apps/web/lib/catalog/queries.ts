@@ -4,7 +4,9 @@ import { aggregateInventoryValues } from "@/lib/items/queries";
 import { getPrimaryImagesBatch } from "@/lib/items/images/queries";
 import { sentItemIds } from "@/lib/field-sales/queries";
 import { parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { returVariantOptions, type ReturVariantOption } from "@/lib/field-sales/retur/variant-options";
+import { saldoBarangToko } from "@/lib/spg/titip-saldo";
 
 export type CatalogItem = {
   itemId: string;
@@ -18,12 +20,23 @@ export type CatalogItem = {
   priceLabel: string | null;
   neverSent: boolean;
   minOrderQty: number;
-  variants: Array<{ variantSku: string; variantLabel: string; available: number }>;
+  /**
+   * Stok di rak toko (saldo buku stok toko, pcs; boleh negatif). Hanya ada di
+   * katalog HP salesman untuk toko yang punya buku stok dan barang yang pernah
+   * bergerak di sana — tanpa itu kuncinya tidak ada sama sekali.
+   */
+  diRak?: number;
+  variants: Array<{ variantSku: string; variantLabel: string; available: number; diRak?: number }>;
 };
 
 export type CatalogPayload = {
   store: { id: string; termsType: "PUTUS" | "KONSI"; markupPercent: number | null; priceDiscountPercent: number | null };
   items: CatalogItem[];
+  /**
+   * Whether `price` carries this store's price: always for a PUTUS store; for a KONSI store only
+   * when the caller asked for it (`hargaKonsi` — the salesman phone, owner answers P18/P18a).
+   */
+  hargaKonsiTampil: boolean;
 };
 
 type CatalogRow = {
@@ -46,18 +59,28 @@ export function serializeCatalogItem(
   imageUrl: string | null,
   neverSent: boolean,
   globalMin: number,
+  opsi: { hargaKonsi?: boolean } = {},
 ): CatalogItem {
   const inv = aggregateInventoryValues(row.inventoryValues);
-  /* Konsi is a consignment transfer, not a sale: the salesman never sees pricing. Keep the retail price off the wire entirely, not just hidden in the UI. */
+  const harga = computeStorePrice({
+    sellingPrice: toNum(row.sellingPrice),
+    termsType: store.termsType,
+    markupPercent: store.markupPercent,
+    priceDiscountPercent: store.priceDiscountPercent,
+  });
+  /*
+   * Konsi is a consignment transfer, not a sale. Its price stays off the wire entirely — not just
+   * hidden in the UI — for every caller that does not ask for it: the store portal, the WhatsApp
+   * catalogue and the SPG phone (owner answer P18a). Only the salesman phone asks (`hargaKonsi`,
+   * P18): the store's retail price at its markup, "Harga retail", and null when the markup cannot
+   * price it (`flagged`) rather than the catalog price under a retail label.
+   */
   const isKonsi = store.termsType === "KONSI";
-  const { price, label } = isKonsi
-    ? { price: null, label: null }
-    : computeStorePrice({
-        sellingPrice: toNum(row.sellingPrice),
-        termsType: store.termsType,
-        markupPercent: store.markupPercent,
-        priceDiscountPercent: store.priceDiscountPercent,
-      });
+  const { price, label } = !isKonsi
+    ? harga
+    : opsi.hargaKonsi && !harga.flagged
+      ? harga
+      : { price: null, label: null };
   const labelBySku = new Map(
     variantSelectOptions(parseItemVariants(row.variants)).map((o) => [o.sku, o.label]),
   );
@@ -87,7 +110,66 @@ export function serializeCatalogItem(
   };
 }
 
-export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload | null> {
+export type SaldoRak = { itemId: string; variantSku: string; qty: number };
+
+/** Peta `saldoBarangToko` (`${itemId}::${variantSku}`) → baris saldo. Id barang tidak memuat "::". */
+export function saldoDariPeta(peta: ReadonlyMap<string, number>): SaldoRak[] {
+  return [...peta].map(([kunci, qty]) => {
+    const i = kunci.indexOf("::");
+    return { itemId: kunci.slice(0, i), variantSku: kunci.slice(i + 2), qty };
+  });
+}
+
+/**
+ * Menempelkan saldo buku stok toko ke katalog: `diRak` per barang = Σ semua
+ * baris bukunya (termasuk baris tanpa varian), per varian = saldo varian itu
+ * (0 bila varian itu belum pernah bergerak di toko). Barang yang tidak ada di
+ * buku tidak diberi kunci — bukan "0 di rak", karena toko tidak pernah
+ * mencatatnya. Saldo negatif dibiarkan (aturan buku: opname yang meluruskan).
+ */
+export function tempelStokRak(items: CatalogItem[], saldo: SaldoRak[]): CatalogItem[] {
+  if (saldo.length === 0) return items;
+  const perBarang = new Map<string, { total: number; varian: Map<string, number> }>();
+  for (const s of saldo) {
+    const b = perBarang.get(s.itemId) ?? { total: 0, varian: new Map<string, number>() };
+    b.total += s.qty;
+    if (s.variantSku) b.varian.set(s.variantSku, (b.varian.get(s.variantSku) ?? 0) + s.qty);
+    perBarang.set(s.itemId, b);
+  }
+  return items.map((it) => {
+    const b = perBarang.get(it.itemId);
+    if (!b) return it;
+    return {
+      ...it,
+      diRak: b.total,
+      variants: it.variants.map((v) => ({ ...v, diRak: b.varian.get(v.variantSku) ?? 0 })),
+    };
+  });
+}
+
+/**
+ * `stokRak`: hanya katalog HP salesman yang memintanya (rute `/pwa/api/catalog`).
+ * Pemakai lain — portal toko, kirim katalog WA — tidak menghitungnya, jadi
+ * kolomnya tidak pernah ada di muatan mereka.
+ *
+ * `hargaKonsi`: sama — hanya HP salesman (P18). Tanpanya harga toko KONSI null di
+ * server (portal toko, kirim katalog WA, HP SPG — P18a).
+ *
+ * Barang "Marketplace saja" tidak pernah ada di katalog ini (P3a) — katalog
+ * salesman, portal toko dan kirim katalog WA sekaligus. Katalog retur di bawah
+ * tidak disaring: barang yang sudah ada di toko tetap bisa diretur.
+ *
+ * `tetapTampilkan`: id barang yang sudah ada di dokumen yang sedang diubah —
+ * hanya rute katalog HP salesman saat "Ubah pesanan" (`?ganti=`), dengan barang
+ * pesanan PENDING miliknya sendiri. Barang itu tetap tampil walau sudah dijadikan
+ * "Marketplace saja", karena pesanan yang sudah dibuat dihormati (P73); tanpa
+ * itu barisnya hilang diam-diam saat pesanan disusun ulang. Tetap hanya barang
+ * jadi yang aktif. Keranjang baru tidak pernah memberikannya (P3a).
+ */
+export async function listCatalogForPwa(
+  storeId: string,
+  opsi: { stokRak?: boolean; hargaKonsi?: boolean; tetapTampilkan?: string[] } = {},
+): Promise<CatalogPayload | null> {
   const store = await prisma.store.findUnique({
     where: { id: storeId },
     select: { id: true, isActive: true, termsType: true, markupPercent: true, priceDiscountPercent: true },
@@ -106,8 +188,12 @@ export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload
   const g = await prisma.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
   const globalMin = g ? Number(g.value) : 6;
 
+  const tetap = [...new Set((opsi.tetapTampilkan ?? []).filter((id) => typeof id === "string" && id !== ""))];
   const rows = await prisma.item.findMany({
-    where: { isActive: true, type: "FINISHED_GOOD" },
+    where: {
+      type: "FINISHED_GOOD",
+      OR: [{ isActive: true, ...syaratDijualOffline() }, ...(tetap.length ? [{ id: { in: tetap }, isActive: true }] : [])],
+    },
     orderBy: { nameId: "asc" },
     select: {
       id: true,
@@ -125,11 +211,18 @@ export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload
   const images = await getPrimaryImagesBatch(rows.map((r) => ({ itemId: r.id, variantSku: null })));
   const key = (itemId: string) => `${itemId}|`;
 
+  const hargaKonsi = opsi.hargaKonsi === true;
   const items = rows.map((r) =>
-    serializeCatalogItem(r, storeCtx, images.get(key(r.id)) ?? null, storeCtx.termsType === "KONSI" ? !sentSet.has(r.id) : false, globalMin),
+    serializeCatalogItem(r, storeCtx, images.get(key(r.id)) ?? null, storeCtx.termsType === "KONSI" ? !sentSet.has(r.id) : false, globalMin, { hargaKonsi }),
   );
 
-  return { store: storeCtx, items };
+  // Sekali per muatan: satu groupBy atas buku toko ini (kosong = toko tanpa buku).
+  const rak = opsi.stokRak ? await saldoBarangToko(prisma, store.id, rows.map((r) => r.id)) : new Map<string, number>();
+  return {
+    store: storeCtx,
+    items: tempelStokRak(items, saldoDariPeta(rak)),
+    hargaKonsiTampil: storeCtx.termsType === "PUTUS" || hargaKonsi,
+  };
 }
 
 export type ReturCatalogItem = {

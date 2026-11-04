@@ -3,6 +3,7 @@ import { roundCents } from "@elorae/db/pricing";
 import { daysOverdue, isOverdue } from "@/lib/finance/ar/aging";
 import { getStoreAvailableCreditMap } from "@/lib/finance/ar/retur-offset-queries";
 import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "@/lib/finance/ar/receivable-source";
+import { RECEIVABLES_ON_PHONE } from "./phone-scope";
 
 export type AmplopReceivableRow = {
   receivableId: string;
@@ -33,12 +34,16 @@ export type Amplop = {
  * The whole "amplop digital" screen in one query, grouped by store.
  *
  * The store set is the union of stores where `userId` is the assigned collector
- * (`Receivable.collectorId`), stores where `userId` is a DELIVERY-backed receivable's ORDER's
+ * (`Receivable.collectorId`) and stores where `userId` is a DELIVERY-backed receivable's ORDER's
  * salesman (`delivery.order.salesmanId`) — deliberately NOT `delivery.deliveredById`, which since
  * the delivery-shipment work is frequently a backoffice admin completing an expedition shipment
  * rather than the salesman who actually visits the store; keying on `deliveredById` would file
- * stores into that admin's amplop and silently drop them from the salesman's — and stores where
- * `userId` is a SELL_THROUGH-backed receivable's report's own salesman (`sellThrough.salesmanId`).
+ * stores into that admin's amplop and silently drop them from the salesman's.
+ *
+ * A konsi receivable never appears — a cycle bill, a sell-through report's, or one at a KONSI store
+ * (`RECEIVABLES_ON_PHONE`): the phone's one konsi payment path is the BKM, not this amplop. A MANUAL/IMPORT receivable assigned to the
+ * user reads its own invoice number as `docNo`, which is why the select carries the receivable's
+ * own invoice fields and not only its `delivery`.
  *
  * `asOf` defaults to `new Date()` but is a real parameter so aging is deterministic in tests.
  */
@@ -46,10 +51,10 @@ export async function listAmplop(userId: string, asOf: Date = new Date()): Promi
   const receivables = await prisma.receivable.findMany({
     where: {
       status: { in: ["OUTSTANDING", "PARTIAL"] },
+      ...RECEIVABLES_ON_PHONE,
       OR: [
         { collectorId: userId },
         { delivery: { order: { salesmanId: userId } } },
-        { sellThrough: { salesmanId: userId } },
       ],
     },
     orderBy: { dueDate: "asc" },
@@ -59,15 +64,10 @@ export async function listAmplop(userId: string, asOf: Date = new Date()): Promi
       outstandingAmount: true,
       dueDate: true,
       store: { select: { name: true } },
+      ...RECEIVABLE_SOURCE_SELECT,
       delivery: {
         select: {
           ...RECEIVABLE_SOURCE_SELECT.delivery.select,
-          taxInvoice: { select: { status: true } },
-        },
-      },
-      sellThrough: {
-        select: {
-          ...RECEIVABLE_SOURCE_SELECT.sellThrough.select,
           taxInvoice: { select: { status: true } },
         },
       },
@@ -98,12 +98,8 @@ export async function listAmplop(userId: string, asOf: Date = new Date()): Promi
       dueDate: r.dueDate,
       outstandingAmount,
       daysOverdue: daysOverdue(r.dueDate, asOf),
-      /**
-       * Exactly one of the two arms is ever set, so reading either's `taxInvoice` first and
-       * falling back to the other resolves to the row's real faktur status either way — a
-       * sell-through receivable's faktur hangs off the report, not a delivery.
-       */
-      taxInvoiceStatus: r.delivery?.taxInvoice?.status ?? r.sellThrough?.taxInvoice?.status ?? null,
+      /* A MANUAL/IMPORT receivable has no delivery, and so no faktur row to read. */
+      taxInvoiceStatus: r.delivery?.taxInvoice?.status ?? null,
       pendingSubmittedAmount: roundCents(r.submissions.reduce((sum, sub) => sum + Number(sub.amount), 0)),
     };
 

@@ -24,6 +24,7 @@ d("assignCollector (test bed only)", () => {
   let receivableId = "";
   let settledDeliveryId = "";
   let settledReceivableId = "";
+  let konsiReceivableId = "";
 
   beforeEach(async () => {
     notify.send.mockReset();
@@ -31,7 +32,7 @@ d("assignCollector (test bed only)", () => {
     storeId = ""; adminId = ""; collectorRoleId = ""; collectorId = "";
     noPwaRoleId = ""; noPwaUserId = ""; ineligibleUserId = "";
     orderId = ""; deliveryId = ""; receivableId = "";
-    settledDeliveryId = ""; settledReceivableId = "";
+    settledDeliveryId = ""; settledReceivableId = ""; konsiReceivableId = "";
 
     const store = await prisma.store.create({
       data: { code: `TEST-CAW-${token}`, name: "test", address: "test", termsType: "PUTUS" },
@@ -104,6 +105,7 @@ d("assignCollector (test bed only)", () => {
   });
 
   afterEach(async () => {
+    if (konsiReceivableId) await prisma.receivable.delete({ where: { id: seededId(konsiReceivableId) } });
     await prisma.receivable.deleteMany({ where: { id: { in: [seededId(receivableId), seededId(settledReceivableId)] } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: seededId(settledDeliveryId) } });
@@ -158,6 +160,36 @@ d("assignCollector (test bed only)", () => {
     expect(err.code).toBe("ALREADY_SETTLED");
     const r = await prisma.receivable.findUnique({ where: { id: settledReceivableId } });
     expect(r!.collectorId).toBeNull();
+  });
+
+  /** A paper konsi debt typed in by hand (MANUAL + `isConsignment`) — a konsi bill by its own mark. */
+  async function seedKonsiBill(holder: string | null): Promise<string> {
+    konsiReceivableId = (
+      await prisma.receivable.create({
+        data: {
+          invoiceNo: `TEST-CAW-KONSI-${token}`, source: "MANUAL", isConsignment: true, storeId,
+          invoiceDate: new Date(), dueDate: new Date(),
+          amount: 300, outstanding: 300, originalAmount: 300, outstandingAmount: 300, collectorId: holder,
+        },
+      })
+    ).id;
+    return konsiReceivableId;
+  }
+
+  it("refuses to hand a konsi bill to a collector, refusing the whole batch it rides in", async () => {
+    const konsi = await seedKonsiBill(null);
+    await expect(assignCollector({ receivableIds: [receivableId, konsi], collectorId, assignedById: adminId }))
+      .rejects.toMatchObject({ code: "KONSI_LEWAT_BKM" });
+    expect((await prisma.receivable.findUnique({ where: { id: konsi } }))!.collectorId).toBeNull();
+    expect((await prisma.receivable.findUnique({ where: { id: receivableId } }))!.collectorId).toBeNull();
+    expect(await prisma.auditLog.count({ where: { entityType: "Receivable", entityId: seededId(receivableId), action: "COLLECTOR_ASSIGN" } })).toBe(0);
+    expect(notify.send).not.toHaveBeenCalled();
+  });
+
+  it("still unassigns a konsi bill that already holds a collector", async () => {
+    const konsi = await seedKonsiBill(collectorId);
+    await assignCollector({ receivableIds: [konsi], collectorId: null, assignedById: adminId });
+    expect((await prisma.receivable.findUnique({ where: { id: konsi } }))!.collectorId).toBeNull();
   });
 
   it("unassigns with collectorId: null and no eligibility check", async () => {

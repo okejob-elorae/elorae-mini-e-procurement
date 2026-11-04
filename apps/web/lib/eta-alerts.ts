@@ -31,7 +31,7 @@ export function getETAStatus(
   if (daysUntil <= 3) {
     return { 
       status: 'warning', 
-      message: `Due dalam ${daysUntil} hari`, 
+      message: `Tiba dalam ${daysUntil} hari`, 
       daysUntil 
     };
   }

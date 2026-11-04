@@ -14,8 +14,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import type { ShipmentActionReason } from "@/app/actions/delivery-shipments";
+import type { ShipmentActionReason } from "@/lib/delivery/action-errors";
 import { recordedQtyByShipmentLine, type SerializedReplay } from "@/lib/field-sales/replay-detail";
+import { pesanGagalPengiriman } from "@/lib/delivery/pesan-galat";
 
 type Line = { id: string; orderLineId: string; productName: string; plannedQty: number };
 
@@ -30,6 +31,24 @@ type Props = {
   storeLng: number | null;
   effectiveRadiusMeters: number;
   isKonsi: boolean;
+  /**
+   * The courier receives for the store (`penerimaPod` = KURIR) and no receipt exists: this POD IS
+   * the store's receipt, so every planned piece is diterima, retur langsung or hilang (they must
+   * add up). At a store with an SPG only what was handed over is recorded — the SPG receives (P40).
+   */
+  penerimaan: boolean;
+  /**
+   * The store's SPG stopped while these goods were on the road and no receipt exists (P45a): the
+   * holder salesman records what the store's PIC got, so this POD records the handover plus any
+   * door refusal. A refusal, or nothing handed over, makes it the store's receipt as before (the
+   * writer's rule): the lost column then appears and the figures must add up.
+   */
+  pemegang: boolean;
+  /**
+   * The store's receipt already exists (the SPG refused every piece at the door before this
+   * confirmation, P40): recording nothing handed over is valid, the server lets it through.
+   */
+  sudahDiterima: boolean;
   lines: Line[];
 };
 
@@ -52,17 +71,25 @@ function fileCheckPasses(file: File): { ok: true } | { ok: false; reasonKey: str
 }
 
 export function CompletePodSheet({
-  shipmentId, storeName, docNo, storeLat, storeLng, effectiveRadiusMeters, isKonsi, lines,
+  shipmentId, storeName, docNo, storeLat, storeLng, effectiveRadiusMeters, isKonsi, penerimaan: tanpaSpg, pemegang, sudahDiterima, lines,
 }: Props) {
   const t = useTranslations("pwa.deliveries");
   const tErr = useTranslations("deliveryShipments");
+  const tTerima = useTranslations("pwa.spgTerima");
   /**
    * The shared REPLAY_MISMATCH copy says "dates or quantities" for the backoffice expedition
    * dialog, whose completion compares both. A salesman-carry completion compares quantities only,
-   * so this sheet names only those.
+   * so this sheet names only those. TERIMA_GAGAL's store-receipt reason code is translated, never
+   * shown raw (`pesanGagalPengiriman`).
    */
-  const refusalMessage = (reason: ShipmentActionReason): string =>
-    reason === "REPLAY_MISMATCH" ? t("replayMismatch") : tErr(`err.${reason}` as any);
+  const refusalMessage = (reason: ShipmentActionReason, detail?: string): string =>
+    reason === "REPLAY_MISMATCH"
+      ? t("replayMismatch")
+      : pesanGagalPengiriman(reason, detail, {
+          teks: (k, v) => tErr(k as any, v),
+          adaSebab: (k) => tTerima.has(`err.${k}` as any),
+          sebab: (k) => tTerima(`err.${k}` as any),
+        });
   const [isPending, startTransition] = useTransition();
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [notaProofFile, setNotaProofFile] = useState<File | null>(null);
@@ -72,6 +99,29 @@ export function CompletePodSheet({
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>(
     () => Object.fromEntries(lines.map((l) => [l.id, String(l.plannedQty)])),
   );
+  const [kembaliInputs, setKembaliInputs] = useState<Record<string, string>>(
+    () => Object.fromEntries(lines.map((l) => [l.id, "0"])),
+  );
+  const [hilangInputs, setHilangInputs] = useState<Record<string, string>>(
+    () => Object.fromEntries(lines.map((l) => [l.id, "0"])),
+  );
+  const angka = (v: string | undefined) => (v === undefined || v.trim() === "" ? 0 : Number(v));
+  /* Same rule as the writer: at a PEMEGANG store a door refusal, or nothing handed over, makes this POD the receipt. */
+  const adaTolak = lines.some((l) => angka(kembaliInputs[l.id]) > 0);
+  const tanpaSerah = lines.length > 0 && lines.every((l) => angka(qtyInputs[l.id]) === 0);
+  const penerimaan = tanpaSpg || (pemegang && (adaTolak || tanpaSerah));
+  const kolomTolak = penerimaan || pemegang;
+  const barisKirim = () =>
+    lines.map((l) =>
+      penerimaan
+        ? {
+            shipmentLineId: l.id,
+            deliveredQty: angka(qtyInputs[l.id]),
+            returnedQty: angka(kembaliInputs[l.id]),
+            lostQty: angka(hilangInputs[l.id]),
+          }
+        : { shipmentLineId: l.id, deliveredQty: angka(qtyInputs[l.id]) },
+    );
   const [success, setSuccess] = useState(false);
   const [queued, setQueued] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -147,11 +197,17 @@ export function CompletePodSheet({
     if (distanceMeters === null) return { ok: false, reasonKey: "err.STORE_NOT_GEOCODED" };
     if (outOfRadius) return { ok: false, reasonKey: "err.GPS_OUT_OF_RADIUS" };
     for (const line of lines) {
-      const qty = Number(qtyInputs[line.id] ?? "0");
-      if (qty > line.plannedQty) return { ok: false, reasonKey: "err.OVER_PLANNED" };
-      if (!Number.isInteger(qty) || qty < 0) {
+      const qty = angka(qtyInputs[line.id]);
+      const kembali = kolomTolak ? angka(kembaliInputs[line.id]) : 0;
+      const hilang = penerimaan ? angka(hilangInputs[line.id]) : 0;
+      if ([qty, kembali, hilang].some((n) => !Number.isInteger(n) || n < 0)) {
         return { ok: false, reasonKey: "err.INVALID_QTY" };
       }
+      if (penerimaan && qty + kembali + hilang !== line.plannedQty) return { ok: false, reasonKey: "err.LINE_UNACCOUNTED" };
+      if (!penerimaan && qty > line.plannedQty) return { ok: false, reasonKey: "err.OVER_PLANNED" };
+    }
+    if (!penerimaan && !sudahDiterima && lines.every((line) => angka(qtyInputs[line.id]) === 0)) {
+      return { ok: false, reasonKey: "err.POD_KOSONG" };
     }
     return { ok: true };
   }
@@ -190,17 +246,14 @@ export function CompletePodSheet({
           signatureUrl: nota.url,
           signatureR2Key: nota.key,
           signedByName: signedByName.trim(),
-          lines: lines.map((l) => ({
-            shipmentLineId: l.id,
-            deliveredQty: Number(qtyInputs[l.id] ?? "0"),
-          })),
+          lines: barisKirim(),
         });
         if (result.ok) {
           toast.success(t("submitSuccess"));
           setSuccess(true);
           return;
         }
-        toast.error(refusalMessage(result.reason));
+        toast.error(refusalMessage(result.reason, "detail" in result ? result.detail : undefined));
         const replay = result.replay;
         setFailure({ reason: result.reason, replay });
         if (result.reason === "REPLAY_MISMATCH" && replay) {
@@ -241,10 +294,7 @@ export function CompletePodSheet({
         signedByName: signedByName.trim(),
         gpsLat: gps.lat,
         gpsLng: gps.lng,
-        lines: lines.map((l) => ({
-          shipmentLineId: l.id,
-          deliveredQty: Number(qtyInputs[l.id] ?? "0"),
-        })),
+        lines: barisKirim(),
         capturedAt: Date.now(),
       });
       toast.success(t("queuedToast"));
@@ -411,22 +461,72 @@ export function CompletePodSheet({
         </Alert>
       )}
 
-      <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        {pemegang ? t("pemegangHint") : penerimaan ? t("penerimaanHint") : t("diserahkanHint")}
+      </p>
+      <div className="space-y-3">
         {lines.map((line) => (
-          <div key={line.id} className="flex items-center justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm">{line.productName}</p>
-              <p className="text-xs text-muted-foreground">{t("plannedLabel")}: {line.plannedQty}</p>
+          <div key={line.id} className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm">{line.productName}</p>
+                <p className="text-xs text-muted-foreground">{t("plannedLabel")}: {line.plannedQty}</p>
+              </div>
+              {!kolomTolak && (
+                <Input
+                  type="number"
+                  min={0}
+                  max={line.plannedQty}
+                  aria-label={t("diserahkanLabel")}
+                  className="w-20 h-10"
+                  value={qtyInputs[line.id] ?? ""}
+                  disabled={isPending}
+                  onChange={(e) => setQtyInputs((prev) => ({ ...prev, [line.id]: e.target.value }))}
+                />
+              )}
             </div>
-            <Input
-              type="number"
-              min={0}
-              max={line.plannedQty}
-              className="w-20 h-10"
-              value={qtyInputs[line.id] ?? ""}
-              disabled={isPending}
-              onChange={(e) => setQtyInputs((prev) => ({ ...prev, [line.id]: e.target.value }))}
-            />
+            {kolomTolak && (
+              <div className={penerimaan ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">{penerimaan ? t("diterimaLabel") : t("diserahkanLabel")}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={line.plannedQty}
+                    className="h-10"
+                    value={qtyInputs[line.id] ?? ""}
+                    disabled={isPending}
+                    onChange={(e) => setQtyInputs((prev) => ({ ...prev, [line.id]: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">{t("returLangsungLabel")}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={line.plannedQty}
+                    className="h-10"
+                    value={kembaliInputs[line.id] ?? ""}
+                    disabled={isPending}
+                    onChange={(e) => setKembaliInputs((prev) => ({ ...prev, [line.id]: e.target.value }))}
+                  />
+                </div>
+                {penerimaan && (
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">{t("hilangLabel")}</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={line.plannedQty}
+                      className="h-10"
+                      value={hilangInputs[line.id] ?? ""}
+                      disabled={isPending}
+                      onChange={(e) => setHilangInputs((prev) => ({ ...prev, [line.id]: e.target.value }))}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>

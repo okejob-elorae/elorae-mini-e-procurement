@@ -43,10 +43,14 @@ const STATUS_BADGE_VARIANT: Record<SellThroughStatusValue, "secondary" | "destru
   VOIDED: "destructive",
 };
 
-/* An APPROVED report is either invoiced or a baseline, and the list says which; the filter keeps the four real statuses. */
-function statusKey(r: SellThroughListItem): SellThroughStatusValue | "APPROVED_BASELINE" | "APPROVED_INVOICED" {
+/*
+ * An APPROVED report is recorded (bills nothing — the cycle bills, decision 2026-10-29), a
+ * baseline, or a legacy invoiced report, and the list says which; the filter keeps the four real
+ * statuses.
+ */
+function statusKey(r: SellThroughListItem): SellThroughStatusValue | "APPROVED_BASELINE" | "APPROVED_INVOICED" | "APPROVED_RECORDED" {
   if (r.status !== "APPROVED") return r.status;
-  return r.baseline ? "APPROVED_BASELINE" : "APPROVED_INVOICED";
+  return r.baseline ? "APPROVED_BASELINE" : r.invoiced ? "APPROVED_INVOICED" : "APPROVED_RECORDED";
 }
 
 type Props = {

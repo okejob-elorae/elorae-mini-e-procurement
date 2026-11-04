@@ -35,8 +35,8 @@ export function ForecastArticlesTab({ results, selectedSku, onSelectSku }: Artic
           options={options}
           value={selected?.parentSku ?? ''}
           onValueChange={(v) => onSelectSku(v || null)}
-          placeholder="Select article..."
-          emptyMessage="No articles"
+          placeholder={t('articles.selectPlaceholder')}
+          emptyMessage={t('articles.noArticles')}
         />
       </div>
 
@@ -45,14 +45,16 @@ export function ForecastArticlesTab({ results, selectedSku, onSelectSku }: Artic
           <div className="flex flex-wrap gap-2">
             <Badge>{selected.abcClass}{selected.xyzClass}</Badge>
             <span className="text-sm text-muted-foreground">
-              CV: {selected.coefficientOfVariation.toFixed(2)} · Base rate:{' '}
-              {Math.round(selected.avgMonthlyDemand).toLocaleString()}/mo
+              {t('articles.stats', {
+                cv: selected.coefficientOfVariation.toFixed(2),
+                rate: Math.round(selected.avgMonthlyDemand).toLocaleString('id-ID'),
+              })}
             </span>
           </div>
 
           <Card>
             <CardHeader>
-              <CardTitle>{t('results.annual')}: {selected.annualForecast.toLocaleString()}</CardTitle>
+              <CardTitle>{t('results.forecastTahunan')}: {selected.annualForecast.toLocaleString('id-ID')}</CardTitle>
             </CardHeader>
             <CardContent>
               <MonthlyForecastTable
@@ -64,29 +66,29 @@ export function ForecastArticlesTab({ results, selectedSku, onSelectSku }: Artic
 
           <Card>
             <CardHeader>
-              <CardTitle>Historical summary</CardTitle>
+              <CardTitle>{t('articles.historicalTitle')}</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-2 text-sm md:grid-cols-3">
               <div>
-                <span className="text-muted-foreground">Total historical qty</span>
-                <p className="font-medium">{selected.totalHistoricalQty.toLocaleString()}</p>
+                <span className="text-muted-foreground">{t('articles.totalHistoricalQty')}</span>
+                <p className="font-medium">{selected.totalHistoricalQty.toLocaleString('id-ID')}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Total revenue</span>
-                <p className="font-medium">{selected.totalHistoricalRevenue.toLocaleString()}</p>
+                <span className="text-muted-foreground">{t('articles.totalRevenue')}</span>
+                <p className="font-medium">{selected.totalHistoricalRevenue.toLocaleString('id-ID')}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Plan target</span>
+                <span className="text-muted-foreground">{t('results.targetPlanKalimat')}</span>
                 <p className="font-medium">
                   {selected.planTarget != null ?
-                    selected.planTarget.toLocaleString()
+                    selected.planTarget.toLocaleString('id-ID')
                   : t('results.noPlan')}
                 </p>
               </div>
             </CardContent>
           </Card>
         </>
-      : <p className="text-muted-foreground">Run forecast to see article details.</p>}
+      : <p className="text-muted-foreground">{t('articles.empty')}</p>}
     </div>
   );
 }

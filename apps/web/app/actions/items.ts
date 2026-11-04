@@ -1,9 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { ItemType, prisma, recalcItemSellingPrice } from '@elorae/db';
+import { ItemType, prisma } from '@elorae/db';
 import { auth } from '@/lib/auth';
-import { apiFetch } from '@/lib/internal-api';
 import { generateSKU as generateSKUFromLib } from '@/lib/sku-generator';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { notifyItemCreated } from '@/lib/notifications/events';
@@ -41,11 +40,13 @@ import {
   DuplicateVariantBarcodeError,
   DuplicateVariantSkuError,
   ItemSkuExistsError,
+  SalesChannelCannotActivateError,
+  SalesChannelCannotDeactivateError,
+  SalesChannelPushInFlightError,
+  SalesChannelRequiredError,
 } from "@/lib/items/save-refusals";
-import {
-  enqueueProductPushOnCreate,
-  enqueueProductPushOnUpdate,
-} from '@/lib/jubelio/product-push';
+import { enqueueProductPushOnUpdate, fireProductPushNow } from '@/lib/jubelio/product-push';
+import { withRetry } from "@/lib/db/tx-retry";
 import {
   parseVariantBarcodeFormat,
   VARIANT_BARCODE_FORMAT_KEY,
@@ -83,7 +84,11 @@ export type ItemSaveRefusal = {
     | "ITEM_SKU_EXISTS"
     | "COLOR_NOT_IN_MASTER"
     | "DUPLICATE_VARIANT_SKU"
-    | "DUPLICATE_VARIANT_BARCODE";
+    | "DUPLICATE_VARIANT_BARCODE"
+    | "SALES_CHANNEL_REQUIRED"
+    | "SALES_CHANNEL_PUSH_IN_FLIGHT"
+    | "SALES_CHANNEL_CANNOT_DEACTIVATE"
+    | "SALES_CHANNEL_CANNOT_ACTIVATE";
   detail: string;
 };
 
@@ -108,6 +113,19 @@ function toItemSaveRefusal(error: unknown): ItemSaveRefusal | null {
   if (error instanceof DuplicateVariantBarcodeError) {
     return { success: false, code: "DUPLICATE_VARIANT_BARCODE", detail: error.barcode };
   }
+  // Saluran jual (jawaban pemilik P3/P72, 2026-11-02): ditolak dengan sebabnya, tanpa menyimpan apa pun.
+  if (error instanceof SalesChannelRequiredError) {
+    return { success: false, code: "SALES_CHANNEL_REQUIRED", detail: "" };
+  }
+  if (error instanceof SalesChannelPushInFlightError) {
+    return { success: false, code: "SALES_CHANNEL_PUSH_IN_FLIGHT", detail: "" };
+  }
+  if (error instanceof SalesChannelCannotDeactivateError) {
+    return { success: false, code: "SALES_CHANNEL_CANNOT_DEACTIVATE", detail: error.alasan };
+  }
+  if (error instanceof SalesChannelCannotActivateError) {
+    return { success: false, code: "SALES_CHANNEL_CANNOT_ACTIVATE", detail: error.alasan };
+  }
   return null;
 }
 
@@ -117,7 +135,10 @@ export async function createItem(data: ItemFormData): Promise<ItemSaveResult> {
 
   let created: Awaited<ReturnType<typeof createItemLib>>;
   try {
-    created = await createItemLib(data);
+    // A new finished good sold on the marketplace is REQUESTED for Jubelio inside its create
+    // transaction and waits on Jubelio → Konfirmasi harga; "Toko offline saja" is never requested;
+    // nothing is pushed from here (owner decisions 2026-11-02, P3/P3a).
+    created = await createItemLib(data, { olehUserId: session.user.id });
   } catch (error) {
     const refusal = toItemSaveRefusal(error);
     if (refusal) return refusal;
@@ -130,8 +151,6 @@ export async function createItem(data: ItemFormData): Promise<ItemSaveResult> {
       notifyItemCreated(item.id, item.nameEn || item.nameId || item.sku, triggeredByName)
     )
     .catch(() => {});
-
-  enqueueProductPushOnCreate(item.id, session.user.id).catch(() => {});
 
   revalidatePath('/backoffice/items');
   return { success: true, item: serialized };
@@ -150,59 +169,39 @@ export async function updateItem(id: string, data: ItemFormData): Promise<ItemSa
     throw error;
   }
 
-  if (txResult.outboxRowId) {
-    void apiFetch("POST", `/jubelio/outbox/enqueue/${txResult.outboxRowId}`, {
-      userId: session.user.id,
-    }).catch(() => {});
-  } else {
-    enqueueProductPushOnUpdate(id, txResult.updated.before, txResult.updated.after, session.user.id).catch(() => {});
-  }
+  // A typed price waits on Jubelio → Konfirmasi harga; only non-price edits push here, and the
+  // push carries the confirmed price (owner decision 2026-11-02). A channel change that deactivates
+  // or reactivates the product in Jubelio (P72) already queued its own push — a full snapshot that
+  // also carries this save's other edits — so it is fired instead of a second one.
+  const kirimanSaluran = txResult.updated.kirimanSaluran;
+  if (kirimanSaluran) fireProductPushNow(kirimanSaluran.outboxId, session.user.id);
+  else enqueueProductPushOnUpdate(id, txResult.updated.before, txResult.updated.after, session.user.id).catch(() => {});
 
   revalidatePath('/backoffice/items');
   revalidatePath(`/backoffice/items/${id}`);
   return { success: true, item: txResult.updated.serialized };
 }
 
+/*
+ * The selling price changes ONLY because someone typed it (owner decision 2026-11-01): the
+ * markup/margin rule and the margin cushion are saved as inputs for the price recommendation on the
+ * item form and never re-price the item. Every typed change is logged MANUAL_EDIT, whatever else
+ * changed; that log row is also the "changed by / at" of the item's row on Jubelio → Konfirmasi
+ * harga.
+ *
+ * The update locks the Item row first (`kunciBarangUntukUbah`), so a channel change and a
+ * serializable price writer on the same item queue behind each other; the deadlock or
+ * serialization victim is retried whole (`withRetry`) instead of failing the save.
+ */
 async function runItemUpdate(userId: string, id: string, data: ItemFormData) {
-  return prisma.$transaction(async (tx) => {
-    const beforeItem = await tx.item.findUnique({
-      where: { id },
-      select: {
-        targetMarginPercent: true,
-        additionalCost: true,
-        sellingPrice: true,
-      },
-    });
-    if (!beforeItem) throw new Error("Item not found");
+  return withRetry(() => prisma.$transaction(async (tx) => {
     // Items with many variants/consumption rules push updateItemLib past Prisma's
     // 5s default; helper adds a few more ops on top. 15s gives headroom.
+    const updated = await updateItemLib(tx, id, data, { olehUserId: userId });
 
-    const updated = await updateItemLib(tx, id, data);
-
-    const toNumOrNull = (v: unknown): number | null => (v == null ? null : Number(v));
-    const beforeMargin = toNumOrNull(beforeItem.targetMarginPercent);
-    const afterMargin = toNumOrNull(data.targetMarginPercent);
-    const beforeExtras = toNumOrNull(beforeItem.additionalCost);
-    const afterExtras = toNumOrNull(data.additionalCost);
-    const beforeSelling = toNumOrNull(beforeItem.sellingPrice);
-    const afterSelling = toNumOrNull(data.sellingPrice);
-
-    const marginChanged = beforeMargin !== afterMargin;
-    const extrasChanged = beforeExtras !== afterExtras;
-    const sellingPriceChanged = beforeSelling !== afterSelling;
-
-    let outboxRowId: string | null = null;
-
-    if (marginChanged || extrasChanged) {
-      const recalc = await recalcItemSellingPrice(tx, {
-        itemId: id,
-        trigger: "MARGIN_CHANGE",
-        changedById: userId,
-      });
-      if (recalc.applied) {
-        outboxRowId = recalc.outboxRowId;
-      }
-    } else if (sellingPriceChanged) {
+    const beforeSelling = updated.before.sellingPrice;
+    const afterSelling = updated.after.sellingPrice;
+    if (beforeSelling !== afterSelling) {
       await tx.itemPriceChangeLog.create({
         data: {
           itemId: id,
@@ -218,9 +217,8 @@ async function runItemUpdate(userId: string, id: string, data: ItemFormData) {
         },
       });
     }
-
-    return { updated, outboxRowId };
-  }, { timeout: 15000 });
+    return { updated };
+  }, { timeout: 15000 }));
 }
 
 export type DeleteItemActionResult =

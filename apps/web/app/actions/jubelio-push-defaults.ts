@@ -1,10 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma, recalcItemSellingPrice } from "@elorae/db";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
-import { apiFetch } from "@/lib/internal-api";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
+import { MARGIN_MAKS, MARKUP_MAKS, type DasarAturanHarga } from "@/lib/items/rekomendasi-harga";
+import {
+  gagalJubelio,
+  jalankanAksiJubelio,
+  type HasilJubelio,
+} from "@/app/backoffice/jubelio/galat-jubelio";
 
 export type JubelioPushDefaultsState = {
   id: string;
@@ -30,7 +35,15 @@ export type JubelioPushDefaultsState = {
   useSingleImageSet: boolean;
   useSerialNumber: boolean;
   buyPrice: number;
+  /**
+   * Persen rekomendasi bawaan (markup ATAU margin, dasarnya di `defaultPriceRuleBasis`) dan
+   * bantalan margin per pcs bawaan — HANYA bahan rekomendasi harga jual di halaman barang, untuk
+   * barang yang tidak punya aturan/biaya sendiri (keputusan pemilik 2026-11-01, jawaban P4 dan
+   * Q5 2026-11-02). Pasangan persen + dasar dipakai utuh, tidak pernah dicampur dengan dasar
+   * barang. Menyimpannya tidak mengubah harga jual barang mana pun. null = belum diisi.
+   */
   defaultMarginPercent: number | null;
+  defaultPriceRuleBasis: DasarAturanHarga;
   defaultAdditionalCost: number | null;
   updatedAt: string;
   updatedById: string | null;
@@ -38,15 +51,18 @@ export type JubelioPushDefaultsState = {
 
 export type JubelioPushDefaultsInput = Omit<
   JubelioPushDefaultsState,
-  "id" | "updatedAt" | "updatedById"
->;
-
-export type SaveJubelioPushDefaultsResult = JubelioPushDefaultsState & {
-  fanOutCount: number;
+  "id" | "updatedAt" | "updatedById" | "defaultPriceRuleBasis"
+> & {
+  /** Tidak dikirim (layar lama) = tidak disentuh. */
+  defaultPriceRuleBasis?: DasarAturanHarga;
 };
 
-function serialize(row: Awaited<ReturnType<typeof prisma.jubelioPushDefaults.findFirst>>): JubelioPushDefaultsState {
-  if (!row) throw new Error("JubelioPushDefaults singleton row missing — re-run migrations");
+type BarisBawaan = NonNullable<Awaited<ReturnType<typeof prisma.jubelioPushDefaults.findFirst>>>;
+
+/** Batas kolom `defaultAdditionalCost` (Decimal(15,2)); batas persen per dasar dari rekomendasi-harga. */
+const BIAYA_BAWAAN_MAKS = 9_999_999_999_999.99;
+
+function serialize(row: BarisBawaan): JubelioPushDefaultsState {
   return {
     ...row,
     buyPrice: Number(row.buyPrice),
@@ -56,114 +72,79 @@ function serialize(row: Awaited<ReturnType<typeof prisma.jubelioPushDefaults.fin
   };
 }
 
-export async function getJubelioPushDefaults(): Promise<JubelioPushDefaultsState> {
-  const session = await auth();
-  if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
+/** null/undefined lolos; angka harus terhingga dan di dalam batas kolomnya. */
+function angkaBawaanSah(v: unknown, maks: number): boolean {
+  if (v == null) return true;
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= maks;
+}
 
-  const row = await prisma.jubelioPushDefaults.findFirst();
-  return serialize(row);
+// Baris tunggal (singleton) yang hilang = BAWAAN_BELUM_ADA, bukan Error mentah.
+const RINCIAN_TANPA_BARIS = "JubelioPushDefaults singleton row missing — re-run migrations";
+
+export async function getJubelioPushDefaults(): Promise<HasilJubelio<JubelioPushDefaultsState>> {
+  return jalankanAksiJubelio(async () => {
+    const session = await auth();
+    if (!session) return gagalJubelio("TANPA_AKSES");
+    requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
+
+    const row = await prisma.jubelioPushDefaults.findFirst();
+    if (!row) return gagalJubelio("BAWAAN_BELUM_ADA", RINCIAN_TANPA_BARIS);
+    return { ok: true, data: serialize(row) };
+  });
 }
 
 export async function saveJubelioPushDefaults(
   input: JubelioPushDefaultsInput,
-): Promise<SaveJubelioPushDefaultsResult> {
+): Promise<HasilJubelio<JubelioPushDefaultsState>> {
+  return jalankanAksiJubelio(() => simpanBawaan(input));
+}
+
+async function simpanBawaan(
+  input: JubelioPushDefaultsInput,
+): Promise<HasilJubelio<JubelioPushDefaultsState>> {
   const session = await auth();
-  if (!session) throw new Error("Unauthorized");
+  if (!session) return gagalJubelio("TANPA_AKSES");
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
-  const userId = session.user.id;
-
-  // Read previous defaults BEFORE the update so we can detect margin/extras change.
-  const previous = await prisma.jubelioPushDefaults.findFirst({
-    select: { defaultMarginPercent: true, defaultAdditionalCost: true },
+  const ada = await prisma.jubelioPushDefaults.findFirst({
+    select: { id: true, defaultPriceRuleBasis: true, defaultMarginPercent: true },
   });
+  if (!ada) return gagalJubelio("BAWAAN_BELUM_ADA", RINCIAN_TANPA_BARIS);
 
-  const prevMargin = previous?.defaultMarginPercent != null ? Number(previous.defaultMarginPercent) : null;
-  const nextMargin = input.defaultMarginPercent != null ? Number(input.defaultMarginPercent) : null;
-  const prevExtras = previous?.defaultAdditionalCost != null ? Number(previous.defaultAdditionalCost) : null;
-  const nextExtras = input.defaultAdditionalCost != null ? Number(input.defaultAdditionalCost) : null;
-
-  const marginChanged = prevMargin !== nextMargin;
-  const extrasChanged = prevExtras !== nextExtras;
+  // Persen dan bantalan margin bawaan hanya bahan rekomendasi harga: menyimpannya
+  // TIDAK menghitung ulang harga jual barang mana pun. Klien yang tidak
+  // mengirimnya (layar lama) tidak mengosongkan kolomnya — dasarnya juga.
+  const { defaultMarginPercent, defaultAdditionalCost, defaultPriceRuleBasis, ...isian } = input;
+  if (defaultPriceRuleBasis !== undefined && defaultPriceRuleBasis !== "MARKUP" && defaultPriceRuleBasis !== "MARGIN") {
+    return gagalJubelio("ISIAN_TIDAK_SAH", "defaultPriceRuleBasis: MARKUP | MARGIN");
+  }
+  const dasar: DasarAturanHarga = defaultPriceRuleBasis ?? ada.defaultPriceRuleBasis;
+  const batasPersen = dasar === "MARGIN" ? MARGIN_MAKS : MARKUP_MAKS;
+  // Dasar yang dikirim tanpa persennya memeriksa persen bawaan TERSIMPAN dengan dasar baru (R14).
+  const persenDiperiksa =
+    defaultMarginPercent !== undefined
+      ? defaultMarginPercent
+      : defaultPriceRuleBasis !== undefined && ada.defaultMarginPercent != null
+        ? Number(ada.defaultMarginPercent)
+        : undefined;
+  if (!angkaBawaanSah(persenDiperiksa, batasPersen)) {
+    return gagalJubelio("ISIAN_TIDAK_SAH", dasar === "MARGIN" ? "defaultMarginPercent: margin 0–99.99" : "defaultMarginPercent: markup 0–999.99");
+  }
+  if (!angkaBawaanSah(defaultAdditionalCost, BIAYA_BAWAAN_MAKS)) {
+    return gagalJubelio("ISIAN_TIDAK_SAH", "defaultAdditionalCost: >= 0");
+  }
 
   const row = await prisma.jubelioPushDefaults.update({
     where: { id: "singleton" },
     data: {
-      ...input,
-      defaultMarginPercent: input.defaultMarginPercent ?? null,
-      defaultAdditionalCost: input.defaultAdditionalCost ?? null,
-      updatedById: userId,
+      ...isian,
+      ...(defaultMarginPercent !== undefined ? { defaultMarginPercent } : {}),
+      ...(defaultPriceRuleBasis !== undefined ? { defaultPriceRuleBasis } : {}),
+      ...(defaultAdditionalCost !== undefined ? { defaultAdditionalCost } : {}),
+      updatedById: session.user.id,
     },
   });
-
-  const saved = serialize(row);
-  const outboxRowIds: string[] = [];
-
-  if (marginChanged || extrasChanged) {
-    const affected = await prisma.item.findMany({
-      where: {
-        type: "FINISHED_GOOD",
-        targetMarginPercent: null,
-        source: { not: "JUBELIO_INGEST" },
-      },
-      select: { id: true },
-    });
-
-    const BATCH_SIZE = 100;
-    const SMALL_FANOUT_THRESHOLD = 500;
-
-    if (affected.length <= SMALL_FANOUT_THRESHOLD) {
-      await prisma.$transaction(async (tx) => {
-        for (const { id } of affected) {
-          const recalc = await recalcItemSellingPrice(tx, {
-            itemId: id,
-            trigger: "DEFAULTS_CHANGE",
-            changedById: userId,
-          });
-          if (recalc.applied && recalc.outboxRowId) outboxRowIds.push(recalc.outboxRowId);
-        }
-      }, { timeout: 30000 });
-    } else {
-      for (let i = 0; i < affected.length; i += BATCH_SIZE) {
-        const batch = affected.slice(i, i + BATCH_SIZE);
-        await prisma.$transaction(async (tx) => {
-          for (const { id } of batch) {
-            const recalc = await recalcItemSellingPrice(tx, {
-              itemId: id,
-              trigger: "DEFAULTS_CHANGE",
-              changedById: userId,
-            });
-            if (recalc.applied && recalc.outboxRowId) outboxRowIds.push(recalc.outboxRowId);
-          }
-        }, { timeout: 15000 });
-      }
-    }
-
-    // Best-effort: fire dispatch hints for the first N rows so users see immediate progress.
-    // The poller drains the rest within ~5s.
-    const HINT_LIMIT = 50;
-    for (const rowId of outboxRowIds.slice(0, HINT_LIMIT)) {
-      void apiFetch("POST", `/jubelio/outbox/enqueue/${rowId}`, { userId }).catch(() => {
-        // poller picks it up within ~5s if this fails
-      });
-    }
-  }
 
   revalidatePath("/backoffice/jubelio/settings");
-  return { ...saved, fanOutCount: outboxRowIds.length };
-}
-
-export async function getMarginFallbackItemCount(): Promise<number> {
-  const session = await auth();
-  if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
-
-  return prisma.item.count({
-    where: {
-      type: "FINISHED_GOOD",
-      targetMarginPercent: null,
-      source: { not: "JUBELIO_INGEST" },
-    },
-  });
+  return { ok: true, data: serialize(row) };
 }

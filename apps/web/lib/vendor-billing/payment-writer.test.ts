@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { createVendorPayment, voidVendorPayment } from "./payment-writer";
+import { createVendorPayment, voidVendorPayment, VENDOR_PAYMENTS_CLOSED } from "./payment-writer";
+import { deriveBillStatus } from "./status";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../finance/journals/mapping-test-fixture";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -61,96 +62,94 @@ d("Vendor payment writer (test bed only)", () => {
     Object.keys(ids).forEach((k) => (ids[k as keyof typeof ids] = ""));
   });
 
-  const base = () => ({ supplierId: ids.supplier, paidAt: new Date("2026-10-25"), method: "BANK" as const });
   const billOf = (id: string) => prisma.vendorBill.findUniqueOrThrow({ where: { id } });
   const journalOf = (paymentId: string, sourceType = "VENDOR_PAYMENT") =>
     prisma.journal.findUnique({ where: { sourceType_sourceId: { sourceType, sourceId: paymentId } }, include: { lines: true } });
 
-  it("pays two bills in one payment and posts Dr AP / Cr Bank", async () => {
-    const p = await createVendorPayment(
-      { ...base(), allocations: [{ billId: ids.billA, amount: 100_000 }, { billId: ids.billB, amount: 20_000 }] },
-      ids.user
-    );
-    expect(p.docNumber).toMatch(/^VPAY\//);
-    const [a, b] = [await billOf(ids.billA), await billOf(ids.billB)];
-    expect([a.status, Number(a.paidAmount)]).toEqual(["PAID", 100_000]);
-    expect([b.status, Number(b.paidAmount)]).toEqual(["PARTIAL", 20_000]);
+  /** A vendor payment made before they closed, as the old writer left it: allocations, bill balances, Dr AP / Cr Bank or Kas. */
+  let seq = 0;
+  async function oldPayment(allocations: Array<{ billId: string; amount: number }>, method: "BANK" | "CASH" = "BANK") {
+    const amount = allocations.reduce((s, a) => s + a.amount, 0);
+    seq += 1;
+    const p = await prisma.vendorPayment.create({
+      data: {
+        docNumber: `VPAY-${tag}-${seq}`,
+        supplierId: ids.supplier,
+        paidAt: new Date("2026-10-25"),
+        method,
+        amount,
+        createdById: ids.user,
+        allocations: { create: allocations },
+      },
+      select: { id: true },
+    });
+    for (const a of allocations) {
+      const b = await billOf(a.billId);
+      const paid = Number(b.paidAmount) + a.amount;
+      await prisma.vendorBill.update({ where: { id: a.billId }, data: { paidAmount: paid, status: deriveBillStatus(Number(b.total), paid, false) } });
+    }
+    await prisma.journal.create({
+      data: {
+        date: new Date("2026-10-25"),
+        description: `Pembayaran vendor uji ${tag}`,
+        sourceType: "VENDOR_PAYMENT",
+        sourceId: p.id,
+        postedById: ids.user,
+        lines: {
+          create: [
+            { chartAccountId: ids.ap, debit: amount, credit: 0 },
+            { chartAccountId: method === "CASH" ? ids.cash : ids.bank, debit: 0, credit: amount },
+          ],
+        },
+      },
+    });
+    return p.id;
+  }
 
-    const j = await journalOf(p.id);
-    expect(j?.date.toISOString()).toBe(new Date("2026-10-25").toISOString());
-    expect(j!.lines.map((l) => [l.chartAccountId, Number(l.debit), Number(l.credit)]).sort()).toEqual(
-      [
-        [ids.ap, 120_000, 0],
-        [ids.bank, 0, 120_000],
-      ].sort()
-    );
-  });
-
-  it("credits Kas for a cash payment", async () => {
-    const p = await createVendorPayment({ ...base(), method: "CASH", allocations: [{ billId: ids.billB, amount: 50_000 }] }, ids.user);
-    const j = await journalOf(p.id);
-    expect(j!.lines.find((l) => l.chartAccountId === ids.cash)?.credit.toString()).toBe("50000");
-  });
-
-  it("refuses an over-allocation, another supplier's bill and a paid bill", async () => {
-    await expect(createVendorPayment({ ...base(), allocations: [{ billId: ids.billB, amount: 50_001 }] }, ids.user)).rejects.toThrow(
-      "melebihi sisa"
-    );
-    await expect(createVendorPayment({ ...base(), allocations: [{ billId: ids.foreign, amount: 1 }] }, ids.user)).rejects.toThrow(
-      "bukan milik supplier ini"
-    );
-    await createVendorPayment({ ...base(), allocations: [{ billId: ids.billB, amount: 50_000 }] }, ids.user);
-    await expect(createVendorPayment({ ...base(), allocations: [{ billId: ids.billB, amount: 1 }] }, ids.user)).rejects.toThrow(
-      "tidak bisa dibayar"
-    );
-    expect(await prisma.vendorPayment.count({ where: { supplierId: ids.supplier } })).toBe(1);
-  });
-
-  it("voids a payment: bills back to unpaid, journal reversed", async () => {
-    const p = await createVendorPayment(
-      { ...base(), allocations: [{ billId: ids.billA, amount: 40_000 }, { billId: ids.billB, amount: 50_000 }] },
-      ids.user
-    );
-    await voidVendorPayment(p.id, "salah rekening", ids.user);
+  it("refuses every new payment, pointing to Supplier payments, and writes nothing", async () => {
+    await expect(createVendorPayment()).rejects.toMatchObject({ code: VENDOR_PAYMENTS_CLOSED });
+    await expect(createVendorPayment()).rejects.toThrow("Pembayaran pemasok");
+    expect(await prisma.vendorPayment.count({ where: { supplierId: ids.supplier } })).toBe(0);
     const [a, b] = [await billOf(ids.billA), await billOf(ids.billB)];
     expect([a.status, Number(a.paidAmount), b.status, Number(b.paidAmount)]).toEqual(["UNPAID", 0, "UNPAID", 0]);
-    const rev = await journalOf(p.id, "VENDOR_PAYMENT_REVERSAL");
-    expect(rev!.lines.find((l) => l.chartAccountId === ids.bank)?.debit.toString()).toBe("90000");
-    await expect(voidVendorPayment(p.id, "lagi", ids.user)).rejects.toThrow("sudah dibatalkan");
   });
 
-  it("keeps header, allocations, bills and journal on the same cents", async () => {
-    const p = await createVendorPayment(
-      { ...base(), allocations: [{ billId: ids.billA, amount: 10.015 }, { billId: ids.billB, amount: 10.015 }] },
-      ids.user
-    );
-    const row = await prisma.vendorPayment.findUniqueOrThrow({ where: { id: p.id }, include: { allocations: true } });
-    const allocSum = row.allocations.reduce((s, a) => s + Number(a.amount), 0);
-    const paidSum = Number((await billOf(ids.billA)).paidAmount) + Number((await billOf(ids.billB)).paidAmount);
-    const ap = (await journalOf(p.id))!.lines.find((l) => l.chartAccountId === ids.ap);
-    expect(Number(row.amount)).toBeCloseTo(allocSum, 2);
-    expect(paidSum).toBeCloseTo(allocSum, 2);
-    expect(Number(ap!.debit)).toBeCloseTo(allocSum, 2);
+  it("voids an old payment: bills back to unpaid, journal reversed", async () => {
+    const id = await oldPayment([
+      { billId: ids.billA, amount: 40_000 },
+      { billId: ids.billB, amount: 50_000 },
+    ]);
+    expect((await billOf(ids.billB)).status).toBe("PAID");
+    await voidVendorPayment(id, "salah rekening", ids.user);
+    const [a, b] = [await billOf(ids.billA), await billOf(ids.billB)];
+    expect([a.status, Number(a.paidAmount), b.status, Number(b.paidAmount)]).toEqual(["UNPAID", 0, "UNPAID", 0]);
+    const rev = await journalOf(id, "VENDOR_PAYMENT_REVERSAL");
+    expect(rev!.lines.find((l) => l.chartAccountId === ids.bank)?.debit.toString()).toBe("90000");
+    expect(rev!.lines.find((l) => l.chartAccountId === ids.ap)?.credit.toString()).toBe("90000");
+    await expect(voidVendorPayment(id, "lagi", ids.user)).rejects.toThrow("sudah dibatalkan");
   });
 
   it("reverses onto the accounts the payment hit, dated on the void", async () => {
-    const p = await createVendorPayment({ ...base(), allocations: [{ billId: ids.billB, amount: 50_000 }] }, ids.user);
-    // Re-point BANK after paying: the reversal must still debit the original bank account.
-    await prisma.journalAccountMapping.update({ where: { role: "BANK" }, data: { chartAccountId: ids.cash } });
-    await voidVendorPayment(p.id, "salah rekening", ids.user);
-    const voided = await prisma.vendorPayment.findUniqueOrThrow({ where: { id: p.id } });
-    const rev = await journalOf(p.id, "VENDOR_PAYMENT_REVERSAL");
+    const id = await oldPayment([{ billId: ids.billB, amount: 50_000 }], "CASH");
+    // Re-point CASH after paying: the reversal must still debit the account the payment credited.
+    await prisma.journalAccountMapping.update({ where: { role: "CASH" }, data: { chartAccountId: ids.bank } });
+    await voidVendorPayment(id, "salah rekening", ids.user);
+    const voided = await prisma.vendorPayment.findUniqueOrThrow({ where: { id } });
+    const rev = await journalOf(id, "VENDOR_PAYMENT_REVERSAL");
     expect(rev!.date.toISOString()).toBe(voided.voidedAt!.toISOString());
-    expect(rev!.lines.find((l) => l.chartAccountId === ids.bank)?.debit.toString()).toBe("50000");
-    expect(rev!.lines.some((l) => l.chartAccountId === ids.cash)).toBe(false);
+    expect(rev!.lines.find((l) => l.chartAccountId === ids.cash)?.debit.toString()).toBe("50000");
+    expect(rev!.lines.some((l) => l.chartAccountId === ids.bank)).toBe(false);
   });
 
-  it("lets only one of two concurrent payments settle the same bill", async () => {
+  it("lets only one of two concurrent voids of the same payment land", async () => {
+    const id = await oldPayment([{ billId: ids.billA, amount: 60_000 }]);
     const results = await Promise.allSettled([
-      createVendorPayment({ ...base(), allocations: [{ billId: ids.billB, amount: 50_000 }] }, ids.user),
-      createVendorPayment({ ...base(), allocations: [{ billId: ids.billB, amount: 50_000 }] }, ids.user),
+      voidVendorPayment(id, "dobel 1", ids.user),
+      voidVendorPayment(id, "dobel 2", ids.user),
     ]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-    expect(Number((await billOf(ids.billB)).paidAmount)).toBe(50_000);
+    const a = await billOf(ids.billA);
+    expect([a.status, Number(a.paidAmount)]).toEqual(["UNPAID", 0]);
+    expect(await prisma.journal.count({ where: { sourceType: "VENDOR_PAYMENT_REVERSAL", sourceId: seededId(id) } })).toBe(1);
   });
 });

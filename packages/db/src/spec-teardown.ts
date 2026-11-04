@@ -18,3 +18,16 @@
 export function seededId(id: string | undefined): string {
   return id ?? "";
 }
+
+/**
+ * The list form of `seededId`.
+ *
+ * `{ id: { in: ids } }` is the same trap one shape over: if `ids` is ever
+ * `undefined` Prisma drops the term and the delete widens to the whole table.
+ * An empty array is already safe — it matches nothing — so this only has to
+ * turn `undefined` into that safe empty case, and give the lint rule a guard
+ * call to recognise.
+ */
+export function seededIds(ids: string[] | undefined): string[] {
+  return ids ?? [];
+}

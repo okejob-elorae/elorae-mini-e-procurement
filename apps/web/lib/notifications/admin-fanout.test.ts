@@ -78,17 +78,23 @@ describe("fanOutAdminNotification", () => {
     await fanOutAdminNotification({ ...BASE, category: "FIELD_RETURN_MISMATCH" });
     expect(mockGetUsers).toHaveBeenCalledWith("field_returns:manage");
 
-    // Isolated from the calls above: CREDIT_LIMIT_HOLD maps to the same permission as
-    // PENDING_ORDER_APPROVAL, so a stale toHaveBeenCalledWith would pass even if the map were
-    // still missing this category — clear and assert the actual last call instead.
+    // Isolated from the calls above, so a stale toHaveBeenCalledWith cannot pass for it. A held
+    // order is approved only with an override reason, which the action accepts only from
+    // `field_sales_orders:credit_override` — plain approvers already hear about the order through
+    // PENDING_ORDER_APPROVAL.
     mockGetUsers.mockClear();
     await fanOutAdminNotification({ ...BASE, category: "CREDIT_LIMIT_HOLD" });
-    expect(mockGetUsers).toHaveBeenCalledWith("field_sales_orders:approve");
+    expect(mockGetUsers).toHaveBeenCalledWith("field_sales_orders:credit_override");
+    expect(mockGetUsers).not.toHaveBeenCalledWith("field_sales_orders:approve");
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining("no permission mapped for category CREDIT_LIMIT_HOLD"));
 
+    // Owner 2026-11-02 (P48): receiving the office overdue reminder is its own permission, neither the
+    // collections code it used to ride on nor receivables:manage, which changes the thresholds (Q14).
     mockGetUsers.mockClear();
     await fanOutAdminNotification({ ...BASE, category: "AR_OVERDUE" });
-    expect(mockGetUsers).toHaveBeenCalledWith("collections:manage");
+    expect(mockGetUsers).toHaveBeenCalledWith("receivables:overdue_reminder");
+    expect(mockGetUsers).not.toHaveBeenCalledWith("collections:manage");
+    expect(mockGetUsers).not.toHaveBeenCalledWith("receivables:manage");
 
     mockGetUsers.mockClear();
     await fanOutAdminNotification({ ...BASE, category: "PO_PAYMENT_DUE" });
@@ -106,6 +112,68 @@ describe("fanOutAdminNotification", () => {
       await fanOutAdminNotification({ ...BASE, category });
       expect(mockGetUsers).toHaveBeenCalledWith("stores:manage");
     }
+  });
+
+  it("tells whoever may verify payment claims about giros falling due", async () => {
+    // Only a claim verifier (`payments:verify`, `bolehMemverifikasi`) can mark a giro cleared or
+    // bounced; pinging anyone else about it is noise.
+    await fanOutAdminNotification({ ...BASE, category: "GIRO_JATUH_TEMPO" });
+    expect(mockGetUsers).toHaveBeenCalledWith("payments:verify");
+    expect(mockGetUsers).not.toHaveBeenCalledWith("journals:manage");
+    expect(mockSend).toHaveBeenCalledWith(
+      [{ id: "u1", fcmToken: null }],
+      expect.objectContaining({ type: "GIRO_JATUH_TEMPO" }),
+    );
+  });
+
+  /*
+   * The permission split (owner, 2026-10-29 and 2026-11-01) moved these decisions to their own
+   * codes. Routing them by the old code tells people who can no longer act and leaves out the ones
+   * who now can. Each pair is the category and the code its office action checks.
+   */
+  it.each([
+    ["GIRO_JATUH_TEMPO", "payments:verify"],
+    ["KLAIM_DIBATALKAN_SALES", "payments:verify"],
+    ["KOREKSI_DIMINTA_BKM", "payments:verify"],
+    ["COLLECTION_PENDING_VERIFICATION", "payments:verify"],
+    ["STOCK_LOSS_OPEN", "receivables:decide_bearer"],
+    ["STORE_TRANSFER_PROPOSED", "store_transfers:approve"],
+    ["STORE_TRANSFER_DISCREPANCY", "store_transfers:decide_shortfall"],
+    // Owner 2026-11-02: an SPG's shopper-return report waits for whoever may approve it.
+    ["RETUR_PEMBELI_MENUNGGU", "spg_returns:approve"],
+    ["CREDIT_LIMIT_HOLD", "field_sales_orders:credit_override"],
+    // Unchanged on purpose: retur-toko actions still check receivables:manage, and receiving a
+    // transfer on the store's behalf is still stores:manage.
+    ["RETUR_DIBATALKAN_SALES", "receivables:manage"],
+    ["KOREKSI_DIMINTA_RETUR", "receivables:manage"],
+    ["STORE_TRANSFER_TO_RECEIVE", "stores:manage"],
+    ["STORE_TRANSFER_STALE", "stores:manage"],
+    /*
+     * Owner 2026-11-02, round 4. Lost goods stay on receivables:decide_bearer; a store-return
+     * shortfall has its own code (P22). A voided or corrected nota tells Finance (payments:verify) and,
+     * when its faktur was numbered, the faktur recorder (P25, P34, P41a).
+     */
+    ["RETUR_SELISIH", "store_returns:decide_shortfall"],
+    ["DELIVERY_NOTA_VOIDED", "payments:verify"],
+    ["DELIVERY_NOTA_CORRECTED", "payments:verify"],
+    ["TAX_INVOICE_NOTA_CHANGED", "tax_invoices:manage"],
+    ["VENDOR_BILL_PRICE_DIFFERENCE", "vendor_bills:decide_price"],
+    ["SUPPLIER_INVOICE_OVERDUE", "vendor_bills:manage"],
+    ["GRN_NO_PO_PENDING", "goods_receipts:confirm_no_po"],
+    ["SPG_SCHEDULE_SUBMITTED", "spg_schedules:approve"],
+    // The check-in record: entered by spg_attendance:record, checked by spg_attendance:verify (P7e, P61a).
+    ["SPG_ATTENDANCE_NEEDED", "spg_attendance:record"],
+    ["SPG_ATTENDANCE_SUBMITTED", "spg_attendance:verify"],
+    ["SPG_ATTENDANCE_RETURNED", "spg_attendance:record"],
+    ["SPG_DEBT_PAYMENT_SUBMITTED", "payments:verify"],
+    ["SPG_DEBT_PAYMENT_RETURNED", "spg_commission:pay"],
+    ["JUBELIO_PRICE_DIFFERS", "jubelio_prices:confirm"],
+    ["AR_OVERDUE", "receivables:overdue_reminder"],
+  ])("routes %s to %s, the code its office action checks", async (category, permission) => {
+    mockGetUsers.mockClear();
+    await fanOutAdminNotification({ ...BASE, category });
+    expect(mockGetUsers).toHaveBeenCalledTimes(1);
+    expect(mockGetUsers).toHaveBeenCalledWith(permission);
   });
 
   it("sends the category as the type and carries the source id in data", async () => {

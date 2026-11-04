@@ -31,8 +31,9 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json tsconfig*.json .
 COPY packages/db ./packages/db
 COPY apps/web ./apps/web
 ENV NEXT_TELEMETRY_DISABLED=1
-# Bump node heap for the Next.js build — default 2GB OOMs on the apps/web bundle.
-ENV NODE_OPTIONS=--max-old-space-size=4096
+# Bump node heap for the Next.js build — default 2GB OOMs on the apps/web bundle, and 4 GB stopped
+# being enough for its type-check once the Max features landed (ci.yml uses the same limit).
+ENV NODE_OPTIONS=--max-old-space-size=8192
 # NEXT_PUBLIC_* are inlined at BUILD time. Passed as build-args from CI (GHA
 # secrets); absent on a bare VPS build → default empty (matches prior behavior).
 ARG NEXT_PUBLIC_FIREBASE_API_KEY
@@ -69,6 +70,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --chown=elorae:elorae --from=builder /repo/apps/web/.next/standalone ./
 COPY --chown=elorae:elorae --from=builder /repo/apps/web/.next/static ./apps/web/.next/static
 COPY --chown=elorae:elorae --from=builder /repo/apps/web/public ./apps/web/public
+# Model bahasa OCR. Dibundel supaya server TIDAK mengambilnya dari CDN saat
+# jalan — pembacaan nota tidak boleh bergantung jaringan keluar.
+COPY --chown=elorae:elorae --from=builder /repo/apps/web/tessdata ./apps/web/tessdata
 USER elorae
 EXPOSE 3000
 WORKDIR /app/apps/web

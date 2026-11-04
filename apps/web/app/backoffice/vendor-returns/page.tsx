@@ -1,6 +1,9 @@
 'use client';
 
+import { useLocale, useTranslations } from 'next-intl';
+
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import {
@@ -48,16 +51,34 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { getVendorReturns, processReturn, deleteVendorReturn } from '@/app/actions/vendor-returns';
+import { getVendorReturns, processReturn, hapusReturPemasok } from '@/app/actions/vendor-returns';
+import { getPemasokPilihan } from '@/app/actions/purchase-orders';
+import { TAUTAN_DOKUMEN } from '@/app/backoffice/purchase-orders/tautan-dokumen';
+import { pesanTolakRetur, tolakReturBasi } from './pesan-tolak-retur';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import { PageHeader } from '@/components/ui/page-header';
+import { formatDisplayDate } from '@/lib/date-only';
 
 interface SupplierOption {
   id: string;
   code: string;
   name: string;
+  disetujui: boolean;
 }
+
+const rp = (n: number) => `Rp ${n.toLocaleString('id-ID', { maximumFractionDigits: 2 })}`;
 
 type VendorReturnRow = Extract<
   Awaited<ReturnType<typeof getVendorReturns>>,
@@ -65,6 +86,15 @@ type VendorReturnRow = Extract<
 >['items'][number];
 
 export default function VendorReturnsPage() {
+  const tUi = useTranslations('ui');
+  const tTable = useTranslations('tableHeaders');
+  const t = useTranslations('vendorReturnsList');
+  const locale = useLocale();
+  const statusLabel = (status: string) =>
+    status === 'DRAFT' ? t('statusDraft')
+    : status === 'PROCESSED' ? t('statusProcessed')
+    : status === 'COMPLETED' ? t('statusCompleted')
+    : status;
   const { data: session } = useSession();
   const canManage = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_MANAGE);
   const canCreate = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_CREATE);
@@ -72,10 +102,18 @@ export default function VendorReturnsPage() {
   const [vendors, setVendors] = useState<SupplierOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('__all__');
-  const [vendorFilter, setVendorFilter] = useState<string>('__all__');
+  /* Seeded from ?vendorId so the archive folder lands on that vendor's returns
+     rather than the unfiltered list — the link was decorative before. */
+  const searchParams = useSearchParams();
+  const [vendorFilter, setVendorFilter] = useState<string>(
+    () => searchParams.get('vendorId') ?? '__all__',
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Proses dan hapus lewat dialog aplikasi (dulu proses tanpa konfirmasi, hapus lewat dialog bawaan peramban).
+  const [konfirmasi, setKonfirmasi] = useState<{ jenis: 'proses' | 'hapus'; id: string; docNumber: string } | null>(null);
+  const tUmum = useTranslations('common');
   const [page, setPage] = useState(1);
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(0);
@@ -100,7 +138,7 @@ export default function VendorReturnsPage() {
         setTotalCount(list.length);
       }
     } catch {
-      toast.error('Failed to load vendor returns');
+      toast.error(t('loadFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -109,10 +147,8 @@ export default function VendorReturnsPage() {
   useEffect(() => {
     const loadVendors = async () => {
       try {
-        const { getSuppliersForSelect } = await import('@/app/actions/suppliers');
-        const data = await getSuppliersForSelect({ approvedOnly: true });
-        const list = Array.isArray(data) ? data : [];
-        setVendors((list as SupplierOption[]) || []);
+        // Pemasok disetujui ATAU yang punya dokumen — saringan harus bisa memilih pemasok retur lama.
+        setVendors(await getPemasokPilihan());
       } catch {
         // non-blocking
       }
@@ -133,11 +169,17 @@ export default function VendorReturnsPage() {
     if (!session?.user?.id) return;
     setProcessingId(id);
     try {
-      await processReturn(id, session.user.id);
-      toast.success('Return processed');
+      // Penolakan datang sebagai kode (pesan lemparan disamarkan di produksi).
+      const hasil = await processReturn(id, session.user.id);
+      if (!hasil.ok) {
+        toast.error(pesanTolakRetur(hasil, t, t('processFailed'), locale));
+        if (tolakReturBasi(hasil)) fetchReturns();
+        return;
+      }
+      toast.success(t('processed'));
       fetchReturns();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to process');
+    } catch {
+      toast.error(t('processFailed'));
     } finally {
       setProcessingId(null);
     }
@@ -145,45 +187,55 @@ export default function VendorReturnsPage() {
 
   const handleDelete = async (id: string) => {
     if (!session?.user?.id) return;
-    if (!confirm('Are you sure you want to delete this return?')) return;
     setDeletingId(id);
     try {
-      await deleteVendorReturn(id, session.user.id);
-      toast.success('Return deleted');
+      // Penolakan datang sebagai kode (pesan lemparan disamarkan di produksi).
+      const hasil = await hapusReturPemasok(id);
+      if (!hasil.ok) {
+        toast.error(hasil.code === 'GAGAL' ? t('deleteFailed') : t(`err.${hasil.code}` as never));
+        if (hasil.code !== 'GAGAL') fetchReturns();
+        return;
+      }
+      toast.success(t('deleted'));
       fetchReturns();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete');
+    } catch {
+      toast.error(t('deleteFailed'));
     } finally {
       setDeletingId(null);
     }
   };
 
+  const jalankanKonfirmasi = async () => {
+    const k = konfirmasi;
+    setKonfirmasi(null);
+    if (!k) return;
+    if (k.jenis === 'proses') await handleProcess(k.id);
+    else await handleDelete(k.id);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Vendor Returns</h1>
-          <p className="text-muted-foreground">
-            Manage returns to vendors and track stock impact
-          </p>
-        </div>
-        {canCreate && (
-          <Link href="/backoffice/vendor-returns/new">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              New Return
-            </Button>
-          </Link>
-        )}
-      </div>
+      <PageHeader
+        title={t('judul')}
+        actions={
+          canCreate ? (
+            <Link href="/backoffice/vendor-returns/new">
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                {t('buatRetur')}
+              </Button>
+            </Link>
+          ) : undefined
+        }
+      />
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex flex-col flex-wrap sm:flex-row gap-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search doc # or vendor..."
+            placeholder={t('searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -191,26 +243,30 @@ export default function VendorReturnsPage() {
         </div>
         <SearchableCombobox
           options={[
-            { value: '__all__', label: 'All vendors' },
-            ...vendors.map((v) => ({ value: v.id, label: `${v.code} – ${v.name}` })),
+            { value: '__all__', label: t('allVendors') },
+            ...vendors.map((v) => ({
+              value: v.id,
+              label: `${v.code} – ${v.name}${v.disetujui ? '' : ` · ${t('belumDisetujui')}`}`,
+            })),
           ]}
           value={vendorFilter}
           onValueChange={setVendorFilter}
-          placeholder="Vendor"
-          triggerClassName="w-[180px]"
+          placeholder={t('vendorPlaceholder')}
+          searchPlaceholder={t('cariPemasok')}
+          triggerClassName="w-[220px]"
         />
         <Select
           value={statusFilter}
           onValueChange={setStatusFilter}
         >
           <SelectTrigger className="w-[140px]">
-            <SelectValue placeholder="Status" />
+            <SelectValue placeholder={tTable('status')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All Status</SelectItem>
-            <SelectItem value="DRAFT">Draft</SelectItem>
-            <SelectItem value="PROCESSED">Processed</SelectItem>
-            <SelectItem value="COMPLETED">Completed</SelectItem>
+            <SelectItem value="__all__">{tUi('allStatus')}</SelectItem>
+            <SelectItem value="DRAFT">{t('statusDraft')}</SelectItem>
+            <SelectItem value="PROCESSED">{t('statusProcessed')}</SelectItem>
+            <SelectItem value="COMPLETED">{t('statusCompleted')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -220,7 +276,7 @@ export default function VendorReturnsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
-            Vendor Return List
+            {t('judulDaftar')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -231,7 +287,7 @@ export default function VendorReturnsPage() {
             ) : returns.length === 0 ? (
               <div className="text-center py-12">
                 <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">No vendor returns found</p>
+                <p className="text-muted-foreground">{t('noVendorReturnsFound')}</p>
               </div>
             ) : (
               <>
@@ -239,38 +295,53 @@ export default function VendorReturnsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Doc #</TableHead>
-                      <TableHead>Vendor</TableHead>
-                      <TableHead>Work Order</TableHead>
-                      <TableHead className="text-right">Total Value</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead className="w-[100px]">Actions</TableHead>
+                      <TableHead>{t('colDoc')}</TableHead>
+                      <TableHead className="min-w-[160px]">{t('colVendor')}</TableHead>
+                      <TableHead>{t('colTerkait')}</TableHead>
+                      <TableHead className="text-right">{tUi('totalValue')}</TableHead>
+                      <TableHead>{tTable('status')}</TableHead>
+                      <TableHead>{t('colCreated')}</TableHead>
+                      <TableHead className="sticky right-0 w-[100px] bg-card">{t('colAksi')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {returns.map((r) => (
                         <TableRow key={r.id}>
-                          <TableCell className="font-medium">{r.docNumber}</TableCell>
                           <TableCell>
+                            <Link href={`/backoffice/vendor-returns/${r.id}`} className={TAUTAN_DOKUMEN}>
+                              {r.docNumber}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="whitespace-normal">
                             {(r.vendor as { name?: string; code?: string })?.name ?? r.vendorId}
                           </TableCell>
-                          <TableCell>
-                            {r.wo
-                              ? (
-                                  <Link
-                                    href={`/backoffice/work-orders/${(r.wo as { id: string }).id}`}
-                                    className="text-primary hover:underline"
-                                  >
-                                    {(r.wo as { docNumber?: string }).docNumber}
-                                  </Link>
-                                )
-                              : '—'}
+                          <TableCell className="text-sm">
+                            {!r.wo && !r.po ? (
+                              '—'
+                            ) : (
+                              <div className="flex flex-col gap-0.5">
+                                {r.wo && (
+                                  <span>
+                                    <Link
+                                      href={`/backoffice/work-orders/${(r.wo as { id: string }).id}`}
+                                      className={TAUTAN_DOKUMEN}
+                                    >
+                                      {(r.wo as { docNumber?: string }).docNumber}
+                                    </Link>
+                                  </span>
+                                )}
+                                {r.po && (
+                                  <span>
+                                    <Link href={`/backoffice/purchase-orders/${r.po.id}`} className={TAUTAN_DOKUMEN}>
+                                      {r.po.docNumber}
+                                    </Link>
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </TableCell>
-                          <TableCell className="text-right">
-                            {Number(r.totalValue).toLocaleString(undefined, {
-                              minimumFractionDigits: 2
-                            })}
+                          <TableCell className="text-right tabular-nums whitespace-nowrap">
+                            {rp(Number(r.totalValue))}
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -287,18 +358,21 @@ export default function VendorReturnsPage() {
                               ) : (
                                 <Clock className="mr-1 h-3 w-3" />
                               )}
-                              {r.status}
+                              {statusLabel(r.status)}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">
-                            {r.createdAt instanceof Date
-                              ? r.createdAt.toLocaleDateString()
-                              : new Date(r.createdAt).toLocaleDateString()}
+                            {formatDisplayDate(r.createdAt, locale)}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="sticky right-0 bg-card">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label={t('actionsFor', { docNumber: r.docNumber })}
+                                  title={t('actionsFor', { docNumber: r.docNumber })}
+                                >
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
@@ -306,7 +380,7 @@ export default function VendorReturnsPage() {
                                 <DropdownMenuItem asChild>
                                   <Link href={`/backoffice/vendor-returns/${r.id}`}>
                                     <Eye className="mr-2 h-4 w-4" />
-                                    View
+                                    {t('view')}
                                   </Link>
                                 </DropdownMenuItem>
                                 {r.status === 'DRAFT' && canManage && (
@@ -314,11 +388,11 @@ export default function VendorReturnsPage() {
                                     <DropdownMenuItem asChild>
                                       <Link href={`/backoffice/vendor-returns/${r.id}/edit`}>
                                         <Pencil className="mr-2 h-4 w-4" />
-                                        Edit
+                                        {t('edit')}
                                       </Link>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
-                                      onClick={() => handleProcess(r.id)}
+                                      onClick={() => setKonfirmasi({ jenis: 'proses', id: r.id, docNumber: r.docNumber })}
                                       disabled={processingId === r.id}
                                     >
                                       {processingId === r.id ? (
@@ -326,11 +400,11 @@ export default function VendorReturnsPage() {
                                       ) : (
                                         <PlayCircle className="mr-2 h-4 w-4" />
                                       )}
-                                      {processingId === r.id ? 'Processing...' : 'Process'}
+                                      {processingId === r.id ? t('processing') : t('process')}
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-destructive"
-                                      onClick={() => handleDelete(r.id)}
+                                      onClick={() => setKonfirmasi({ jenis: 'hapus', id: r.id, docNumber: r.docNumber })}
                                       disabled={deletingId === r.id}
                                     >
                                       {deletingId === r.id ? (
@@ -338,7 +412,7 @@ export default function VendorReturnsPage() {
                                       ) : (
                                         <Trash2 className="mr-2 h-4 w-4" />
                                       )}
-                                      {deletingId === r.id ? 'Deleting...' : 'Delete'}
+                                      {deletingId === r.id ? t('deleting') : t('delete')}
                                     </DropdownMenuItem>
                                   </>
                                 )}
@@ -361,6 +435,30 @@ export default function VendorReturnsPage() {
             )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={konfirmasi !== null} onOpenChange={(buka) => !buka && setKonfirmasi(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {konfirmasi?.jenis === 'hapus'
+                ? t('hapusJudul', { doc: konfirmasi?.docNumber ?? '' })
+                : t('prosesJudul', { doc: konfirmasi?.docNumber ?? '' })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {konfirmasi?.jenis === 'hapus' ? t('hapusIsi') : t('prosesIsi')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tUmum('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant={konfirmasi?.jenis === 'hapus' ? 'destructive' : 'default'}
+              onClick={() => void jalankanKonfirmasi()}
+            >
+              {konfirmasi?.jenis === 'hapus' ? t('delete') : t('process')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

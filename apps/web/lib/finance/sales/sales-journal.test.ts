@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, seededIds } from "@elorae/db";
 import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
 import { type PostingRole } from "@/lib/constants/journal-roles";
@@ -17,6 +17,9 @@ d("sales auto-journal (test bed only)", () => {
   let revId = "";
   let cogsId = "";
   let invId = "";
+  let invFgId = "";
+  let uomId = "";
+  let itemIds: string[] = [];
   let mappingSnapshot: MappingSnapshot;
 
   let soSeq = 0;
@@ -76,7 +79,10 @@ d("sales auto-journal (test bed only)", () => {
     cogsId = "";
     invId = "";
     token = Math.floor(Math.random() * 1_000_000);
-    mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
+    invFgId = "";
+    uomId = "";
+    itemIds = [];
+    mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY", "INVENTORY_FG"]);
     const user = await prisma.user.create({ data: { email: `test-sales-journal-${token}@test.local`, name: "Test Admin" } });
     userId = user.id;
     orderId = await makeOrder(1000, [300, 200]);
@@ -87,12 +93,14 @@ d("sales auto-journal (test bed only)", () => {
     revId = await mk(`9${token}2`, "Penjualan (test)", "PENDAPATAN");
     cogsId = await mk(`9${token}3`, "HPP (test)", "HPP");
     invId = await mk(`9${token}4`, "Persediaan (test)", "ASET");
+    invFgId = await mk(`9${token}5`, "Persediaan barang jadi (test)", "ASET");
     const map = async (role: string, id: string) =>
       prisma.journalAccountMapping.upsert({ where: { role: role as PostingRole }, create: { role: role as PostingRole, chartAccountId: id }, update: { chartAccountId: id } });
     await map("AR", arId);
     await map("SALES_REVENUE", revId);
     await map("COGS", cogsId);
     await map("INVENTORY", invId);
+    await map("INVENTORY_FG", invFgId);
   });
 
   afterEach(async () => {
@@ -126,9 +134,11 @@ d("sales auto-journal (test bed only)", () => {
         await prisma.journal.deleteMany({ where: { id: { in: ids.map(seededId) } } });
       }
     });
-    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: [arId, revId, cogsId, invId].map(seededId).filter(Boolean) } } }));
+    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: [arId, revId, cogsId, invId, invFgId].map(seededId).filter(Boolean) } } }));
     await step("items", () => prisma.salesOrderItem.deleteMany({ where: { salesOrder: { salesorderNo: { startsWith: `SO-${token}` } } } }));
     await step("orders", () => prisma.salesOrder.deleteMany({ where: { salesorderNo: { startsWith: `SO-${token}` } } }));
+    await step("catalog items", () => prisma.item.deleteMany({ where: { id: { in: seededIds(itemIds) } } }));
+    await step("uom", () => prisma.uOM.deleteMany({ where: { id: seededId(uomId) } }));
     await step("user", () => prisma.user.deleteMany({ where: { id: seededId(userId) } }));
 
     if (failures.length) throw new Error(`sales journal spec teardown failed — ${failures.join(" | ")}`);
@@ -226,5 +236,45 @@ d("sales auto-journal (test bed only)", () => {
     const b = await postSalesRevenueJournal(orderId, userId, prisma);
     expect(a).toMatchObject({ ok: true, created: true });
     expect(b).toMatchObject({ ok: true, created: false });
+  });
+
+  /*
+   * HPP penjualan mengkredit persediaan menurut tipe barang: barang jadi keluar dari
+   * INVENTORY_FG (yang didebit penerimaan barang jadi), kain/aksesori dari INVENTORY.
+   * Dulu semuanya mengkredit INVENTORY: persediaan bahan baku menjadi negatif sebesar
+   * HPP dan persediaan barang jadi tidak pernah berkurang (uji akuntansi 2026-10-07).
+   */
+  it("cogs credits INVENTORY_FG for finished goods and INVENTORY for materials", async () => {
+    const uom = await prisma.uOM.create({ data: { code: `U-SJ-${token}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+    const mkItem = async (sku: string, type: "FINISHED_GOOD" | "FABRIC") =>
+      (await prisma.item.create({ data: { sku, nameId: sku, nameEn: sku, type, uomId, isActive: true }, select: { id: true } })).id;
+    const fg = await mkItem(`SJ-FG-${token}`, "FINISHED_GOOD");
+    const kain = await mkItem(`SJ-KN-${token}`, "FABRIC");
+    itemIds = [fg, kain];
+    const oid = await makeOrder(1000, [300, 200, 50]);
+    const rows = await prisma.salesOrderItem.findMany({ where: { salesOrderId: oid }, orderBy: { salesorderDetailId: "asc" }, select: { id: true } });
+    await prisma.salesOrderItem.update({ where: { id: rows[0].id }, data: { itemId: fg } });
+    await prisma.salesOrderItem.update({ where: { id: rows[1].id }, data: { itemId: fg } });
+    await prisma.salesOrderItem.update({ where: { id: rows[2].id }, data: { itemId: kain } });
+
+    expect(await postSalesCogsJournal(oid, userId, prisma)).toMatchObject({ ok: true, created: true });
+    const j = await prisma.journal.findUnique({ where: { sourceType_sourceId: { sourceType: "SALESORDER_COGS", sourceId: oid } }, include: { lines: true } });
+    expect(j!.lines).toHaveLength(3);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === cogsId)!.debit)).toBe(550);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === invFgId)!.credit)).toBe(500);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === invId)!.credit)).toBe(50);
+  });
+
+  it("finished-goods cogs with INVENTORY_FG unmapped → UNMAPPED_ROLE INVENTORY_FG (never silently to INVENTORY)", async () => {
+    const uom = await prisma.uOM.create({ data: { code: `U-SJ2-${token}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+    const fg = (await prisma.item.create({ data: { sku: `SJ-FG2-${token}`, nameId: "fg", nameEn: "fg", type: "FINISHED_GOOD", uomId, isActive: true }, select: { id: true } })).id;
+    itemIds = [fg];
+    const oid = await makeOrder(1000, [400]);
+    const [baris] = await prisma.salesOrderItem.findMany({ where: { salesOrderId: oid }, select: { id: true } });
+    await prisma.salesOrderItem.update({ where: { id: baris.id }, data: { itemId: fg } });
+    await prisma.journalAccountMapping.deleteMany({ where: { role: "INVENTORY_FG" } });
+    expect(await postSalesCogsJournal(oid, userId, prisma)).toMatchObject({ ok: false, code: "UNMAPPED_ROLE", role: "INVENTORY_FG" });
   });
 });

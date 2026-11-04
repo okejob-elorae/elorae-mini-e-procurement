@@ -69,9 +69,11 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/lead-time': 'lead_time:view',
   '/backoffice/purchase-orders': 'purchase_orders:view',
   '/backoffice/supplier-payments': 'supplier_payments:view',
+  '/backoffice/supplier-payments/baru': 'supplier_payments:create',
   '/backoffice/inventory': 'inventory:view',
   '/backoffice/inventory/stock-opname': 'inventory_opname:view',
   '/backoffice/inventory/reconciliation': 'inventory_reconciliation:view',
+  '/backoffice/gudang-rusak': 'inventory:view',
   '/backoffice/sales-orders': 'sales_orders:view',
   '/backoffice/fulfillment': 'sales_orders:view',
   '/backoffice/field-sales-orders': 'field_sales_orders:view',
@@ -83,12 +85,60 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/packer': 'packer:menu',
   '/packer/record': 'packer:menu',
   '/api/packer': 'packer:menu',
+  '/backoffice/spg-sales/[id]': 'spg_sales:view',
+  // `/backoffice/spg-requests` sengaja TIDAK dipetakan: terbuka untuk pengawas
+  // SPG (`spg_sales:view`) ATAU pengelola toko (`stores:manage`) yang dikabari
+  // permintaan dari toko tanpa pemegang; halamannya memagari dirinya sendiri.
+  '/backoffice/spg-lost-sales': 'spg_sales:view',
+  '/backoffice/spg-transfers': 'spg_sales:view',
+  '/backoffice/spg-transfers/[id]': 'spg_sales:view',
+  '/backoffice/spg-tutup-hari': 'spg_sales:view',
+  '/backoffice/spg-pelanggan': 'spg_sales:view',
+  '/backoffice/jadwal-spg': 'spg_sales:view',
+  // `/backoffice/komisi-spg` (termasuk `/catatan-hadir` di bawahnya) sengaja TIDAK dipetakan lagi:
+  // Keuangan membayar gaji & komisi SPG dengan `spg_commission:pay` saja, tanpa `spg_sales:view`
+  // (keputusan pemilik 2026-11-02, Q9 + P28), dan pemeriksa pembayaran utang SPG
+  // (`payments:verify`) ikut membukanya — peta ini hanya bisa satu izin. Halamannya memagari
+  // dirinya sendiri (`bolehMembukaKomisiSpg`, `bolehMembukaCatatanHadir`).
+  // Retur pembeli SPG: daftar dan rinciannya dibuka pengawas SPG; tombol
+  // Setujui/Tolak memeriksa `spg_returns:approve` di halaman dan aksinya.
+  "/backoffice/retur-spg": "spg_sales:view",
+  '/backoffice/promo-konter': 'promos:view',
+  '/backoffice/items/size-charts': 'items:view',
+  '/backoffice/settings/spg': 'spg_sales:view',
+  '/backoffice/kinerja-spg': 'spg_sales:view',
+  // `/backoffice/barang-hilang` sengaja TIDAK dipetakan: terbuka untuk pengawas
+  // SPG (`spg_sales:view`), keuangan yang mencatat dan menandai pelunasan
+  // (`receivables:manage`) ATAU yang menetapkan beban barang hilang — di toko SPG
+  // maupun di perjalanan pengiriman (`receivables:decide_bearer`); halamannya
+  // memagari dirinya sendiri.
+  '/backoffice/items/labels': 'items:view',
+  // `/backoffice/spg-kiriman-rusak` sengaja TIDAK dipetakan: terbuka untuk
+  // pengawas SPG (`spg_sales:view`) ATAU gudang yang memutuskan (`inventory:manage`).
+  '/backoffice/inden': 'field_sales_orders:view',
+  '/backoffice/sales-lapangan': 'field_sales_orders:view',
+  '/backoffice/absensi': 'field_sales_orders:view',
+  '/backoffice/target-sales': 'field_sales_orders:view',
+  '/backoffice/izin': 'field_sales_orders:view',
+  '/backoffice/pengumuman': 'field_sales_orders:view',
+  '/backoffice/jadwal-kunjungan': 'field_sales_orders:view',
+  '/backoffice/laporan/komisi-salesman': 'field_sales_orders:approve',
+  // Laporan operasional yang dulu tab beranda: izin yang sama dengan beranda.
+  // Pencocokan awalan memilih rute terpanjang, jadi komisi di atas tetap
+  // memakai izinnya sendiri.
+  '/backoffice/laporan': 'dashboard:view',
+  // `/backoffice/biaya-perjalanan` dan `/backoffice/tukar-barang` sengaja TIDAK
+  // dipetakan: masing-masing terbuka untuk dua kelompok (sales ATAU keuangan;
+  // sales ATAU gudang), dan peta ini hanya bisa satu izin. Halamannya memagari
+  // dirinya sendiri (`bolehMelihatBiaya`, `bolehMelihatTukar`).
   '/backoffice/work-orders': 'work_orders:view',
   '/backoffice/work-orders/nota-register': 'nota_register:view',
   '/backoffice/forecast': 'forecast:view',
   '/backoffice/forecast/import': 'forecast:manage',
   '/backoffice/production/planning': 'production_planning:view',
+  '/backoffice/production/follow-up': 'production_planning:view',
   '/backoffice/production/colors': 'production_colors:view',
+  '/backoffice/production/palette': 'production_colors:view',
   '/backoffice/vendor-returns': 'vendor_returns:view',
   '/backoffice/returns': 'sales_returns:view',
   '/backoffice/reports/hpp': 'reports_hpp:view',
@@ -99,29 +149,77 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/settings/uom': 'settings_uom:view',
   '/backoffice/settings/security': 'settings_security:view',
   '/backoffice/settings/rbac': 'settings_rbac:view',
-  '/backoffice/profile-accounts': 'settings_rbac:view',
+  // `/backoffice/profile-accounts` sengaja TIDAK dipetakan lagi: Akun Profil
+  // ditutup (keputusan pemilik 2026-11-01) dan setiap rutenya kini hanya
+  // meneruskan ke Pengaturan → Pengguna / Peran & izin, yang memagari dirinya.
+  '/backoffice/settings/users': 'settings_security:manage',
   '/backoffice/jubelio/admin': 'jubelio_admin:view',
   '/backoffice/jubelio/settings': 'settings_security:view',
   '/backoffice/jubelio/categories': 'settings_security:view',
   '/backoffice/jubelio/migration': 'settings_security:view',
+  // Konfirmasi harga sebelum dikirim ke Jubelio — halamannya dibuka izin persetujuannya sendiri.
+  "/backoffice/jubelio/harga": "jubelio_prices:confirm",
   '/backoffice/jubelio/couriers': 'settings_security:view',
   '/backoffice/finance/coa': 'coa:view',
   '/backoffice/finance/faktur-pajak': 'tax_invoices:view',
   '/backoffice/finance/piutang': 'receivables:view',
   '/backoffice/finance/payments': 'payments:manage',
-  '/backoffice/finance/collections': 'collections:manage',
-  '/backoffice/settings/piutang': 'collections:manage',
+  // `/backoffice/finance/collections` sengaja TIDAK dipetakan: halamannya
+  // terbuka untuk `collections:manage` ATAU `payments:verify` (keputusan
+  // pemilik 2026-11-01) dan memagari dirinya sendiri; peta ini hanya bisa
+  // menguji satu izin.
+  // Ambang pengingat jatuh tempo: halaman = izin aksinya (`getOverdueThresholds`/
+  // `setOverdueThresholds`), keputusan pemilik 2026-11-02 (Q14). MENERIMA pengingatnya adalah
+  // izin terpisah, `receivables:overdue_reminder` (P48).
+  "/backoffice/settings/piutang": "receivables:manage",
   "/backoffice/settings/purchasing": "purchase_orders:edit",
   "/backoffice/settings/spg-commission": "spg_commission:manage",
   "/backoffice/item-requests": "item_requests:view",
   "/backoffice/vendor-bills": "vendor_bills:view",
   "/backoffice/vendor-payments": "supplier_payments:view",
+  '/backoffice/finance/pph-dipotong': 'journals:view',
+  // Kas & bank (voucher BKK/BKMK/transfer, kas kecil, kategori) dan rekonsiliasi bank.
+  '/backoffice/finance/kas': 'journals:view',
+  '/backoffice/finance/kas/baru': 'journals:manage',
+  '/backoffice/finance/rekonsiliasi-bank': 'journals:view',
+  '/backoffice/finance/tutup-buku': 'journals:view',
+  '/backoffice/finance/integritas': 'journals:view',
+  '/backoffice/finance/mulai-buku-besar': 'journals:view',
+  '/backoffice/finance/pajak': 'journals:view',
+  // Ekspor faktur keluaran dibuka pembaca faktur pajak (tim pajak), bukan pembaca jurnal.
+  '/backoffice/finance/pajak/faktur-keluaran': 'tax_invoices:view',
+  '/backoffice/finance/rekonsiliasi-piutang': 'journals:view',
+  '/backoffice/finance/rekonsiliasi-persediaan': 'journals:view',
+  '/backoffice/finance/saldo-awal': 'journals:view',
+  // Isi anggaran: pembaca jurnal (keuangan); realisasi vs anggaran: pembaca
+  // laporan keuangan. Awalan terpanjang menang, jadi `/realisasi` memakai izinnya sendiri.
+  '/backoffice/finance/anggaran': 'journals:view',
+  '/backoffice/finance/anggaran/realisasi': 'finance_reports:view',
+  '/backoffice/finance/reports/perbandingan': 'finance_reports:view',
+  '/backoffice/finance/reports/rasio': 'finance_reports:view',
+  '/backoffice/finance/reports/laba-kanal': 'finance_reports:view',
+  // Aset tetap & jurnal berulang: melihat journals:view; formulir (/baru, /ubah) menjaga journals:manage sendiri.
+  '/backoffice/finance/aset-tetap': 'journals:view',
+  '/backoffice/finance/jurnal-berulang': 'journals:view',
+  // Modul piutang sengaja TIDAK dipetakan — `/backoffice/piutang`, `pelunasan`
+  // (termasuk `giro` dan `baru`), `pelunasan-dasbor`, `retur-toko`, `kontrabon`,
+  // `beban-selisih`, `tugas-tagih`, `arsip-retur`, `konsinyasi`, dan cetakannya
+  // di `/print/{bkm,retur,faktur,konsi}`. Pembaca sahnya lintas tugas (keuangan
+  // membuka BKM yang ia verifikasi, gudang membuka nota retur yang ia hitung),
+  // sedangkan peta ini hanya bisa satu izin — dan awalan `/backoffice/pelunasan`
+  // ikut mencocokkan `/backoffice/pelunasan-dasbor`. Setiap halaman (dan aksi
+  // cetaknya) memagari dirinya sendiri lewat `lib/receivables/izin.ts`.
+  // `/backoffice/archive` juga tidak: pembelian ATAU pembaca piutang (hanya
+  // folder "Nota toko"); halamannya memagari dirinya sendiri.
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
   '/api/items': 'items:view',
   '/api/uoms': 'settings_uom:view',
   '/api/production/colors': 'production_colors:view',
+  // `/api/notifications*` sengaja TIDAK dipetakan: setiap handler-nya memeriksa sesi dan hanya
+  // menyentuh baris milik `session.user.id`. Memetakannya ke `dashboard:view` dulu membuat salesman
+  // dan SPG (yang tidak punya izin itu) mendapat 403 untuk lonceng, tandai-dibaca, dan daftar push.
 };
 
 /**
@@ -142,7 +240,9 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/fulfillment',
   '/backoffice/forecast',
   '/backoffice/production/planning',
+  '/backoffice/production/follow-up',
   '/backoffice/production/colors',
+  '/backoffice/production/palette',
   '/backoffice/vendor-returns',
   '/backoffice/reports/hpp',
   '/backoffice/audit-trail',
@@ -150,15 +250,16 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/jubelio/settings',
   '/backoffice/jubelio/categories',
   '/backoffice/jubelio/migration',
+  "/backoffice/jubelio/harga",
   '/backoffice/jubelio/couriers',
   '/backoffice/settings/documents',
   '/backoffice/settings/item-codes',
   '/backoffice/settings/tax',
   '/backoffice/settings/uom',
   '/backoffice/settings/security',
-  // Profile Accounts / legacy RBAC are ADMIN-gated in the page — omit from
-  // first-allowed so a non-ADMIN with settings_rbac:view cannot loop
-  // /backoffice → settings/rbac → profile-accounts → /backoffice.
+  // Peran & izin is ADMIN-gated in the page — omit from first-allowed so a
+  // non-ADMIN with settings_rbac:view cannot loop /backoffice → settings/rbac
+  // → /backoffice.
 ];
 
 /**
@@ -222,6 +323,39 @@ export const PERMISSIONS = {
   // Sales Orders
   SALES_ORDERS_VIEW: 'sales_orders:view',
   SALES_ORDERS_FULFILL: 'sales_orders:fulfill',
+  // Receivables & collections
+  RECEIVABLES_VIEW: 'receivables:view',
+  RECEIVABLES_MANAGE: 'receivables:manage',
+  // Who bears LOST GOODS — at an SPG store or in transit, including the value of a carrier
+  // claim. A manager decision (owner, 2026-11-01), held by ADMIN only until the owner grants
+  // it in Peran & izin. Store-return shortfalls moved to their own code below (owner
+  // 2026-11-02, P22); every role holding this code on the day of the split was given both
+  // (seed-owner-2026-11-02b-permissions.sql).
+  RECEIVABLES_DECIDE_BEARER: "receivables:decide_bearer",
+  // Who bears a STORE-RETURN SHORTFALL (warehouse count below the return note) — split from
+  // receivables:decide_bearer (owner 2026-11-02, P22). Manager decision, admin only by default.
+  STORE_RETURNS_DECIDE_SHORTFALL: "store_returns:decide_shortfall",
+  // RECEIVING the office overdue reminder (AR_OVERDUE) — its own code so Finance needs no
+  // receivables:manage (owner 2026-11-02, P48). Admin and KEUANGAN by default. Changing the
+  // thresholds is receivables:manage (Q14).
+  RECEIVABLES_OVERDUE_REMINDER: "receivables:overdue_reminder",
+  // Creative marketing — content calendar, KOL briefs, KOL master.
+  // Held apart from sales: the people who plan an Instagram post are not the
+  // people who approve a field-sales order, and neither should inherit the
+  // other's screens just because both touch "marketing".
+  CREATIVE_VIEW: 'creative:view',
+  CREATIVE_MANAGE: 'creative:manage',
+  // Consignment — held separately so a sales-admin or tax-admin role can be
+  // given the consignment cycle WITHOUT being handed the receivables archive,
+  // which carries photographed store documents.
+  CONSIGNMENT_VIEW: 'consignment:view',
+  CONSIGNMENT_MANAGE: 'consignment:manage',
+  // The cycle's three numbers belong to three people (brief): the sales-note
+  // number to the sales admin, the tax-invoice number to the tax admin, and
+  // locking the official figures to the manager. One code each.
+  CONSIGNMENT_NOTE_NUMBER: "consignment:note_number",
+  CONSIGNMENT_TAX_NUMBER: "consignment:tax_number",
+  CONSIGNMENT_LOCK: "consignment:lock",
   // Field Sales Orders
   FIELD_SALES_ORDERS_VIEW: 'field_sales_orders:view',
   FIELD_SALES_ORDERS_APPROVE: 'field_sales_orders:approve',
@@ -230,6 +364,11 @@ export const PERMISSIONS = {
   // Delivery Shipments
   DELIVERIES_SHIP: 'deliveries:ship',
   DELIVERIES_POD: 'deliveries:pod',
+  // "Tidak jadi dikirim" on a PUTUS shipment whose nota tagihan is already issued: the nota, its
+  // receivable and tax invoice are voided and Finance is told at once (owner 2026-11-02, P25 +
+  // P41a: Admin Penjualan presses it alone, no second approval). Admin and ADMIN_PENJUALAN by
+  // default. A KONSI shipment is still cancelled with deliveries:ship.
+  DELIVERIES_CANCEL_NOTA: "deliveries:cancel_nota",
   // Purchase Orders
   PURCHASE_ORDERS_VIEW: 'purchase_orders:view',
   PURCHASE_ORDERS_CREATE: 'purchase_orders:create',
@@ -247,14 +386,19 @@ export const PERMISSIONS = {
   INVENTORY_OPNAME_APPROVE: 'inventory_opname:approve',
   INVENTORY_RECONCILIATION_VIEW: 'inventory_reconciliation:view',
   INVENTORY_RECONCILIATION_MANAGE: 'inventory_reconciliation:manage',
+  // Confirming a goods receipt recorded WITHOUT a PO, before it enters stock or payables
+  // (owner 2026-11-02, P51a: "tidak usah dihapus, tapi ada konfirmasi dari admin"). Only the
+  // confirmation was decided; there is no decline. Manager decision, admin only by default.
+  GOODS_RECEIPTS_CONFIRM_NO_PO: "goods_receipts:confirm_no_po",
   // Work Orders
   WORK_ORDERS_VIEW: 'work_orders:view',
   WORK_ORDERS_CREATE: 'work_orders:create',
   WORK_ORDERS_MANAGE: 'work_orders:manage',
   // Nota Register
   NOTA_REGISTER_VIEW: 'nota_register:view',
-  // Production Colors (Pantone TCX)
+  // Production Colors (Pantone TCX) + palet warna & warna sablon
   PRODUCTION_COLORS_VIEW: 'production_colors:view',
+  PRODUCTION_COLORS_MANAGE: 'production_colors:manage',
   // S&OP Forecast
   FORECAST_VIEW: 'forecast:view',
   FORECAST_MANAGE: 'forecast:manage',
@@ -288,12 +432,20 @@ export const PERMISSIONS = {
   // Jubelio admin — admin-only. Not granted to non-admin roles; only the
   // wildcard '*' (system/admin role) satisfies it.
   JUBELIO_ADMIN_VIEW: 'jubelio_admin:view',
+  // Confirming a selling price before it is sent to Jubelio (owner 2026-11-02: admin only by
+  // default, grantable in Peran & izin).
+  JUBELIO_PRICES_CONFIRM: "jubelio_prices:confirm",
   // Chart of Accounts
   COA_VIEW: 'coa:view',
   COA_MANAGE: 'coa:manage',
   // Stores (Field Sales — SFA)
   STORES_VIEW: "stores:view",
   STORES_MANAGE: "stores:manage",
+  // Store-level approvals split out of stores:manage / field_sales_orders:approve
+  // (owner, 2026-11-01: approvals are admin-only by default, grantable).
+  STORE_STOCKTAKES_APPROVE: "store_stocktakes:approve",
+  STORE_TRANSFERS_APPROVE: "store_transfers:approve",
+  STORE_TRANSFERS_DECIDE_SHORTFALL: "store_transfers:decide_shortfall",
   // Promos
   PROMOS_VIEW: "promos:view",
   PROMOS_MANAGE: "promos:manage",
@@ -302,14 +454,33 @@ export const PERMISSIONS = {
   // SPG Sales (in-store promoter)
   SPG_SALES_RECORD: "spg_sales:record",
   SPG_SALES_VIEW: "spg_sales:view",
-  // SPG Commission (rates per item category)
+  // SPG Commission (rates per item category, and each SPG's monthly base salary)
   SPG_COMMISSION_MANAGE: "spg_commission:manage",
+  // Marking SPG pay & commission paid (consignment and putus stores). KEUANGAN holds it by default
+  // (owner 2026-11-02, Q9) and opens only the Komisi SPG page with it, no other SPG screen (P28).
+  SPG_COMMISSION_PAY: "spg_commission:pay",
+  // Approving, rejecting or reopening the monthly work schedule an SPG fills on her phone (owner
+  // 2026-11-02, P7c). Manager decision, admin only by default.
+  SPG_SCHEDULES_APPROVE: "spg_schedules:approve",
+  // Entering a store check-in record (typed or Excel) for an SPG who did not fill her schedule
+  // (owner 2026-11-02, P7d + P7e): admin and ADMIN_PENJUALAN by default.
+  SPG_ATTENDANCE_RECORD: "spg_attendance:record",
+  // Cross-checking that record before it counts for base salary (owner 2026-11-02, P61a: "admin
+  // keuangan saja yang memeriksa"): admin and KEUANGAN by default; never the person who entered it.
+  SPG_ATTENDANCE_VERIFY: "spg_attendance:verify",
+  // SPG shopper returns — approving a reported return (owner 2026-11-02: admin and ADMIN_PENJUALAN
+  // by default, grantable).
+  SPG_RETURNS_APPROVE: "spg_returns:approve",
   // Request Item (material requests -> PO)
   ITEM_REQUESTS_VIEW: "item_requests:view",
   ITEM_REQUESTS_MANAGE: "item_requests:manage",
   // Vendor billing (vendor invoices against PO items and WO steps)
   VENDOR_BILLS_VIEW: "vendor_bills:view",
   VENDOR_BILLS_MANAGE: "vendor_bills:manage",
+  // Deciding a supplier invoice whose price differs from the recorded payable, higher or lower:
+  // accept it, or correct the invoice down (owner 2026-11-02, P27 + P53). Manager decision,
+  // admin only by default.
+  VENDOR_BILLS_DECIDE_PRICE: "vendor_bills:decide_price",
   // Finance — Settlements
   SETTLEMENTS_VIEW: "finance:settlements:view",
   SETTLEMENTS_MANAGE: "finance:settlements:manage",
@@ -328,8 +499,11 @@ export const PERMISSIONS = {
   FIELD_RETURNS_MANAGE: "field_returns:manage",
   FIELD_RETURNS_WRITEOFF: "field_returns:writeoff",
   // Finance — AR (Piutang) + Payments
-  RECEIVABLES_VIEW: "receivables:view",
   PAYMENTS_MANAGE: "payments:manage",
+  // Checking a store payment against the bank statement (BKM, giro clearing).
+  // Admin and finance (owner, 2026-10-29); the writer still refuses whoever
+  // reported or recorded the payment (PEMERIKSA_SAMA).
+  PAYMENTS_VERIFY: "payments:verify",
   // Finance — Collections
   COLLECTIONS_COLLECT: "collections:collect",
   COLLECTIONS_MANAGE: "collections:manage",

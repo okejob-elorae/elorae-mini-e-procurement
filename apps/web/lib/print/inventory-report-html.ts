@@ -96,7 +96,7 @@ export function buildInventoryReportPrintHtml(
           <td>${esc(d.name)}</td>
           <td>${esc(d.type)}</td>
           <td class="uom">${esc(d.uomCode)}</td>
-          <td class="right">${Number(d.qtyOnHand).toLocaleString()}</td>
+          <td class="right">${Number(d.qtyOnHand).toLocaleString('id-ID')}</td>
           <td class="right">${Number(d.avgCost).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
           <td class="right">${Number(d.totalValue).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
           <td class="right">${Number(d.percentageOfTotal).toFixed(2)}%</td>
@@ -112,8 +112,8 @@ export function buildInventoryReportPrintHtml(
               `<tr>
                 <td class="uom">${esc(a.sku)}</td>
                 <td>${esc(a.name)}</td>
-                <td class="right">${Number(a.qtyOnHand).toLocaleString()}</td>
-                <td class="right">${Number(a.reorderPoint).toLocaleString()}</td>
+                <td class="right">${Number(a.qtyOnHand).toLocaleString('id-ID')}</td>
+                <td class="right">${Number(a.reorderPoint).toLocaleString('id-ID')}</td>
               </tr>`
           )
           .join('')
@@ -150,7 +150,7 @@ ${printPageLandscape}
     </div>
     <div>
       <div class="sk">${esc(labels.totalQty)}</div>
-      <div class="sv">${summary.totalQuantity.toLocaleString()}</div>
+      <div class="sv">${summary.totalQuantity.toLocaleString('id-ID')}</div>
     </div>
     <div>
       <div class="sk">${esc(labels.totalValue)}</div>

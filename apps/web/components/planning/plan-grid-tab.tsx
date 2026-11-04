@@ -6,7 +6,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
-import type { ComboboxOption, PlanCategoryDetail, PlanYearDetail } from "./types";
+import type {
+  ComboboxOption,
+  PlanCategoryDetail,
+  PlanStageAddData,
+  PlanStageUpdateData,
+  PlanYearDetail,
+} from "./types";
 import { formatPlanNumber } from "./types";
 import { CategoryTreeRow } from "./category-tree-row";
 
@@ -31,14 +37,8 @@ type PlanGridTabProps = {
   onSaveMonth: (categoryId: string, month: number, targetQty: number) => Promise<void>;
   onResetMonth: (categoryId: string, month: number) => Promise<void>;
   onResetAllMonths: (categoryId: string) => Promise<void>;
-  onAddStage: (
-    categoryId: string,
-    data: { name: string; targetQty: number; targetMonth?: number }
-  ) => Promise<void>;
-  onUpdateStage: (
-    stageId: string,
-    data: Partial<{ name: string; targetQty: number; supplierId: string | null }>
-  ) => Promise<void>;
+  onAddStage: (categoryId: string, data: PlanStageAddData) => Promise<boolean>;
+  onUpdateStage: (stageId: string, data: PlanStageUpdateData) => Promise<boolean>;
   onDeleteStage: (stageId: string) => Promise<void>;
   onCreateWo: (stageId: string) => Promise<void>;
 };
@@ -118,12 +118,16 @@ export function PlanGridTab(props: PlanGridTabProps) {
       onSaveMonth(category.id, month, targetQty).then(onRefresh),
     onResetMonth: (month: number) => onResetMonth(category.id, month).then(onRefresh),
     onResetAllMonths: () => onResetAllMonths(category.id).then(onRefresh),
-    onAddStage: (data: { name: string; targetQty: number; targetMonth?: number }) =>
-      onAddStage(category.id, data).then(onRefresh),
-    onUpdateStage: (
-      stageId: string,
-      data: Partial<{ name: string; targetQty: number; supplierId: string | null }>
-    ) => onUpdateStage(stageId, data).then(onRefresh),
+    onAddStage: (data: PlanStageAddData) =>
+      onAddStage(category.id, data).then(async (ok) => {
+        if (ok) await onRefresh();
+        return ok;
+      }),
+    onUpdateStage: (stageId: string, data: PlanStageUpdateData) =>
+      onUpdateStage(stageId, data).then(async (ok) => {
+        if (ok) await onRefresh();
+        return ok;
+      }),
     onDeleteStage: (stageId: string) => onDeleteStage(stageId).then(onRefresh),
     onCreateWo: (stageId: string) => onCreateWo(stageId),
   });
@@ -146,6 +150,7 @@ export function PlanGridTab(props: PlanGridTabProps) {
         setExpandedDetails((p) => ({ ...p, [category.id]: !p[category.id] }))
       }
       disabled={disabled}
+      canManage={canManage}
       canCreateWo={canCreateWo}
       allowWoWhenLocked
       itemOptions={itemOptions}

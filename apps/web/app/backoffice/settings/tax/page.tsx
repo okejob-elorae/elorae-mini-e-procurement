@@ -10,13 +10,15 @@ import { Input } from '@/components/ui/input';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { KartuSuratPo } from './KartuSuratPo';
+import { KartuPajakPerusahaan } from './KartuPajakPerusahaan';
 
 export default function TaxSettingsPage() {
   const t = useTranslations('tax');
@@ -43,7 +45,7 @@ export default function TaxSettingsPage() {
   const handleSave = async () => {
     const num = Number.parseFloat(rate);
     if (!Number.isFinite(num) || num < 0 || num > 100) {
-      toast.error('Enter a percentage between 0 and 100');
+      toast.error(t('invalidRate'));
       return;
     }
     setSaving(true);
@@ -67,21 +69,20 @@ export default function TaxSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
-        <p className="text-muted-foreground">{t('pageDescription')}</p>
+        <TombolBantuan judul={t('pageTitle')} />
       </div>
+
+      <KartuPajakPerusahaan />
 
       <Card className="max-w-md">
         <CardHeader>
-          <CardTitle>PPN rate</CardTitle>
-          <CardDescription>
-            When a PO line is marked &quot;Exclude PPN&quot;, this rate is applied to the line price for work order material cost.
-          </CardDescription>
+          <CardTitle>{t('tarifPo.judul')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="ppn-rate">{t('ppnRateLabel')}</Label>
+            <Label htmlFor="ppn-rate">{t('tarifPo.label')}</Label>
             <Input
               id="ppn-rate"
               type="number"
@@ -99,6 +100,8 @@ export default function TaxSettingsPage() {
           </Button>
         </CardContent>
       </Card>
+
+      <KartuSuratPo />
     </div>
   );
 }

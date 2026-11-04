@@ -21,6 +21,7 @@ d("sales return auto-journal (test bed only)", () => {
   let revId = "";
   let cogsId = "";
   let invId = "";
+  let invFgId = "";
   let mappingSnapshot: MappingSnapshot;
   let cutoverSnapshot: string | null;
 
@@ -165,7 +166,8 @@ d("sales return auto-journal (test bed only)", () => {
     orderId = "";
     returnId = "";
     token = Math.floor(Math.random() * 1_000_000);
-    mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
+    invFgId = "";
+    mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY", "INVENTORY_FG"]);
     const setting = await prisma.systemSetting.findUnique({
       where: { key: GL_CUTOVER_SETTING_KEY },
       select: { value: true },
@@ -185,8 +187,9 @@ d("sales return auto-journal (test bed only)", () => {
     revId = await mk(`9${token}2`, "PENDAPATAN");
     cogsId = await mk(`9${token}3`, "HPP");
     invId = await mk(`9${token}4`, "ASET");
+    invFgId = await mk(`9${token}5`, "ASET");
     const map = async (role: string, id: string) => prisma.journalAccountMapping.upsert({ where: { role: role as never }, create: { role: role as never, chartAccountId: id }, update: { chartAccountId: id } });
-    await map("AR", arId); await map("SALES_REVENUE", revId); await map("COGS", cogsId); await map("INVENTORY", invId);
+    await map("AR", arId); await map("SALES_REVENUE", revId); await map("COGS", cogsId); await map("INVENTORY", invId); await map("INVENTORY_FG", invFgId);
 
     orderId = await makeOrder();
     returnId = await makeReturn();
@@ -234,7 +237,7 @@ d("sales return auto-journal (test bed only)", () => {
         await prisma.journal.deleteMany({ where: { id: { in: jids.map(seededId) } } });
       }
     });
-    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: [arId, revId, cogsId, invId].map(seededId).filter(Boolean) } } }));
+    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: [arId, revId, cogsId, invId, invFgId].map(seededId).filter(Boolean) } } }));
     await step("returnItems", () => prisma.salesReturnItem.deleteMany({ where: { salesReturnId: seededId(returnId) } }));
     await step("returns", () => prisma.salesReturn.deleteMany({ where: { id: seededId(returnId) } }));
     await step("orderItems", () => prisma.salesOrderItem.deleteMany({ where: { salesOrderId: seededId(orderId) } }));
@@ -261,6 +264,22 @@ d("sales return auto-journal (test bed only)", () => {
     expect(r).toMatchObject({ ok: true, created: true });
     const j = await prisma.journal.findUnique({ where: { sourceType_sourceId: { sourceType: "SALESRETURN_COGS", sourceId: returnId } }, include: { lines: true } });
     expect(Number(j!.lines.find((l) => l.chartAccountId === invId)!.debit)).toBe(220);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === cogsId)!.credit)).toBe(220);
+  });
+
+  /*
+   * Barang jadi yang kembali ke rak masuk ke INVENTORY_FG — akun yang dikredit HPP
+   * penjualannya. Dulu retur selalu mendebit INVENTORY (bahan baku).
+   */
+  it("cogs reversal of finished goods debits INVENTORY_FG, not INVENTORY", async () => {
+    const accepted = await prisma.salesReturnItem.findMany({ where: { salesReturnId: returnId, decision: "ACCEPTED" }, select: { id: true } });
+    for (const a of accepted) await prisma.salesReturnItem.update({ where: { id: a.id }, data: { itemId } });
+    const r = await postSalesReturnCogsJournal(returnId, userId, prisma);
+    expect(r).toMatchObject({ ok: true, created: true });
+    const j = await prisma.journal.findUnique({ where: { sourceType_sourceId: { sourceType: "SALESRETURN_COGS", sourceId: returnId } }, include: { lines: true } });
+    expect(j!.lines).toHaveLength(2);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === invFgId)!.debit)).toBe(220);
+    expect(j!.lines.find((l) => l.chartAccountId === invId)).toBeUndefined();
     expect(Number(j!.lines.find((l) => l.chartAccountId === cogsId)!.credit)).toBe(220);
   });
 

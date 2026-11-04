@@ -274,8 +274,10 @@ d("createKonsiPushOrder (test bed only)", () => {
   describe("credit gate", () => {
     /**
      * Credit exposure without the cost of a delivery: an APPROVED putus order with nothing
-     * delivered counts its whole total as undelivered residual. No lines, so it reserves nothing;
-     * tracking its id lets the fixture teardown remove it.
+     * delivered counts its whole total as not yet on a nota. Exposure is read from the order's open
+     * LINES (`nilaiBelumDinota`), so it carries one open line worth its whole total (deliveredQty 0);
+     * no reservation is made for it. Tracking its id lets the fixture teardown remove the line and
+     * the order (lines by `orderId`, through `seededId`).
      */
     const seedExposure = async (total: number) => {
       const order = await prisma.fieldSalesOrder.create({
@@ -287,6 +289,7 @@ d("createKonsiPushOrder (test bed only)", () => {
           status: "APPROVED",
           subtotal: total,
           total,
+          lines: { create: [{ itemId: state.itemId, variantSku: "", productName: "X", qty: 1, unitPrice: total, lineTotal: total, deliveredQty: 0 }] },
         },
       });
       state.orderIds.push(order.id);
@@ -364,8 +367,17 @@ d("createKonsiPushOrder (test bed only)", () => {
       method: "EXPEDITION",
       lines: [{ orderLineId: orderLine.id, qty: 4 }],
       packedById: state.userId,
+      idempotencyKey: `PUSH-${state.run}`,
     });
-    await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: `RESI-PUSH-${state.run}` });
+    /* An EXPEDITION shipment needs resi, weight (P35) and the handover photo (P43) before it ships. */
+    await updateShipmentTracking({
+      shipmentId,
+      carrierName: "JNE",
+      resiNumber: `RESI-PUSH-${state.run}`,
+      weightKg: 1.5,
+      handoverPhotoUrl: "https://r2.example/handover.jpg",
+      handoverPhotoR2Key: `delivery-handover/${shipmentId}/handover.jpg`,
+    });
     await shipDeliveryShipment({ shipmentId, shippedById: state.userId });
     const shipment = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId }, include: { lines: true } });
     await completeDeliveryShipment({

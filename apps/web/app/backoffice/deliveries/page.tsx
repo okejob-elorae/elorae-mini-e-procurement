@@ -12,6 +12,8 @@ export default async function DeliveriesPage() {
   const permissions = session?.user?.permissions ?? [];
   const canShip = hasPermission(permissions, PERMISSIONS.DELIVERIES_SHIP);
   const canPod = hasPermission(permissions, PERMISSIONS.DELIVERIES_POD);
+  /* P41/P41a: Admin Penjualan cancels a putus shipment whose nota exists — reaching it needs this page. */
+  const canCancelNota = hasPermission(permissions, PERMISSIONS.DELIVERIES_CANCEL_NOTA);
   /**
    * EITHER permission opens the route. `deliveries:pod` exists for the actor who closes a
    * delivery against proof, and completion is only reachable from this register — gating entry on
@@ -19,7 +21,7 @@ export default async function DeliveriesPage() {
    * inside still checks its own permission, and the Complete button is gated on `canPod` below,
    * so a ship-only user no longer sees a button that would 403 on submit.
    */
-  if (!session?.user?.id || (!canShip && !canPod)) {
+  if (!session?.user?.id || (!canShip && !canPod && !canCancelNota)) {
     redirect("/backoffice");
   }
 
@@ -37,6 +39,7 @@ export default async function DeliveriesPage() {
       carriers={carriers}
       canShip={canShip}
       canPod={canPod}
+      canCancelNota={canCancelNota}
     />
   );
 }

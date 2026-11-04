@@ -87,7 +87,7 @@ async function notifySalesmanOfRejection(
 
 /**
  * Rejects a submitted store settlement: CAS-flips `PENDING -> REJECTED` and tells the salesman
- * why, surfaced on the existing `/pwa/notifications` bell.
+ * why, surfaced in Kabar (`/pwa/kabar`), the phone's one notification list.
  *
  * Posts no journal and moves no money ITSELF, and reverses nothing either — there is no
  * compensating path here for a `Payment` that already exists. The usual case is that none does: a

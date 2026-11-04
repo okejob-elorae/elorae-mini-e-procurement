@@ -3,6 +3,24 @@
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
+import { bacaRiwayatHpp } from "@/lib/items/riwayat-hpp-queries";
+import { HALAMAN_RIWAYAT_HPP, type RiwayatHpp } from "@/lib/items/riwayat-hpp";
+
+/**
+ * Riwayat HPP barang (setiap penerimaan barang jadi dan pembelian, terbaru
+ * dulu) — layar "Riwayat HPP" di halaman barang memanggil ini untuk "Muat lagi"
+ * dengan penunjuk `sebelum` = `berikutnya` halaman terakhirnya, jadi riwayat
+ * sepanjang apa pun bisa dibuka sampai habis. Hanya membaca.
+ */
+export async function getItemHppHistory(
+  itemId: string,
+  opts: { sebelum?: string | null; limit?: number } = {},
+): Promise<RiwayatHpp> {
+  const session = await auth();
+  if (!session) throw new Error("Unauthorized");
+  requirePermission(session.user.permissions, PERMISSIONS.ITEMS_VIEW);
+  return bacaRiwayatHpp(prisma, itemId, { sebelum: opts.sebelum ?? null, batas: opts.limit ?? HALAMAN_RIWAYAT_HPP });
+}
 
 export type ItemPriceHistoryRow = {
   id: string;

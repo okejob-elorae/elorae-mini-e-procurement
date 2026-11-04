@@ -5,8 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { Card } from "@/components/ui/card";
+import { ArrowDown, ArrowUp, ArrowUpDown, PackageCheck } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -32,7 +33,7 @@ import {
   type SalesOrderFulfillmentStatus,
 } from "@/lib/constants/enums";
 import { CHANNEL_BADGE, STATUS_BADGE } from "@/lib/sales-orders/badges";
-import { formatDateTime } from "@/lib/sales-orders/format";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { FULFILLMENT_FORBIDDEN_REASON } from "@/lib/sales-orders/fulfillment-result";
 import {
   batchFinishPickAction,
@@ -42,6 +43,7 @@ import {
   type QueueSortDir,
   type QueueSortField,
 } from "@/app/actions/fulfillment-queue";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 
 const ROUTE = "/backoffice/fulfillment";
 
@@ -76,10 +78,12 @@ export function FulfillmentQueueClient(props: Props) {
   const [isPending, startTransition] = useTransition();
   const [searchInput, setSearchInput] = useState(props.search);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
+  // Baris berganti (halaman, saringan, sesudah aksi) → pilihan lama dibuang, di render yang sama.
+  const [barisTerakhir, setBarisTerakhir] = useState(props.rows);
+  if (barisTerakhir !== props.rows) {
+    setBarisTerakhir(props.rows);
     setSelected(new Set());
-  }, [props.rows]);
+  }
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -113,6 +117,15 @@ export function FulfillmentQueueClient(props: Props) {
   function reset(): void {
     setSearchInput("");
     startTransition(() => router.push(ROUTE));
+  }
+
+  /*
+   * The queue defaults to PENDING, so going back to the bare route would keep that narrowing.
+   * The empty state's "clear filters" has to show every order, which needs the explicit ALL.
+   */
+  function clearFilters(): void {
+    setSearchInput("");
+    startTransition(() => router.push(`${ROUTE}?fulfillmentStatus=ALL`));
   }
 
   function toggleRow(id: string): void {
@@ -165,18 +178,19 @@ export function FulfillmentQueueClient(props: Props) {
   }
 
   const allSelected = props.rows.length > 0 && selected.size === props.rows.length;
+  const saringanPengguna = !!(props.channel || props.search || props.dateFrom || props.dateTo);
+  // Bawaan halaman ("Menunggu") bukan saringan yang dipilih pengguna.
+  const hanyaBawaan = !saringanPengguna && props.fulfillmentStatus === "PENDING";
+  const hasFilter = saringanPengguna || props.fulfillmentStatus !== "ALL";
   const someSelected = selected.size > 0;
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">{t("pageTitle")}</h1>
-        <p className="text-muted-foreground">{t("pageSubtitle")}</p>
-      </div>
+      <PageHeader title={t("pageTitle")} />
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-7">
-          <div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="w-full sm:w-44">
             <label className="text-xs text-muted-foreground mb-1 block">
               {t("filter.fulfillmentStatus")}
             </label>
@@ -197,7 +211,7 @@ export function FulfillmentQueueClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
-          <div>
+          <div className="w-full sm:w-40">
             <label className="text-xs text-muted-foreground mb-1 block">
               {t("filter.channel")}
             </label>
@@ -218,7 +232,7 @@ export function FulfillmentQueueClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
-          <div className="lg:col-span-2">
+          <div className="min-w-[16rem] flex-[1_1_18rem]">
             <label className="text-xs text-muted-foreground mb-1 block">
               {t("filter.search")}
             </label>
@@ -228,29 +242,21 @@ export function FulfillmentQueueClient(props: Props) {
               onChange={(e) => setSearchInput(e.target.value)}
             />
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">
+          <div className="w-full sm:w-auto">
+            <label htmlFor="rentang-tanggal" className="text-xs text-muted-foreground mb-1 block">
               {t("filter.dateRange")}
             </label>
-            <Input
-              type="date"
-              value={props.dateFrom}
-              onChange={(e) => pushParam("dateFrom", e.target.value || undefined)}
+            <RentangTanggalInput
+              id="rentang-tanggal"
+              className="sm:w-64"
+              dari={props.dateFrom}
+              sampai={props.dateTo}
+              onChange={({ dari, sampai }) => pushParams({ dateFrom: dari || undefined, dateTo: sampai || undefined, page: undefined })}
             />
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">&nbsp;</label>
-            <Input
-              type="date"
-              value={props.dateTo}
-              onChange={(e) => pushParam("dateTo", e.target.value || undefined)}
-            />
-          </div>
-          <div className="flex flex-col justify-end">
-            <Button variant="outline" onClick={reset} className="w-full">
-              {t("filter.reset")}
-            </Button>
-          </div>
+          <Button variant="outline" onClick={reset} className="shrink-0">
+            {t("filter.reset")}
+          </Button>
         </div>
       </Card>
 
@@ -282,116 +288,133 @@ export function FulfillmentQueueClient(props: Props) {
       )}
 
       <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[40px]">
-                {props.canFulfill && (
-                  <Checkbox
-                    checked={allSelected}
-                    onCheckedChange={toggleAll}
-                    aria-label="Select all"
-                  />
-                )}
-              </TableHead>
-              <SortableHead
-                label={t("table.orderNo")}
-                field="salesorderNo"
-                currentField={props.sortField}
-                currentDir={props.sortDir}
-                onClick={onSortClick}
-              />
-              <SortableHead
-                label={t("table.channel")}
-                field="channel"
-                currentField={props.sortField}
-                currentDir={props.sortDir}
-                onClick={onSortClick}
-              />
-              <TableHead>{t("table.buyer")}</TableHead>
-              <SortableHead
-                label={t("table.date")}
-                field="transactionDate"
-                currentField={props.sortField}
-                currentDir={props.sortDir}
-                onClick={onSortClick}
-              />
-              <SortableHead
-                label={t("table.fulfillmentStatus")}
-                field="fulfillmentStatus"
-                currentField={props.sortField}
-                currentDir={props.sortDir}
-                onClick={onSortClick}
-              />
-              <TableHead>{t("table.status")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {props.rows.length === 0 ? (
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <PackageCheck className="h-5 w-5" />
+            {t("listTitle")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                  {t("empty")}
-                </TableCell>
+                <TableHead className="w-[40px]">
+                  {props.canFulfill && (
+                    <Checkbox
+                      checked={allSelected}
+                      onCheckedChange={toggleAll}
+                      aria-label={t("selectAll")}
+                    />
+                  )}
+                </TableHead>
+                <SortableHead
+                  label={t("table.orderNo")}
+                  field="salesorderNo"
+                  currentField={props.sortField}
+                  currentDir={props.sortDir}
+                  onClick={onSortClick}
+                />
+                <SortableHead
+                  label={t("table.channel")}
+                  field="channel"
+                  currentField={props.sortField}
+                  currentDir={props.sortDir}
+                  onClick={onSortClick}
+                />
+                <TableHead>{t("table.buyer")}</TableHead>
+                <SortableHead
+                  label={t("table.date")}
+                  field="transactionDate"
+                  currentField={props.sortField}
+                  currentDir={props.sortDir}
+                  onClick={onSortClick}
+                />
+                <SortableHead
+                  label={t("table.fulfillmentStatus")}
+                  field="fulfillmentStatus"
+                  currentField={props.sortField}
+                  currentDir={props.sortDir}
+                  onClick={onSortClick}
+                />
+                <TableHead>{t("table.status")}</TableHead>
               </TableRow>
-            ) : (
-              props.rows.map((r) => (
-                <TableRow
-                  key={r.id}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() =>
-                    startTransition(() => router.push(`/backoffice/sales-orders/${r.id}`))
-                  }
-                >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    {props.canFulfill && (
-                      <Checkbox
-                        checked={selected.has(r.id)}
-                        onCheckedChange={() => toggleRow(r.id)}
-                        aria-label={`Select ${r.salesorderNo}`}
-                      />
+            </TableHeader>
+            <TableBody>
+              {props.rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="whitespace-normal py-8 text-center text-muted-foreground">
+                    {hasFilter ? (
+                      <div className="flex flex-col items-center gap-3">
+                        <span>{hanyaBawaan ? t("emptyPending") : t("emptyFiltered")}</span>
+                        <Button variant="outline" size="sm" onClick={clearFilters}>
+                          {hanyaBawaan ? t("lihatSemua") : t("clearFilters")}
+                        </Button>
+                      </div>
+                    ) : (
+                      t("empty")
                     )}
                   </TableCell>
-                  <TableCell>
-                    <Link
-                      href={`/backoffice/sales-orders/${r.id}`}
-                      className="font-mono text-sm hover:underline"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {r.salesorderNo}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${CHANNEL_BADGE[r.channel].tailwindClass}`}
-                    >
-                      {tSalesOrders(`channel.${CHANNEL_BADGE[r.channel].labelKey}` as never)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="max-w-[200px] truncate">
-                    {r.customerName ?? "—"}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-sm">
-                    {formatDateTime(r.transactionDate, locale)}
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${FULFILLMENT_BADGE[r.fulfillmentStatus]}`}
-                    >
-                      {t(`fulfillmentStatus.${r.fulfillmentStatus}` as never)}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${STATUS_BADGE[r.status].tailwindClass}`}
-                    >
-                      {tSalesOrders(`status.${r.status}` as never)}
-                    </span>
-                  </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                props.rows.map((r) => (
+                  <TableRow
+                    key={r.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() =>
+                      startTransition(() => router.push(`/backoffice/sales-orders/${r.id}`))
+                    }
+                  >
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {props.canFulfill && (
+                        <Checkbox
+                          checked={selected.has(r.id)}
+                          onCheckedChange={() => toggleRow(r.id)}
+                          aria-label={t("selectRow", { orderNo: r.salesorderNo })}
+                        />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/backoffice/sales-orders/${r.id}`}
+                        className="font-mono text-sm hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {r.salesorderNo}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${CHANNEL_BADGE[r.channel].tailwindClass}`}
+                      >
+                        {tSalesOrders(`channel.${CHANNEL_BADGE[r.channel].labelKey}` as never)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="max-w-[200px] truncate">
+                      {r.customerName ?? "—"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm">
+                      {formatDisplayDateTime(r.transactionDate, locale)}
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${FULFILLMENT_BADGE[r.fulfillmentStatus]}`}
+                      >
+                        {t(`fulfillmentStatus.${r.fulfillmentStatus}` as never)}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${STATUS_BADGE[r.status].tailwindClass}`}
+                      >
+                        {tSalesOrders(`status.${r.status}` as never)}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
       </Card>
 
       <Pager
@@ -427,7 +450,7 @@ function SortableHead({
       <button
         type="button"
         onClick={() => onClick(field)}
-        className="inline-flex items-center gap-1 hover:text-foreground"
+        className="inline-flex items-center gap-1 [letter-spacing:inherit] [text-transform:inherit] hover:text-foreground"
       >
         {label}
         <Icon className="h-3.5 w-3.5" />

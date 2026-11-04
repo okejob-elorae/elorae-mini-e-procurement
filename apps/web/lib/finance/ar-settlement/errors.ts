@@ -17,6 +17,8 @@ export type SettlementErrorCode =
   | "RETUR_WRONG_STORE"
   | "NOT_OUTSTANDING"
   | "NOT_ASSIGNED"
+  /** A konsi bill (`isKonsiBill`, `lib/finance/collections/phone-scope.ts`): paid only through a BKM. */
+  | "KONSI_LEWAT_BKM"
   | "INVOICE_OVERCLAIMED"
   | "FIELD_RETURN_NOT_FOUND"
   | "MISSING_FIELD_RETURN_ID"

@@ -1,17 +1,19 @@
 "use client";
 
+import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { getCashFlowReport } from "@/app/actions/finance-reports";
+import { bacaKesiapanCetakAction, type KesiapanCetak } from "@/app/backoffice/finance/_kesiapan/aksi";
+import { CatatanBukuBesar } from "../CatatanBukuBesar";
 import type { CashFlowLine } from "@/lib/finance/reports/cash-flow";
 
 type Report = Awaited<ReturnType<typeof getCashFlowReport>>;
 
-function formatRupiah(value: number): string {
-  return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
-}
+/** Satu format angka laporan keuangan: negatif dalam kurung (`format-laporan.ts`). */
+const formatRupiah = rupiahLaporan;
 
 function lineRows(lines: CashFlowLine[]): React.ReactNode[] {
   return lines.map((line) => (
@@ -47,13 +49,20 @@ export default function PrintCashFlowPage() {
   const sp = useSearchParams();
   const printedRef = useRef(false);
   const [report, setReport] = useState<Report | "error" | null>(null);
+  const [kesiapan, setKesiapan] = useState<KesiapanCetak | null>(null);
 
   useEffect(() => {
-    getCashFlowReport({
-      from: sp.get("from") ?? undefined,
-      to: sp.get("to") ?? undefined,
-    })
-      .then(setReport)
+    Promise.all([
+      getCashFlowReport({
+        from: sp.get("from") ?? undefined,
+        to: sp.get("to") ?? undefined,
+      }),
+      bacaKesiapanCetakAction().catch(() => null),
+    ])
+      .then(([r, k]) => {
+        setKesiapan(k);
+        setReport(r);
+      })
       .catch(() => setReport("error"));
   }, [sp]);
 
@@ -123,6 +132,7 @@ export default function PrintCashFlowPage() {
         <p className="mt-1 text-xs text-gray-600">Disiapkan oleh: {report.preparedBy}</p>
         <p className="text-xs text-gray-600">Dicetak: {report.printedAt}</p>
       </div>
+      <CatatanBukuBesar kesiapan={kesiapan} />
       <table className="w-full text-sm">
         <tbody>
           {band("ARUS KAS DARI AKTIVITAS OPERASIONAL")}

@@ -15,7 +15,8 @@ export type JubelioVariantRow = {
   is_bundle?: boolean;
   variation_values?: JubelioVariationValue[];
   barcode?: string | null;
-  sell_price?: number;
+  /** The variant's price. Jubelio may send a number or a string; missing or unreadable is UNKNOWN, never 0. */
+  sell_price?: number | string | null;
   end_qty?: number | null;
   available_qty?: number | null;
 };
@@ -78,7 +79,15 @@ export type CatalogItemDraft = {
   nameId: string;
   nameEn: string;
   description?: string;
+  /**
+   * THE Jubelio price of the article: the HIGHEST variant price (owner answer P1, 2026-11-02), else
+   * the group's sell_price when no variant price is known. null = no positive price.
+   */
   sellingPrice: string | null;
+  /** The lowest known variant price; "0" when a known variant has no price (`summarizeJubelioPrices`). */
+  lowestPrice: string | null;
+  /** false = nothing about the price was readable at all; then no observation is recorded. */
+  priceKnown: boolean;
   categoryId: string | null;
   jubelioItemGroupId: number;
   jubelioLastModified: Date | null;
@@ -123,4 +132,4 @@ export type CatalogSyncResult = {
   errors: CatalogSyncError[];
 };
 
-export const SYNC_FIELDS = ["nameId", "nameEn", "description", "variants", "sellingPrice"] as const;
+export const SYNC_FIELDS = ["nameId", "nameEn", "description", "variants"] as const;

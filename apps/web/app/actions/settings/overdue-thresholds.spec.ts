@@ -21,8 +21,14 @@ vi.mock("@elorae/db", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidate }));
 
-import { setOverdueThresholds } from "./overdue-thresholds";
+import { getRequiredPermission, PERMISSIONS } from "@/lib/rbac";
+import { getOverdueThresholds, setOverdueThresholds } from "./overdue-thresholds";
 
+/*
+ * Settings → Piutang: the page, both actions and the hub card share `receivables:manage` (Q14).
+ * Receiving the reminder (`receivables:overdue_reminder`, P48) and assigning collectors
+ * (`collections:manage`) open nothing here.
+ */
 describe("setOverdueThresholds", () => {
   beforeEach(() => {
     mockAuth.mockReset();
@@ -30,14 +36,22 @@ describe("setOverdueThresholds", () => {
     mockUpsert.mockReset();
     mockAuditCreate.mockReset();
     mockRevalidate.mockReset();
-    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["collections:manage"] } });
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["receivables:manage"] } });
   });
 
-  it("refuses without collections:manage", async () => {
-    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: [] } });
-    await expect(setOverdueThresholds("7,30")).rejects.toThrow();
+  it("refuses without receivables:manage — collections:manage or the reminder permission alone is not enough", async () => {
+    for (const permissions of [[], ["collections:manage"], ["receivables:overdue_reminder"]]) {
+      mockAuth.mockResolvedValue({ user: { id: "u1", permissions } });
+      await expect(setOverdueThresholds("7,30")).rejects.toThrow();
+    }
     expect(mockUpsert).not.toHaveBeenCalled();
     expect(mockAuditCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses without a session", async () => {
+    mockAuth.mockResolvedValue(null);
+    await expect(setOverdueThresholds("7,30")).rejects.toThrow("Unauthorized");
+    expect(mockUpsert).not.toHaveBeenCalled();
   });
 
   it("returns validation codes without writing or auditing", async () => {
@@ -75,5 +89,34 @@ describe("setOverdueThresholds", () => {
         data: expect.objectContaining({ changes: { before: { value: null }, after: { value: "7" } } }),
       }),
     );
+  });
+});
+
+describe("getOverdueThresholds", () => {
+  beforeEach(() => {
+    mockAuth.mockReset();
+    mockFindUnique.mockReset();
+  });
+
+  it("refuses without receivables:manage, before reading anything", async () => {
+    for (const permissions of [[], ["collections:manage"], ["receivables:overdue_reminder"]]) {
+      mockAuth.mockResolvedValue({ user: { id: "u1", permissions } });
+      await expect(getOverdueThresholds()).rejects.toThrow();
+    }
+    mockAuth.mockResolvedValue(null);
+    await expect(getOverdueThresholds()).rejects.toThrow("Unauthorized");
+    expect(mockFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("returns the parsed list for receivables:manage", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["receivables:manage"] } });
+    mockFindUnique.mockResolvedValue({ value: "0,7,30" });
+    expect(await getOverdueThresholds()).toEqual([0, 7, 30]);
+  });
+});
+
+describe("the page asks for the same permission as its actions", () => {
+  it("/backoffice/settings/piutang requires receivables:manage", () => {
+    expect(getRequiredPermission("/backoffice/settings/piutang")).toBe(PERMISSIONS.RECEIVABLES_MANAGE);
   });
 });

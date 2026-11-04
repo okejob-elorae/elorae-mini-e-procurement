@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import {
   getItemPriceHistory,
   type ItemPriceHistoryRow,
@@ -14,26 +16,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const TRIGGER_LABELS: Record<ItemPriceHistoryRow["triggerReason"], string> = {
-  FG_RECEIPT: "FG receipt",
-  MARGIN_CHANGE: "Margin change",
-  DEFAULTS_CHANGE: "Defaults change",
-  MANUAL_EDIT: "Manual edit",
-};
-
 function formatPrice(v: number | null): string {
   if (v == null) return "—";
-  return `Rp ${v.toLocaleString("en-US")}`;
-}
-
-function formatDateTime(d: Date): string {
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(d));
+  return `Rp ${v.toLocaleString("id-ID")}`;
 }
 
 export function PriceHistoryTable({ itemId }: { itemId: string }) {
+  const t = useTranslations("items.priceHistory");
+  const locale = useLocale();
   const [rows, setRows] = useState<ItemPriceHistoryRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -58,13 +48,13 @@ export function PriceHistoryTable({ itemId }: { itemId: string }) {
 
   if (loading) {
     return (
-      <div className="text-sm text-muted-foreground">Loading price history…</div>
+      <div className="text-sm text-muted-foreground">{t("loading")}</div>
     );
   }
   if (rows.length === 0) {
     return (
       <div className="text-sm text-muted-foreground">
-        No price changes recorded yet.
+        {t("empty")}
       </div>
     );
   }
@@ -73,27 +63,27 @@ export function PriceHistoryTable({ itemId }: { itemId: string }) {
     <div className="space-y-2">
       {total > 50 && (
         <div className="text-xs text-muted-foreground">
-          Showing first 50 of {total} entries.
+          {t("showingFirst", { shown: 50, total })}
         </div>
       )}
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Changed at</TableHead>
-            <TableHead>Trigger</TableHead>
-            <TableHead className="text-right">Old price</TableHead>
-            <TableHead className="text-right">New price</TableHead>
-            <TableHead className="text-right">avgCost basis</TableHead>
-            <TableHead className="text-right">Margin used</TableHead>
-            <TableHead>FG Receipt</TableHead>
-            <TableHead>Actor</TableHead>
+            <TableHead>{t("colChangedAt")}</TableHead>
+            <TableHead>{t("colTrigger")}</TableHead>
+            <TableHead className="text-right">{t("colOldPrice")}</TableHead>
+            <TableHead className="text-right">{t("colNewPrice")}</TableHead>
+            <TableHead className="text-right">{t("colAvgCost")}</TableHead>
+            <TableHead className="text-right">{t("colMargin")}</TableHead>
+            <TableHead>{t("colSource")}</TableHead>
+            <TableHead>{t("colActor")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((r) => (
             <TableRow key={r.id}>
-              <TableCell>{formatDateTime(r.changedAt)}</TableCell>
-              <TableCell>{TRIGGER_LABELS[r.triggerReason]}</TableCell>
+              <TableCell>{formatDisplayDateTime(r.changedAt, locale)}</TableCell>
+              <TableCell>{t(`trigger.${r.triggerReason}`)}</TableCell>
               <TableCell className="text-right">
                 {formatPrice(r.oldSellingPrice)}
               </TableCell>

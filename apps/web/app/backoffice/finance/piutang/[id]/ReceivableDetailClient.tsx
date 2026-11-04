@@ -35,6 +35,12 @@ type CollectionSubmissionStatus = "PENDING" | "VERIFIED" | "REJECTED";
 type Props = {
   receivable: ReceivableDetail;
   canManagePayments: boolean;
+  /**
+   * A konsi bill (`isKonsiBill`, resolved on the server from the bill's own marks): paid only
+   * through a BKM, so `recordPayment` refuses it (`KONSI_LEWAT_BKM`) and the payment sheet is not
+   * offered here. A rounding residue is still cleared from this page — the writer exempts it.
+   */
+  konsiBill: boolean;
   canManageCollections: boolean;
   journalRetryable: boolean;
   allocationCandidates: AllocationCandidate[];
@@ -133,6 +139,7 @@ function journalErrorKey(reason: string): string {
 export function ReceivableDetailClient({
   receivable: r,
   canManagePayments,
+  konsiBill,
   canManageCollections,
   journalRetryable,
   allocationCandidates,
@@ -152,7 +159,9 @@ export function ReceivableDetailClient({
           ? "detail.primaryActionDisabledPaid"
           : status === "WRITTEN_OFF"
             ? "detail.primaryActionDisabledWrittenOff"
-            : "detail.primaryActionDisabledVoided",
+            : r.source.kind === "CONSIGNMENT_CYCLE"
+              ? "detail.primaryActionDisabledVoidedCycle"
+              : "detail.primaryActionDisabledVoided",
       )
     : t("recordPaymentAction");
   const isOverdue = isOverdueDisplay(status, r.daysOverdue);
@@ -163,6 +172,16 @@ export function ReceivableDetailClient({
    * (server-resolved) already stays false for a SELL_THROUGH row, so this is a defensive narrow, not
    * the real gate. Sell-through journals are retried from the report's own page. */
   const deliveryId = r.source.kind === "DELIVERY" ? r.source.deliveryId : null;
+  /* A konsi cycle bill opens on its consignment cycle. A MANUAL/IMPORT invoice has no source document
+   * of its own, so it opens on the receivables book filtered to its number. */
+  const sourceHref =
+    r.source.kind === "DELIVERY"
+      ? `/backoffice/field-sales-orders/${r.source.orderId}`
+      : r.source.kind === "SELL_THROUGH"
+        ? `/backoffice/konsi-sell-through/${r.source.sellThroughId}`
+        : r.source.kind === "CONSIGNMENT_CYCLE"
+          ? `/backoffice/konsinyasi/${encodeURIComponent(r.source.cycleId)}`
+          : `/backoffice/piutang?cari=${encodeURIComponent(r.source.docNo)}`;
 
   /**
    * `stillPending` is read from the action's own returned outcome, never from re-checking
@@ -209,12 +228,16 @@ export function ReceivableDetailClient({
           {r.source.kind === "SELL_THROUGH" && (
             <Badge variant="outline">{t("detail.sourceSellThrough")}</Badge>
           )}
+          {r.source.kind === "CONSIGNMENT_CYCLE" && <Badge variant="outline">{t("detail.sourceCycle")}</Badge>}
           <Badge className={STATUS_BADGE_CLASS[status]}>{t(STATUS_LABEL_KEY[status])}</Badge>
-          {canManagePayments && (
+          {canManagePayments && !konsiBill && (
             <Button className="h-10" disabled={isSettled} onClick={() => setSheetOpen(true)}>
               <Wallet className="h-4 w-4 mr-2" />
               {primaryActionLabel}
             </Button>
+          )}
+          {canManagePayments && konsiBill && !isSettled && (
+            <span className="text-sm text-muted-foreground">{t("detail.konsiLewatBkm")}</span>
           )}
         </div>
       </div>
@@ -227,6 +250,19 @@ export function ReceivableDetailClient({
             className="inline-flex items-center gap-1 font-medium hover:underline"
           >
             {r.source.docNo}
+            <ExternalLink className="h-3 w-3" />
+          </Link>
+        </p>
+      )}
+
+      {status === "VOIDED" && r.source.kind === "CONSIGNMENT_CYCLE" && (
+        <p className="text-sm text-muted-foreground">
+          {t("detail.primaryActionDisabledVoidedCycle")}{" "}
+          <Link
+            href={`/backoffice/konsinyasi/${encodeURIComponent(r.source.cycleId)}`}
+            className="inline-flex items-center gap-1 font-medium hover:underline"
+          >
+            {t("detail.sourceCycle")}
             <ExternalLink className="h-3 w-3" />
           </Link>
         </p>
@@ -265,14 +301,7 @@ export function ReceivableDetailClient({
         <h2 className="font-semibold">{t("detail.invoiceFactsTitle")}</h2>
         <div className="flex justify-between gap-4 text-sm">
           <span className="text-muted-foreground">{t("colDocNo")}</span>
-          <Link
-            href={
-              r.source.kind === "DELIVERY"
-                ? `/backoffice/field-sales-orders/${r.source.orderId}`
-                : `/backoffice/konsi-sell-through/${r.source.sellThroughId}`
-            }
-            className="inline-flex items-center gap-1 font-mono hover:underline"
-          >
+          <Link href={sourceHref} className="inline-flex items-center gap-1 font-mono hover:underline">
             {r.source.docNo}
             <ExternalLink className="h-3 w-3" />
           </Link>
@@ -473,7 +502,7 @@ export function ReceivableDetailClient({
         </CardContent>
       </Card>
 
-      {canManagePayments && (
+      {canManagePayments && !konsiBill && (
         <RecordPaymentSheet
           open={sheetOpen}
           onOpenChange={setSheetOpen}

@@ -3,11 +3,13 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 import { useTranslations, useLocale } from "next-intl";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -40,6 +42,9 @@ import {
   RETURN_STATUS_TAILWIND,
   ITEM_DECISION_TAILWIND,
 } from "@/lib/sales-returns/format";
+import { CHANNEL_BADGE } from "@/lib/sales-orders/badges";
+import { formatDisplayDateTime } from "@/lib/date-only";
+import { formatRupiah } from "@/lib/format/rupiah";
 
 type Props = {
   ret: SalesReturnDetail;
@@ -48,26 +53,16 @@ type Props = {
   canViewSalesOrders: boolean;
 };
 
-function fmtCurrency(v: unknown, locale: string): string {
-  const n = v == null ? 0 : Number(v);
-  return new Intl.NumberFormat(locale === "id" ? "id-ID" : "en-US", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
-function fmtDateTime(d: Date | string | null | undefined, locale: string): string {
-  if (!d) return "—";
-  return new Intl.DateTimeFormat(locale === "id" ? "id-ID" : "en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(d));
+// Rupiah ditulis dengan gaya Indonesia di kedua bahasa, sama seperti layar
+// lain — dan tanpa Intl, supaya server dan browser menulis teks yang sama.
+function fmtCurrency(v: unknown): string {
+  return formatRupiah(v as number | string | null | undefined);
 }
 
 export function ReturnDecisionCard({ ret, canDecide, canPostJournal, canViewSalesOrders }: Props) {
   const t = useTranslations("salesReturns.decision");
   const tj = useTranslations("salesReturns");
+  const tOrders = useTranslations("salesOrders");
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -174,9 +169,12 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal, canViewSale
       </Button>
       <Card className="p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">
-            {t("title")}: {ret.jubelioReturnNo ?? `#${ret.jubelioReturnId}`}
-          </h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-lg font-semibold">
+              {t("title")}: {ret.jubelioReturnNo ?? `#${ret.jubelioReturnId}`}
+            </h1>
+            <TombolBantuan judul={t("title")} />
+          </div>
           <span
             className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${RETURN_STATUS_TAILWIND[ret.status]}`}
           >
@@ -186,22 +184,32 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal, canViewSale
 
         <div className="grid grid-cols-2 text-sm gap-y-1">
           <span className="text-muted-foreground">{t("channel")}</span>
-          <span>{ret.channel}</span>
+          <span>
+            {tOrders(
+              `channel.${CHANNEL_BADGE[ret.channel as keyof typeof CHANNEL_BADGE]?.labelKey ?? "other"}` as never,
+            )}
+          </span>
           <span className="text-muted-foreground">{t("orderNo")}</span>
+          {/* Nomor yang sama dengan daftar Pesanan marketplace, bertaut ke pesanannya;
+              nomor channel (tanpa awalan) di bawahnya sebagai rujukan ke marketplace. */}
           {canViewSalesOrders && ret.salesOrder?.id ? (
-            <Link
-              href={`/backoffice/sales-orders/${ret.salesOrder.id}`}
-              className="font-mono hover:underline"
-            >
-              {ret.channelOrderNo ?? "—"}
-            </Link>
+            <span>
+              <Link href={`/backoffice/sales-orders/${ret.salesOrder.id}`} className={`font-mono ${TAUTAN_DOKUMEN}`}>
+                {ret.salesOrder.salesorderNo}
+              </Link>
+              {ret.channelOrderNo && ret.channelOrderNo !== ret.salesOrder.salesorderNo && (
+                <span className="block text-xs text-muted-foreground">
+                  {t("nomorChannel", { nomor: ret.channelOrderNo })}
+                </span>
+              )}
+            </span>
           ) : (
             <span className="font-mono">{ret.channelOrderNo ?? "—"}</span>
           )}
           <span className="text-muted-foreground">{t("buyer")}</span>
           <span>{ret.buyerName ?? "—"}</span>
           <span className="text-muted-foreground">{t("receivedAt")}</span>
-          <span>{fmtDateTime(ret.receivedAt, locale)}</span>
+          <span>{formatDisplayDateTime(ret.receivedAt, locale)}</span>
           {ret.packingVideoUrl && ret.salesOrder?.id ? (
             <>
               <span className="text-muted-foreground">Video packing</span>
@@ -218,7 +226,7 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal, canViewSale
         {locked && (
           <div className="text-sm bg-muted px-3 py-2 rounded">
             {t("lockedBanner", {
-              when: fmtDateTime(ret.decidedAt, locale),
+              when: formatDisplayDateTime(ret.decidedAt, locale),
               who: ret.decidedBy?.name ?? "—",
             })}
           </div>
@@ -269,7 +277,9 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal, canViewSale
               <TableHead className="text-right">{t("col.unitPrice")}</TableHead>
               <TableHead className="text-right">{t("col.subtotal")}</TableHead>
               <TableHead>{t("col.decision")}</TableHead>
-              {canDecide && !locked && <TableHead>{t("col.actions")}</TableHead>}
+              {canDecide && !locked && (
+                <TableHead className="sticky right-0 bg-card">{t("col.actions")}</TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -279,16 +289,16 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal, canViewSale
               const acceptedWithoutStock = item.decision === "ACCEPTED" && item.stockAdjustmentId === null;
               return (
                 <TableRow key={item.id}>
-                  <TableCell>{item.productName}</TableCell>
+                  <TableCell className="min-w-[12rem] whitespace-normal">{item.productName}</TableCell>
                   <TableCell className="font-mono text-xs">
                     {item.variantSku ?? item.externalSku}
                   </TableCell>
                   <TableCell className="text-right">{Number(item.qty)}</TableCell>
                   <TableCell className="text-right">
-                    {fmtCurrency(item.unitPrice, locale)}
+                    {fmtCurrency(item.unitPrice)}
                   </TableCell>
                   <TableCell className="text-right">
-                    {fmtCurrency(item.subtotal, locale)}
+                    {fmtCurrency(item.subtotal)}
                   </TableCell>
                   <TableCell>
                     <span
@@ -301,7 +311,7 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal, canViewSale
                     )}
                   </TableCell>
                   {canDecide && !locked && (
-                    <TableCell>
+                    <TableCell className="sticky right-0 bg-card">
                       <div className="flex gap-2">
                         <Button
                           size="sm"

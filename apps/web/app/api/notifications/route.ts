@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@elorae/db";
 import { decodeNotificationCursor, fetchNotificationPage } from "@/lib/notifications/page";
+import { lengkapiDataLonceng } from "./lengkapi";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,9 @@ export const dynamic = "force-dynamic";
  * GET /api/notifications?cursor=<opaque>
  * Returns one page of the current user's notifications (newest first) plus
  * `nextCursor` (null on the last page) and the total unread count.
+ *
+ * `unreadCount` selalu menghitung SEMUA yang belum dibaca milik pengguna, bukan
+ * yang termuat — itu angka lencananya.
  */
 export async function GET(request: Request) {
   try {
@@ -16,6 +20,7 @@ export async function GET(request: Request) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const userId = session.user.id;
 
     const rawCursor = new URL(request.url).searchParams.get("cursor");
     let cursor = null;
@@ -27,16 +32,15 @@ export async function GET(request: Request) {
     }
 
     const [page, unreadCount] = await Promise.all([
-      fetchNotificationPage(session.user.id, cursor),
+      fetchNotificationPage(userId, cursor),
       prisma.notificationQueue.count({
-        where: {
-          userId: session.user.id,
-          readAt: null,
-        },
+        where: { userId, readAt: null },
       }),
     ]);
 
-    return NextResponse.json({ items: page.items, nextCursor: page.nextCursor, unreadCount });
+    const items = await lengkapiDataLonceng(page.items);
+
+    return NextResponse.json({ items, nextCursor: page.nextCursor, unreadCount });
   } catch (err) {
     console.error("GET /api/notifications failed:", err);
     return NextResponse.json(

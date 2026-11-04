@@ -1,11 +1,17 @@
 import { pwaDb, type PendingOrder } from "./db";
 
-export function newLocalId(): string {
-  return typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
+export { newLocalId } from "../id-lokal";
 
-export async function enqueueOrder(o: Omit<PendingOrder, "capturedAt" | "syncState" | "attempts">): Promise<void> {
-  await pwaDb.pendingOrders.put({ ...o, capturedAt: Date.now(), syncState: "pending", attempts: 0 });
+/**
+ * Pesanan di antrean HP, termasuk jendela pre-order-nya (`PendingOrder.preorderWindowId`).
+ * Baris lama tanpa kolom itu dibaca sebagai pesanan stok siap biasa. Nama lama
+ * dipertahankan sebagai alias supaya pemanggilnya tidak perlu diubah.
+ */
+export type PendingOrderInden = PendingOrder;
+
+export async function enqueueOrder(o: Omit<PendingOrderInden, "capturedAt" | "syncState" | "attempts">): Promise<void> {
+  const baris: PendingOrderInden = { ...o, capturedAt: Date.now(), syncState: "pending", attempts: 0 };
+  await pwaDb.pendingOrders.put(baris);
 }
 
 export async function listPendingOrders(): Promise<PendingOrder[]> {

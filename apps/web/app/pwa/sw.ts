@@ -1,6 +1,7 @@
 import { defaultCache } from "@serwist/next/worker";
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
 import { ExpirationPlugin, NetworkFirst, Serwist, StaleWhileRevalidate } from "serwist";
+// Jalur relatif, bukan alias `@/`: service worker dibangun penyusun anak Serwist.
 import { parsePushPayload } from "../../lib/pwa/push-payload";
 
 declare global {
@@ -66,9 +67,25 @@ const serwist = new Serwist({
 /**
  * FCM push for the PWA, handled here rather than by a Firebase messaging service worker: two
  * service workers cannot share the `/pwa/` scope, and the PWA obtains its FCM token against this
- * registration. Every push MUST show a notification (Chrome's `userVisibleOnly` contract), so an
+ * registration. Every push MUST show a notification (Chrome's `userVisibleOnly` contract, and
+ * iPhone revokes the subscription of an app that receives a push without showing anything), so an
  * unreadable payload still shows a generic one.
+ *
+ * FCM sends `{ notification: { title, body }, data: { type, ...ids } }`. `parsePushPayload` picks
+ * the phone screen through `getNotificationHref(type, data, "pwa")` — field-staff kabar
+ * (`tautanKabar`) and the team's types alike, never an office page — and falls back to Kabar.
  */
+function dataPush(raw: unknown): Record<string, string> {
+  const root = raw !== null && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
+  const data = root?.data;
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+    if (typeof v === "string") out[k] = v;
+  }
+  return out;
+}
+
 self.addEventListener("push", (event) => {
   let raw: unknown = null;
   try {
@@ -77,12 +94,14 @@ self.addEventListener("push", (event) => {
     raw = null;
   }
   const payload = parsePushPayload(raw);
+  const data = dataPush(raw);
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
       tag: payload.tag,
       icon: "/pwa/icon-192.png",
-      data: { url: payload.url },
+      badge: "/pwa/icon-192.png",
+      data: { ...data, url: payload.url },
     }),
   );
 });
@@ -90,7 +109,8 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const data = event.notification.data as { url?: unknown } | null;
-  const url = typeof data?.url === "string" ? data.url : "/pwa/notifications";
+  // Same fallback as `parsePushPayload`: Kabar, the phone's one notification list.
+  const url = typeof data?.url === "string" ? data.url : "/pwa/kabar";
   event.waitUntil(openPushTarget(url));
 });
 

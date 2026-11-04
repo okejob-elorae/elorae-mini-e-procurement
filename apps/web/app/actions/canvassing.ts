@@ -6,15 +6,19 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { loadVan } from "@/lib/canvassing/writer";
+import { periksaKanvas, type AlasanBukanKanvas } from "@/lib/canvassing/kelayakan-kanvas";
 import { postVanJournalSafely } from "@/lib/canvassing/post-van-journal-safely";
 import type { VanJournalFailure } from "@/lib/canvassing/post-van-journal-safely";
 import { postVanLoadJournal } from "@/lib/canvassing/van-journal";
 import { isJournalRetryable } from "@/lib/canvassing/journal-pending";
+import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 export type LoadVanActionResult =
   | { ok: true; docNo: string; journalFailure: VanJournalFailure | null }
-  | { ok: false; reason: "FORBIDDEN" | "EMPTY" | "INSUFFICIENT_STOCK" | "VALIDATION"; shortLines?: Array<{ itemId: string; variantSku: string | null; requested: number; available: number }> };
+  | { ok: false; reason: "FORBIDDEN" | "EMPTY" | "INSUFFICIENT_STOCK" | "VALIDATION"; shortLines?: Array<{ itemId: string; variantSku: string | null; requested: number; available: number }> }
+  /** Penerima bukan sales kanvas (SPG, admin sistem, tanpa akses HP, tidak ada) — stok tidak bergerak. */
+  | { ok: false; reason: "NOT_CANVASSER"; sebab: AlasanBukanKanvas };
 
 const schema = z.object({
   canvasserId: z.string().min(1),
@@ -37,6 +41,9 @@ export async function loadVanAction(input: {
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.CANVASSING_MANAGE)) {
     return { ok: false, reason: "FORBIDDEN" };
   }
+  // Barang yang dimuat ke mobil SPG/admin terjebak: mereka tidak bisa menjual dari mobil.
+  const sebab = await periksaKanvas(parsed.data.canvasserId);
+  if (sebab) return { ok: false, reason: "NOT_CANVASSER", sebab };
   const res = await loadVan({ canvasserId: parsed.data.canvasserId, loadedById: session.user.id, lines: parsed.data.lines, note: parsed.data.note });
   if (!res.ok) {
     if (res.code === "INSUFFICIENT_STOCK") return { ok: false, reason: "INSUFFICIENT_STOCK", shortLines: res.shortLines };
@@ -79,6 +86,8 @@ export async function postVanLoadJournalAction(
   }
 
   const r = await postVanLoadJournal(vanLoadId, session.user.id);
+  // Jurnal berdiri → tanda "Jurnal gagal" selesai (Beranda). Barisnya tetap ada untuk tombol ulang.
+  if (r.ok) await tandaiJurnalTertundaSelesai([dokumenJurnal("VAN_LOAD", vanLoadId)]);
   revalidatePath(`/backoffice/canvassing/${load.canvasserId}`);
   return r;
 }

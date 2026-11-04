@@ -1,23 +1,25 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { 
   Plus, 
   Search, 
   ShoppingCart, 
   Eye,
   Calendar,
-  AlertCircle,
-  CheckCircle,
-  Clock,
+  Send,
   XCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatusPill } from '@/components/ui/status-pill';
+import { EmptyState } from '@/components/ui/empty-state';
+import { getStatusMeta } from '@/lib/ui/status-map';
 import {
   Card,
   CardContent,
@@ -40,14 +42,22 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { getPOs, submitPO, cancelPO } from '@/app/actions/purchase-orders';
+import { getPOs, submitPO, batalkanPO } from '@/app/actions/purchase-orders';
+import { pesanTolakBatalPo } from './pesan-batal-po';
+import { BatalPoDialog } from './BatalPoDialog';
+import { keadaanBatalPo, tampilStatusBayar } from './aturan-po';
+import { TAUTAN_DOKUMEN } from './tautan-dokumen';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
+import { useSorotBaris } from '@/components/gerak/useSorotBaris';
 import { POStatus } from '@/lib/constants/enums';
 import { ETABadge } from '@/components/ui/ETABadge';
 import { Progress } from '@/components/ui/progress';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { cn } from '@/lib/utils';
+import { formatDisplayDate } from '@/lib/date-only';
+import { parsePOStatusFilter, type POStatusFilter } from '@/lib/purchase-orders/overdue';
+import { alamatDaftarPo } from '@/lib/purchase-orders/cari-po';
 
 export interface PurchaseOrder {
   id: string;
@@ -58,6 +68,9 @@ export interface PurchaseOrder {
   paidAt?: string | null;
   totalAmount: string;
   grandTotal: string;
+  /** Utang setelah sisa yang tidak datang (PO ditutup) dan retur pemasok — dari `listPOs`. */
+  utang?: { utang: number; nilaiPo: number };
+  closedAt?: string | null;
   createdAt: string;
   supplier: {
     name: string;
@@ -81,74 +94,69 @@ export interface PurchaseOrder {
   };
 }
 
-const statusLabels: Record<POStatus, string> = {
-  DRAFT: 'Draft',
-  SUBMITTED: 'Submitted',
-  PARTIAL: 'Partial',
-  CLOSED: 'Closed',
-  OVER: 'Over-received',
-  CANCELLED: 'Cancelled'
-};
-
-const statusColors: Record<POStatus, string> = {
-  DRAFT: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
-  SUBMITTED: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-  PARTIAL: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
-  CLOSED: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-  OVER: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
-  CANCELLED: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-};
-
-const statusIcons: Record<POStatus, React.ReactNode> = {
-  DRAFT: <Clock className="h-4 w-4" />,
-  SUBMITTED: <CheckCircle className="h-4 w-4" />,
-  PARTIAL: <AlertCircle className="h-4 w-4" />,
-  CLOSED: <CheckCircle className="h-4 w-4" />,
-  OVER: <AlertCircle className="h-4 w-4" />,
-  CANCELLED: <XCircle className="h-4 w-4" />,
-};
-
-const SECURITY_MESSAGE_KEYS = new Set([
-  'userNotFound',
-  'pinNotSet',
-  'tooManyAttempts',
-  'pinIncorrect',
-]);
-
-function isSecurityMessageKey(value: string): boolean {
-  return SECURITY_MESSAGE_KEYS.has(value);
-}
+const SEMUA_STATUS: POStatus[] = ['DRAFT', 'SUBMITTED', 'PARTIAL', 'CLOSED', 'OVER', 'CANCELLED'];
 
 export function PurchaseOrdersPageClient({
   initialPOs,
   initialTotalCount,
   initialPage = 1,
+  initialStatus = '',
+  initialCari = '',
 }: {
   initialPOs?: PurchaseOrder[];
   initialTotalCount?: number;
   initialPage?: number;
+  initialStatus?: POStatusFilter;
+  initialCari?: string;
 } = {}) {
   const { data: session } = useSession();
   const tToasts = useTranslations('toasts');
   const tSecurity = useTranslations('security');
   const tPO = useTranslations('purchaseOrders');
+  const tStatus = useTranslations('statuses');
+  const tTable = useTranslations('tableHeaders');
+  const locale = useLocale();
   const [pos, setPOs] = useState<PurchaseOrder[]>(initialPOs ?? []);
+  // PO yang statusnya baru berubah (dikirim, dibatalkan, atau di halaman rinciannya) menyala sebentar.
+  const { sorot, tandai } = useSorotBaris('po', pos.map((po) => ({ id: po.id, tanda: po.status })));
   const [isLoading, setIsLoading] = useState(!initialPOs);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<POStatus | ''>('');
+  /** Isi kotak cari (setiap ketukan). */
+  const [searchQuery, setSearchQuery] = useState(initialCari);
+  /** Kata kunci yang dikirim ke server — sesudah jeda mengetik. */
+  const [cariAktif, setCariAktif] = useState(initialCari);
+  const pathname = usePathname();
+  const [statusFilter, setStatusFilterState] = useState<POStatusFilter>(initialStatus);
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
+  const [cancelTargetDoc, setCancelTargetDoc] = useState('');
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
   const [page, setPage] = useState(initialPage);
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(initialTotalCount ?? 0);
+  /** Hanya jawaban permintaan TERAKHIR yang dipakai (ketikan cepat → jawaban lama datang belakangan). */
+  const permintaanRef = useRef(0);
+  /** Muat pertama sudah dikerjakan server dengan saringan yang sama. */
+  const lewatiMuatAwal = useRef(Boolean(initialPOs));
+
+  const setStatusFilter = (next: POStatusFilter) => {
+    setStatusFilterState(next);
+    setPage(1);
+  };
 
   const fetchPOs = async () => {
+    const nomor = ++permintaanRef.current;
     setIsLoading(true);
     try {
+      // Cari, saring, dan halaman semuanya di server: jumlah halaman dihitung dari hasil saringan.
       const result = await getPOs(
-        { status: statusFilter || undefined },
+        {
+          ...(statusFilter === 'overdue' ? { overdue: true } : { status: statusFilter || undefined }),
+          ...(cariAktif ? { cari: cariAktif } : {}),
+        },
         { page, pageSize }
       );
+      if (nomor !== permintaanRef.current) return;
       if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
         setPOs((result as unknown as { items: PurchaseOrder[]; totalCount: number }).items);
         setTotalCount((result as unknown as { items: PurchaseOrder[]; totalCount: number }).totalCount);
@@ -157,21 +165,43 @@ export function PurchaseOrdersPageClient({
         setPOs(list);
         setTotalCount(list.length);
       }
+      /*
+       * Saringan ditulis balik ke alamat SESUDAH jawaban datang (replace, bukan
+       * push): tautannya bisa dibagikan, "Kembali" tidak berjalan mundur melewati
+       * setiap ketikan, dan — penting — `history.replaceState` di Next masuk
+       * antrean router sebagai navigasi yang membuang aksi server yang sedang
+       * berjalan, jadi tidak boleh terjadi saat `getPOs` masih menunggu.
+       */
+      const qs = alamatDaftarPo({ status: statusFilter, cari: cariAktif, halaman: page });
+      if (window.location.search.replace(/^\?/, '') !== qs) {
+        window.history.replaceState(null, '', qs ? `${pathname}?${qs}` : pathname);
+      }
     } catch {
-      toast.error('Failed to load purchase orders');
+      if (nomor === permintaanRef.current) toast.error(tPO('loadFailed'));
     } finally {
-      setIsLoading(false);
+      if (nomor === permintaanRef.current) setIsLoading(false);
     }
   };
 
+  // Jeda mengetik sebelum kata kunci dikirim; setiap kata kunci baru mulai dari halaman 1.
   useEffect(() => {
-    setPage(1);
-  }, [statusFilter]);
+    const k = searchQuery.trim();
+    if (k === cariAktif) return;
+    const id = window.setTimeout(() => {
+      setCariAktif(k);
+      setPage(1);
+    }, 350);
+    return () => window.clearTimeout(id);
+  }, [searchQuery, cariAktif]);
 
   useEffect(() => {
+    if (lewatiMuatAwal.current) {
+      lewatiMuatAwal.current = false;
+      return;
+    }
     fetchPOs();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPOs depends on filters/page
-  }, [statusFilter, page, pageSize]);
+  }, [statusFilter, cariAktif, page, pageSize]);
 
   const handleSubmit = async (id: string) => {
     if (!session?.user?.id) {
@@ -181,6 +211,7 @@ export function PurchaseOrdersPageClient({
     try {
       await submitPO(id, session.user.id);
       toast.success(tToasts('poSubmittedSuccessfully'));
+      tandai(id);
       fetchPOs();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : tToasts('failedToSubmitPO');
@@ -188,35 +219,54 @@ export function PurchaseOrdersPageClient({
     }
   };
 
-  const handleCancel = (id: string) => {
+  /** Batal dari daftar: dialog alasan (wajib) → PIN. Dulu dialog bawaan peramban + alasan Inggris tetap. */
+  const handleCancel = (po: PurchaseOrder) => {
     if (!session?.user?.id) {
       toast.error(tToasts('youMustBeLoggedIn'));
       return;
     }
-    if (!confirm(tPO('confirmCancelPO'))) return;
-    setCancelTargetId(id);
+    setCancelTargetId(po.id);
+    setCancelTargetDoc(po.docNumber);
+    setCancelDialogOpen(true);
+  };
+
+  const lanjutBatal = (alasan: string) => {
+    setCancelReason(alasan);
     setPinModalOpen(true);
   };
 
+  /*
+   * Batal lewat `batalkanPO`, yang MENGEMBALIKAN `{ ok:false, code }`: dulu lewat
+   * `cancelPO` yang melempar, dan di build produksi Next menyamarkan pesan
+   * lemparan — "sudah ada barang diterima" jadi galat umum. PIN salah/kosong
+   * dilempar ke jendela PIN supaya bisa diketik ulang di sana.
+   */
   const handlePinConfirm = async (pin: string) => {
     if (!session?.user?.id || !cancelTargetId) return;
 
+    let hasil: Awaited<ReturnType<typeof batalkanPO>>;
     try {
-      await cancelPO(cancelTargetId, session.user.id, 'PO cancelled from list', pin);
-      toast.success(tToasts('poCancelledSuccessfully'));
-      setPinModalOpen(false);
-      setCancelTargetId(null);
-      fetchPOs();
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error && isSecurityMessageKey(error.message)
-          ? tSecurity(error.message)
-          : error instanceof Error
-            ? error.message
-            : tToasts('failedToCancelPO');
-      toast.error(message);
-      throw error instanceof Error ? error : new Error(message);
+      hasil = await batalkanPO(cancelTargetId, cancelReason, pin);
+    } catch {
+      // Galat jaringan/server: tampil di jendela PIN, bukan "PIN tidak valid".
+      throw new Error(tToasts('failedToCancelPO'));
     }
+    if (!hasil.ok) {
+      const pesan = pesanTolakBatalPo(hasil);
+      const teks =
+        pesan.ruang === 'security'
+          ? tSecurity.has(pesan.kunci) ? tSecurity(pesan.kunci) : tSecurity('pinInvalid')
+          : tPO.has(pesan.kunci) ? tPO(pesan.kunci) : tToasts('failedToCancelPO');
+      if (pesan.ulangiPin) throw new Error(teks);
+      toast.error(teks);
+    } else {
+      toast.success(tToasts('poCancelledSuccessfully'));
+      tandai(cancelTargetId);
+    }
+    setPinModalOpen(false);
+    setCancelTargetId(null);
+    setCancelReason('');
+    fetchPOs();
   };
 
   const getPendingQty = (po: PurchaseOrder) => {
@@ -238,35 +288,32 @@ export function PurchaseOrdersPageClient({
     };
   };
 
-  const filteredPOs = pos.filter(po => 
-    po.docNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    po.supplier.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Sudah disaring (cari + status) dan dipotong per halaman di server.
+  const filteredPOs = pos;
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Purchase Orders</h1>
-          <p className="text-muted-foreground">
-            Manage procurement and track deliveries
-          </p>
-        </div>
-        <Link href="/backoffice/purchase-orders/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New PO
-          </Button>
-        </Link>
-      </div>
+      <PageHeader
+        title={tPO('judulHalaman')}
+        actions={
+          <Link href="/backoffice/purchase-orders/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              {tPO('newPO')}
+            </Button>
+          </Link>
+        }
+      />
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search PO number or supplier..."
+            type="search"
+            placeholder={tPO('searchPlaceholder')}
+            aria-label={tPO('searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -274,16 +321,17 @@ export function PurchaseOrdersPageClient({
         </div>
         <Select
           value={statusFilter || '__all__'}
-          onValueChange={(v) => setStatusFilter(v === '__all__' ? '' : (v as POStatus))}
+          onValueChange={(v) => setStatusFilter(v === '__all__' ? '' : parsePOStatusFilter(v))}
         >
           <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="All Status" />
+            <SelectValue placeholder={tPO('allStatus')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All Status</SelectItem>
-            {(Object.entries(statusLabels) as [POStatus, string][]).map(([status, label]) => (
+            <SelectItem value="__all__">{tPO('allStatus')}</SelectItem>
+            <SelectItem value="overdue">{tPO('filterOverdue')}</SelectItem>
+            {SEMUA_STATUS.map((status) => (
               <SelectItem key={status} value={status}>
-                {label}
+                {tStatus(getStatusMeta('purchaseOrder', status).labelKey as never)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -295,7 +343,7 @@ export function PurchaseOrdersPageClient({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ShoppingCart className="h-5 w-5" />
-            Purchase Order List
+            {tPO('listTitle')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -304,56 +352,78 @@ export function PurchaseOrdersPageClient({
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
             </div>
           ) : filteredPOs.length === 0 ? (
-            <div className="text-center py-12">
-              <ShoppingCart className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">No purchase orders found</p>
-            </div>
+            cariAktif || statusFilter ? (
+              <EmptyState
+                icon={ShoppingCart}
+                title={tPO('emptyFilteredTitle')}
+                description={tPO('emptyFilteredDescription')}
+              />
+            ) : (
+              <EmptyState
+                icon={ShoppingCart}
+                title={tPO('emptyTitle')}
+                description={tPO('emptyDescription')}
+              />
+            )
           ) : (
             <>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>PO Number</TableHead>
-                    <TableHead>Supplier</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>ETA</TableHead>
-                    <TableHead>Payment</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="min-w-[120px]">Progress</TableHead>
-                    <TableHead className="text-right">Pending</TableHead>
-                    <TableHead className="w-12"></TableHead>
+                    <TableHead>{tTable('poNumber')}</TableHead>
+                    <TableHead className="min-w-[148px]">{tTable('supplier')}</TableHead>
+                    <TableHead>{tTable('status')}</TableHead>
+                    <TableHead>{tTable('eta')}</TableHead>
+                    <TableHead className="hidden 2xl:table-cell">{tTable('payment')}</TableHead>
+                    <TableHead className="text-right">{tPO('colTotal')}</TableHead>
+                    <TableHead className="min-w-[120px]">{tTable('progress')}</TableHead>
+                    <TableHead className="hidden text-right 2xl:table-cell">{tPO('colPending')}</TableHead>
+                    <TableHead className="sticky right-0 w-12 bg-card">
+                      <span className="sr-only">{tPO('colActions')}</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
+                <TableBody className="baris-berurutan">
                   {filteredPOs.map((po) => (
-                    <TableRow key={po.id}>
-                      <TableCell className="font-medium">
-                        <Link
-                          href={`/backoffice/purchase-orders/${po.id}`}
-                          className="text-primary hover:underline"
-                        >
+                    <TableRow key={po.id} {...sorot(po.id)}>
+                      <TableCell>
+                        <Link href={`/backoffice/purchase-orders/${po.id}`} className={TAUTAN_DOKUMEN}>
                           {po.docNumber}
                         </Link>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal">
                         <div>
                           <p className="font-medium">{po.supplier.name}</p>
                           <p className="text-sm text-muted-foreground">{po.supplier.code}</p>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge className={statusColors[po.status]}>
-                          {statusIcons[po.status]}
-                          <span className="ml-1">{statusLabels[po.status]}</span>
-                        </Badge>
+                        {/* Below 2xl the payment state stacks under the status
+                            pill instead of taking its own column: at 1280 px
+                            the table was ~200 px wider than its card. */}
+                        <div className="flex flex-col items-start gap-1">
+                          {(() => {
+                            const meta = getStatusMeta('purchaseOrder', po.status);
+                            return <StatusPill tone={meta.tone}>{tStatus(meta.labelKey as never)}</StatusPill>;
+                          })()}
+                          {tampilStatusBayar(po.status) && (
+                            <span className="2xl:hidden">
+                              {po.paidAt ? (
+                                <StatusPill tone="settled">{tPO('paid')}</StatusPill>
+                              ) : (
+                                <StatusPill tone="waiting">{tPO('unpaid')}</StatusPill>
+                              )}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {po.etaDate ? (
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center gap-2">
                               <Calendar className="h-4 w-4 text-muted-foreground" />
-                              {new Date(po.etaDate).toLocaleDateString('id-ID')}
+                              {formatDisplayDate(po.etaDate, locale)}
                             </div>
                             <ETABadge etaDate={new Date(po.etaDate)} status={po.status} />
                           </div>
@@ -361,15 +431,25 @@ export function PurchaseOrdersPageClient({
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        {po.paidAt ? (
-                          <Badge variant="default" className="bg-green-600">Paid</Badge>
+                      <TableCell className="hidden 2xl:table-cell">
+                        {!tampilStatusBayar(po.status) ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : po.paidAt ? (
+                          <StatusPill tone="settled">{tPO('paid')}</StatusPill>
                         ) : (
-                          <Badge variant="secondary">Unpaid</Badge>
+                          <StatusPill tone="waiting">{tPO('unpaid')}</StatusPill>
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
-                        Rp {Number(po.grandTotal).toLocaleString()}
+                      <TableCell className="text-right whitespace-nowrap">
+                        Rp {Number(po.grandTotal).toLocaleString('id-ID')}
+                        {po.utang && po.utang.utang !== po.utang.nilaiPo && (
+                          <div className="text-xs text-muted-foreground">
+                            {/* PO lunas: nilai akhirnya, bukan "Utang" yang terbaca masih terbuka. */}
+                            {tPO(po.paidAt ? 'ringkasan.nilaiAkhirSingkat' : 'ringkasan.utangSingkat', {
+                              nilai: `Rp ${po.utang.utang.toLocaleString('id-ID')}`,
+                            })}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         {(() => {
@@ -388,40 +468,49 @@ export function PurchaseOrdersPageClient({
                                 'text-xs tabular-nums',
                                 overReceived ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'
                               )}>
-                                {totalReceived.toLocaleString()} / {totalOrdered.toLocaleString()}
-                                {overReceived && <span className="ml-1">(over)</span>}
+                                {totalReceived.toLocaleString('id-ID')} / {totalOrdered.toLocaleString('id-ID')}
+                                {overReceived && <span className="ml-1">{tPO('overShort')}</span>}
                               </p>
                             </div>
                           );
                         })()}
                       </TableCell>
-                      <TableCell className="text-right">
-                        {getPendingQty(po).toLocaleString()}
+                      <TableCell className="hidden text-right 2xl:table-cell">
+                        {getPendingQty(po).toLocaleString('id-ID')}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
+                      <TableCell className="sticky right-0 bg-card">
+                        <div className="flex items-center gap-1">
                           <Link href={`/backoffice/purchase-orders/${po.id}`}>
-                            <Button variant="ghost" size="icon">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={tPO('viewPO', { docNumber: po.docNumber })}
+                              title={tPO('viewPO', { docNumber: po.docNumber })}
+                            >
                               <Eye className="h-4 w-4" />
                             </Button>
                           </Link>
                           {po.status === 'DRAFT' && (
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               onClick={() => handleSubmit(po.id)}
+                              aria-label={`${tPO('submit')} — ${po.docNumber}`}
+                              title={tPO('submit')}
                             >
-                              Submit
+                              <Send className="h-4 w-4" />
                             </Button>
                           )}
-                          {(po.status === 'DRAFT' || po.status === 'SUBMITTED') && (
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
+                          {keadaanBatalPo({ status: po.status, items: po.items, jumlahGrn: po._count?.grns }) === 'boleh' && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               className="text-destructive"
-                              onClick={() => handleCancel(po.id)}
+                              onClick={() => handleCancel(po)}
+                              aria-label={`${tPO('cancel')} — ${po.docNumber}`}
+                              title={tPO('cancel')}
                             >
-                              Cancel
+                              <XCircle className="h-4 w-4" />
                             </Button>
                           )}
                         </div>
@@ -443,11 +532,19 @@ export function PurchaseOrdersPageClient({
         </CardContent>
       </Card>
 
+      <BatalPoDialog
+        open={cancelDialogOpen}
+        onOpenChange={setCancelDialogOpen}
+        docNumber={cancelTargetDoc}
+        onLanjut={lanjutBatal}
+      />
+
       <PinAuthModal
         isOpen={pinModalOpen}
         onClose={() => {
           setPinModalOpen(false);
           setCancelTargetId(null);
+          setCancelReason('');
         }}
         onConfirm={handlePinConfirm}
         action={tPO('pinActionCancelPO')}

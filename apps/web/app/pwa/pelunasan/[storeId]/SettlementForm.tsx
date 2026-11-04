@@ -78,6 +78,8 @@ const REASON_KEY: Partial<Record<SettlementActionReason, string>> = {
   MISSING_EVIDENCE: "errMissingEvidence",
   DRAFT_ID_CONFLICT: "errDraftIdConflict",
   NOT_OUTSTANDING: "errNotOutstanding",
+  // Tagihan konsinyasi hanya dibayar lewat BKM (keputusan 2026-10-29, satu jalur bayar).
+  KONSI_LEWAT_BKM: "errKonsiLewatBkm",
   INVOICE_OVERCLAIMED: "errInvoiceOverclaimed",
   RETURN_NOT_APPROVED: "errReturnNotApproved",
   NOT_VALUED: "errNotValued",

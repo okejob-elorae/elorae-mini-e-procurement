@@ -55,7 +55,7 @@ d("createItemsFromImport (test bed only)", () => {
   });
 
   it("creates every item as an ERP finished good with one zero-quantity variantless inventory row and no ledger entry", async () => {
-    const created = await createItemsFromImport(plan());
+    const created = await createItemsFromImport(plan(), { salesChannel: "BOTH" });
     expect(created.map((c) => c.sku)).toEqual(skus);
 
     const items = await prisma.item.findMany({ where: { sku: { in: skus } }, orderBy: { sku: "asc" } });
@@ -77,7 +77,26 @@ d("createItemsFromImport (test bed only)", () => {
     await prisma.item.create({
       data: { sku: skus[1], nameId: "already", nameEn: "already", type: "FINISHED_GOOD", uomId },
     });
-    await expect(createItemsFromImport(plan())).rejects.toBeInstanceOf(ItemImportSkuTakenError);
+    await expect(createItemsFromImport(plan(), { salesChannel: "BOTH" })).rejects.toBeInstanceOf(ItemImportSkuTakenError);
     expect(await prisma.item.count({ where: { sku: skus[0] } })).toBe(0);
+  });
+
+  it("Marketplace or both requests every created product (no push) and stores the channel; Toko offline saja requests none", async () => {
+    await createItemsFromImport(plan(), { salesChannel: "BOTH", olehUserId: null });
+    const diajukan = await prisma.item.findMany({
+      where: { sku: { in: skus } },
+      select: { id: true, salesChannel: true, jubelioCreateRequestedAt: true, jubelioConfirmedPrice: true },
+    });
+    expect(diajukan).toHaveLength(2);
+    expect(diajukan.every((i) => i.salesChannel === "BOTH")).toBe(true);
+    expect(diajukan.every((i) => i.jubelioCreateRequestedAt instanceof Date && i.jubelioConfirmedPrice === null)).toBe(true);
+    expect(await prisma.jubelioOutbox.count({ where: { entityId: { in: diajukan.map((i) => seededId(i.id)) } } })).toBe(0);
+
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: diajukan.map((i) => seededId(i.id)) } } });
+    await prisma.item.deleteMany({ where: { sku: { in: skus.map(seededId) } } });
+
+    await createItemsFromImport(plan(), { salesChannel: "OFFLINE" });
+    const tanpa = await prisma.item.findMany({ where: { sku: { in: skus } }, select: { salesChannel: true, jubelioCreateRequestedAt: true } });
+    expect(tanpa.every((i) => i.salesChannel === "OFFLINE" && i.jubelioCreateRequestedAt === null)).toBe(true);
   });
 });

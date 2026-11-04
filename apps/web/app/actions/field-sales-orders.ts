@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { approveFieldSalesOrder, rejectFieldSalesOrder } from "@/lib/field-sales/writer";
+import { approveFieldSalesOrder, HargaFinalTidakSahError, rejectFieldSalesOrder } from "@/lib/field-sales/writer";
 import { getItemAvailabilityBySku } from "@/lib/field-sales/queries";
 import { createKonsiPushOrder, type CreateKonsiPushOrderInput, type KonsiPushLine } from "@/lib/field-sales/konsi-push-writer";
 import {
@@ -17,6 +17,7 @@ import {
   type ShortLine,
   type KonsiPushErrorCode,
 } from "@/lib/field-sales/errors";
+import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";
 
 export type ActionResult =
   | { ok: true }
@@ -30,7 +31,9 @@ export type ActionResult =
         | "INVALID_FINAL_PRICE"
         | "INVALID_ADDED_LINE"
         | "CREDIT_LIMIT_EXCEEDED"
-        | "REASON_REQUIRED";
+        | "REASON_REQUIRED"
+        /* Pesanan yang kreditnya ditahan saat dibuat butuh pernyataan "sudah memeriksa tagihan". */
+        | "KREDIT_BELUM_DIPERIKSA";
       /* Only ever present on INSUFFICIENT_STOCK. Optional because rejectFieldSalesOrderAction shares this type. */
       shortLines?: ShortLine[];
       /* Only ever present on INVALID_ADDED_LINE. */
@@ -40,6 +43,7 @@ export type ActionResult =
         exposure: { receivableOutstanding: number; undeliveredOrderResidual: number; total: number };
         creditLimit: number;
         orderTotal: number;
+        sumber?: "TOKO" | "BAWAAN";
       };
     };
 
@@ -87,6 +91,7 @@ export async function approveFieldSalesOrderAction(
   finalPrices?: Array<{ lineId: string; finalUnitPrice: number }>,
   addedLines?: Array<{ itemId: string; variantSku: string; qty: number }>,
   creditOverrideReason?: string,
+  opsi?: { kreditDiperiksa?: boolean },
 ): Promise<ActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
@@ -98,15 +103,27 @@ export async function approveFieldSalesOrderAction(
       return { ok: false, reason: "FORBIDDEN" };
     }
   }
+  // Hanya `true` yang dihitung sebagai pernyataan; nilai lain dari klien dianggap belum memeriksa.
+  const kreditDiperiksa = opsi?.kreditDiperiksa === true;
   try {
-    await approveFieldSalesOrder({ orderId, approvedById: g.userId, finalPrices, addedLines, creditOverrideReason });
+    await approveFieldSalesOrder({
+      orderId,
+      approvedById: g.userId,
+      finalPrices,
+      addedLines,
+      creditOverrideReason,
+      kreditDiperiksa,
+    });
   } catch (e) {
     if (e instanceof CreditLimitExceededError) {
       return {
         ok: false,
         reason: "CREDIT_LIMIT_EXCEEDED",
-        credit: { exposure: e.exposure, creditLimit: e.creditLimit, orderTotal: e.orderTotal },
+        credit: { exposure: e.exposure, creditLimit: e.creditLimit, orderTotal: e.orderTotal, ...(e.sumber ? { sumber: e.sumber } : {}) },
       };
+    }
+    if (e instanceof KreditBelumDiperiksaError) {
+      return { ok: false, reason: "KREDIT_BELUM_DIPERIKSA" };
     }
     if (e instanceof InsufficientStockError) {
       return { ok: false, reason: "INSUFFICIENT_STOCK", shortLines: e.shortLines };
@@ -120,10 +137,17 @@ export async function approveFieldSalesOrderAction(
     if (e instanceof InvalidOrderTransitionError) {
       return { ok: false, reason: e.from === "MISSING" ? "NOT_FOUND" : "INVALID_TRANSITION" };
     }
+    // Cadangan saringan bentuk di atas: penolakan harga final dari penulis dijawab dengan kode
+    // yang dipahami kartu persetujuan, bukan galat yang di produksi tertutup digest.
+    if (e instanceof HargaFinalTidakSahError) {
+      return { ok: false, reason: "INVALID_FINAL_PRICE" };
+    }
     throw e;
   }
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
+  // Persetujuan konsi hanya mencadangkan stok: barangnya baru pindah ke toko saat pengirimannya
+  // selesai, jadi kabar ke SPG toko dikirim dari aksi penyelesaian pengiriman, bukan di sini.
   return { ok: true };
 }
 
@@ -160,6 +184,7 @@ export type KonsiPushActionResult =
         exposure: { receivableOutstanding: number; undeliveredOrderResidual: number; total: number };
         creditLimit: number;
         orderTotal: number;
+        sumber?: "TOKO" | "BAWAAN";
       };
     };
 
@@ -221,7 +246,7 @@ export async function createKonsiPushOrderAction(input: unknown): Promise<KonsiP
       return {
         ok: false,
         reason: "CREDIT_LIMIT_EXCEEDED",
-        credit: { exposure: e.exposure, creditLimit: e.creditLimit, orderTotal: e.orderTotal },
+        credit: { exposure: e.exposure, creditLimit: e.creditLimit, orderTotal: e.orderTotal, ...(e.sumber ? { sumber: e.sumber } : {}) },
       };
     }
     console.error("[konsi-push] unexpected failure", e);

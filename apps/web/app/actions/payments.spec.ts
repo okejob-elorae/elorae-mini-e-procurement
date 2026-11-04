@@ -218,6 +218,20 @@ describe("payment action guards", () => {
     if (!res.ok) expect(res.reason).toBe("RETURN_NOT_APPROVED");
   });
 
+  /*
+   * The konsi refusal keeps its own reason, so the toast names the real cause. Cast because the
+   * AR writer's `PaymentErrorCode` may not carry it yet; the map does either way.
+   */
+  it("maps the konsi refusal onto its own reason", async () => {
+    mockRecordPayment.mockRejectedValue(new PaymentError("KONSI_LEWAT_BKM" as never));
+    expect(
+      await recordPaymentAction({
+        storeId: "s1", paidAt: "2026-03-01", method: "CASH", amount: 100,
+        allocations: [{ receivableId: "r1", amount: 100 }],
+      }),
+    ).toEqual({ ok: false, reason: "KONSI_LEWAT_BKM" });
+  });
+
   it("posts the receipt journal and reports alreadyApplied on success", async () => {
     mockApplyReturnOffset.mockResolvedValue({ ok: true, paymentId: "pay-9", alreadyApplied: true });
     const res = await applyReturnOffsetAction({

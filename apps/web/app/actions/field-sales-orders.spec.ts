@@ -25,6 +25,7 @@ vi.mock("@/lib/field-sales/writer", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 import { InsufficientStockError, InvalidAddedLineError } from "@/lib/field-sales/errors";
+import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";
 import { approveFieldSalesOrderAction, getKonsiPushAvailabilityAction, rejectFieldSalesOrderAction } from "./field-sales-orders";
 
 describe("approveFieldSalesOrderAction (unit — writer mocked)", () => {
@@ -129,6 +130,24 @@ describe("approveFieldSalesOrderAction (unit — writer mocked)", () => {
     );
   });
 
+  it("maps KreditBelumDiperiksaError onto KREDIT_BELUM_DIPERIKSA", async () => {
+    mockHasPermission.mockReturnValue(true);
+    mockApprove.mockRejectedValue(new KreditBelumDiperiksaError("o1"));
+    const res = await approveFieldSalesOrderAction("o1");
+    expect(res).toEqual({ ok: false, reason: "KREDIT_BELUM_DIPERIKSA" });
+  });
+
+  it("forwards kreditDiperiksa only when it is exactly true", async () => {
+    mockHasPermission.mockReturnValue(true);
+    mockApprove.mockResolvedValue({ ok: true });
+    await approveFieldSalesOrderAction("o1", undefined, undefined, undefined, { kreditDiperiksa: true });
+    expect(mockApprove).toHaveBeenLastCalledWith(expect.objectContaining({ orderId: "o1", kreditDiperiksa: true }));
+    await approveFieldSalesOrderAction("o1", undefined, undefined, undefined, { kreditDiperiksa: "ya" as never });
+    expect(mockApprove).toHaveBeenLastCalledWith(expect.objectContaining({ orderId: "o1", kreditDiperiksa: false }));
+    await approveFieldSalesOrderAction("o1");
+    expect(mockApprove).toHaveBeenLastCalledWith(expect.objectContaining({ orderId: "o1", kreditDiperiksa: false }));
+  });
+
   it("succeeds with no addedLines at all (backward compatible)", async () => {
     mockHasPermission.mockReturnValue(true);
     mockApprove.mockResolvedValue({ ok: true });
@@ -150,6 +169,25 @@ describe("approveFieldSalesOrderAction (unit — writer mocked)", () => {
       ok: false,
       reason: "CREDIT_LIMIT_EXCEEDED",
       credit: { exposure: { receivableOutstanding: 100, undeliveredOrderResidual: 200, total: 300 }, creditLimit: 250, orderTotal: 400 },
+    });
+  });
+
+  it("forwards the limit's source when the refusal carries it", async () => {
+    mockHasPermission.mockReturnValue(true);
+    const { CreditLimitExceededError } = await import("@/lib/field-sales/errors");
+    mockApprove.mockRejectedValue(
+      new CreditLimitExceededError({ receivableOutstanding: 100, undeliveredOrderResidual: 200, total: 300 }, 250, 400, "BAWAAN"),
+    );
+    const result = await approveFieldSalesOrderAction("order-1");
+    expect(result).toEqual({
+      ok: false,
+      reason: "CREDIT_LIMIT_EXCEEDED",
+      credit: {
+        exposure: { receivableOutstanding: 100, undeliveredOrderResidual: 200, total: 300 },
+        creditLimit: 250,
+        orderTotal: 400,
+        sumber: "BAWAAN",
+      },
     });
   });
 

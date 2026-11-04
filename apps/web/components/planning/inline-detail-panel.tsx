@@ -1,33 +1,19 @@
 "use client";
 
-import type { ComboboxOption, PlanCategoryDetail } from "./types";
+import type { ComboboxOption, PlanCategoryDetail, PlanStageHandlers } from "./types";
 import { MonthlyCards } from "./monthly-cards";
 import { StageList } from "./stage-list";
 
-export type InlineDetailPanelProps = {
+export type InlineDetailPanelProps = PlanStageHandlers & {
   category: PlanCategoryDetail;
   supplierOptions: ComboboxOption[];
   disabled?: boolean;
+  canManage?: boolean;
   canCreateWo?: boolean;
   allowWoWhenLocked?: boolean;
   onSaveMonth: (month: number, targetQty: number) => Promise<void>;
   onResetMonth: (month: number) => Promise<void>;
   onResetAllMonths: () => Promise<void>;
-  onAddStage: (data: {
-    name: string;
-    targetQty: number;
-    targetMonth?: number;
-    supplierId?: string;
-  }) => Promise<void>;
-  onUpdateStage: (
-    stageId: string,
-    data: Partial<{
-      name: string;
-      targetQty: number;
-      targetMonth: number | null;
-      supplierId: string | null;
-    }>
-  ) => Promise<void>;
   onDeleteStage: (stageId: string) => Promise<void>;
   onCreateWo: (stageId: string) => Promise<void>;
 };
@@ -36,6 +22,7 @@ export function InlineDetailPanel({
   category,
   supplierOptions,
   disabled,
+  canManage,
   canCreateWo,
   allowWoWhenLocked,
   onSaveMonth,
@@ -59,6 +46,7 @@ export function InlineDetailPanel({
         category={category}
         supplierOptions={supplierOptions}
         disabled={disabled}
+        canManage={canManage}
         canCreateWo={canCreateWo}
         allowWoWhenLocked={allowWoWhenLocked}
         onAddStage={onAddStage}

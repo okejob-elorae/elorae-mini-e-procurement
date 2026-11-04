@@ -4,6 +4,9 @@ import { prisma } from '@elorae/db';
 import { Decimal } from 'decimal.js';
 import * as XLSX from 'xlsx';
 import { toCsv } from "@/lib/reports/csv";
+import { barisEksporKinerjaPemasok, KOLOM_KINERJA_PEMASOK } from '@/lib/laporan/ekspor-laporan';
+import { PERMISSIONS } from '@/lib/rbac';
+import { wajibIzinLaporan } from './penjaga';
 
 export type VendorPerformanceRow = {
   docNumber: string;
@@ -22,6 +25,7 @@ export async function getVendorPerformanceReport(
   dateFrom: Date,
   dateTo: Date
 ): Promise<VendorPerformanceRow[]> {
+  await wajibIzinLaporan(PERMISSIONS.WORK_ORDERS_VIEW);
   const wos = await prisma.workOrder.findMany({
     where: {
       vendorId,
@@ -83,38 +87,19 @@ export async function exportVendorPerformanceReport(
   dateTo: Date,
   format: 'csv' | 'excel'
 ): Promise<{ data: string; filename: string } | { base64: string; filename: string }> {
+  await wajibIzinLaporan(PERMISSIONS.WORK_ORDERS_VIEW);
   const rows = await getVendorPerformanceReport(vendorId, dateFrom, dateTo);
-  const data = rows.map((r) => ({
-    'Doc Number': r.docNumber,
-    'Finished Good': r.finishedGood,
-    'Planned Qty': r.plannedQty,
-    'Actual Qty': r.actualQty,
-    'Efficiency %': r.efficiency,
-    'Material Cost': r.materialCost,
-    'Return Value': r.returnValue,
-    'Status': r.status,
-    'Completion Time (days)': r.completionTimeDays ?? '',
-  }));
+  // Kepala kolom dan status sama dengan layar (Indonesia).
+  const data = barisEksporKinerjaPemasok(rows);
 
   if (format === 'csv') {
-    const headers = [
-      "Doc Number",
-      "Finished Good",
-      "Planned Qty",
-      "Actual Qty",
-      "Efficiency %",
-      "Material Cost",
-      "Return Value",
-      "Status",
-      "Completion Time (days)",
-    ];
     /* The formula guard prefixes a leading "-", so the "-" placeholder exports as an em dash. */
-    const csvRows = data.map((r) => ({ ...r, "Finished Good": r["Finished Good"] === "-" ? "—" : r["Finished Good"] }));
-    return { data: toCsv(headers, csvRows), filename: `vendor-performance-${Date.now()}.csv` };
+    const csvRows = data.map((r) => ({ ...r, "Barang jadi": r["Barang jadi"] === "-" ? "—" : r["Barang jadi"] }));
+    return { data: toCsv([...KOLOM_KINERJA_PEMASOK], csvRows), filename: `laporan-setoran-cmt-${Date.now()}.csv` };
   }
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(data);
-  XLSX.utils.book_append_sheet(wb, ws, 'Vendor Performance');
+  const ws = XLSX.utils.json_to_sheet(data, { header: [...KOLOM_KINERJA_PEMASOK] });
+  XLSX.utils.book_append_sheet(wb, ws, 'Setoran CMT');
   const buffer = Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
-  return { base64: buffer.toString('base64'), filename: `vendor-performance-${Date.now()}.xlsx` };
+  return { base64: buffer.toString('base64'), filename: `laporan-setoran-cmt-${Date.now()}.xlsx` };
 }

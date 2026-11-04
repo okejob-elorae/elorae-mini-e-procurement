@@ -1,6 +1,19 @@
 import { prisma, Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { isValidMarkupPercent, MARKUP_PERCENT_MAX } from "@elorae/db/pricing";
+import { cariTeks } from "@/lib/db/cari-teks";
+import { gantiPemegangToko } from "@/lib/stores/penanggung-jawab-writer";
+import {
+  bacaAturanKelasToko,
+  bacaKelas,
+  DAFTAR_KELAS,
+  KUNCI_KELAS_TOKO,
+  perubahanUsulan,
+  usulanPerJenis,
+  type AturanKelasToko,
+  type KelasToko,
+  type SatuanNilaiKelas,
+} from "@/lib/stores/kelas-toko";
 
 export type StoreFields = {
   code: string;
@@ -12,15 +25,66 @@ export type StoreFields = {
   paymentTempo: number;
   markupPercent: number | null;
   priceDiscountPercent: number | null;
+  /**
+   * Batas kredit toko (Rp): eksposur piutang toko ditambah pesanan yang disetujui tidak boleh
+   * melewatinya tanpa alasan override. null = ikut batas bawaan di Pengaturan → Salesman (toko
+   * putus; bawaan kosong = tidak dibatasi); 0 = toko tunai (setiap pesanan kredit butuh
+   * override). Milik admin, bukan sales. Artinya diputuskan `batasKreditBerlaku`
+   * (`lib/salesman/kredit.ts`), yang juga dipakai mode kredit di atasnya.
+   */
   creditLimit: number | null;
+  /**
+   * "Tanpa batas kredit": toko dibebaskan dari batas kredit DAN batas faktur terbuka (tagihan
+   * lewat janji tetap dinilai). Dicentang → kedua kolom batas disimpan kosong. Milik admin;
+   * opsional seperti `maxOpenInvoices` — `undefined` tidak mengubah yang tersimpan.
+   */
+  noCreditLimit?: boolean;
   npwp: string | null;
   lat: number | null;
   lng: number | null;
   checkinRadiusMeters: number | null;
   sellThroughMethod: "SPG_POS" | "SHELF_COUNT" | null;
+  /**
+   * Toko pengusaha kena pajak.
+   *
+   * Menentukan boleh-tidaknya potongan berjenis `pkpOnly` (PPh 23). Milik
+   * admin, BUKAN sales — sama seperti termsType dan markupPercent, karena
+   * mengubahnya mengubah berapa yang boleh dipotong dari tagihan.
+   */
+  isPkp: boolean;
+  /**
+   * Tagihan konsinyasi toko ini memakai PPN (hanya bermakna untuk toko KONSI).
+   * Bawaan mati: tanpa PPN. Dibekukan ke siklus saat angkanya dikunci. Milik
+   * admin; opsional seperti `maxOpenInvoices` — `undefined` tidak mengubah yang tersimpan.
+   */
+  consignmentVat?: boolean;
+  /** Area (StoreGroup) — JGU, JTT, … Milik admin. */
+  groupId: string | null;
+  /**
+   * Sales yang memegang toko ini SEKARANG. Milik admin; dirotasi dari
+   * formulir toko atau massal dari daftar toko, dan setiap perubahan tercatat
+   * di jejak audit. Bukan penjual faktur — itu tetap di faktur/pesanannya.
+   */
+  salesmanId: string | null;
+  /**
+   * Jumlah faktur belum lunas maksimal yang dinilai mode kredit. Kosong = ikut batas bawaan di
+   * Pengaturan → Salesman; 0 adalah nilai sah. Opsional di masukan: pemanggil yang tidak
+   * mengirimnya (`undefined`) tidak mengubah nilai yang tersimpan.
+   */
+  maxOpenInvoices?: number | null;
+  /**
+   * Kelas toko A/B/C — menentukan jarak kunjungan sales (diatur per kelas di
+   * Pengaturan → Salesman). null = tanpa kelas, ikut batas hari umum. Milik
+   * admin. Opsional seperti `maxOpenInvoices`: `undefined` tidak mengubah yang tersimpan.
+   */
+  storeClass?: KelasToko | null;
 };
 
 export type StoreListItem = StoreFields & {
+  consignmentVat: boolean;
+  noCreditLimit: boolean;
+  maxOpenInvoices: number | null;
+  storeClass: KelasToko | null;
   id: string;
   isActive: boolean;
   createdAt: Date;
@@ -38,9 +102,10 @@ function toDecimalOrNull(v: number | null): Prisma.Decimal | null {
  *   store's floor with no correction path once the store stops being read as KONSI (the stock
  *   card, and the konsi retur decrement, are both gated on termsType === "KONSI");
  * - or it has a konsi order still awaiting approval, or approved with qty neither delivered nor
- *   closed. Konsi stock reaches StoreStock only when a delivery shipment completes, so that qty
- *   is on no store balance yet — but completing it after the switch would land it on a PUTUS
- *   store's StoreStock, where nothing can ever correct it.
+ *   closed. Konsi stock reaches StoreStock only when the store receives its shipment, so that qty
+ *   is on no store balance yet — but delivering it after the switch would land it on a PUTUS
+ *   store's StoreStock, where nothing can ever correct it;
+ * - or a konsi transfer to it is still IN_TRANSIT (shipped, not yet received), for the same reason.
  *
  * The store must return or transfer its stock, and settle those orders, first.
  */
@@ -93,11 +158,20 @@ function toPercentColumnScale(percent: number | null): number | null {
 }
 
 function atColumnScale(input: StoreFields): StoreFields {
-  return {
+  return clearLimitsWhenUnlimited({
     ...input,
     markupPercent: toPercentColumnScale(input.markupPercent),
     priceDiscountPercent: toPercentColumnScale(input.priceDiscountPercent),
-  };
+  });
+}
+
+/**
+ * A store ticked "Tanpa batas kredit" keeps no limit figure behind: both limit columns are stored
+ * empty, so nothing that reads the raw columns can mistake a stale figure for a live limit.
+ * Unticked or not sent leaves both as given.
+ */
+function clearLimitsWhenUnlimited(input: StoreFields): StoreFields {
+  return input.noCreditLimit === true ? { ...input, creditLimit: null, maxOpenInvoices: null } : input;
 }
 
 /* Takes the fields `atColumnScale` returns, so the range check runs on the figure the column stores. */
@@ -165,6 +239,24 @@ function assertValidSellThroughMethod(input: Pick<StoreFields, "termsType" | "se
   }
 }
 
+/**
+ * Thrown by createStore/updateStore when a KONSI store would be saved with no holding salesperson.
+ * Owner P47, 2026-11-02: a konsi store always has a holder, who alone sees and collects its konsi
+ * bills (P31) — a konsi bill with no holder would reach no phone at all.
+ */
+export class KonsiTanpaPemegangError extends Error {
+  constructor() {
+    super("A KONSI store must have a holding salesperson");
+    this.name = "KonsiTanpaPemegangError";
+  }
+}
+
+function assertKonsiPunyaPemegang(input: Pick<StoreFields, "termsType" | "salesmanId">): void {
+  if (input.termsType === "KONSI" && !input.salesmanId) {
+    throw new KonsiTanpaPemegangError();
+  }
+}
+
 function serializeStore(s: {
   id: string;
   code: string;
@@ -177,11 +269,18 @@ function serializeStore(s: {
   markupPercent: Prisma.Decimal | null;
   priceDiscountPercent: Prisma.Decimal | null;
   creditLimit: Prisma.Decimal | null;
+  noCreditLimit: boolean;
   npwp: string | null;
   lat: Prisma.Decimal | null;
   lng: Prisma.Decimal | null;
   checkinRadiusMeters: number | null;
   sellThroughMethod: "SPG_POS" | "SHELF_COUNT" | null;
+  isPkp: boolean;
+  consignmentVat: boolean;
+  groupId: string | null;
+  salesmanId: string | null;
+  maxOpenInvoices: number | null;
+  storeClass: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -198,11 +297,18 @@ function serializeStore(s: {
     markupPercent: s.markupPercent ? s.markupPercent.toNumber() : null,
     priceDiscountPercent: s.priceDiscountPercent ? s.priceDiscountPercent.toNumber() : null,
     creditLimit: s.creditLimit !== null ? s.creditLimit.toNumber() : null,
+    noCreditLimit: s.noCreditLimit,
     npwp: s.npwp,
     lat: s.lat ? s.lat.toNumber() : null,
     lng: s.lng ? s.lng.toNumber() : null,
     checkinRadiusMeters: s.checkinRadiusMeters,
     sellThroughMethod: s.sellThroughMethod,
+    isPkp: s.isPkp,
+    consignmentVat: s.consignmentVat,
+    groupId: s.groupId,
+    salesmanId: s.salesmanId,
+    maxOpenInvoices: s.maxOpenInvoices,
+    storeClass: bacaKelas(s.storeClass),
     isActive: s.isActive,
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
@@ -281,21 +387,37 @@ function normalizeStoreNpwp(npwp: string | null): string | null {
 
 export type StoreListRow = StoreListItem & { npwpMissing: boolean };
 
+/** Aksi jejak saat batas kredit toko diubah dari formulir toko. */
+export const AKSI_BATAS_KREDIT_TOKO = "STORE_CREDIT_LIMIT_CHANGED";
+/** Aksi jejak saat kelas toko diubah — dari formulir toko atau dari usulan otomatis. */
+export const AKSI_KELAS_TOKO = "STORE_CLASS_CHANGED";
+/** Aksi jejak saat sakelar PPN tagihan konsinyasi toko diubah dari formulir toko. */
+export const AKSI_PPN_KONSI_TOKO = "STORE_CONSIGNMENT_VAT_CHANGED";
+
 export async function listStores(
   opts: {
     activeOnly?: boolean;
     search?: string;
     location?: StoreLocationFilter;
     npwp?: StoreNpwpFilter;
+    /** Area (StoreGroup id). */
+    groupId?: string;
+    /** Pemegang sekarang; "TANPA" = toko yang belum punya pemegang. */
+    salesmanId?: string | "TANPA";
+    /** Kelas toko; "TANPA" = toko yang belum diberi kelas. */
+    storeClass?: KelasToko | "TANPA";
   } = {},
   paging?: { page: number; pageSize: number },
 ): Promise<{ items: StoreListRow[]; totalCount: number }> {
   const where: Prisma.StoreWhereInput = {};
   if (opts.activeOnly) where.isActive = true;
+  if (opts.groupId) where.groupId = opts.groupId;
+  if (opts.salesmanId) where.salesmanId = opts.salesmanId === "TANPA" ? null : opts.salesmanId;
+  if (opts.storeClass) where.storeClass = opts.storeClass === "TANPA" ? null : opts.storeClass;
   if (opts.search && opts.search.trim()) {
     where.OR = [
-      { name: { contains: opts.search.trim() } },
-      { code: { contains: opts.search.trim() } },
+      { name: cariTeks(opts.search.trim()) },
+      { code: cariTeks(opts.search.trim()) },
     ];
   }
   const filters = [buildStoreLocationWhere(opts.location), buildStoreNpwpWhere(opts.npwp)].filter(
@@ -335,8 +457,15 @@ export async function listActiveStoreOptions(): Promise<{ id: string; name: stri
   return prisma.store.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } });
 }
 
-export async function listActiveStoresForPwa() {
-  const rows = await prisma.store.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
+/**
+ * Toko aktif untuk HP. `hanyaMilik` = saat kunci "hanya toko sendiri" menyala,
+ * sempitkan ke toko yang dipegang sales itu.
+ */
+export async function listActiveStoresForPwa(opsi?: { hanyaMilik?: string }) {
+  const rows = await prisma.store.findMany({
+    where: { isActive: true, ...(opsi?.hanyaMilik ? { salesmanId: opsi.hanyaMilik } : {}) },
+    orderBy: { name: "asc" },
+  });
   return rows.map(serializeStore);
 }
 
@@ -350,6 +479,7 @@ export async function createStore(rawInput: StoreFields): Promise<StoreListItem>
   assertValidMarkupPercent(input);
   assertValidPriceDiscount(input);
   assertValidSellThroughMethod(input);
+  assertKonsiPunyaPemegang(input);
   const created = await prisma.store.create({
     data: {
       code: input.code,
@@ -362,21 +492,33 @@ export async function createStore(rawInput: StoreFields): Promise<StoreListItem>
       markupPercent: toDecimalOrNull(input.markupPercent),
       priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
       creditLimit: toDecimalOrNull(input.creditLimit),
+      noCreditLimit: input.noCreditLimit ?? false,
       npwp: normalizeStoreNpwp(input.npwp),
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
       checkinRadiusMeters: input.checkinRadiusMeters,
       sellThroughMethod: input.sellThroughMethod,
+      isPkp: input.isPkp,
+      consignmentVat: input.consignmentVat ?? false,
+      groupId: input.groupId,
+      salesmanId: input.salesmanId,
+      maxOpenInvoices: input.maxOpenInvoices ?? null,
+      storeClass: input.storeClass ?? null,
     },
   });
   return serializeStore(created);
 }
 
-export async function updateStore(id: string, rawInput: StoreFields): Promise<StoreListItem> {
+/**
+ * Simpan formulir toko. Perubahan pemegang, batas kredit, kelas, dan PPN konsinyasi ditulis ke
+ * jejak audit di transaksi yang sama — kolomnya hanya menyimpan nilai terakhir.
+ */
+export async function updateStore(id: string, rawInput: StoreFields, olehUserId: string): Promise<StoreListItem> {
   const input = atColumnScale(rawInput);
   assertValidMarkupPercent(input);
   assertValidPriceDiscount(input);
   assertValidSellThroughMethod(input);
+  assertKonsiPunyaPemegang(input);
 
   return runSerializable(async (tx) => {
     if (input.termsType === "PUTUS") {
@@ -410,9 +552,25 @@ export async function updateStore(id: string, rawInput: StoreFields): Promise<St
           0,
         );
         if (openKonsiQty > 0) throw new StoreHasConsignmentStockError(id);
+
+        /*
+         * Goods on their way to the store: a konsi shipment's transfer is IN_TRANSIT from the
+         * moment the shipment is created (the order line's deliveredQty already counts it) until
+         * the store receives it, and its units are on no StoreStock row yet. Receiving it after
+         * the switch would land konsi stock on a PUTUS store.
+         */
+        const inTransit = await tx.konsiTransfer.findFirst({
+          where: { storeId: id, status: "IN_TRANSIT" },
+          select: { id: true },
+        });
+        if (inTransit) throw new StoreHasConsignmentStockError(id);
       }
     }
 
+    const sebelum = await tx.store.findUnique({
+      where: { id },
+      select: { salesmanId: true, creditLimit: true, maxOpenInvoices: true, noCreditLimit: true, storeClass: true, consignmentVat: true },
+    });
     const updated = await tx.store.update({
       where: { id },
       data: {
@@ -431,7 +589,75 @@ export async function updateStore(id: string, rawInput: StoreFields): Promise<St
         lng: toDecimalOrNull(input.lng),
         checkinRadiusMeters: input.checkinRadiusMeters,
         sellThroughMethod: input.sellThroughMethod,
+        isPkp: input.isPkp,
+        groupId: input.groupId,
+        salesmanId: input.salesmanId,
+        ...(input.maxOpenInvoices !== undefined ? { maxOpenInvoices: input.maxOpenInvoices } : {}),
+        ...(input.noCreditLimit !== undefined ? { noCreditLimit: input.noCreditLimit } : {}),
+        ...(input.storeClass !== undefined ? { storeClass: input.storeClass } : {}),
+        ...(input.consignmentVat !== undefined ? { consignmentVat: input.consignmentVat } : {}),
       },
+    });
+    const kreditSebelum = {
+      creditLimit: sebelum?.creditLimit ? sebelum.creditLimit.toNumber() : null,
+      maxOpenInvoices: sebelum?.maxOpenInvoices ?? null,
+      noCreditLimit: sebelum?.noCreditLimit ?? false,
+    };
+    const kreditSesudah = {
+      creditLimit: updated.creditLimit ? updated.creditLimit.toNumber() : null,
+      maxOpenInvoices: updated.maxOpenInvoices,
+      noCreditLimit: updated.noCreditLimit,
+    };
+    // Batas kredit menentukan pesanan mana yang ditahan atau ditolak — siapa
+    // mengubahnya, kapan, dan dari berapa hanya hidup di jejak ini.
+    if (
+      sebelum &&
+      (kreditSebelum.creditLimit !== kreditSesudah.creditLimit ||
+        kreditSebelum.maxOpenInvoices !== kreditSesudah.maxOpenInvoices ||
+        kreditSebelum.noCreditLimit !== kreditSesudah.noCreditLimit)
+    ) {
+      await tx.auditLog.create({
+        data: {
+          userId: olehUserId,
+          action: AKSI_BATAS_KREDIT_TOKO,
+          entityType: "Store",
+          entityId: id,
+          changes: { before: kreditSebelum, after: kreditSesudah },
+        },
+      });
+    }
+    // Kelas menentukan seberapa sering toko didatangi — jejaknya sama dengan batas kredit.
+    const kelasSebelum = bacaKelas(sebelum?.storeClass);
+    const kelasSesudah = bacaKelas(updated.storeClass);
+    if (sebelum && kelasSebelum !== kelasSesudah) {
+      await tx.auditLog.create({
+        data: {
+          userId: olehUserId,
+          action: AKSI_KELAS_TOKO,
+          entityType: "Store",
+          entityId: id,
+          changes: { before: { storeClass: kelasSebelum }, after: { storeClass: kelasSesudah } },
+          metadata: { sumber: "FORMULIR" },
+        },
+      });
+    }
+    // PPN tagihan konsinyasi menentukan pendapatan dan faktur pajak siklus yang dikunci sesudahnya.
+    if (sebelum && sebelum.consignmentVat !== updated.consignmentVat) {
+      await tx.auditLog.create({
+        data: {
+          userId: olehUserId,
+          action: AKSI_PPN_KONSI_TOKO,
+          entityType: "Store",
+          entityId: id,
+          changes: { before: { consignmentVat: sebelum.consignmentVat }, after: { consignmentVat: updated.consignmentVat } },
+        },
+      });
+    }
+    await gantiPemegangToko(tx, {
+      storeId: id,
+      sebelum: sebelum?.salesmanId ?? null,
+      sesudah: input.salesmanId,
+      olehUserId,
     });
     return serializeStore(updated);
   });
@@ -543,4 +769,151 @@ export async function listVisitPhotosForVisits(visitIds: string[]) {
     map.set(r.visitId, list);
   }
   return map;
+}
+
+// ─── Kelas toko ──────────────────────────────────────────────────────────────
+
+/** Rentang nilai beli yang dipakai mengusulkan kelas toko. */
+export const HARI_NILAI_KELAS = 180;
+
+/** Aturan kelas toko dari `SystemSetting` (nilai rusak → bawaan per kolom). */
+export async function aturanKelasToko(): Promise<AturanKelasToko> {
+  const baris = await prisma.systemSetting.findUnique({ where: { key: KUNCI_KELAS_TOKO }, select: { value: true } });
+  return bacaAturanKelasToko(baris?.value);
+}
+
+export type BarisKelasToko = {
+  storeId: string;
+  code: string;
+  name: string;
+  termsType: "PUTUS" | "KONSI";
+  areaKode: string | null;
+  kelas: KelasToko | null;
+  /** Nilai beli 180 hari: rupiah untuk toko putus, potong untuk toko konsinyasi. */
+  nilai: number;
+  satuan: SatuanNilaiKelas;
+  /** null = belum ada pembelian dalam 180 hari — tidak diberi usulan. */
+  usulan: KelasToko | null;
+};
+
+/**
+ * Setiap toko aktif dengan nilai belinya 180 hari terakhir dan usulan kelasnya.
+ *
+ * Nilai beli:
+ * - Toko PUTUS = rupiah seluruh nota pengiriman dalam 180 hari (menurut tanggal
+ *   kirim). Yang dihitung barang yang benar-benar diterima toko, bukan yang
+ *   dipesan: pesanan yang sisanya ditutup hanya terhitung bagian terkirimnya.
+ * - Toko KONSI = jumlah POTONG yang dipindah ke toko (`KonsiTransfer`) dalam
+ *   180 hari, menurut tanggal surat jalannya dibuat (saat itu barang keluar
+ *   Gudang Utama, pemilik Q1). Pemindahan yang tidak jadi dikirim (CANCELLED)
+ *   tidak dihitung, dan potong yang ditolak di pintu lalu dibawa kembali
+ *   (`returnedQty`) dikurangkan. Persetujuan hanya memesan stok, jadi pesanan
+ *   yang belum dikirim atau sisanya ditutup tidak terhitung. Konsinyasi tidak
+ *   punya harga beli — barangnya titipan, dibayar sesudah laku — jadi rupiahnya
+ *   tidak sebanding dengan toko putus. Karena itu kedua jenis diperingkat
+ *   terpisah (`usulanPerJenis`), dan layar menyebut satuannya.
+ * Penjualan van ke toko tidak ikut: definisi pemilik adalah kiriman putus dan
+ * konsinyasi. Toko tanpa pembelian tetap tanpa usulan.
+ */
+export async function daftarKelasToko(aturan: AturanKelasToko, hariIni: Date = new Date()): Promise<BarisKelasToko[]> {
+  const sejak = new Date(hariIni.getTime() - HARI_NILAI_KELAS * 86_400_000);
+  const [toko, kirim, konsi] = await Promise.all([
+    prisma.store.findMany({
+      where: { isActive: true },
+      select: { id: true, code: true, name: true, termsType: true, storeClass: true, group: { select: { code: true } } },
+      orderBy: { name: "asc" },
+    }),
+    prisma.fieldSalesDelivery.findMany({
+      where: { deliveredAt: { gte: sejak }, order: { orderType: "PUTUS", status: "APPROVED" } },
+      select: { total: true, order: { select: { storeId: true } } },
+    }),
+    prisma.konsiTransfer.findMany({
+      where: { createdAt: { gte: sejak }, status: { not: "CANCELLED" } },
+      select: { storeId: true, lines: { select: { qty: true, returnedQty: true } } },
+    }),
+  ]);
+
+  const rupiah = new Map<string, number>();
+  for (const d of kirim) rupiah.set(d.order.storeId, (rupiah.get(d.order.storeId) ?? 0) + Number(d.total));
+  const potong = new Map<string, number>();
+  for (const tr of konsi) {
+    const n = tr.lines.reduce((j, l) => j + Math.max(Number(l.qty) - l.returnedQty, 0), 0);
+    potong.set(tr.storeId, (potong.get(tr.storeId) ?? 0) + n);
+  }
+
+  const usulan = usulanPerJenis(
+    toko.map((t) => ({
+      storeId: t.id,
+      termsType: t.termsType,
+      rupiah: rupiah.get(t.id) ?? 0,
+      potong: potong.get(t.id) ?? 0,
+    })),
+    aturan.otomatis,
+  );
+  return toko.map((t) => ({
+    storeId: t.id,
+    code: t.code,
+    name: t.name,
+    termsType: t.termsType,
+    areaKode: t.group?.code ?? null,
+    kelas: bacaKelas(t.storeClass),
+    nilai: usulan[t.id].nilai,
+    satuan: usulan[t.id].satuan,
+    usulan: usulan[t.id].usulan,
+  }));
+}
+
+/** Jumlah toko aktif per kelas, untuk ringkasan di Pengaturan → Salesman. */
+export async function jumlahTokoPerKelas(): Promise<Record<KelasToko | "TANPA", number>> {
+  const rows = await prisma.store.groupBy({ by: ["storeClass"], where: { isActive: true }, _count: { _all: true } });
+  const hasil: Record<KelasToko | "TANPA", number> = { A: 0, B: 0, C: 0, TANPA: 0 };
+  for (const r of rows) hasil[bacaKelas(r.storeClass) ?? "TANPA"] += r._count._all;
+  return hasil;
+}
+
+/**
+ * "Terapkan usulan" di halaman Kelas toko: ubah kelas toko terpilih menjadi
+ * usulannya. Usulan DIHITUNG ULANG di sini — kelas kiriman layar tidak
+ * dipercaya — dan kelas sekarang dibaca di dalam transaksi, supaya jejak
+ * mencatat nilai "sebelum" yang benar. Setiap toko yang berubah mendapat satu
+ * baris jejak `STORE_CLASS_CHANGED` beserta nilai beli yang mendasarinya.
+ */
+export async function terapkanUsulanKelas(
+  storeIds: readonly string[],
+  olehUserId: string,
+  hariIni: Date = new Date(),
+): Promise<{ diubah: number }> {
+  const daftar = await daftarKelasToko(await aturanKelasToko(), hariIni);
+  const dasar = new Map(daftar.map((b) => [b.storeId, b]));
+  const ids = [...new Set(storeIds)].filter((id) => dasar.has(id));
+  if (ids.length === 0) return { diubah: 0 };
+
+  return prisma.$transaction(async (tx) => {
+    const sekarang = await tx.store.findMany({ where: { id: { in: ids } }, select: { id: true, storeClass: true } });
+    const ubah = perubahanUsulan(
+      sekarang.map((t) => ({ storeId: t.id, kelas: bacaKelas(t.storeClass), usulan: dasar.get(t.id)?.usulan ?? null })),
+      ids,
+    );
+    if (ubah.length === 0) return { diubah: 0 };
+    // Satu pembaruan per kelas tujuan, bukan per toko — ratusan toko tetap
+    // selesai jauh di bawah batas waktu transaksi.
+    for (const k of DAFTAR_KELAS) {
+      const ke = ubah.filter((u) => u.ke === k).map((u) => u.storeId);
+      if (ke.length) await tx.store.updateMany({ where: { id: { in: ke } }, data: { storeClass: k } });
+    }
+    await tx.auditLog.createMany({
+      data: ubah.map((u) => {
+        const b = dasar.get(u.storeId);
+        return {
+          userId: olehUserId,
+          action: AKSI_KELAS_TOKO,
+          entityType: "Store",
+          entityId: u.storeId,
+          changes: { before: { storeClass: u.dari }, after: { storeClass: u.ke } },
+          metadata: { sumber: "USULAN_OTOMATIS", hari: HARI_NILAI_KELAS, nilai: b?.nilai ?? 0, satuan: b?.satuan ?? null },
+        };
+      }),
+    });
+    return { diubah: ubah.length };
+  });
 }

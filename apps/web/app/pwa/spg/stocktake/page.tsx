@@ -3,6 +3,7 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { getActiveVisit, getStore } from "@/lib/stores/queries";
 import { buildStocktakeLines, previousApprovedCountedAt } from "@/lib/stores/stocktake/queries";
+import { barangDisisihkan } from "@/lib/spg/retur-pembeli-queries";
 import { SpgStocktakeShell, type SpgStocktakeLine } from "./SpgStocktakeShell";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +34,7 @@ export default async function SpgStocktakePage() {
    * submit ever following it (a re-render, a back-and-forth navigation), so it must never
    * carry a write the SPG never asked for.
    */
-  const [openDoc, periodFrom] = await Promise.all([
+  const [openDoc, periodFrom, disisihkan] = await Promise.all([
     prisma.storeStocktake.findFirst({
       where: { storeId: store.id, openKey: { not: null } },
       select: {
@@ -43,6 +44,8 @@ export default async function SpgStocktakePage() {
       },
     }),
     previousApprovedCountedAt(prisma, store.id),
+    // Barang retur pembeli yang disisihkan (P12): tidak di rak, jangan dihitung.
+    barangDisisihkan(store.id),
   ]);
   const ledgerLines = await buildStocktakeLines(prisma, store.id, periodFrom, new Date());
 
@@ -98,5 +101,5 @@ export default async function SpgStocktakePage() {
     });
   }
 
-  return <SpgStocktakeShell storeId={store.id} storeName={store.name} lines={lines} />;
+  return <SpgStocktakeShell storeId={store.id} storeName={store.name} lines={lines} disisihkan={disisihkan} />;
 }

@@ -6,7 +6,7 @@
  * This script relies on DATABASE_URL in the environment; it does not
  * load .env files itself.
  */
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { createDbAdapter } from "../src/adapter";
 import { PrismaClient } from "../generated/prisma/client";
 import { getDatabaseUrl } from "../src/db-connection";
 
@@ -20,14 +20,15 @@ if (!url) {
 const safeUrl = url.replace(/:[^:@]+@/, ":****@");
 console.log("Connecting to:", safeUrl);
 
-const adapter = new PrismaMariaDb(url);
+const adapter = createDbAdapter(url);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  const result = await prisma.$queryRaw<[{ "1": number }]>`SELECT 1 as \`1\``;
+  // `AS ok` rather than a backtick-quoted `1`: backticks are MySQL-only syntax.
+  const result = await prisma.$queryRaw<[{ ok: number }]>`SELECT 1 AS ok`;
   console.log("✅ Connection OK. Query result:", result);
 
-  // Optional: get server version (works on MySQL/TiDB)
+  // Optional: server version — VERSION() exists on MySQL/MariaDB and PostgreSQL alike.
   try {
     const version = await prisma.$queryRaw<[{ version: string }]>`SELECT VERSION() as version`;
     console.log("   Server version:", version[0]?.version ?? "—");

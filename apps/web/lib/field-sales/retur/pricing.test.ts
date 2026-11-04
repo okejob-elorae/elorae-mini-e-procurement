@@ -295,6 +295,17 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
     if (res.kind === "AMBIGUOUS") expect(res.candidates).toHaveLength(2);
   });
 
+  it("never offers a line that bills nothing — a voided or fully corrected nota (qty 0)", async () => {
+    /* Delivery B voided: its AMBIG line now bills 0, so only delivery A prices AMBIG. */
+    await prisma.fieldSalesDeliveryLine.updateMany({ where: { deliveryId: seededId(deliveryBId) }, data: { qty: 0, lineTotal: 0 } });
+    const found = await listPriceCandidates(prisma, { storeId, itemId, variantSku: "AMBIG" });
+    expect(found).toHaveLength(1);
+    expect(found[0].docNo).toBe(`TEST-FSP-DLV-A-${token}`);
+    const grouped = await listPriceCandidatesForKeys(prisma, [{ storeId, itemId, variantSku: "AMBIG" }]);
+    expect(grouped.get(priceCandidateKey({ storeId, itemId, variantSku: "AMBIG" }))).toHaveLength(1);
+    expect((await resolveLinePrice(prisma, { storeId, itemId, variantSku: "AMBIG" })).kind).toBe("AUTO");
+  });
+
   it("reports UNPRICEABLE when nothing was ever delivered", async () => {
     const res = await resolveLinePrice(prisma, { storeId, itemId, variantSku: "NEVERSENT" });
     expect(res.kind).toBe("UNPRICEABLE");

@@ -73,6 +73,7 @@ export function PinAuthModal({ isOpen, onClose, onConfirm, action }: PinAuthModa
             onChange={(e) => setPin((e.target?.value ?? '').replace(/\D/g, ''))}
             onKeyDown={handleKeyDown}
             placeholder={tPlaceholders('pinMask')}
+            aria-label={t('pinCardTitle')}
             className="text-center text-2xl tracking-widest"
             autoFocus
           />

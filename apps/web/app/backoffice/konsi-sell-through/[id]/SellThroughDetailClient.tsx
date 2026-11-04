@@ -66,13 +66,14 @@ const REASON_MAX_LENGTH = 1000;
 export function SellThroughDetailClient({
   report,
   canManage,
+  canDecide,
   canPrint,
-  salesmanCandidates,
 }: {
   report: SellThroughDetail;
   canManage: boolean;
+  /* `consignment:lock` — the code `approveSellThroughAction`/`voidSellThroughAction` enforce. */
+  canDecide: boolean;
   canPrint: boolean;
-  salesmanCandidates: Array<{ id: string; name: string }>;
 }) {
   const t = useTranslations("konsiSellThrough");
   const tDetail = useTranslations("konsiSellThrough.detail");
@@ -102,7 +103,15 @@ export function SellThroughDetailClient({
   const canEditResolution = isSpgPos && isDraft && canManage;
   const heldLines = report.lines.filter((l) => l.held);
   const lateLineCount = report.lines.filter((l) => l.hasLateMovements).length;
-  const statusKey = report.status === "APPROVED" ? (report.baseline ? "APPROVED_BASELINE" : "APPROVED_INVOICED") : report.status;
+  /* An approved report that is neither a baseline nor invoiced was RECORDED: it froze the figures and billed nothing. */
+  const statusKey =
+    report.status === "APPROVED"
+      ? report.baseline
+        ? "APPROVED_BASELINE"
+        : report.invoiceDate === null
+          ? "APPROVED_RECORDED"
+          : "APPROVED_INVOICED"
+      : report.status;
   /* Every column left of Line Total, so the footer's total sits under it. */
   const totalLabelSpan = isSpgPos ? 10 : 9;
 
@@ -223,13 +232,13 @@ export function SellThroughDetailClient({
               {tCancel("button")}
             </Button>
           )}
-          {canManage && isDraft && (
+          {canDecide && isDraft && (
             <Button className="h-10" disabled={heldLines.length > 0} onClick={() => setApproveOpen(true)}>
               <CheckCircle2 className="h-4 w-4" />
               {tApprove("button")}
             </Button>
           )}
-          {canManage && report.status === "APPROVED" && (
+          {canDecide && report.status === "APPROVED" && (
             <Button variant="outline" className="h-10 text-destructive" onClick={() => setVoidOpen(true)}>
               <XCircle className="h-4 w-4" />
               {report.baseline ? tVoid("buttonBaseline") : tVoid("button")}
@@ -238,7 +247,7 @@ export function SellThroughDetailClient({
         </div>
       </div>
 
-      {canManage && isDraft && heldLines.length > 0 && (
+      {canDecide && isDraft && heldLines.length > 0 && (
         <p className="text-sm text-amber-700">{tApprove("disabledHeld", { n: heldLines.length })}</p>
       )}
 
@@ -328,8 +337,17 @@ export function SellThroughDetailClient({
         )}
       </Card>
 
-      {(report.status === "APPROVED" || report.status === "VOIDED") && (
+      {/* Invoiced reports are legacy; a recorded or draft report bills nothing — the cycle does (decision 2026-10-29). */}
+      {(report.status === "APPROVED" || report.status === "VOIDED") && report.invoiceDate !== null && (
         <SellThroughInvoiceCard report={report} canPrint={canPrint} canManage={canManage} describeError={errorMessage} />
+      )}
+      {!report.baseline && report.invoiceDate === null && report.status !== "CANCELLED" && (
+        <p className="text-sm text-muted-foreground">
+          {tDetail("billFromCycle")}{" "}
+          <Link href="/backoffice/konsinyasi" className="font-medium text-foreground underline underline-offset-4">
+            {tDetail("billFromCycleLink")}
+          </Link>
+        </p>
       )}
 
       <Card>
@@ -544,17 +562,15 @@ export function SellThroughDetailClient({
         </CardContent>
       </Card>
 
-      {canManage && isDraft && (
+      {canDecide && isDraft && (
         <SellThroughApproveDialog
           open={approveOpen}
           onOpenChange={setApproveOpen}
           report={report}
-          salesmanCandidates={salesmanCandidates}
           onApproved={() => {
             setApproveOpen(false);
             router.refresh();
           }}
-          onPriceChanged={() => router.refresh()}
           describeError={errorMessage}
         />
       )}

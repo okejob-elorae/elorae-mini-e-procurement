@@ -2,10 +2,11 @@ import { takeUnitsBySalesman, type SpgPosQty } from "./compute";
 
 /**
  * The per-SPG split weights of a konsi sell-through report's lines, from the SpgSale ledger rows of
- * its window and of its previous report's window. One spelling, two callers: approve
- * (`approveSellThrough`, `lib/konsi-sell-through/writer.ts`) runs it once inside its own
- * transaction and stores the result as `KonsiSellThroughSpgShare` rows, and `getCommissionRecap`
- * (`queries.ts`) runs it live only for a report approved before those rows existed.
+ * its window and of its previous report's window. Approve (`approveSellThrough`,
+ * `lib/konsi-sell-through/writer.ts`) runs it once inside its own transaction and stores the result
+ * as `KonsiSellThroughSpgShare` rows. Since the owner's 2026-11-01 decision those rows feed no
+ * commission figure: consignment commission comes from the locked consignment cycle (`payout.ts`),
+ * and the recap (`queries.ts`) no longer reads sell-through reports. They stay as history.
  *
  * Client-safe and import-free apart from `./compute`. The rows and lines are plain values; the
  * callers load them and resolve each sale to its SPG.

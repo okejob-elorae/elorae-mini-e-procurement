@@ -23,7 +23,7 @@
  * 3308) first. Dry-run (no --apply) is read-only and may run against any url.
  */
 import "dotenv/config";
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { createDbAdapter } from "../src/adapter";
 import { AdjustmentType, PrismaClient } from "../generated/prisma/client";
 import { getDatabaseUrl } from "../src/db-connection";
 import { assertNotProdApply, classifyForBackfill } from "../src/backfill-reservations-classify";
@@ -34,7 +34,7 @@ const effectiveDatabaseUrl = getDatabaseUrl() || process.env.DATABASE_URL || "";
 
 assertNotProdApply(effectiveDatabaseUrl, apply);
 
-const adapter = new PrismaMariaDb(effectiveDatabaseUrl);
+const adapter = createDbAdapter(effectiveDatabaseUrl);
 const prisma = new PrismaClient({ adapter });
 
 type Summary = {

@@ -33,12 +33,15 @@ export default async function FieldReturnDetailPage({ params }: PageProps) {
   const fieldReturn = await getFieldReturnById(id, { canManage });
   if (!fieldReturn) notFound();
 
+  /* A konsi bill is paid only through a BKM (`KONSI_LEWAT_BKM`), so the offset picker never offers one. */
   const isOffsettableNow =
     canOffsetPayments && fieldReturn.status === "APPROVED" &&
     fieldReturn.valuationStatus === "VALUED" && fieldReturn.offsetStatus === "AVAILABLE";
 
   const [allocationCandidates, suggestedAllocations] = await Promise.all([
-    isOffsettableNow ? listAllocationCandidatesForStore(fieldReturn.storeId) : Promise.resolve<AllocationCandidate[]>([]),
+    isOffsettableNow
+      ? listAllocationCandidatesForStore(fieldReturn.storeId, { excludeKonsiBills: true })
+      : Promise.resolve<AllocationCandidate[]>([]),
     isOffsettableNow ? suggestOffsetAllocations(id) : Promise.resolve([]),
   ]);
 

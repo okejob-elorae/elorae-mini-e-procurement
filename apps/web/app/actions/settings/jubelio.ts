@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { apiFetch, extractApiMessage } from "@/lib/internal-api";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
+import {
+  gagalJubelio,
+  galatDariBalasanApi,
+  jalankanAksiJubelio,
+  type HasilJubelio,
+} from "@/app/backoffice/jubelio/galat-jubelio";
 
 export type JubelioTokenState = {
   hasToken: boolean;
@@ -40,43 +46,57 @@ export type JubelioCatalogSyncResult = {
   }>;
 };
 
-export async function getJubelioTokenState(): Promise<JubelioTokenState> {
-  const session = await auth();
-  if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
+// Semua aksi di sini mengembalikan { ok, code } — tidak melempar ke layar.
 
-  const r = await apiFetch<JubelioTokenState>("GET", "/jubelio/status", {
-    userId: session.user.id,
+export async function getJubelioTokenState(): Promise<HasilJubelio<JubelioTokenState>> {
+  return jalankanAksiJubelio(async () => {
+    const session = await auth();
+    if (!session) return gagalJubelio("TANPA_AKSES");
+    requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
+
+    const r = await apiFetch<JubelioTokenState>("GET", "/jubelio/status", {
+      userId: session.user.id,
+    });
+    if (!r.ok) {
+      return galatDariBalasanApi(r.status, extractApiMessage(r.error, `API ${r.status} on /jubelio/status`));
+    }
+    return { ok: true, data: r.data as JubelioTokenState };
   });
-  if (!r.ok) throw new Error(extractApiMessage(r.error, `API ${r.status} on /jubelio/status`));
-  return r.data as JubelioTokenState;
 }
 
-export async function refreshJubelioToken(): Promise<JubelioTokenState> {
-  const session = await auth();
-  if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
+export async function refreshJubelioToken(): Promise<HasilJubelio<JubelioTokenState>> {
+  return jalankanAksiJubelio(async () => {
+    const session = await auth();
+    if (!session) return gagalJubelio("TANPA_AKSES");
+    requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
-  const r = await apiFetch<JubelioTokenState>("POST", "/jubelio/refresh", {
-    userId: session.user.id,
+    const r = await apiFetch<JubelioTokenState>("POST", "/jubelio/refresh", {
+      userId: session.user.id,
+    });
+    if (!r.ok) {
+      return galatDariBalasanApi(r.status, extractApiMessage(r.error, `API ${r.status} on /jubelio/refresh`));
+    }
+    revalidatePath("/backoffice/settings");
+    return { ok: true, data: r.data as JubelioTokenState };
   });
-  if (!r.ok) throw new Error(extractApiMessage(r.error, `API ${r.status} on /jubelio/refresh`));
-  revalidatePath("/backoffice/settings");
-  return r.data as JubelioTokenState;
 }
 
 export async function syncJubelioCatalog(
   opts: JubelioCatalogSyncOptions = {},
-): Promise<JubelioCatalogSyncResult> {
-  const session = await auth();
-  if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
+): Promise<HasilJubelio<JubelioCatalogSyncResult>> {
+  return jalankanAksiJubelio(async () => {
+    const session = await auth();
+    if (!session) return gagalJubelio("TANPA_AKSES");
+    requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
-  const r = await apiFetch<JubelioCatalogSyncResult>("POST", "/jubelio/catalog/sync", {
-    userId: session.user.id,
-    body: { dryRun: opts.dryRun ?? false, itemGroupIds: opts.itemGroupIds },
+    const r = await apiFetch<JubelioCatalogSyncResult>("POST", "/jubelio/catalog/sync", {
+      userId: session.user.id,
+      body: { dryRun: opts.dryRun ?? false, itemGroupIds: opts.itemGroupIds },
+    });
+    if (!r.ok) {
+      return galatDariBalasanApi(r.status, extractApiMessage(r.error, `API ${r.status} on /jubelio/catalog/sync`));
+    }
+    if (!opts.dryRun) revalidatePath("/backoffice/settings");
+    return { ok: true, data: r.data as JubelioCatalogSyncResult };
   });
-  if (!r.ok) throw new Error(extractApiMessage(r.error, `API ${r.status} on /jubelio/catalog/sync`));
-  if (!opts.dryRun) revalidatePath("/backoffice/settings");
-  return r.data as JubelioCatalogSyncResult;
 }

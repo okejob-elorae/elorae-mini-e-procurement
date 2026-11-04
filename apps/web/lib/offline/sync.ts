@@ -118,6 +118,8 @@ export async function syncPendingPOs(): Promise<{
             paymentDueDate: po.paymentDueDate,
             paymentTermsDays: po.paymentTermsDays,
             notes: po.notes,
+            // Tahap produksi (PO dari ruang kerja tahap); server memeriksa tahapnya masih ada.
+            ...(po.planStageId ? { planStageId: po.planStageId } : {}),
             items: po.items,
           },
         }),

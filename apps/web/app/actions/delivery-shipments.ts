@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@elorae/db";
+import { prisma, type AdminNotification } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import {
@@ -13,13 +13,17 @@ import {
   cancelDeliveryShipment,
 } from "@/lib/delivery/shipment-writer";
 import { listDeliveryShipments, getDeliveryShipment } from "@/lib/delivery/shipment-queries";
-import { mapError, type ShipmentActionReason, type ShipmentActionResult } from "@/lib/delivery/action-errors";
-import { DeliveryError } from "@/lib/field-sales/errors";
+import { mapError, type ShipmentActionResult } from "@/lib/delivery/action-errors";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
+import { kaitPindahKonsiPengiriman } from "@/lib/finance/operasional/kait";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { kabarkanPengirimanBerangkat, kabarkanPengirimanDiserahkan, kabarkanPengirimanDibatalkan } from "@/lib/spg/kabar-pengiriman";
+import { kabarkanPesananDikirim } from "@/lib/delivery/kabar-salesman";
+import { sebarSesudahTerima } from "@/lib/spg/stok-writer";
 
-export type { ShipmentActionReason, ShipmentActionResult };
 
 const ERROR_TAG = "delivery-shipments";
 
@@ -42,9 +46,10 @@ async function revalidateShipmentOrder(shipmentId: string): Promise<void> {
 
 /**
  * Both of a PUTUS delivery's journals, through `postArJournalSafely` — never a builder called bare.
- * The success path and the `REPLAY_MISMATCH` refusal share it, so the two cannot drift apart.
- * Posting is idempotent on the source document, so a delivery whose journals already posted
- * re-posts nothing. Never exported: from a `"use server"` module that would publish it as a
+ * Called after the nota is issued (shipment creation), after a store receipt corrected it and after
+ * a cancel voided it. Posting is idempotent on the source document, so a delivery whose journals
+ * already posted re-posts nothing (re-syncing a corrected or voided nota is the nota journal's own
+ * job, `lib/finance/ar/delivery-journal.ts`). Never exported: from a `"use server"` module that would publish it as a
  * network-callable action posting journals for any delivery id, which is also why
  * `app/pwa/deliveries/actions.ts` holds its own copy — keep the two in sync by hand.
  */
@@ -58,13 +63,61 @@ async function postDeliveryJournals(deliveryId: string, postedById: string): Pro
 }
 
 /**
+ * Tells the store's SPG the goods have been HANDED OVER — count and receive them — after the
+ * completion committed, putus and konsi alike, keyed on the shipment: N is what THIS shipment
+ * actually handed over (a konsi order shipped 60 then 40 tells the SPG twice), and a 0-pcs
+ * completion says nothing was handed over. The notifier never throws and
+ * notifies once per shipment, so a same-actor replay sends nothing new. Never exported, for the
+ * same reason as `postDeliveryJournals`, and `app/pwa/deliveries/actions.ts` holds its own copy —
+ * keep the two in sync by hand.
+ */
+async function notifyStoreSpg(shipmentId: string, deliveryId: string, actorId: string): Promise<void> {
+  void kabarkanPengirimanDiserahkan({ shipmentId, deliveryId: deliveryId || null, pelakuId: actorId });
+}
+
+/**
+ * Posts (or re-syncs) the consignment move journal (DR consignment inventory / CR inventory) for a
+ * KONSI shipment, after its transaction committed. Stock moves into transit when the shipment is
+ * CREATED, so the journal follows creation, every door refusal and a cancel. Idempotent and never
+ * throws: a shipment a crashed earlier attempt touched still gets its journal from the next call.
+ * Never exported; `app/pwa/deliveries/actions.ts` holds its own copy.
+ */
+async function postKonsiMoveJournal(shipmentId: string, actorId: string): Promise<void> {
+  try {
+    const shipment = await prisma.deliveryShipment.findUnique({
+      where: { id: shipmentId },
+      select: { order: { select: { orderType: true } } },
+    });
+    if (shipment?.order.orderType !== "KONSI") return;
+    await kaitPindahKonsiPengiriman(shipmentId, actorId);
+  } catch (error) {
+    console.error(`[${ERROR_TAG}] konsi move journal hook failed`, error);
+  }
+}
+
+/** Goods that left or came back to the main warehouse — the absolute figures go to Jubelio. Never throws. */
+async function pushStock(itemIds: readonly string[], ref: string, actorId: string): Promise<void> {
+  if (itemIds.length === 0) return;
+  try {
+    await antrekanPushStok([...new Set(itemIds)], { sumber: "ADJUSTMENT", ref, userId: actorId });
+  } catch (error) {
+    console.error(`[${ERROR_TAG}] stock push failed`, error);
+  }
+}
+
+function fanOut(notifications: readonly AdminNotification[]): void {
+  for (const n of notifications) void fanOutAdminNotification(n);
+}
+
+/**
  * READ access to the shipment register. Not exported — a `"use server"` module may only export
  * async functions, so the server page spells the same OR out with `hasPermission` directly.
  */
 function canReadShipments(permissions: string[]): boolean {
   return (
     hasPermission(permissions, PERMISSIONS.DELIVERIES_SHIP) ||
-    hasPermission(permissions, PERMISSIONS.DELIVERIES_POD)
+    hasPermission(permissions, PERMISSIONS.DELIVERIES_POD) ||
+    hasPermission(permissions, PERMISSIONS.DELIVERIES_CANCEL_NOTA)
   );
 }
 
@@ -75,9 +128,9 @@ function canReadShipments(permissions: string[]): boolean {
  * over (`"2026-02-30"` → 2 March, and it would be STORED), and a year outside MariaDB's `DATETIME`
  * range. The format round-trip is what closes the last two.
  *
- * Without this, `new Date(\`${input.invoiceDate}T00:00:00.000+07:00\`)` on an emptied date field
- * produces an Invalid Date, `recordFieldSalesDelivery`'s own ordering guard evaluates
- * `NaN < NaN === false` and therefore PASSES it, and the Invalid Date reaches a Prisma write.
+ * Without this, an emptied date field produces an Invalid Date, the writer's own ordering guard
+ * evaluates `NaN < NaN === false` and therefore PASSES it, and the Invalid Date reaches a Prisma
+ * write.
  */
 function parseCalendarDay(value: unknown): Date | null {
   if (typeof value !== "string") return null;
@@ -87,20 +140,44 @@ function parseCalendarDay(value: unknown): Date | null {
   return formatDateOnlyJakarta(parsed) === trimmed ? parsed : null;
 }
 
+/**
+ * PACKS a shipment AND moves its goods out of the main warehouse (konsi: into transit to the store;
+ * putus: the nota tagihan is issued, dated today WIB). `idempotencyKey` is made once per dialog
+ * open and kept across retries, so a double submit makes one shipment; on a replay (`ulang`) the
+ * idempotent post-commit tail still runs, in case the first response was lost before it ran.
+ */
 export async function createShipmentAction(input: {
   orderId: string;
   method: "EXPEDITION" | "SALESMAN_CARRY";
   lines: Array<{ orderLineId: string; qty: number }>;
-}): Promise<ShipmentActionResult & { shipmentId?: string }> {
+  idempotencyKey: string;
+  dueDate?: string;
+}): Promise<ShipmentActionResult & { shipmentId?: string; docNo?: string; ulang?: boolean }> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_SHIP)) {
     return { ok: false, reason: "FORBIDDEN" };
   }
+  const kunci = typeof input.idempotencyKey === "string" ? input.idempotencyKey.trim() : "";
+  if (kunci.length < 1 || kunci.length > 64) return { ok: false, reason: "INVALID_REQUEST" };
+  const dueDate = input.dueDate ? parseCalendarDay(input.dueDate) : undefined;
+  if (dueDate === null) return { ok: false, reason: "INVALID_REQUEST" };
   try {
-    const result = await createDeliveryShipment({ ...input, packedById: session.user.id });
+    const result = await createDeliveryShipment({
+      orderId: input.orderId,
+      method: input.method,
+      lines: input.lines,
+      packedById: session.user.id,
+      idempotencyKey: kunci,
+      dueDate,
+    });
+    if (result.deliveryId) await postDeliveryJournals(result.deliveryId, session.user.id);
+    else await postKonsiMoveJournal(result.shipmentId, session.user.id);
+    // Also on a replay (R1): the first response may have been lost before the push ran; the
+    // figures pushed are absolute, so pushing them again is harmless.
+    await pushStock(result.barangKeluar, `kirim ${result.docNo}`, session.user.id);
     revalidatePath("/backoffice/deliveries");
     revalidatePath(`/backoffice/field-sales-orders/${input.orderId}`);
-    return { ok: true, shipmentId: result.shipmentId };
+    return { ok: true, shipmentId: result.shipmentId, docNo: result.docNo, ulang: result.ulang };
   } catch (error) {
     return mapError(error, ERROR_TAG);
   }
@@ -111,28 +188,16 @@ export async function updateShipmentTrackingAction(input: {
   carrierName?: string;
   resiNumber?: string;
   carriedById?: string;
-  invoiceDate?: string;
-  dueDate?: string;
+  weightKg?: number | null;
+  handoverPhotoUrl?: string;
+  handoverPhotoR2Key?: string;
 }): Promise<ShipmentActionResult> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_SHIP)) {
     return { ok: false, reason: "FORBIDDEN" };
   }
-  const invoiceDate = input.invoiceDate ? parseCalendarDay(input.invoiceDate) : undefined;
-  const dueDate = input.dueDate ? parseCalendarDay(input.dueDate) : undefined;
-  if ((input.invoiceDate && !invoiceDate) || (input.dueDate && !dueDate)) {
-    return { ok: false, reason: "INVALID_REQUEST" };
-  }
-  /**
-   * Same ordering check `completeShipmentAction` applies below, but conditional on both dates
-   * actually being supplied — they are optional on this action, which is also how a carrier is
-   * saved on its own without touching the dates. This is the ONLY place a reversed pair can still
-   * be caught: `updateShipmentTracking` is PACKED-gated, so once the shipment ships the pair is
-   * frozen, and the salesman then discovers it in the field with no way to correct it. The
-   * SALESMAN_CARRY completion path reads these dates off the row and never revalidates them.
-   */
-  if (invoiceDate && dueDate && dueDate.getTime() < invoiceDate.getTime()) {
-    return { ok: false, reason: "INVALID_DATES" };
+  if (input.weightKg !== undefined && input.weightKg !== null && typeof input.weightKg !== "number") {
+    return { ok: false, reason: "INVALID_WEIGHT" };
   }
   try {
     await updateShipmentTracking({
@@ -140,10 +205,12 @@ export async function updateShipmentTrackingAction(input: {
       carrierName: input.carrierName,
       resiNumber: input.resiNumber,
       carriedById: input.carriedById,
-      invoiceDate: invoiceDate ?? undefined,
-      dueDate: dueDate ?? undefined,
+      weightKg: input.weightKg,
+      handoverPhotoUrl: input.handoverPhotoUrl,
+      handoverPhotoR2Key: input.handoverPhotoR2Key,
     });
     revalidatePath("/backoffice/deliveries");
+    revalidatePath(`/backoffice/deliveries/${input.shipmentId}`);
     return { ok: true };
   } catch (error) {
     return mapError(error, ERROR_TAG);
@@ -179,6 +246,15 @@ export async function shipShipmentAction(input: { shipmentId: string }): Promise
   }
   try {
     await shipDeliveryShipment({ shipmentId: input.shipmentId, shippedById: session.user.id });
+    /*
+     * The IN_TRANSIT transition ("Kirim" in the Pengiriman menu / Ubah Pelacakan). The stock left
+     * the warehouse when the shipment was created; the store's SPG is told, once per shipment,
+     * after the write committed; the notifier never throws. The putus order's salesman gets the
+     * PESANAN_DIKIRIM notice the removed "Catat pengiriman" used to send (P44a) — once, because only
+     * one call wins the PACKED → IN_TRANSIT swap.
+     */
+    void kabarkanPengirimanBerangkat({ shipmentId: input.shipmentId, pelakuId: session.user.id });
+    void kabarkanPesananDikirim({ shipmentId: input.shipmentId, pelakuId: session.user.id });
     revalidatePath("/backoffice/deliveries");
     await revalidateShipmentOrder(input.shipmentId);
     return { ok: true };
@@ -187,88 +263,91 @@ export async function shipShipmentAction(input: { shipmentId: string }): Promise
   }
 }
 
+/**
+ * The expedition's confirmation. At a store without an SPG it is also the store's receipt
+ * (diterima / retur langsung / hilang per line); its post-commit half — notifications, the
+ * journals of the corrected nota or the received transfer, the stock push of refused goods — runs
+ * here after commit, also on a same-actor replay (idempotent).
+ */
 export async function completeShipmentAction(input: {
   shipmentId: string;
   proofPhotoUrl: string;
   proofPhotoR2Key: string;
-  invoiceDate?: string;
-  dueDate?: string;
-  lines: Array<{ shipmentLineId: string; deliveredQty: number }>;
+  lines: Array<{ shipmentLineId: string; deliveredQty: number; returnedQty?: number; lostQty?: number }>;
 }): Promise<ShipmentActionResult> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_POD)) {
     return { ok: false, reason: "FORBIDDEN" };
   }
-  /**
-   * Both dates are validated HERE when supplied, before the writer, not left to the writer's own
-   * guard. A server action is a network endpoint, so an emptied or malformed field is not a
-   * client-side problem — and an Invalid Date defeats the downstream ordering check rather than
-   * tripping it. Optional now: a konsi order raises no invoice and the dialog sends neither date,
-   * which parses to `undefined` on both — `completeDeliveryShipment`'s own konsi branch never asks
-   * for them, and its non-konsi branch still throws MISSING_DATES if either is absent.
-   */
-  const invoiceDate = input.invoiceDate ? parseCalendarDay(input.invoiceDate) : undefined;
-  const dueDate = input.dueDate ? parseCalendarDay(input.dueDate) : undefined;
-  /* null means supplied-but-malformed, undefined means absent; `=== null` also narrows both to `Date | undefined`. */
-  if (invoiceDate === null || dueDate === null) {
-    return { ok: false, reason: "INVALID_REQUEST" };
-  }
-  if (invoiceDate && dueDate && dueDate.getTime() < invoiceDate.getTime()) {
-    return { ok: false, reason: "INVALID_DATES" };
-  }
-
   try {
     const result = await completeDeliveryShipment({
       shipmentId: input.shipmentId,
       deliveredById: session.user.id,
       proofPhotoUrl: input.proofPhotoUrl,
       proofPhotoR2Key: input.proofPhotoR2Key,
-      invoiceDate,
-      dueDate,
       lines: input.lines,
     });
-
-    /**
-     * Posted AFTER completeDeliveryShipment's transaction commits, exactly the same placement
-     * recordDeliveryAction uses for a hand-entered delivery — see
-     * app/actions/field-sales-deliveries.ts. completeDeliveryShipment itself stays a pure DB
-     * writer with no journal-posting side effect, same as recordFieldSalesDelivery.
-     *
-     * result.deliveryId is "" for a KONSI order — completeDeliveryShipment's konsi branch moves
-     * the stock itself through a KonsiTransfer inside its own transaction and never calls
-     * recordFieldSalesDelivery, because a konsi transfer is a stock move, not a sale, and has no
-     * delivery document or journal — guard on it being non-empty or these post against a delivery
-     * that doesn't exist.
-     */
+    if (result.podReceipt) {
+      await sebarSesudahTerima({
+        storeId: result.podReceipt.storeId,
+        userId: session.user.id,
+        sourceType: result.podReceipt.sourceType,
+        receiptId: result.podReceipt.receiptId,
+        sesudah: result.podReceipt.sesudah,
+      });
+    }
     if (result.deliveryId) await postDeliveryJournals(result.deliveryId, session.user.id);
+    else await postKonsiMoveJournal(input.shipmentId, session.user.id);
+    await notifyStoreSpg(input.shipmentId, result.deliveryId, session.user.id);
 
     revalidatePath("/backoffice/deliveries");
     await revalidateShipmentOrder(input.shipmentId);
     return { ok: true };
   } catch (error) {
-    if (error instanceof DeliveryError && error.code === "REPLAY_MISMATCH" && error.replay) {
-      /**
-       * The refused replay's delivery is REAL — recorded under this shipment's key, stock moved,
-       * receivable raised — and a crash before the posts above means its journals never posted.
-       * The shipment stays IN_TRANSIT, so only a resubmit with the recorded quantities would reach
-       * that success path, and nothing guarantees one ever comes. Posted here, before the refusal
-       * goes back; `replay.deliveryId` is never "" (a konsi completion records no delivery).
-       */
-      await postDeliveryJournals(error.replay.deliveryId, session.user.id);
-    }
     return mapError(error, ERROR_TAG);
   }
 }
 
-export async function cancelShipmentAction(input: { shipmentId: string }): Promise<ShipmentActionResult> {
+/**
+ * "Tidak jadi dikirim". The permission follows the document (P41/P41a): a putus shipment whose nota
+ * exists needs `deliveries:cancel_nota` (default ADMIN + ADMIN_PENJUALAN); a konsi shipment — and a
+ * shipment of the old rule without a document — keeps `deliveries:ship`. A reason is required.
+ * After commit: journals re-sync, refused stock goes to Jubelio, Keuangan is notified at once, and
+ * the SPG is told when the goods had already left.
+ */
+export async function cancelShipmentAction(input: { shipmentId: string; reason: string }): Promise<ShipmentActionResult> {
   const session = await auth();
-  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_SHIP)) {
-    return { ok: false, reason: "FORBIDDEN" };
-  }
+  if (!session?.user?.id) return { ok: false, reason: "FORBIDDEN" };
+  const permissions = session.user.permissions ?? [];
+  if (typeof input.reason !== "string") return { ok: false, reason: "INVALID_REQUEST" };
+  let shipment: { deliveryId: string | null; order: { orderType: string } } | null;
   try {
-    await cancelDeliveryShipment({ shipmentId: input.shipmentId, cancelledById: session.user.id });
+    shipment = await prisma.deliveryShipment.findUnique({
+      where: { id: input.shipmentId },
+      select: { deliveryId: true, order: { select: { orderType: true } } },
+    });
+  } catch (error) {
+    return mapError(error, ERROR_TAG);
+  }
+  if (!shipment) return { ok: false, reason: "NOT_FOUND" };
+  const needsNotaPermission = shipment.order.orderType === "PUTUS" && shipment.deliveryId !== null;
+  const allowed = needsNotaPermission
+    ? hasPermission(permissions, PERMISSIONS.DELIVERIES_CANCEL_NOTA)
+    : hasPermission(permissions, PERMISSIONS.DELIVERIES_SHIP);
+  if (!allowed) return { ok: false, reason: "FORBIDDEN" };
+  try {
+    const result = await cancelDeliveryShipment({
+      shipmentId: input.shipmentId,
+      cancelledById: session.user.id,
+      reason: input.reason,
+    });
+    fanOut(result.notifikasi);
+    if (result.deliveryId) await postDeliveryJournals(result.deliveryId, session.user.id);
+    else await postKonsiMoveJournal(input.shipmentId, session.user.id);
+    await pushStock(result.barangKembali, `tidak jadi dikirim ${input.shipmentId}`, session.user.id);
+    if (result.berangkat) void kabarkanPengirimanDibatalkan({ shipmentId: input.shipmentId, pelakuId: session.user.id });
     revalidatePath("/backoffice/deliveries");
-    await revalidateShipmentOrder(input.shipmentId);
+    revalidatePath(`/backoffice/field-sales-orders/${result.orderId}`);
     return { ok: true };
   } catch (error) {
     return mapError(error, ERROR_TAG);
@@ -279,8 +358,8 @@ export async function cancelShipmentAction(input: { shipmentId: string }): Promi
  * The register itself is readable by EITHER permission, for the same reason `getShipmentAction`
  * is: the POD actor reaches the Complete button by finding the IN_TRANSIT row in this list, so a
  * `deliveries:ship`-only gate here would hand them an empty page and nothing to complete. Every
- * WRITE stays on its own permission — `deliveries:ship` for pack/track/ship/cancel,
- * `deliveries:pod` for completion.
+ * WRITE stays on its own permission — `deliveries:ship` for pack/track/ship and the konsi cancel,
+ * `deliveries:cancel_nota` for the putus cancel, `deliveries:pod` for completion.
  */
 export async function listShipmentsAction(input: {
   status?: "PACKED" | "IN_TRANSIT" | "DELIVERED" | "PARTIALLY_DELIVERED" | "CANCELLED";
@@ -314,4 +393,36 @@ export async function getShipmentAction(id: string) {
     return null;
   }
   return getDeliveryShipment(id);
+}
+
+/**
+ * The priced lines of a konsi shipment's surat jalan (P37): its transfer's lines with the konsi
+ * price snapshotted at creation — what the store receives minus what came back. Read by the
+ * order page's per-shipment print; office-only (the SPG phone and the store portal never receive
+ * these prices, P18a). Null when the shipment has no transfer (a shipment of the old rule).
+ */
+export async function muatSuratJalanKonsiAction(shipmentId: string): Promise<{
+  lines: Array<{ orderLineId: string | null; productName: string; variantSku: string; qty: number; unitPrice: number | null }>;
+} | null> {
+  const session = await auth();
+  const permissions = session?.user?.permissions ?? [];
+  if (!session?.user?.id) return null;
+  if (!canReadShipments(permissions) && !hasPermission(permissions, PERMISSIONS.FIELD_SALES_ORDERS_VIEW)) return null;
+  if (typeof shipmentId !== "string" || shipmentId === "") return null;
+  const transfer = await prisma.konsiTransfer.findUnique({
+    where: { shipmentId },
+    select: { lines: { select: { orderLineId: true, productName: true, variantSku: true, qty: true, returnedQty: true, unitPrice: true } } },
+  });
+  if (!transfer) return null;
+  return {
+    lines: transfer.lines
+      .map((l) => ({
+        orderLineId: l.orderLineId,
+        productName: l.productName,
+        variantSku: l.variantSku,
+        qty: Math.round(Number(l.qty)) - l.returnedQty,
+        unitPrice: l.unitPrice === null ? null : Number(l.unitPrice),
+      }))
+      .filter((l) => l.qty > 0),
+  };
 }

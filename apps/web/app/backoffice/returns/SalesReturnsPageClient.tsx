@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
@@ -7,7 +9,8 @@ import { SALES_CHANNEL_VALUES, SALES_RETURN_STATUS_VALUES } from "@/lib/constant
 import type { SalesReturnsListRow, SalesReturnsKpi } from "@/lib/sales-returns/queries";
 import { CHANNEL_BADGE } from "@/lib/sales-orders/badges";
 import { RETURN_STATUS_BADGE } from "@/lib/sales-returns/badges";
-import { formatIDR, formatDateTime } from "@/lib/sales-orders/format";
+import { formatIDR } from "@/lib/sales-orders/format";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -17,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -27,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 
 type Props = {
   rows: SalesReturnsListRow[];
@@ -67,12 +72,18 @@ export function SalesReturnsPageClient(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
 
-  function pushParam(key: string, value: string | undefined) {
+  function pushParams(updates: Record<string, string | undefined>) {
     const params = new URLSearchParams(sp.toString());
-    if (!value) params.delete(key);
-    else params.set(key, value);
+    for (const [key, value] of Object.entries(updates)) {
+      if (!value) params.delete(key);
+      else params.set(key, value);
+    }
     params.delete("page");
     startTransition(() => router.push(`/backoffice/returns?${params.toString()}`));
+  }
+
+  function pushParam(key: string, value: string | undefined) {
+    pushParams({ [key]: value });
   }
 
   function reset() {
@@ -80,12 +91,17 @@ export function SalesReturnsPageClient(props: Props) {
     startTransition(() => router.push("/backoffice/returns"));
   }
 
+  const hasFilter = !!(
+    props.search ||
+    props.channel ||
+    props.status ||
+    props.dateFrom ||
+    props.dateTo
+  );
+
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">{t("pageTitle")}</h1>
-        <p className="text-muted-foreground">{t("pageSubtitle")}</p>
-      </div>
+      <PageHeader title={t("pageTitle")} />
 
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -129,10 +145,10 @@ export function SalesReturnsPageClient(props: Props) {
 
       {/* Filters */}
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-7">
-          <div className="lg:col-span-2">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[16rem] flex-[1_1_20rem]">
             <label className="text-xs text-muted-foreground mb-1 block">
-              {t("filter.searchPlaceholder")}
+              {t("filter.search")}
             </label>
             <Input
               placeholder={t("filter.searchPlaceholder")}
@@ -140,7 +156,7 @@ export function SalesReturnsPageClient(props: Props) {
               onChange={(e) => setSearchInput(e.target.value)}
             />
           </div>
-          <div>
+          <div className="w-full sm:w-40">
             <label className="text-xs text-muted-foreground mb-1 block">
               {t("filter.channel")}
             </label>
@@ -161,7 +177,7 @@ export function SalesReturnsPageClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
-          <div>
+          <div className="w-full sm:w-40">
             <label className="text-xs text-muted-foreground mb-1 block">
               {t("filter.status")}
             </label>
@@ -182,29 +198,21 @@ export function SalesReturnsPageClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">
+          <div className="w-full sm:w-auto">
+            <label htmlFor="rentang-tanggal" className="text-xs text-muted-foreground mb-1 block">
               {t("filter.dateRange")}
             </label>
-            <Input
-              type="date"
-              value={props.dateFrom}
-              onChange={(e) => pushParam("dateFrom", e.target.value || undefined)}
+            <RentangTanggalInput
+              id="rentang-tanggal"
+              className="sm:w-64"
+              dari={props.dateFrom}
+              sampai={props.dateTo}
+              onChange={({ dari, sampai }) => pushParams({ dateFrom: dari || undefined, dateTo: sampai || undefined })}
             />
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">&nbsp;</label>
-            <Input
-              type="date"
-              value={props.dateTo}
-              onChange={(e) => pushParam("dateTo", e.target.value || undefined)}
-            />
-          </div>
-          <div className="flex flex-col justify-end">
-            <Button variant="outline" onClick={reset} className="w-full">
-              {t("filter.reset")}
-            </Button>
-          </div>
+          <Button variant="outline" onClick={reset} className="shrink-0">
+            {t("filter.reset")}
+          </Button>
         </div>
       </Card>
 
@@ -215,7 +223,7 @@ export function SalesReturnsPageClient(props: Props) {
             <TableRow>
               <TableHead>{t("table.returnNo")}</TableHead>
               <TableHead>{t("table.channel")}</TableHead>
-              <TableHead>{t("table.orderNo")}</TableHead>
+              <TableHead className="hidden 2xl:table-cell">{t("table.orderNo")}</TableHead>
               <TableHead>{t("table.buyer")}</TableHead>
               <TableHead className="text-right">{t("table.qty")}</TableHead>
               <TableHead className="text-right">{t("table.value")}</TableHead>
@@ -226,10 +234,17 @@ export function SalesReturnsPageClient(props: Props) {
           <TableBody>
             {props.rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                  {props.search || props.channel || props.status || props.dateFrom || props.dateTo
-                    ? t("emptyFiltered")
-                    : t("empty")}
+                <TableCell colSpan={8} className="whitespace-normal py-8 text-center text-muted-foreground">
+                  {hasFilter ? (
+                    <div className="flex flex-col items-center gap-3">
+                      <span>{t("emptyFiltered")}</span>
+                      <Button variant="outline" size="sm" onClick={reset}>
+                        {t("clearFilters")}
+                      </Button>
+                    </div>
+                  ) : (
+                    t("empty")
+                  )}
                 </TableCell>
               </TableRow>
             ) : (
@@ -242,7 +257,13 @@ export function SalesReturnsPageClient(props: Props) {
                   }
                 >
                   <TableCell className="font-mono text-sm">
-                    {r.jubelioReturnNo ?? `#${r.jubelioReturnId}`}
+                    <Link
+                      href={`/backoffice/returns/${r.id}`}
+                      className={TAUTAN_DOKUMEN}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {r.jubelioReturnNo ?? `#${r.jubelioReturnId}`}
+                    </Link>
                   </TableCell>
                   <TableCell>
                     <span
@@ -251,7 +272,7 @@ export function SalesReturnsPageClient(props: Props) {
                       {tOrders(`channel.${CHANNEL_BADGE[r.channel].labelKey}` as never)}
                     </span>
                   </TableCell>
-                  <TableCell className="font-mono text-sm">
+                  <TableCell className="hidden font-mono text-sm 2xl:table-cell">
                     {r.channelOrderNo ?? "—"}
                   </TableCell>
                   <TableCell className="max-w-[200px] truncate">
@@ -267,7 +288,7 @@ export function SalesReturnsPageClient(props: Props) {
                     </span>
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    {formatDateTime(r.receivedAt, locale)}
+                    {formatDisplayDateTime(r.receivedAt, locale)}
                   </TableCell>
                 </TableRow>
               ))

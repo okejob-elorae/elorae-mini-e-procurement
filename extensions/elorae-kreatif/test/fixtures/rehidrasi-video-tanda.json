@@ -1,0 +1,92 @@
+{
+  "__DEFAULT_SCOPE__": {
+    "webapp.app-context": { "language": "id-ID", "region": "ID" },
+    "webapp.video-detail": {
+      "itemInfo": {
+        "itemStruct": {
+          "id": "7689069333120634120",
+          "desc": "Outfit kerja minggu ini bareng @Eloraé 🤍 #ootd #OOTDIndonesia #fyp",
+          "createTime": "1790000000",
+          "isAd": false,
+          "author": {
+            "id": "6900000000000000001",
+            "uniqueId": "LystianoVilda",
+            "nickname": "Lystiano Vilda",
+            "secUid": "MS4wLjABAAAAlystianoSecUid"
+          },
+          "textExtra": [
+            {
+              "awemeId": "",
+              "end": 37,
+              "hashtagName": "",
+              "isCommerce": false,
+              "secUid": "MS4wLjABAAAAeloraeSecUid",
+              "start": 30,
+              "subType": 0,
+              "type": 0,
+              "userId": "6911111111111111111",
+              "userUniqueId": "elorae.official"
+            },
+            {
+              "awemeId": "",
+              "end": 45,
+              "hashtagId": "1601",
+              "hashtagName": "ootd",
+              "isCommerce": false,
+              "start": 40,
+              "subType": 0,
+              "type": 1,
+              "userId": "",
+              "userUniqueId": ""
+            },
+            {
+              "awemeId": "",
+              "end": 60,
+              "hashtagId": "88123",
+              "hashtagName": "OOTDIndonesia",
+              "isCommerce": false,
+              "start": 46,
+              "subType": 0,
+              "type": 1,
+              "userId": "",
+              "userUniqueId": ""
+            },
+            {
+              "awemeId": "",
+              "end": 65,
+              "hashtagId": "229207",
+              "hashtagName": "fyp",
+              "isCommerce": false,
+              "start": 61,
+              "subType": 0,
+              "type": 1,
+              "userId": "",
+              "userUniqueId": ""
+            }
+          ],
+          "challenges": [
+            { "id": "1601", "title": "ootd", "desc": "" },
+            { "id": "88123", "title": "OOTDIndonesia", "desc": "" },
+            { "id": "229207", "title": "fyp", "desc": "" }
+          ],
+          "stats": {
+            "diggCount": 1498,
+            "shareCount": 127,
+            "commentCount": 27,
+            "playCount": 31900,
+            "collectCount": "506"
+          },
+          "statsV2": {
+            "diggCount": "1498",
+            "shareCount": "127",
+            "commentCount": "27",
+            "playCount": "31900",
+            "collectCount": "506"
+          }
+        }
+      },
+      "statusCode": 0,
+      "statusMsg": ""
+    }
+  }
+}

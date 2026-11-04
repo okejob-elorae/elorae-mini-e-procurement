@@ -1,0 +1,13 @@
+{
+  "_catatan": "TEBAKAN — bentuk respons GraphQL linimasa profil untuk pengguna yang sudah masuk BELUM diukur. Nama kolom mengikuti brief (code, taken_at, play_count/ig_play_count, like_count, comment_count, caption.text, usertags.in[].user.username, coauthor_producers[].username, sponsor_tags[].sponsor.username, is_paid_partnership, user.username).",
+  "data": {
+    "xdt_api__v1__feed__user_timeline_graphql_connection": {
+      "edges": [
+        { "node": { "code": "C9xYz_AbC-1", "pk": "3400000000000000001", "taken_at": 1727000000, "media_type": 2, "product_type": "clips", "play_count": 15000, "like_count": 900, "comment_count": 40, "caption": { "text": "OOTD pakai @Elorae.Official 💛 #OOTD #EloraeStyle" }, "user": { "username": "kol.satu", "pk": "111" }, "usertags": { "in": [{ "user": { "username": "toko.lain" } }] }, "coauthor_producers": [], "sponsor_tags": [], "is_paid_partnership": false, "timeline_pinned_user_ids": [] } },
+        { "node": { "code": "C8aaaaaaaa2", "taken_at": 1726000000, "media_type": 1, "product_type": "feed", "like_count": 500, "comment_count": 12, "caption": { "text": "Foto saja" }, "user": { "username": "kol.satu" }, "timeline_pinned_user_ids": ["111"] } },
+        { "node": { "code": "C7bbbbbbbb3", "taken_at": 1725000000, "media_type": 2, "product_type": "clips", "ig_play_count": 8000, "like_count": 0, "comment_count": 3, "like_and_view_counts_disabled": true, "caption": null, "user": { "username": "kol.satu" }, "sponsor_tags": [{ "sponsor": { "username": "brand.besar" } }] } },
+        { "node": { "code": "C6cccccccc4", "taken_at": 1724000000, "like_count": 77, "comment_count": 1, "user": { "username": "akun.lain" } } }
+      ]
+    }
+  }
+}

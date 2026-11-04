@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import {
@@ -10,13 +11,23 @@ import {
   revertTaxInvoiceToCreated,
   revertTaxInvoiceToPending,
 } from "@/lib/tax-invoices/writer";
-import { TaxInvoiceError } from "@/lib/tax-invoices/errors";
+import { penolakanNomorFaktur, TaxInvoiceError, type KodeNomorFaktur } from "@/lib/tax-invoices/errors";
 
 export type TaxInvoiceActionResult =
   | { ok: true }
   | {
       ok: false;
-      code: "FORBIDDEN" | "NOT_FOUND" | "INVALID_STATE" | "INVALID_REQUEST" | "CONFLICT" | "REASON_TOO_LONG" | "ERROR";
+      code:
+        | "FORBIDDEN"
+        | "NOT_FOUND"
+        | "INVALID_STATE"
+        | "INVALID_REQUEST"
+        | "CONFLICT"
+        | "REASON_TOO_LONG"
+        | "ERROR"
+        | KodeNomorFaktur;
+      /** Hanya pada NOMOR_FAKTUR_GANDA, bila ketemu: nomor nota (atau laporan sell-through) yang sudah memegang nomor itu. */
+      dipakaiDi?: string;
     };
 
 async function guard(): Promise<{ userId: string } | { ok: false; code: "FORBIDDEN" }> {
@@ -33,9 +44,36 @@ async function guard(): Promise<{ userId: string } | { ok: false; code: "FORBIDD
  * swallow it anyway, and letting a stray shape fall onto a code that means something else is the
  * exact mistake already on record for the delivery actions.
  */
-function toResult(e: unknown): TaxInvoiceActionResult {
+async function toResult(e: unknown): Promise<TaxInvoiceActionResult> {
+  // Penolakan nomor faktur membawa code INVALID_REQUEST yang generik; `sebab`-nya yang dipakai layar.
+  const nomor = penolakanNomorFaktur(e);
+  if (nomor) {
+    const dipakaiDi = await nomorDokumenPemegang(nomor.dipakaiDeliveryId, nomor.dipakaiSellThroughId);
+    return dipakaiDi ? { ok: false, code: nomor.code, dipakaiDi } : { ok: false, code: nomor.code };
+  }
   if (e instanceof TaxInvoiceError) return { ok: false, code: e.code };
   return { ok: false, code: "ERROR" };
+}
+
+/**
+ * Nomor dokumen yang memegang NSFP ganda: nota pengiriman, atau laporan sell-through konsi
+ * (faktur pajaknya bersumber dari salah satu). Hanya pelengkap pesan: gagal mencari tidak
+ * mengubah penolakannya.
+ */
+async function nomorDokumenPemegang(deliveryId: string | null, sellThroughId: string | null): Promise<string | null> {
+  try {
+    if (deliveryId) {
+      const nota = await prisma.fieldSalesDelivery.findUnique({ where: { id: deliveryId }, select: { docNo: true } });
+      return nota?.docNo ?? null;
+    }
+    if (sellThroughId) {
+      const laporan = await prisma.konsiSellThrough.findUnique({ where: { id: sellThroughId }, select: { docNo: true } });
+      return laporan?.docNo ?? null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function markCreatedAction(input: {
@@ -66,7 +104,7 @@ export async function markCreatedAction(input: {
       userId: g.userId,
     });
   } catch (e) {
-    return toResult(e);
+    return await toResult(e);
   }
   revalidatePath("/backoffice/finance/faktur-pajak");
   return { ok: true };
@@ -84,7 +122,7 @@ export async function markNotRequiredAction(input: {
   try {
     await markTaxInvoiceNotRequired({ taxInvoiceId: input.taxInvoiceId, reason: input.reason, userId: g.userId });
   } catch (e) {
-    return toResult(e);
+    return await toResult(e);
   }
   revalidatePath("/backoffice/finance/faktur-pajak");
   return { ok: true };
@@ -147,7 +185,7 @@ export async function revertToPendingAction(input: {
   try {
     await revertTaxInvoiceToPending({ taxInvoiceId: input.taxInvoiceId, reason: input.reason, userId: g.userId });
   } catch (e) {
-    return toResult(e);
+    return await toResult(e);
   }
   revalidatePath("/backoffice/finance/faktur-pajak");
   return { ok: true };

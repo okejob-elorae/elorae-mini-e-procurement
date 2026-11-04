@@ -20,6 +20,7 @@ const {
   mockListPriceCandidates,
   mockResolveLinePrice,
   mockPriceApprovedReturnLine,
+  mockKaitReturLapanganKonsi,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockHasPermission: vi.fn(),
@@ -35,6 +36,7 @@ const {
   mockListPriceCandidates: vi.fn(),
   mockResolveLinePrice: vi.fn(),
   mockPriceApprovedReturnLine: vi.fn(),
+  mockKaitReturLapanganKonsi: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -57,6 +59,7 @@ vi.mock("@elorae/db", () => ({
   prisma: { fieldReturnLine: { findUnique: mockFindLine, updateMany: mockUpdateMany } },
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
+vi.mock("@/lib/finance/operasional/kait", () => ({ kaitReturLapanganKonsi: mockKaitReturLapanganKonsi }));
 
 import { FieldReturnError } from "@/lib/field-sales/retur/errors";
 import {
@@ -85,6 +88,8 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
     mockListPriceCandidates.mockReset();
     mockResolveLinePrice.mockReset();
     mockPriceApprovedReturnLine.mockReset();
+    mockKaitReturLapanganKonsi.mockReset();
+    mockKaitReturLapanganKonsi.mockResolvedValue(undefined);
     mockAuth.mockResolvedValue({
       user: { id: "user-1", permissions: ["field_returns:manage", "field_returns:writeoff"] },
     });
@@ -563,6 +568,38 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       expect(mockApprove).toHaveBeenCalledWith({ returnId: "r1", approvedById: "user-1" });
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns");
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns/r1");
+    });
+
+    it("posts the consignment field-return journal once, after the approval commits, as the approver", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockApprove.mockResolvedValue({ ok: true });
+      const res = await approveAction("r1");
+      expect(res).toEqual({ ok: true });
+      expect(mockKaitReturLapanganKonsi).toHaveBeenCalledTimes(1);
+      expect(mockKaitReturLapanganKonsi).toHaveBeenCalledWith("r1", "user-1");
+      expect(mockKaitReturLapanganKonsi.mock.invocationCallOrder[0]).toBeGreaterThan(mockApprove.mock.invocationCallOrder[0]);
+    });
+
+    it("posts no journal when the writer refuses the approval", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockApprove.mockRejectedValue(new FieldReturnError("UNRESOLVED_LINES"));
+      const res = await approveAction("r1");
+      expect(res).toEqual({ ok: false, code: "UNRESOLVED_LINES" });
+      expect(mockKaitReturLapanganKonsi).not.toHaveBeenCalled();
+    });
+
+    it("posts no journal for a caller without field_returns:manage", async () => {
+      mockHasPermission.mockReturnValue(false);
+      const res = await approveAction("r1");
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockKaitReturLapanganKonsi).not.toHaveBeenCalled();
+    });
+
+    it("posts no journal for an invalid request", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await approveAction("");
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockKaitReturLapanganKonsi).not.toHaveBeenCalled();
     });
   });
 

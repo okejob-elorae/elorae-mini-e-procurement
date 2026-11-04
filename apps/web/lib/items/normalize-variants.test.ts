@@ -35,6 +35,11 @@ describe("validateAndNormalizeVariants", () => {
     expect(out[0].sku).toBe("KMJ-01-MERAHM");
   });
 
+  it("leaves a fabric colour's Pantone code out of a generated SKU", () => {
+    const out = validateAndNormalizeVariants("KAIN-01", [{ warna: "Hitam", pantone: "19-4005 TCX", sku: "" }]);
+    expect(out).toEqual([{ warna: "Hitam", pantone: "19-4005 TCX", sku: "KAIN-01-HITAM" }]);
+  });
+
   it("refuses duplicate variant SKUs and barcodes case-insensitively", () => {
     expect(() =>
       validateAndNormalizeVariants("A", [{ sku: "A-X" }, { sku: "A-x" }], {}),
@@ -99,6 +104,12 @@ describe("validateAndNormalizeVariants with fixedAxes (#437)", () => {
     expect(
       validateAndNormalizeVariants("FG1", [{ Color: "Red", size: "S", sku: "FG1-RED-S" }], { fixedAxes: true }),
     ).toEqual([{ Warna: "Red", Ukuran: "S", sku: "FG1-RED-S" }]);
+  });
+
+  it("does not count a Pantone code as a third axis", () => {
+    expect(
+      validateAndNormalizeVariants("FG1", [{ Warna: "Red", pantone: "19-1664 TCX", sku: "FG1-RED" }], { fixedAxes: true }),
+    ).toEqual([{ Warna: "Red", pantone: "19-1664 TCX", sku: "FG1-RED" }]);
   });
 
   it("refuses an attribute other than colour and size", () => {

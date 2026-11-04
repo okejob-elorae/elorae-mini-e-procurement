@@ -146,6 +146,10 @@ d("approveFieldReturn (test bed only)", () => {
   let konsiBearsReturnId = "";
   let konsiBearsLineId = "";
 
+  /* Retur S: KONSI store, itemId, claimed == received == 4, sellable 1, rejected 3 (Q25/P23). */
+  let konsiRejectReturnId = "";
+  let konsiRejectLineId = "";
+
   beforeEach(async () => {
     uomId = "";
     itemId = "";
@@ -195,6 +199,8 @@ d("approveFieldReturn (test bed only)", () => {
     konsiBearsItemId = "";
     konsiBearsReturnId = "";
     konsiBearsLineId = "";
+    konsiRejectReturnId = "";
+    konsiRejectLineId = "";
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-FRA-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -582,6 +588,17 @@ d("approveFieldReturn (test bed only)", () => {
       counts: [{ lineId: konsiBearsLineId, receivedQty: 4, sellableQty: 4, rejectedQty: 0 }],
     });
     await resolveFieldReturnLine({ lineId: konsiBearsLineId, type: "SALESMAN_BEARS", createdById: adminId });
+
+    /* Retur S — KONSI store, claimed == received == 4, one sellable, three rejected as damaged. */
+    const createdKonsiReject = await mkReturn({ itemId, qty: 4, reason: "DAMAGED", storeId: konsiStoreId });
+    konsiRejectReturnId = createdKonsiReject.returnId;
+    const lineKonsiReject = await prisma.fieldReturnLine.findFirstOrThrow({ where: { returnId: seededId(konsiRejectReturnId) } });
+    konsiRejectLineId = lineKonsiReject.id;
+    await receiveFieldReturn({
+      returnId: konsiRejectReturnId,
+      receivedById: adminId,
+      counts: [{ lineId: konsiRejectLineId, receivedQty: 4, sellableQty: 1, rejectedQty: 3 }],
+    });
   });
 
   afterEach(async () => {
@@ -614,8 +631,10 @@ d("approveFieldReturn (test bed only)", () => {
       neverHeldReturnId,
       konsiSurplusReturnId,
       konsiBearsReturnId,
+      konsiRejectReturnId,
     ];
     const storeIds = [storeId, konsiStoreId];
+    await prisma.damagedStockMovement.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
     await prisma.rejectedGoodsLedger.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
@@ -969,6 +988,29 @@ d("approveFieldReturn (test bed only)", () => {
     const line = detail?.lines.find((l) => l.id === seededId(lineId));
     expect(line?.unitPrice).toBe(833_333.33);
     expect(line?.lineValue).toBe(10_000_000);
+  });
+
+  it("routes a KONSI store's rejected units to Gudang Barang Rusak, not the rejected-goods ledger (Q25/P23)", async () => {
+    await approveFieldReturn({ returnId: konsiRejectReturnId, approvedById: adminId });
+    const rusak = await prisma.damagedStockMovement.findMany({
+      where: { refType: "FieldReturnLine", refId: seededId(konsiRejectLineId) },
+    });
+    expect(rusak).toHaveLength(1);
+    expect(rusak[0].kind).toBe("MASUK_RETUR");
+    expect(Number(rusak[0].qty)).toBe(3);
+    expect(rusak[0].itemId).toBe(itemId);
+    expect(
+      await prisma.rejectedGoodsLedger.count({ where: { refType: "FIELD_RETURN", refId: seededId(konsiRejectReturnId) } }),
+    ).toBe(0);
+    /* The sellable unit still returns to main. */
+    const adj = await prisma.stockAdjustment.findFirstOrThrow({ where: { itemId: seededId(itemId), source: "FIELD_RETURN" } });
+    expect(Number(adj.qtyChange)).toBe(1);
+  });
+
+  it("keeps a PUTUS store's rejected units on the rejected-goods ledger and out of Gudang Barang Rusak", async () => {
+    await approveFieldReturn({ returnId: rejectedReturnId, approvedById: adminId });
+    expect(await prisma.rejectedGoodsLedger.count({ where: { refType: "FIELD_RETURN", refId: seededId(rejectedReturnId) } })).toBe(1);
+    expect(await prisma.damagedStockMovement.count({ where: { refType: "FieldReturnLine", refId: seededId(rejectedLineId) } })).toBe(0);
   });
 
   it("decrements StoreStock by creditedQty when the store is KONSI", async () => {

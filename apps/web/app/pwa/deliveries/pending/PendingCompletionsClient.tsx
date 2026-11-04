@@ -9,6 +9,7 @@ import { listPendingCompletions, deletePendingCompletion, retryPendingCompletion
 import { setupOrderSync } from "@/lib/pwa/offline/sync";
 import { flushPendingCompletions } from "@/lib/pwa/offline/completion-sync";
 import { type PendingCompletion } from "@/lib/pwa/offline/db";
+import { pesanGagalPengiriman } from "@/lib/delivery/pesan-galat";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 export function PendingCompletionsClient() {
   const t = useTranslations("pwa.deliveries.pending");
   const tErr = useTranslations("deliveryShipments");
+  const tTerima = useTranslations("pwa.spgTerima");
   const [items, setItems] = useState<PendingCompletion[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -112,7 +114,14 @@ export function PendingCompletionsClient() {
 
                     {item.syncState === "failed" && item.error && (
                       <p className="text-xs text-destructive">
-                        {replayRefused ? t("errReplayMismatch") : tErr(`err.${item.error}` as any)}
+                        {replayRefused
+                          ? t("errReplayMismatch")
+                          : /* The queue keeps the code only; messages that take {detail} get "" (never a raw key). */
+                            pesanGagalPengiriman(item.error, undefined, {
+                              teks: (k, v) => tErr(k as any, v),
+                              adaSebab: (k) => tTerima.has(`err.${k}` as any),
+                              sebab: (k) => tTerima(`err.${k}` as any),
+                            })}
                       </p>
                     )}
 

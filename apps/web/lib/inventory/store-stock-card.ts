@@ -12,6 +12,20 @@ export type StoreStockRow = {
   vanQty: number;
   /** The store's latest approved stocktake was partial and left this row uncounted, so its drift was not corrected. */
   uncountedInLastCount: boolean;
+  /**
+   * Pieces on IN_TRANSIT konsi shipment transfers to this store (`qty − returnedQty`): they left the
+   * main warehouse with the surat jalan but are not on this row's `qty` until the store receipt lands
+   * them, so they are visible here and never sellable (owner answers Q1 and P26, 2026-11-02).
+   */
+  dalamPerjalanan: number;
+};
+
+/** An item × variant that is only on its way to this store — no `StoreStock` row exists for it yet. */
+export type StoreStockInTransitRow = {
+  itemId: string;
+  variantSku: string;
+  itemName: string;
+  dalamPerjalanan: number;
 };
 
 /** The store's latest approved stocktake, when it was partial. `uncountedCount` is how many current stock rows it left uncounted. */
@@ -43,6 +57,12 @@ export type StoreStockMovement = {
 
 export type StoreStockCardData = {
   rows: StoreStockRow[];
+  /**
+   * In-transit pieces whose item × variant has no `StoreStock` row yet (a first shipment). Kept OUT
+   * of `rows` on purpose: `rows` stays the store's own stock book, so its count, its empty state and
+   * the assortment card's "never received" test (membership in `rows`) keep meaning what they did.
+   */
+  dalamPerjalananTanpaStok: StoreStockInTransitRow[];
   negativeCount: number;
   lastPartialCount: LastPartialCount | null;
   movements: StoreStockMovement[];
@@ -101,6 +121,33 @@ function movementHref(refType: string, refId: string, transferOrderIds: Map<stri
 }
 
 /**
+ * Pieces on their way to this store, per item × variant: every line of an IN_TRANSIT `KonsiTransfer`
+ * to it, `qty − returnedQty` (pieces refused at the door or brought back by "tidak jadi dikirim" are
+ * back in the main warehouse). RECEIVED transfers are already on `StoreStock`; CANCELLED ones are
+ * wholly back. `variantSku` is normalised `?? ""` like `StoreStock`'s, and a key whose pieces all
+ * came back is dropped.
+ */
+async function dalamPerjalananToko(
+  storeId: string,
+): Promise<Map<string, { itemId: string; variantSku: string; itemName: string; qty: number }>> {
+  const lines = await prisma.konsiTransferLine.findMany({
+    where: { transfer: { storeId, status: "IN_TRANSIT" } },
+    select: { itemId: true, variantSku: true, productName: true, qty: true, returnedQty: true, item: { select: { nameId: true } } },
+  });
+  const peta = new Map<string, { itemId: string; variantSku: string; itemName: string; qty: number }>();
+  for (const l of lines) {
+    const variantSku = l.variantSku ?? "";
+    const key = `${l.itemId}::${variantSku}`;
+    const sisa = Number(l.qty) - l.returnedQty;
+    const ada = peta.get(key);
+    if (ada) ada.qty += sisa;
+    else peta.set(key, { itemId: l.itemId, variantSku, itemName: l.item?.nameId ?? l.productName, qty: sisa });
+  }
+  for (const [key, p] of peta) if (!(p.qty > 0)) peta.delete(key);
+  return peta;
+}
+
+/**
  * Read-only view for the store detail page's konsi stock card. Combines the store's own
  * `StoreStock` ledger with `getStockAcrossLocations` for the "where else does this sit"
  * figure — main warehouse and van — never an "available" number (that helper deliberately
@@ -144,6 +191,8 @@ export async function getStoreStockCard(storeId: string): Promise<StoreStockCard
       ? new Set(lastApproved.lines.map((l) => `${l.itemId}::${l.variantSku}`))
       : new Set<string>();
 
+  const perjalanan = await dalamPerjalananToko(storeId);
+
   const rows: StoreStockRow[] = stockRows.map((r) => {
     const key = `${r.itemId}::${r.variantSku}`;
     const loc = elsewhere.get(key);
@@ -155,8 +204,14 @@ export async function getStoreStockCard(storeId: string): Promise<StoreStockCard
       mainQty: loc?.main ?? 0,
       vanQty: loc?.van ?? 0,
       uncountedInLastCount: uncountedKeys.has(key),
+      dalamPerjalanan: perjalanan.get(key)?.qty ?? 0,
     };
   });
+  const stockKeys = new Set(rows.map((r) => `${r.itemId}::${r.variantSku}`));
+  const dalamPerjalananTanpaStok: StoreStockInTransitRow[] = [...perjalanan.entries()]
+    .filter(([key]) => !stockKeys.has(key))
+    .map(([, p]) => ({ itemId: p.itemId, variantSku: p.variantSku, itemName: p.itemName, dalamPerjalanan: p.qty }))
+    .sort((a, b) => a.itemName.localeCompare(b.itemName) || a.variantSku.localeCompare(b.variantSku));
   const uncountedCount = rows.filter((r) => r.uncountedInLastCount).length;
   const lastPartialCount =
     lastApproved && !lastApproved.isFullCount && uncountedCount > 0
@@ -229,6 +284,7 @@ export async function getStoreStockCard(storeId: string): Promise<StoreStockCard
 
   return {
     rows,
+    dalamPerjalananTanpaStok,
     negativeCount,
     lastPartialCount,
     movements,

@@ -16,6 +16,7 @@ d("postOpnameJournal (test bed only)", () => {
   let inventoryId = "";
   let varianceId = "";
   let opnameId = "";
+  let rawInventoryId = "";
   let mappingSnapshot: MappingSnapshot;
 
   beforeEach(async () => {
@@ -25,10 +26,11 @@ d("postOpnameJournal (test bed only)", () => {
     uomId = "";
     itemId = "";
     inventoryId = "";
+    rawInventoryId = "";
     varianceId = "";
     opnameId = "";
     token = Math.floor(Math.random() * 10_000_000).toString();
-    mappingSnapshot = await snapshotMappings(["INVENTORY", "INVENTORY_VARIANCE"]);
+    mappingSnapshot = await snapshotMappings(["INVENTORY", "INVENTORY_FG", "INVENTORY_VARIANCE"]);
 
     const user = await prisma.user.create({
       data: { email: `test-opname-journal-${token}@test.local`, name: "Test Admin" },
@@ -44,19 +46,29 @@ d("postOpnameJournal (test bed only)", () => {
     });
     itemId = item.id;
 
+    // Opname barang jadi menyesuaikan INVENTORY_FG; opname kain/aksesori menyesuaikan INVENTORY.
     const inventory = await prisma.chartAccount.create({
-      data: { code: `9${token}1`, name: "Inventory (test)", type: "ASET", depth: 1, isActive: true },
+      data: { code: `9${token}1`, name: "Inventory FG (test)", type: "ASET", depth: 1, isActive: true },
     });
     inventoryId = inventory.id;
+    const rawInventory = await prisma.chartAccount.create({
+      data: { code: `9${token}3`, name: "Inventory raw (test)", type: "ASET", depth: 1, isActive: true },
+    });
+    rawInventoryId = rawInventory.id;
     const variance = await prisma.chartAccount.create({
       data: { code: `9${token}2`, name: "Inventory Variance (test)", type: "BEBAN", depth: 1, isActive: true },
     });
     varianceId = variance.id;
 
     await prisma.journalAccountMapping.upsert({
-      where: { role: "INVENTORY" },
-      create: { role: "INVENTORY", chartAccountId: inventoryId },
+      where: { role: "INVENTORY_FG" },
+      create: { role: "INVENTORY_FG", chartAccountId: inventoryId },
       update: { chartAccountId: inventoryId },
+    });
+    await prisma.journalAccountMapping.upsert({
+      where: { role: "INVENTORY" },
+      create: { role: "INVENTORY", chartAccountId: rawInventoryId },
+      update: { chartAccountId: rawInventoryId },
     });
     await prisma.journalAccountMapping.upsert({
       where: { role: "INVENTORY_VARIANCE" },
@@ -88,7 +100,7 @@ d("postOpnameJournal (test bed only)", () => {
     }
     await restoreMappings(mappingSnapshot);
     await prisma.stockLedgerEntry.deleteMany({ where: { refType: "StockOpname", refId: seededId(opnameId) } });
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [seededId(inventoryId), seededId(varianceId)] } } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [seededId(inventoryId), seededId(rawInventoryId), seededId(varianceId)] } } });
     await prisma.stockOpname.delete({ where: { id: opnameId } });
     await prisma.item.delete({ where: { id: itemId } });
     await prisma.uOM.delete({ where: { id: uomId } });
@@ -124,7 +136,7 @@ d("postOpnameJournal (test bed only)", () => {
     await expect(opnameNetDelta(opnameId, prisma)).rejects.toThrow();
   });
 
-  it("surplus (net +500) posts DR INVENTORY 500 / CR INVENTORY_VARIANCE 500, balanced", async () => {
+  it("surplus (net +500) on a finished-goods opname posts DR INVENTORY_FG 500 / CR INVENTORY_VARIANCE 500, balanced", async () => {
     await seedLedgerEntry(500, 5);
 
     const r = await postOpnameJournal(opnameId, userId, prisma);
@@ -147,7 +159,7 @@ d("postOpnameJournal (test bed only)", () => {
     expect(Number(varLine!.credit)).toBe(500);
   });
 
-  it("shrinkage (net -300) posts DR INVENTORY_VARIANCE 300 / CR INVENTORY 300", async () => {
+  it("shrinkage (net -300) on a finished-goods opname posts DR INVENTORY_VARIANCE 300 / CR INVENTORY_FG 300", async () => {
     await seedLedgerEntry(-300, -3);
 
     const r = await postOpnameJournal(opnameId, userId, prisma);
@@ -165,6 +177,29 @@ d("postOpnameJournal (test bed only)", () => {
     expect(Number(invLine!.credit)).toBe(300);
     expect(Number(varLine!.debit)).toBe(300);
     expect(Number(varLine!.credit)).toBe(0);
+  });
+
+  /*
+   * Opname kain/aksesori menyentuh persediaan bahan (INVENTORY), bukan barang jadi:
+   * dulu SEMUA opname memakai INVENTORY, sehingga opname barang jadi mengurangi akun
+   * bahan baku sementara penerimaan barang jadi menambah akun barang jadi.
+   */
+  it("shrinkage on a fabric opname posts against INVENTORY (raw), never INVENTORY_FG", async () => {
+    await prisma.stockOpname.update({ where: { id: opnameId }, data: { scope: "FABRIC" } });
+    await seedLedgerEntry(-120, -2);
+
+    const r = await postOpnameJournal(opnameId, userId, prisma);
+    expect(r).toMatchObject({ ok: true, created: true });
+
+    const j = await prisma.journal.findUnique({
+      where: { sourceType_sourceId: { sourceType: "OPNAME", sourceId: opnameId } },
+      include: { lines: true },
+    });
+    expect(j!.lines).toHaveLength(2);
+    expect(j!.lines.find((l) => l.chartAccountId === inventoryId)).toBeUndefined();
+    const rawLine = j!.lines.find((l) => l.chartAccountId === rawInventoryId);
+    expect(Number(rawLine!.credit)).toBe(120);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === varianceId)!.debit)).toBe(120);
   });
 
   it("net 0 returns NOTHING_TO_POST", async () => {

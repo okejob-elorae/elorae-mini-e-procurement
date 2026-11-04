@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getVanStock, listVanLoads, getLoadableInventory } from "@/lib/canvassing/queries";
 import { getVanForReconcile, listVanReconciles } from "@/lib/canvassing/reconcile-queries";
+import { periksaKanvas } from "@/lib/canvassing/kelayakan-kanvas";
+import { syaratDijualOffline } from "@/lib/items/saluran-jual";
 import { VanDetailClient } from "./VanDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -25,16 +27,18 @@ export default async function CanvasserVanPage({ params }: { params: Promise<{ c
   });
   if (!canvasser) notFound();
 
-  const [vanStock, loads, items, reconcileRows, reconciles] = await Promise.all([
+  const [vanStock, loads, items, reconcileRows, reconciles, bukanKanvas] = await Promise.all([
     getVanStock(canvasserId),
     listVanLoads(canvasserId, LOAD_HISTORY_LIMIT),
     prisma.item.findMany({
-      where: { isActive: true, type: "FINISHED_GOOD" },
+      // Barang "Marketplace saja" tidak pernah dimuat ke van (P3a).
+      where: { isActive: true, type: "FINISHED_GOOD", ...syaratDijualOffline() },
       select: { id: true, sku: true, nameId: true, variants: true },
       orderBy: { nameId: "asc" },
     }),
     getVanForReconcile(canvasserId),
     listVanReconciles(canvasserId, { page: 1, pageSize: RECONCILE_HISTORY_PAGE_SIZE }),
+    periksaKanvas(canvasserId),
   ]);
 
   const loadableInventory = await getLoadableInventory(items.map((i) => i.id));
@@ -54,6 +58,7 @@ export default async function CanvasserVanPage({ params }: { params: Promise<{ c
       loadableInventory={loadableInventory}
       reconcileRows={reconcileRows}
       reconciles={reconciles.items}
+      bukanKanvas={bukanKanvas}
     />
   );
 }

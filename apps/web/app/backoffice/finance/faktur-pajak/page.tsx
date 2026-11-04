@@ -40,6 +40,7 @@ export default async function FakturPajakPage({ searchParams }: PageProps) {
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = DEFAULT_PAGE_SIZE;
   const canManage = hasPermission(permissions, PERMISSIONS.TAX_INVOICES_MANAGE);
+  const canViewOrder = hasPermission(permissions, PERMISSIONS.FIELD_SALES_ORDERS_VIEW);
 
   let loaded: {
     list: Awaited<ReturnType<typeof listTaxInvoices>>;
@@ -69,6 +70,7 @@ export default async function FakturPajakPage({ searchParams }: PageProps) {
       page={page}
       pageSize={pageSize}
       canManage={canManage}
+      canViewOrder={canViewOrder}
       loadError={loaded === null}
       ppnRatePercent={loaded?.ppnRatePercent ?? FALLBACK_PPN_RATE_PERCENT}
     />

@@ -1,0 +1,12 @@
+-- Barang hilang yang dicatat MANUAL oleh kantor di toko yang punya buku stok
+-- kini mengurangi buku itu (2026-10-07).
+--
+-- Sebelumnya catatan manual tidak menggeser buku, jadi opname berikutnya atas
+-- potong yang sama menemukan kurang lagi dan membuka catatan barang hilang
+-- KEDUA (kantor harus membatalkan satu). Sekarang `bukaCatatanHilang` menulis
+-- satu baris `HILANG` (−qty, refType "StockLoss") per baris catatan, di
+-- transaksi yang sama; membatalkan catatan menulis pembaliknya (+qty, hanya
+-- yang belum dilihat opname sesudahnya). Toko tanpa buku tidak dibukakan buku.
+--
+-- ADD VALUE tidak boleh dipakai di transaksi yang sama — berkas ini tidak memakainya.
+ALTER TYPE "StoreStockKind" ADD VALUE IF NOT EXISTS 'HILANG';

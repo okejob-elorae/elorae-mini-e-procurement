@@ -1,13 +1,17 @@
+/**
+ * Only shown between top-level areas (login → backoffice, backoffice → PWA).
+ * Inside the backoffice, `app/backoffice/loading.tsx` shows a page skeleton
+ * within the shell instead, so this no longer covers the whole app with a
+ * blurred overlay on every menu click.
+ */
 export default function Loading() {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-      <div className="flex flex-col items-center gap-4">
-        <div
-          className="h-10 w-10 animate-spin rounded-full border-2 border-primary border-t-transparent"
-          aria-hidden
-        />
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </div>
+    <div className="flex min-h-[60vh] items-center justify-center" role="status" aria-live="polite">
+      <div
+        className="h-9 w-9 animate-spin rounded-full border-2 border-primary border-t-transparent"
+        aria-hidden
+      />
+      <span className="sr-only">Memuat…</span>
     </div>
   );
 }

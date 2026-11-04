@@ -3,20 +3,23 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { getVendorPayments } from "@/app/actions/vendor-billing";
 import type { VendorPaymentRow } from "@/lib/vendor-billing/payment-queries";
+import { VendorPaymentsClosedNotice } from "./VendorPaymentsClosedNotice";
 
-export function VendorPaymentsClient({ canCreate }: { canCreate: boolean }) {
+/** History of the old Vendor Billing payments: they take no new payments since 2026-11-01. */
+export function VendorPaymentsClient({ canPay }: { canPay: boolean }) {
   const t = useTranslations("vendorPayments");
   const [supplierId, setSupplierId] = useState("");
   const [from, setFrom] = useState("");
@@ -56,15 +59,9 @@ export function VendorPaymentsClient({ canCreate }: { canCreate: boolean }) {
           <h1 className="text-2xl font-bold">{t("title")}</h1>
           <p className="text-muted-foreground">{t("subtitle")}</p>
         </div>
-        {canCreate && (
-          <Link href="/backoffice/vendor-payments/new" className="ml-auto">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              {t("newPayment")}
-            </Button>
-          </Link>
-        )}
       </div>
+
+      <VendorPaymentsClosedNotice canPay={canPay} />
 
       <Card>
         <CardHeader>
@@ -85,11 +82,11 @@ export function VendorPaymentsClient({ canCreate }: { canCreate: boolean }) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="vp-from">{t("from")}</Label>
-              <Input id="vp-from" type="date" className="w-[160px]" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <TanggalInput id="vp-from" className="w-[160px]" value={from} onChange={(e) => setFrom(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="vp-to">{t("to")}</Label>
-              <Input id="vp-to" type="date" className="w-[160px]" value={to} onChange={(e) => setTo(e.target.value)} />
+              <TanggalInput id="vp-to" className="w-[160px]" value={to} onChange={(e) => setTo(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="vp-search">{t("search")}</Label>

@@ -4,11 +4,12 @@ import { JubelioCatalogController } from "./catalog.controller";
 import { JubelioCatalogDeleteController } from "./catalog-delete.controller";
 import { JubelioCatalogSyncService } from "./catalog-sync.service";
 import { JubelioCatalogDeleteService } from "./catalog-delete.service";
+import { JubelioPriceObserverService } from "./price-observer.service";
 
 @Module({
   imports: [JubelioModule],
   controllers: [JubelioCatalogController, JubelioCatalogDeleteController],
-  providers: [JubelioCatalogSyncService, JubelioCatalogDeleteService],
+  providers: [JubelioCatalogSyncService, JubelioCatalogDeleteService, JubelioPriceObserverService],
   exports: [JubelioCatalogSyncService, JubelioCatalogDeleteService],
 })
 export class JubelioCatalogModule {}

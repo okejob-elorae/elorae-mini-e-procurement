@@ -10,14 +10,37 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BILL_STATUS_VARIANT } from "../status-variant";
+import type { KonteksKoreksi } from "@/lib/vendor-billing/koreksi-utang-konteks";
 import { VoidBillButton } from "./VoidBillButton";
+import { KoreksiUtangCard } from "./KoreksiUtangCard";
 
 type Bill = NonNullable<Awaited<ReturnType<typeof getVendorBillDetail>>>;
 
 const day = (d: Date | string) => new Date(d).toLocaleDateString("id-ID");
 
-export function VendorBillDetailClient({ bill, canVoid, userId }: { bill: Bill; canVoid: boolean; userId: string }) {
+export function VendorBillDetailClient({
+  bill,
+  canVoid,
+  canPay,
+  canDecide,
+  voidBlockedReceipts,
+  konteks,
+  peranBelumDipetakan,
+  userId,
+}: {
+  bill: Bill;
+  canVoid: boolean;
+  canPay: boolean;
+  /** `vendor_bills:decide_price` — the code `putuskanSelisihHargaAction` checks. */
+  canDecide: boolean;
+  /** Receipts that keep the void withheld (`penerimaanLebihBayarJikaDibatalkan`); empty when nothing does or the viewer cannot void. */
+  voidBlockedReceipts: string[];
+  konteks: Record<string, KonteksKoreksi>;
+  peranBelumDipetakan: string[];
+  userId: string;
+}) {
   const t = useTranslations("vendorBills");
+  const tGrn = useTranslations("vendorBills.grn");
 
   return (
     <div className="space-y-6">
@@ -36,8 +59,21 @@ export function VendorBillDetailClient({ bill, canVoid, userId }: { bill: Bill; 
         <Badge className="ml-auto" variant={BILL_STATUS_VARIANT[bill.status]}>
           {t(`statusLabel.${bill.status}`)}
         </Badge>
+        {canPay && (
+          <Link href={`/backoffice/supplier-payments/baru?pemasok=${encodeURIComponent(bill.supplier.id)}&invoice=${encodeURIComponent(bill.id)}`}>
+            <Button variant="outline">{t("payViaSupplierPayments")}</Button>
+          </Link>
+        )}
         {canVoid && <VoidBillButton billId={bill.id} userId={userId} />}
       </div>
+
+      {voidBlockedReceipts.length > 0 && (
+        <p className="text-sm text-muted-foreground">{t("voidBlockedBySupplierPayments", { steps: voidBlockedReceipts.join(", ") })}</p>
+      )}
+
+      {bill.lines.some((l) => l.tanpaPenerimaan) && bill.status !== "VOID" && (
+        <p className="text-sm text-amber-700 dark:text-amber-400">{tGrn("barisLama")}</p>
+      )}
 
       {bill.status === "VOID" && (
         <Card>
@@ -58,12 +94,18 @@ export function VendorBillDetailClient({ bill, canVoid, userId }: { bill: Bill; 
             <p>{bill.dueDate ? day(bill.dueDate) : "-"}</p>
           </div>
           <div>
-            <p className="text-muted-foreground">{t("colTotal")}</p>
+            <p className="text-muted-foreground">{t("totalDicatat")}</p>
             <p className="font-medium">{formatIDR(bill.total)}</p>
           </div>
           <div>
             <p className="text-muted-foreground">{t("colPaid")}</p>
             <p>{formatIDR(bill.paidAmount)}</p>
+            {bill.supplierPaidAmount >= 0.005 && (
+              <p className="text-xs text-muted-foreground">
+                {t("paidSupplier")}: {formatIDR(bill.supplierPaidAmount)}
+                {bill.vendorPaidAmount >= 0.005 ? ` · ${t("paidVendor")}: ${formatIDR(bill.vendorPaidAmount)}` : ""}
+              </p>
+            )}
           </div>
           <div>
             <p className="text-muted-foreground">{t("outstanding")}</p>
@@ -100,11 +142,21 @@ export function VendorBillDetailClient({ bill, canVoid, userId }: { bill: Bill; 
             <TableBody>
               {bill.lines.map((l) => (
                 <TableRow key={l.id}>
-                  <TableCell>
-                    {l.poItem ? (
-                      <Link className="hover:underline" href={`/backoffice/purchase-orders/${l.poItem.po.id}`}>
-                        {l.poItem.po.docNumber}
-                      </Link>
+                  <TableCell className="whitespace-normal">
+                    {l.grn ? (
+                      <>
+                        <Link className="hover:underline" href={`/backoffice/inventory/grn/${l.grn.id}`}>
+                          {l.grn.docNumber}
+                        </Link>
+                        <div className="text-xs text-muted-foreground">{l.grn.poDocNumber ?? tGrn("tanpaPo")}</div>
+                      </>
+                    ) : l.poItem ? (
+                      <>
+                        <Link className="hover:underline" href={`/backoffice/purchase-orders/${l.poItem.po.id}`}>
+                          {l.poItem.po.docNumber}
+                        </Link>
+                        {l.tanpaPenerimaan && <div className="text-xs text-amber-700 dark:text-amber-400">{tGrn("barisLamaPendek")}</div>}
+                      </>
                     ) : l.woStep ? (
                       <Link className="hover:underline" href={`/backoffice/work-orders/${l.woStep.wo.id}`}>
                         {l.woStep.wo.docNumber}
@@ -114,8 +166,8 @@ export function VendorBillDetailClient({ bill, canVoid, userId }: { bill: Bill; 
                     )}
                   </TableCell>
                   <TableCell>
-                    {l.poItem
-                      ? `${l.poItem.item.nameId}${l.poItem.variantSku ? ` · ${l.poItem.variantSku}` : ""}`
+                    {l.itemName
+                      ? `${l.itemName}${(l.variantSku ?? l.poItem?.variantSku) ? ` · ${l.variantSku ?? l.poItem?.variantSku}` : ""}`
                       : l.woStep
                         ? `${t("step")} ${l.woStep.sequence}${l.woStep.stepName ? ` · ${l.woStep.stepName}` : ""}`
                         : "-"}
@@ -137,10 +189,39 @@ export function VendorBillDetailClient({ bill, canVoid, userId }: { bill: Bill; 
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <KoreksiUtangCard
+        koreksi={bill.koreksi}
+        konteks={konteks}
+        qtyBaris={Object.fromEntries(bill.lines.map((l) => [l.id, l.qty]))}
+        canDecide={canDecide}
+        peranBelumDipetakan={peranBelumDipetakan}
+      />
+
+      <div className="grid gap-6 lg:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle>{t("paymentsTitle")}</CardTitle>
+            <CardTitle>{t("supplierPaymentsTitle")}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm">
+            {bill.supplierPayments.length === 0 ? (
+              <p className="text-muted-foreground">{t("noSupplierPayments")}</p>
+            ) : (
+              <ul className="space-y-1">
+                {bill.supplierPayments.map((p) => (
+                  <li key={p.id}>
+                    <Link className="hover:underline" href={`/backoffice/supplier-payments/${p.paymentId}`}>
+                      {p.docNumber}
+                    </Link>{" "}
+                    · {day(p.date)} · {p.target} · {formatIDR(p.amount)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("vendorPaymentsTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="text-sm">
             {bill.allocations.length === 0 ? (
@@ -149,7 +230,10 @@ export function VendorBillDetailClient({ bill, canVoid, userId }: { bill: Bill; 
               <ul className="space-y-1">
                 {bill.allocations.map((a) => (
                   <li key={a.id} className={a.payment.voidedAt ? "text-muted-foreground line-through" : ""}>
-                    {a.payment.docNumber} · {day(a.payment.paidAt)} · {formatIDR(a.amount)}
+                    <Link className="hover:underline" href={`/backoffice/vendor-payments/${a.payment.id}`}>
+                      {a.payment.docNumber}
+                    </Link>{" "}
+                    · {day(a.payment.paidAt)} · {formatIDR(a.amount)}
                   </li>
                 ))}
               </ul>

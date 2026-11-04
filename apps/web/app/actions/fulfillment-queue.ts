@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import {
   markOrderPicked,
   markOrderPacked,
@@ -60,8 +61,16 @@ async function requireSession(): Promise<{ userId: string; permissions: string[]
   return { userId: session.user.id, permissions: session.user.permissions };
 }
 
+/**
+ * Status pesanan marketplace yang tidak pernah masuk antrean pemenuhan, di
+ * saringan mana pun: pesanan batal dan pesanan retur bukan pekerjaan gudang —
+ * penulis pemenuhan menolak keduanya (`assertNotCancelled`), dan hitungan
+ * "belum dikirim" di Beranda (`getMarketplaceKpi`) hanya NEW/PROCESSING.
+ */
+const STATUS_DI_LUAR_ANTREAN: readonly SalesOrderStatus[] = ["CANCELLED", "RETURNED"];
+
 function buildWhere(opts: ListFulfillmentQueueOpts): Record<string, unknown> {
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { status: { notIn: [...STATUS_DI_LUAR_ANTREAN] } };
   const fStatus = opts.fulfillmentStatus ?? "PENDING";
   if (fStatus !== "ALL") {
     where.fulfillmentStatus = fStatus;
@@ -76,15 +85,20 @@ function buildWhere(opts: ListFulfillmentQueueOpts): Record<string, unknown> {
   if (opts.search && opts.search.trim().length > 0) {
     const s = opts.search.trim();
     where.OR = [
-      { salesorderNo: { contains: s } },
-      { customerName: { contains: s } },
+      { salesorderNo: cariTeks(s) },
+      { customerName: cariTeks(s) },
     ];
   }
   return where;
 }
 
 export async function listFulfillmentQueue(opts: ListFulfillmentQueueOpts): Promise<QueuePage> {
-  await requireSession();
+  const { permissions } = await requireSession();
+  // Nama pembeli marketplace — hanya untuk yang boleh membuka halaman antrean
+  // (sama dengan ROUTE_PERMISSIONS `/backoffice/fulfillment`), sebelum kueri.
+  if (!hasPermission(permissions, PERMISSIONS.SALES_ORDERS_VIEW)) {
+    throw Object.assign(new Error("Forbidden: Insufficient permissions"), { status: 403 });
+  }
 
   const where = buildWhere(opts);
   const sortField: QueueSortField = opts.sortField ?? "transactionDate";

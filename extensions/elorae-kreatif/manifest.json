@@ -1,0 +1,63 @@
+{
+  "manifest_version": 3,
+  "name": "Elorae Kreatif — Pantau KOL",
+  "short_name": "Elorae Kreatif",
+  "version": "0.11.1",
+  "description": "Membaca angka profil dan video KOL di TikTok, Instagram, dan YouTube lalu mengirimkannya ke Elorae (pemantauan otomatis dan kiriman otomatis dari panel).",
+  "minimum_chrome_version": "111",
+  "permissions": ["storage", "alarms", "tabs", "scripting"],
+  "host_permissions": [
+    "https://www.tiktok.com/*",
+    "https://www.instagram.com/*",
+    "https://www.youtube.com/*",
+    "http://localhost:3000/*",
+    "https://elorae.cloud/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Elorae Kreatif — Pantau KOL",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.tiktok.com/*"],
+      "js": ["halaman-utama.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.instagram.com/*"],
+      "js": ["halaman-utama-instagram.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.tiktok.com/*", "https://www.instagram.com/*", "https://www.youtube.com/*"],
+      "js": ["konten.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["http://localhost:3000/*", "https://elorae.cloud/*"],
+      "js": ["jembatan-elorae.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "lib/pengurai.js",
+        "lib/pengurai-instagram.js",
+        "lib/pengurai-youtube.js",
+        "lib/platform.js",
+        "lib/aturan.js",
+        "lib/panel.js",
+        "lib/tampilan.js",
+        "lib/kalender.js"
+      ],
+      "matches": ["https://www.tiktok.com/*", "https://www.instagram.com/*", "https://www.youtube.com/*"]
+    }
+  ]
+}

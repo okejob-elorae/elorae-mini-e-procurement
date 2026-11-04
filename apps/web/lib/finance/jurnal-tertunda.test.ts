@@ -1,0 +1,385 @@
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { prisma, seededIds } from "@elorae/db";
+import {
+  bergenerasi,
+  dokumenJurnal,
+  hitungJurnalTertunda,
+  sumberNotifikasiJurnal,
+  tandaiJurnalTertundaSelesai,
+} from "./jurnal-tertunda";
+import { findPostableJournalDocIds } from "@/lib/canvassing/journal-pending";
+import { SEMUA_SUMBER_LAPANGAN, SUMBER_BERGENERASI } from "./lapangan/aturan";
+import {
+  JENIS_TERTUNDA_OPERASIONAL,
+  SEMUA_SUMBER_OPERASIONAL,
+  SUMBER_BERGENERASI_OPERASIONAL,
+} from "./operasional/aturan";
+
+/*
+ * Baris "Jurnal gagal" di Beranda dulu tidak pernah hilang: tidak ada kode yang
+ * menandai notifikasi JOURNAL_PENDING selesai sesudah jurnalnya berhasil
+ * diposting. Tes ini memakai id dokumen sintetis (tidak ada dokumen asli yang
+ * membawanya) dan hitungan yang DIBATASI ke notifikasi milik tes ini, karena
+ * basis data uji dipakai bersama dengan baris notifikasi asli.
+ */
+
+describe("sumberNotifikasiJurnal — metadata setiap penulis JOURNAL_PENDING", () => {
+  it("memetakan setiap bentuk metadata ke sumber jurnalnya", () => {
+    expect(sumberNotifikasiJurnal({ docId: "v1", kind: "van_load", reason: "UNMAPPED_ROLE" })).toEqual(
+      dokumenJurnal("VAN_LOAD", "v1"),
+    );
+    expect(sumberNotifikasiJurnal({ docId: "v2", kind: "van_sale" })).toEqual(dokumenJurnal("VAN_SALE", "v2"));
+    expect(sumberNotifikasiJurnal({ docId: "v3", kind: "van_reconcile" })).toEqual(
+      dokumenJurnal("VAN_RECONCILE", "v3"),
+    );
+    expect(sumberNotifikasiJurnal({ grnId: "g1", kind: "receipt", reason: "ERROR" })).toEqual(dokumenJurnal("GRN", "g1"));
+    expect(sumberNotifikasiJurnal({ grnId: "g1", kind: "reversal" })).toEqual(dokumenJurnal("GRN_REVERSAL", "g1"));
+    expect(sumberNotifikasiJurnal({ receiptId: "r1", woId: "w1", kind: "fg_receipt" })).toEqual(
+      dokumenJurnal("FG_RECEIPT", "r1"),
+    );
+    expect(sumberNotifikasiJurnal({ opnameId: "o1", reason: "UNBALANCED", role: null })).toEqual(
+      dokumenJurnal("OPNAME", "o1"),
+    );
+    expect(sumberNotifikasiJurnal({ salesReturnId: "s1", kind: "revenue" })).toEqual(
+      dokumenJurnal("SALESRETURN_REVENUE", "s1"),
+    );
+    expect(sumberNotifikasiJurnal({ salesReturnId: "s1", kind: "cogs" })).toEqual(
+      dokumenJurnal("SALESRETURN_COGS", "s1"),
+    );
+    expect(sumberNotifikasiJurnal({ orderId: "so1", kind: "revenue" })).toEqual(
+      dokumenJurnal("SALESORDER_REVENUE", "so1"),
+    );
+    expect(sumberNotifikasiJurnal({ orderId: "so1", kind: "cogs" })).toEqual(dokumenJurnal("SALESORDER_COGS", "so1"));
+    expect(sumberNotifikasiJurnal({ docId: "po1", kind: "supplier_payment", reason: "NOTHING_TO_POST" })).toEqual({
+      tipe: "pembayaranPemasok",
+      arah: "payment",
+      poId: "po1",
+    });
+    expect(sumberNotifikasiJurnal({ docId: "po1", kind: "supplier_payment_reversal" })).toEqual({
+      tipe: "pembayaranPemasok",
+      arah: "reversal",
+      poId: "po1",
+    });
+  });
+
+  it("memetakan kind jurnal piutang (`postArJournalSafely`) — nota ke jurnal nota, pasangan lamanya setara", () => {
+    expect(sumberNotifikasiJurnal({ docId: "d1", kind: "field_delivery_revenue", reason: "UNMAPPED_ROLE" })).toEqual({
+      tipe: "dokumen",
+      sourceType: "FIELD_DELIVERY",
+      sourceId: "d1",
+      setara: ["FIELD_DELIVERY_REVENUE"],
+    });
+    expect(sumberNotifikasiJurnal({ docId: "d1", kind: "field_delivery_cogs" })).toEqual({
+      tipe: "dokumen",
+      sourceType: "FIELD_DELIVERY",
+      sourceId: "d1",
+      setara: ["FIELD_DELIVERY_COGS"],
+    });
+    expect(sumberNotifikasiJurnal({ docId: "p1", kind: "ar_payment" })).toEqual(dokumenJurnal("PAYMENT_RECEIPT", "p1"));
+    expect(sumberNotifikasiJurnal({ docId: "p1", kind: "ar_payment_void" })).toEqual(dokumenJurnal("PAYMENT_VOID", "p1"));
+    expect(sumberNotifikasiJurnal({ docId: "k1", kind: "konsi_sell_through_revenue" })).toEqual(
+      dokumenJurnal("KONSI_SELLTHRU_REVENUE", "k1"),
+    );
+    expect(sumberNotifikasiJurnal({ docId: "k1", kind: "konsi_sell_through_cogs" })).toEqual(dokumenJurnal("KONSI_SELLTHRU_COGS", "k1"));
+    expect(sumberNotifikasiJurnal({ docId: "k1", kind: "konsi_sell_through_shrinkage" })).toEqual(
+      dokumenJurnal("KONSI_SELLTHRU_SHRINKAGE", "k1"),
+    );
+    expect(sumberNotifikasiJurnal({ docId: "k1", kind: "konsi_sell_through_surplus" })).toEqual(
+      dokumenJurnal("KONSI_SELLTHRU_SURPLUS", "k1"),
+    );
+    expect(sumberNotifikasiJurnal({ docId: "k1", kind: "konsi_sell_through_revenue_void" })).toEqual(
+      dokumenJurnal("KONSI_SELLTHRU_REVENUE_VOID", "k1"),
+    );
+    expect(sumberNotifikasiJurnal({ docId: "k1", kind: "konsi_sell_through_surplus_void" })).toEqual(
+      dokumenJurnal("KONSI_SELLTHRU_SURPLUS_VOID", "k1"),
+    );
+  });
+
+  it("metadata yang tiba sebagai teks JSON dibaca sama dengan objeknya", () => {
+    expect(sumberNotifikasiJurnal(JSON.stringify({ grnId: "g1", kind: "receipt", reason: "ERROR" }))).toEqual(
+      dokumenJurnal("GRN", "g1"),
+    );
+    expect(sumberNotifikasiJurnal(JSON.stringify({ docId: "po1", kind: "supplier_payment" }))).toEqual({
+      tipe: "pembayaranPemasok",
+      arah: "payment",
+      poId: "po1",
+    });
+    expect(sumberNotifikasiJurnal(JSON.stringify("teks"))).toBeNull();
+    expect(sumberNotifikasiJurnal("{rusak")).toBeNull();
+  });
+
+  /*
+   * Peta kind operasional di jurnal-tertunda.ts disalin tangan. Kind yang lupa
+   * disalin (pernah: `konsi_pindah`, `konsi_retur_lapangan`) membuat tandanya
+   * tidak pernah selesai — posting ulang berhasil, tetapi baris "Jurnal gagal"
+   * tetap menghitungnya selamanya. Tes ini menyapu SETIAP sumber operasional.
+   */
+  it("setiap kind jurnal operasional dipetakan ke sourceType-nya sendiri", () => {
+    for (const s of SEMUA_SUMBER_OPERASIONAL) {
+      const kind = JENIS_TERTUNDA_OPERASIONAL[s];
+      expect(sumberNotifikasiJurnal({ docId: "op1", kind, reason: "UNMAPPED_ROLE" }), kind).toEqual(dokumenJurnal(s, "op1"));
+    }
+  });
+
+  it("sumber bergenerasi (selesai hanya lewat penyelarasnya) sama dengan daftar di aturan lapangan & operasional", () => {
+    for (const s of SEMUA_SUMBER_OPERASIONAL) expect(bergenerasi(s), s).toBe(SUMBER_BERGENERASI_OPERASIONAL.includes(s));
+    for (const s of SEMUA_SUMBER_LAPANGAN) expect(bergenerasi(s), s).toBe(SUMBER_BERGENERASI.includes(s));
+  });
+
+  it("bentuk yang tidak dikenal tidak dipetakan (tetap dihitung, tidak pernah diam-diam selesai)", () => {
+    expect(sumberNotifikasiJurnal(null)).toBeNull();
+    expect(sumberNotifikasiJurnal("x")).toBeNull();
+    expect(sumberNotifikasiJurnal([])).toBeNull();
+    expect(sumberNotifikasiJurnal({})).toBeNull();
+    expect(sumberNotifikasiJurnal({ grnId: "g1", kind: "lain" })).toBeNull();
+    expect(sumberNotifikasiJurnal({ orderId: "so1" })).toBeNull();
+    expect(sumberNotifikasiJurnal({ docId: "d1", kind: "lain" })).toBeNull();
+    expect(sumberNotifikasiJurnal({ grnId: "", kind: "receipt" })).toBeNull();
+  });
+});
+
+/* Menulis AdminNotification dan Journal — tidak pernah terhadap basis data produksi. */
+const url = process.env.DATABASE_URL ?? "";
+const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
+const d = isProd ? describe.skip : describe;
+
+d("hitung & tandai JOURNAL_PENDING (basis data uji)", () => {
+  let token = "";
+  let notifIds: string[] = [];
+  let jurnalIds: string[] = [];
+
+  beforeEach(() => {
+    token = `w6-${Date.now().toString(36)}-${Math.floor(Math.random() * 1_000_000)}`;
+    notifIds = [];
+    jurnalIds = [];
+  });
+
+  afterEach(async () => {
+    try {
+      if (notifIds.length) await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(notifIds) } } });
+    } catch (e) {
+      console.warn("[jurnal-tertunda.test.ts] gagal menghapus notifikasi uji", notifIds, e);
+    }
+    try {
+      if (jurnalIds.length) await prisma.journal.deleteMany({ where: { id: { in: seededIds(jurnalIds) } } });
+    } catch (e) {
+      console.warn("[jurnal-tertunda.test.ts] gagal menghapus jurnal uji", jurnalIds, e);
+    }
+  });
+
+  async function gagal(metadata: Record<string, unknown>, createdAt?: Date): Promise<string> {
+    const n = await prisma.adminNotification.create({
+      data: {
+        category: "JOURNAL_PENDING",
+        severity: "WARNING",
+        title: "uji",
+        message: "uji",
+        metadata: metadata as never,
+        ...(createdAt ? { createdAt } : {}),
+      },
+      select: { id: true },
+    });
+    notifIds.push(n.id);
+    return n.id;
+  }
+
+  async function jurnal(sourceType: string, sourceId: string, createdAt?: Date): Promise<void> {
+    const j = await prisma.journal.create({
+      data: {
+        date: new Date(),
+        description: "uji jurnal tertunda",
+        sourceType,
+        sourceId,
+        postedById: "penguji-w6",
+        ...(createdAt ? { createdAt } : {}),
+      },
+      select: { id: true },
+    });
+    jurnalIds.push(j.id);
+  }
+
+  async function dibaca(id: string): Promise<boolean> {
+    const n = await prisma.adminNotification.findUnique({ where: { id }, select: { readAt: true } });
+    return n?.readAt != null;
+  }
+
+  it("gagal → 1 baris; jurnal berhasil + ditandai → 0", async () => {
+    const grnId = `grn-${token}`;
+    const id = await gagal({ grnId, kind: "receipt", reason: "UNMAPPED_ROLE", role: "AP" });
+    expect(await hitungJurnalTertunda({ notifikasiIds: [id] })).toBe(1);
+
+    await jurnal("GRN", grnId);
+    const ditandai = await tandaiJurnalTertundaSelesai([dokumenJurnal("GRN", grnId)]);
+
+    expect(ditandai).toBe(1);
+    expect(await dibaca(id)).toBe(true);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [id] })).toBe(0);
+  });
+
+  it("dua notifikasi beralasan beda untuk dokumen yang sama → keduanya selesai; dokumen lain tidak tersentuh", async () => {
+    const saleId = `vs-${token}`;
+    const a = await gagal({ docId: saleId, kind: "van_sale", reason: "UNMAPPED_ROLE", role: "CASH" });
+    const b = await gagal({ docId: saleId, kind: "van_sale", reason: "ERROR", role: null });
+    const lain = await gagal({ docId: `vs-lain-${token}`, kind: "van_sale", reason: "UNMAPPED_ROLE" });
+    const jenisLain = await gagal({ docId: saleId, kind: "van_load", reason: "UNMAPPED_ROLE" });
+
+    const ditandai = await tandaiJurnalTertundaSelesai([dokumenJurnal("VAN_SALE", saleId)]);
+
+    expect(ditandai).toBe(2);
+    expect(await dibaca(a)).toBe(true);
+    expect(await dibaca(b)).toBe(true);
+    expect(await dibaca(lain)).toBe(false);
+    expect(await dibaca(jenisLain)).toBe(false);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [a, b, lain, jenisLain] })).toBe(2);
+  });
+
+  it("pertahanan berlapis: notifikasi belum dibaca tapi jurnal dokumennya sudah ada → tidak dihitung", async () => {
+    const orderId = `so-${token}`;
+    const rev = await gagal({ orderId, kind: "revenue", reason: "UNMAPPED_ROLE", role: "AR" });
+    const cogs = await gagal({ orderId, kind: "cogs", reason: "UNMAPPED_ROLE", role: "COGS" });
+    const asing = await gagal({ bentuk: "tidak dikenal", token });
+    expect(await hitungJurnalTertunda({ notifikasiIds: [rev, cogs, asing] })).toBe(3);
+
+    await jurnal("SALESORDER_REVENUE", orderId);
+
+    // Pendapatan sudah berjurnal; HPP belum; bentuk asing tetap dihitung.
+    expect(await hitungJurnalTertunda({ notifikasiIds: [rev, cogs, asing] })).toBe(2);
+    expect(await dibaca(rev)).toBe(false);
+  });
+
+  it("tanda pengiriman (`field_delivery_*`) selesai oleh penyelaras nota (bergenerasi), atau oleh separuh pasangan lamanya sendiri", async () => {
+    const lewatNota = `dlv-nota-${token}`;
+    const lewatLama = `dlv-lama-${token}`;
+    const notaRev = await gagal({ docId: lewatNota, kind: "field_delivery_revenue", reason: "UNMAPPED_ROLE", role: "AR" });
+    const notaCogs = await gagal({ docId: lewatNota, kind: "field_delivery_cogs", reason: "UNMAPPED_ROLE", role: "COGS" });
+    const lamaRev = await gagal({ docId: lewatLama, kind: "field_delivery_revenue", reason: "UNMAPPED_ROLE", role: "AR" });
+    const lamaCogs = await gagal({ docId: lewatLama, kind: "field_delivery_cogs", reason: "UNMAPPED_ROLE", role: "COGS" });
+    const semua = [notaRev, notaCogs, lamaRev, lamaCogs];
+    expect(await hitungJurnalTertunda({ notifikasiIds: semua })).toBe(4);
+
+    // Jurnal nota bergenerasi (koreksi & batal nota): generasi pertama yang berdiri bukan bukti…
+    await jurnal("FIELD_DELIVERY", lewatNota);
+    expect(await hitungJurnalTertunda({ notifikasiIds: semua })).toBe(4);
+    // …penyelarasnya yang menandai: satu jurnal nota membawa piutang, pendapatan, dan HPP, jadi kedua tandanya beres.
+    expect(await tandaiJurnalTertundaSelesai([dokumenJurnal("FIELD_DELIVERY", lewatNota)])).toBe(2);
+    expect(await hitungJurnalTertunda({ notifikasiIds: semua })).toBe(2);
+    expect(await dibaca(notaRev)).toBe(true);
+    expect(await dibaca(notaCogs)).toBe(true);
+
+    // Separuh lama hanya menyelesaikan tandanya sendiri.
+    await jurnal("FIELD_DELIVERY_COGS", lewatLama);
+    expect(await hitungJurnalTertunda({ notifikasiIds: semua })).toBe(1);
+    expect(await tandaiJurnalTertundaSelesai([dokumenJurnal("FIELD_DELIVERY_COGS", lewatLama)])).toBe(1);
+    expect(await dibaca(lamaCogs)).toBe(true);
+    expect(await dibaca(lamaRev)).toBe(false);
+  });
+
+  it("tanda pembayaran dan konsi sell-through selesai begitu jurnal sumbernya ada", async () => {
+    const paymentId = `pay-${token}`;
+    const reportId = `kst-${token}`;
+    const bayar = await gagal({ docId: paymentId, kind: "ar_payment", reason: "UNMAPPED_ROLE", role: "AR_STORE" });
+    const konsi = await gagal({ docId: reportId, kind: "konsi_sell_through_cogs", reason: "UNMAPPED_ROLE", role: "COGS" });
+    expect(await hitungJurnalTertunda({ notifikasiIds: [bayar, konsi] })).toBe(2);
+
+    await jurnal("PAYMENT_RECEIPT", paymentId);
+    await jurnal("KONSI_SELLTHRU_COGS", reportId);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [bayar, konsi] })).toBe(0);
+  });
+
+  it("pindah barang konsinyasi (bergenerasi) selesai oleh penyelarasnya; retur lapangan konsinyasi (sekali posting) oleh jurnalnya", async () => {
+    const transferId = `kt-${token}`;
+    const returId = `fr-${token}`;
+    const pindah = await gagal({ docId: transferId, kind: "konsi_pindah", reason: "UNMAPPED_ROLE", role: "INVENTORY_CONSIGNMENT" });
+    const retur = await gagal({ docId: returId, kind: "konsi_retur_lapangan", reason: "UNMAPPED_ROLE", role: "INVENTORY_CONSIGNMENT" });
+    expect(await hitungJurnalTertunda({ notifikasiIds: [pindah, retur] })).toBe(2);
+
+    // Pindah barang berubah sesudah dijurnal (ditolak di pintu, tidak jadi dikirim): jurnalnya bukan bukti.
+    await jurnal("CONSIGNMENT_TRANSFER", transferId);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [pindah, retur] })).toBe(2);
+    expect(await tandaiJurnalTertundaSelesai([dokumenJurnal("CONSIGNMENT_TRANSFER", transferId)])).toBe(1);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [pindah, retur] })).toBe(1);
+    expect(await dibaca(pindah)).toBe(true);
+    expect(await dibaca(retur)).toBe(false);
+
+    await jurnal("CONSIGNMENT_FIELD_RETURN", returId);
+    expect(await tandaiJurnalTertundaSelesai([dokumenJurnal("CONSIGNMENT_FIELD_RETURN", returId)])).toBe(1);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [pindah, retur] })).toBe(0);
+  });
+
+  it("pembayaran pemasok: jurnal yang berdiri SEBELUM kegagalan tidak menyelesaikannya; yang sesudahnya menyelesaikan", async () => {
+    const poId = `po-${token}`;
+    const t0 = new Date(Date.now() - 60_000);
+    const t1 = new Date(Date.now() - 30_000);
+    // Jurnal generasi 1 berdiri lebih dulu, lalu tanda PAYMENT_SUPERSEDED ditulis.
+    await jurnal("SUPPLIER_PAYMENT", `${poId}#1`, t0);
+    const n = await gagal({ docId: poId, kind: "supplier_payment", reason: "PAYMENT_SUPERSEDED" }, t1);
+    const balik = await gagal({ docId: poId, kind: "supplier_payment_reversal", reason: "ERROR" }, t1);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [n, balik] })).toBe(2);
+
+    // Pembalikan generasi 1 diposting sesudah tanda → hanya tanda pembalikan yang beres.
+    await jurnal("SUPPLIER_PAYMENT_REVERSAL", `${poId}#1`);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [n, balik] })).toBe(1);
+
+    // Pembayaran generasi 2 diposting sesudah tanda → tanda pembayaran juga beres.
+    await jurnal("SUPPLIER_PAYMENT", `${poId}#2`);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [n, balik] })).toBe(0);
+  });
+
+  it("pembayaran pemasok: tidak menyentuh PO lain yang id-nya berawalan sama", async () => {
+    const poId = `po-${token}`;
+    const t1 = new Date(Date.now() - 30_000);
+    const n = await gagal({ docId: poId, kind: "supplier_payment", reason: "UNMAPPED_ROLE" }, t1);
+    await jurnal("SUPPLIER_PAYMENT", `${poId}9#1`);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [n] })).toBe(1);
+  });
+
+  it("dibuatSebelum: tanda kegagalan yang ditulis SESUDAH posting dimulai tidak ikut ditandai", async () => {
+    const poId = `po-${token}`;
+    const mulai = new Date(Date.now() - 10_000);
+    const lama = await gagal({ docId: poId, kind: "supplier_payment", reason: "UNMAPPED_ROLE" }, new Date(Date.now() - 60_000));
+    const baru = await gagal({ docId: poId, kind: "supplier_payment", reason: "GRN_JOURNALS_INCOMPLETE" });
+
+    const ditandai = await tandaiJurnalTertundaSelesai(
+      [{ tipe: "pembayaranPemasok", arah: "payment", poId }],
+      { dibuatSebelum: mulai },
+    );
+
+    expect(ditandai).toBe(1);
+    expect(await dibaca(lama)).toBe(true);
+    expect(await dibaca(baru)).toBe(false);
+  });
+
+  it("tombol ulang van tetap tersedia walau notifikasinya sudah ditandai selesai", async () => {
+    const loadId = `vl-${token}`;
+    await gagal({ docId: loadId, kind: "van_load", reason: "UNMAPPED_ROLE", role: "INVENTORY_VAN" });
+    await tandaiJurnalTertundaSelesai([dokumenJurnal("VAN_LOAD", loadId)]);
+
+    // Pembaca tombol memakai keberadaan baris, bukan readAt: kalau jurnalnya
+    // ternyata belum ada, tombol "Post journal" harus tetap muncul.
+    const bisaUlang = await findPostableJournalDocIds("van_load", [loadId]);
+    expect(bisaUlang.has(loadId)).toBe(true);
+  });
+
+  it("balapan: dua penanda serentak untuk dokumen yang sama → tidak ada galat, semua selesai", async () => {
+    const opnameId = `op-${token}`;
+    const a = await gagal({ opnameId, reason: "UNMAPPED_ROLE", role: "INVENTORY" });
+    const b = await gagal({ opnameId, reason: "UNBALANCED", role: null });
+    await jurnal("OPNAME", opnameId);
+
+    const hasil = await Promise.all([
+      tandaiJurnalTertundaSelesai([dokumenJurnal("OPNAME", opnameId)]),
+      tandaiJurnalTertundaSelesai([dokumenJurnal("OPNAME", opnameId)]),
+    ]);
+
+    expect(hasil.every((n) => n >= 0)).toBe(true);
+    expect(await dibaca(a)).toBe(true);
+    expect(await dibaca(b)).toBe(true);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [a, b] })).toBe(0);
+  });
+
+  it("daftar sumber kosong tidak menulis apa pun", async () => {
+    const id = await gagal({ grnId: `grn-${token}`, kind: "receipt", reason: "ERROR" });
+    expect(await tandaiJurnalTertundaSelesai([])).toBe(0);
+    expect(await dibaca(id)).toBe(false);
+  });
+});

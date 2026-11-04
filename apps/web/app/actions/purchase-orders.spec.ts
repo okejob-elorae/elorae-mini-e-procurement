@@ -10,6 +10,7 @@ const {
   mockTransaction,
   mockRecompute,
   mockSetTerms,
+  mockRunSerializable,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockVerifyPin: vi.fn(),
@@ -20,6 +21,7 @@ const {
   mockTransaction: vi.fn(),
   mockRecompute: vi.fn(),
   mockSetTerms: vi.fn(),
+  mockRunSerializable: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -47,7 +49,9 @@ vi.mock("@/lib/purchase-orders/queries", () => ({ listPOs: vi.fn(), getPOById: v
 vi.mock("@/lib/items/validate-variant-lines", () => ({
   assertLinesVariantSkusMatchItemDefinitions: vi.fn(),
 }));
-vi.mock("@/lib/leadtime/po-snapshot", () => ({ resolvePoLeadTimeFields: vi.fn() }));
+vi.mock("@/lib/leadtime/po-snapshot", () => ({
+  resolvePoLeadTimeFields: vi.fn(async () => ({ chainSnapshot: null, chainTotalDays: null, etaDate: null })),
+}));
 vi.mock("@/lib/purchasing/supplier-payment-journal", () => ({
   hasCurrentPaymentJournal: vi.fn(),
   hasStandingPaymentJournalWhileUnpaid: vi.fn(),
@@ -65,7 +69,7 @@ vi.mock("@/lib/purchase-orders/payment-due", () => ({
 vi.mock("@/lib/purchase-orders/set-payment-terms", () => ({
   setPurchaseOrderPaymentTerms: mockSetTerms,
 }));
-vi.mock("@/lib/db/tx-retry", () => ({ runSerializable: vi.fn() }));
+vi.mock("@/lib/db/tx-retry", () => ({ runSerializable: mockRunSerializable }));
 
 import { cancelPO, changePOStatus, createPO, setPOPaymentTerms, submitPO, updatePO } from "./purchase-orders";
 
@@ -100,9 +104,9 @@ describe("purchase-order actor trust", () => {
   it("updatePO verifies the session user's PIN on a posted PO", async () => {
     mockPoFindUnique.mockResolvedValue({ status: "SUBMITTED" });
     mockVerifyPin.mockResolvedValue({ success: false, message: "bad pin" });
-    await expect(updatePO("po1", {} as never, "u1", "1234")).rejects.toThrow("bad pin");
+    await expect(updatePO("po1", {} as never, "u1", "1234")).resolves.toMatchObject({ ok: false, code: "PIN_DITOLAK" });
     expect(mockVerifyPin).toHaveBeenCalledWith("u1", "1234", "EDIT_POSTED_PO");
-    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockRunSerializable).not.toHaveBeenCalled();
   });
 
   it("cancelPO verifies the session user's PIN", async () => {
@@ -121,33 +125,47 @@ describe("purchase-order actor trust", () => {
 });
 
 describe("updatePO payment terms", () => {
+  /* The edit's transaction, run for real against a mocked client: the paid-terms check reads the PO inside it. */
+  const tx = {
+    $queryRaw: vi.fn(async () => []),
+    purchaseOrder: { findUnique: mockPoFindUnique, update: mockPoUpdate },
+    pOStatusHistory: { create: mockHistoryCreate },
+    pOItem: { findMany: vi.fn(async () => []), deleteMany: vi.fn(async () => ({ count: 0 })) },
+    vendorBillLine: { count: vi.fn(async () => 0) },
+    itemRequestLine: { findMany: vi.fn(async () => []), updateMany: vi.fn(async () => ({ count: 0 })) },
+    item: {},
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
     mockPoFindUnique.mockResolvedValue({ status: "DRAFT" });
+    mockRunSerializable.mockImplementation(async (cb: (client: typeof tx) => unknown) => cb(tx));
   });
 
   it("refuses invalid terms before opening a transaction", async () => {
     await expect(
       updatePO("po1", { supplierId: "s1", items: [], paymentTermsDays: 400 } as never, "u1")
-    ).rejects.toThrow("Payment terms must be a whole number of days from 0 to 365");
-    expect(mockTransaction).not.toHaveBeenCalled();
+    ).resolves.toEqual({ ok: false, code: "TERMIN_TIDAK_SAH" });
+    expect(mockRunSerializable).not.toHaveBeenCalled();
   });
 
-  it("refuses changed terms on a paid PO before opening a transaction", async () => {
+  it("refuses changed terms on a paid PO inside the edit's transaction, writing nothing", async () => {
     mockPoFindUnique.mockResolvedValue({ status: "DRAFT", paidAt: new Date(), paymentTermsDays: 30 });
     await expect(
       updatePO("po1", { supplierId: "s1", items: [], paymentTermsDays: 60 } as never, "u1")
-    ).rejects.toThrow("This PO is already paid — its payment terms can no longer change");
-    expect(mockTransaction).not.toHaveBeenCalled();
+    ).resolves.toEqual({ ok: false, code: "TERMIN_SUDAH_LUNAS" });
+    expect(mockRunSerializable).toHaveBeenCalledTimes(1);
+    expect(mockPoUpdate).not.toHaveBeenCalled();
   });
 
   it("saves a paid PO whose terms are unchanged", async () => {
     mockPoFindUnique.mockResolvedValue({ status: "DRAFT", paidAt: new Date(), paymentTermsDays: 30 });
     await expect(
       updatePO("po1", { supplierId: "s1", items: [], paymentTermsDays: 30 } as never, "u1")
-    ).resolves.toEqual({ id: "po1" });
-    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    ).resolves.toEqual({ ok: true, id: "po1" });
+    expect(mockRunSerializable).toHaveBeenCalledTimes(1);
+    expect(mockPoUpdate).toHaveBeenCalledTimes(1);
   });
 });
 

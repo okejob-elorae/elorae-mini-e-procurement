@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -245,9 +246,8 @@ export function RecordPaymentSheet({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="payment-paid-at">{t("paymentSheet.paidAtLabel")}</Label>
-              <Input
+              <TanggalInput
                 id="payment-paid-at"
-                type="date"
                 className="h-10"
                 value={paidAt}
                 disabled={isPending}

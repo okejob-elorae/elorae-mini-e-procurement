@@ -2,14 +2,26 @@ import { prisma, postJournal, JournalError, Prisma, type PrismaClient } from "@e
 import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mapping";
 import { bookedPayable, type ApLine } from "./supplier-payable";
+import { adaPembayaranDokumenUntukPo } from "./pembayaran-dokumen-po";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
 /**
- * `postSupplierPaymentJournal` can fail five ways the shared
+ * `postSupplierPaymentJournal` can fail six ways the shared
  * `GenerateAutoJournalResult` has no code for, every one of which would
  * otherwise read as a benign zero — or a benign idempotent hit — and let the PO
  * report a clean "marked paid".
+ *
+ * `ADA_PEMBAYARAN_DOKUMEN`: the PO's receipts are already (partly) paid through
+ * supplier payment documents (Supplier payments → Pay, `SUPPLIER_PAYMENT_DOC`
+ * journals, which debit AP themselves). This journal pays the PO's WHOLE booked
+ * payable, so posting it would pay the settled part a second time — payables
+ * negative and bank credited twice for one supplier invoice. Answered before
+ * anything else, in the writer rather than only at the paid toggle, so every
+ * path to this journal passes the same guard: `setPOPaidAt` refuses it first,
+ * before its compare-and-swap, but the PO page's "Post payment journal" retry
+ * (`retrySupplierPaymentJournalAction`) reaches this writer for a PO that the
+ * document payments themselves marked paid.
  *
  * `AP_ACCOUNT_MISMATCH`: GRN journals exist for this PO, but at least one of
  * them contributed no line on the currently-resolved AP account. That happens
@@ -61,8 +73,8 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  * again, `hasStandingPaymentJournalWhileUnpaid` flags the PO and the reversal can
  * be posted directly from the detail page's standing-payment warning.
  *
- * The first four stay distinct from the genuinely benign zero cases — no GRNs at
- * all (an advance payment), no GRN that could ever book a payable (each one
+ * The four payable-read codes (`AP_ACCOUNT_MISMATCH` and the three `GRN_*`) stay
+ * distinct from the genuinely benign zero cases — no GRNs at all (an advance payment), no GRN that could ever book a payable (each one
  * either sub-cent or owner-declined), or a net payable already cleared by
  * reversals — so a caller can raise them loudly instead of reporting success.
  * `PAYMENT_SUPERSEDED` does the same for the other silent success: an idempotent
@@ -70,6 +82,7 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  */
 export type PostSupplierPaymentResult =
   | GenerateAutoJournalResult
+  | { ok: false; code: "ADA_PEMBAYARAN_DOKUMEN" }
   | { ok: false; code: "AP_ACCOUNT_MISMATCH" }
   | { ok: false; code: "GRN_APPROVAL_PENDING" }
   | { ok: false; code: "GRN_JOURNALS_INCOMPLETE" }
@@ -311,6 +324,25 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
 
   if (apLines.length === 0 || journalsWithoutApLine > 0) return { ok: false, code: "AP_ACCOUNT_MISMATCH" };
 
+  /*
+   * Retur ke pemasok yang SELESAI mendebit hutang usaha di jurnalnya sendiri
+   * (`VENDOR_RETURN`, sourceId = id retur, akuntansi operasional): hutang PO ini
+   * sudah berkurang sebesar kredit returnya. Tanpa baris-baris ini, tombol tandai
+   * lunas membayar hutang GRN penuh dan kredit retur terbayar dua kali (sekali
+   * sebagai potongan hutang, sekali lagi sebagai kas keluar). Hanya baris di akun
+   * hutang usaha yang sekarang yang dibaca; retur tanpa kredit PO tidak punya
+   * baris hutang dan memang tidak mengubah apa pun, jadi TIDAK diperiksa seperti
+   * jurnal GRN di atas (tidak ada "ketidakcocokan akun" untuk mereka).
+   */
+  const returSelesai = await client.vendorReturn.findMany({ where: { poId, status: "COMPLETED" }, select: { id: true } });
+  if (returSelesai.length > 0) {
+    const jurnalRetur = await client.journal.findMany({
+      where: { sourceType: "VENDOR_RETURN", sourceId: { in: returSelesai.map((r) => r.id) } },
+      select: { lines: { where: { chartAccountId: apAccountId }, select: { debit: true, credit: true } } },
+    });
+    for (const j of jurnalRetur) for (const l of j.lines) apLines.push({ debit: Number(l.debit), credit: Number(l.credit) });
+  }
+
   const payable = bookedPayable(apLines);
   if (payable < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
 
@@ -413,6 +445,14 @@ export async function postSupplierPaymentJournal(
   paidAt: Date,
   client: AnyClient = prisma,
 ): Promise<PostSupplierPaymentResult> {
+  /*
+   * Read in the caller's transaction like everything below, so a document
+   * payment committing concurrently conflicts with this post instead of slipping
+   * in between the check and the journal. See `ADA_PEMBAYARAN_DOKUMEN` on the
+   * result type.
+   */
+  if (await adaPembayaranDokumenUntukPo(poId, client)) return { ok: false, code: "ADA_PEMBAYARAN_DOKUMEN" };
+
   const lookup = await poBookedPayable(poId, client);
   if (!lookup.ok) return lookup;
 
@@ -428,7 +468,7 @@ export async function postSupplierPaymentJournal(
       { role: "AP" as const, debit: lookup.payable, credit: 0 },
       { role: "BANK" as const, debit: 0, credit: lookup.payable },
     ],
-    { date: paidAt, description: `Supplier payment ${po?.docNumber ?? poId}`, postedById },
+    { date: paidAt, description: `Pembayaran pemasok (tandai lunas) PO ${po?.docNumber ?? poId}`, postedById },
   );
 
   /*
@@ -500,6 +540,31 @@ export async function hasStandingPaymentJournalWhileUnpaid(
 export async function hasCurrentPaymentJournal(poId: string, client: AnyClient = prisma): Promise<boolean> {
   const gen = await currentGeneration(poId, client);
   return (await postedPaymentJournal(poId, gen, client)) != null;
+}
+
+/**
+ * Jurnal pembayaran tombol "Tandai lunas" masih BERDIRI untuk PO ini pada
+ * generasinya sekarang, apa pun `paidAt`-nya. Dipakai pembayaran pemasok
+ * sebagian: tanda lunas yang dipasang tombol lama tidak boleh dibuka otomatis
+ * oleh pembatalan pembayaran dokumen.
+ */
+export async function adaJurnalTandaiLunasBerdiri(poId: string, client: AnyClient = prisma): Promise<boolean> {
+  const gen = await currentGeneration(poId, client);
+  return (await postedPaymentJournal(poId, gen, client)) != null;
+}
+
+/**
+ * Generasi pembayaran tombol lama yang sekarang berlaku (untuk kunci cermin
+ * `SupplierPayment` — `tandai-lunas:<poId>#<gen>`).
+ */
+export async function generasiTandaiLunas(poId: string, client: AnyClient = prisma): Promise<number> {
+  return currentGeneration(poId, client);
+}
+
+/** Total jurnal pembayaran tombol lama yang berdiri pada generasi `gen` (sen), null bila tidak ada. */
+export async function nilaiJurnalTandaiLunasSen(poId: string, gen: number, client: AnyClient = prisma): Promise<{ sen: number; tanggal: Date } | null> {
+  const j = await postedPaymentJournal(poId, gen, client);
+  return j ? { sen: totalDebitCents(j.lines), tanggal: j.date } : null;
 }
 
 /**
@@ -668,7 +733,7 @@ export async function postSupplierPaymentReversalJournal(
     const res = await postJournal(client, {
       source: { type: "SUPPLIER_PAYMENT_REVERSAL", id: sourceId },
       date: paid.date,
-      description: `Supplier payment reversal ${po?.docNumber ?? poId}`,
+      description: `Pembatalan pembayaran pemasok (tandai lunas) PO ${po?.docNumber ?? poId}`,
       postedById,
       lines,
     });

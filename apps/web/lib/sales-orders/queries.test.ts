@@ -16,6 +16,7 @@ vi.mock("@elorae/db", () => ({
 }));
 
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { listSalesOrders, getSalesOrderById, getSalesOrdersListKpi, inclusiveWibDayCount } from "./queries";
 
 beforeEach(() => {
@@ -102,10 +103,35 @@ describe("listSalesOrders", () => {
       lte: new Date("2026-06-30"),
     });
     expect(args.where.OR).toEqual([
-      { salesorderNo: { contains: "Alice" } },
-      { customerName: { contains: "Alice" } },
-      { trackingNumber: { contains: "Alice" } },
+      { salesorderNo: cariTeks("Alice") },
+      { customerName: cariTeks("Alice") },
+      { trackingNumber: cariTeks("Alice") },
     ]);
+  });
+
+  // Abai huruf di kedua dialek: opsi Prisma di PostgreSQL, collation *_ci di
+  // MariaDB — klien MariaDB menolak opsi itu.
+  it.each([
+    ["postgresql://u:p@127.0.0.1:55432/elorae", true],
+    ["mysql://u:p@127.0.0.1:3306/elorae", false],
+  ])("search filter mengikuti dialek DATABASE_URL (%s)", async (url, pakaiMode) => {
+    vi.stubEnv("DATABASE_URL", url);
+    try {
+      (prisma.salesOrder.findMany as any).mockResolvedValue([]);
+      (prisma.salesOrder.count as any).mockResolvedValue(0);
+
+      await listSalesOrders({ search: " Alice " }, { page: 1, pageSize: 10 });
+
+      const or = (prisma.salesOrder.findMany as any).mock.calls[0][0].where.OR;
+      expect(or).toHaveLength(3);
+      for (const syarat of or) {
+        const filter = Object.values(syarat)[0] as Record<string, unknown>;
+        expect(filter.contains).toBe("Alice");
+        expect("mode" in filter).toBe(pakaiMode);
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("omits where keys when filters are undefined", async () => {

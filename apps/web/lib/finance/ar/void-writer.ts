@@ -1,5 +1,6 @@
 import { runSerializable } from "@/lib/db/tx-retry";
 import { findApprovedSettlementOwningPayment } from "@/lib/finance/ar-settlement/component-owner";
+import { selaraskanSisaPiutang } from "@/lib/receivables/writer";
 import { projectReturnOffset } from "./retur-offset-writer";
 import { PaymentError } from "./errors";
 
@@ -127,6 +128,12 @@ export async function voidPayment(input: {
        */
       const status = paid === 0 ? "OUTSTANDING" : outstanding === 0 ? "PAID" : "PARTIAL";
       await tx.receivable.update({ where: { id: a.receivableId }, data: { status } });
+      /*
+       * The receivables module's own balance (`outstanding`, `settledAt`) follows the restored
+       * `paidAmount` in the same transaction. Left behind at zero, the invoice would drop out of
+       * every open-only list (`hanyaTerbuka`) while the store still owes it.
+       */
+      await selaraskanSisaPiutang(tx, a.receivableId);
     }
 
     /*

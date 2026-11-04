@@ -31,7 +31,12 @@ export type DocTypeValue =
   | "SELLTHRU"
   | "ITEMREQ"
   | "VENDOR_BILL"
-  | "VENDOR_PAYMENT";
+  | "VENDOR_PAYMENT"
+  | "CASHOUT"
+  | "CASHIN"
+  | "CASHTRF"
+  | "SUPPAY"
+  | "ASSET";
 
 export type DocTypeGroup = "procurement" | "inventory" | "fieldSales" | "finance";
 
@@ -64,6 +69,11 @@ export const DOC_TYPE_GROUP: Record<DocTypeValue, DocTypeGroup> = {
   PAYMENT: "finance",
   BKM: "finance",
   VENDOR_PAYMENT: "finance",
+  SUPPAY: "finance",
+  CASHOUT: "finance",
+  CASHIN: "finance",
+  CASHTRF: "finance",
+  ASSET: "finance",
 };
 
 export function docTypesInGroup(group: DocTypeGroup): DocTypeValue[] {

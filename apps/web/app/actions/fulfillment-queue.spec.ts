@@ -27,6 +27,7 @@ import {
   InvalidFulfillmentTransition,
 } from "@elorae/db/sales-order-fulfillment-writer";
 import { auth } from "@/lib/auth";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { revalidatePath } from "next/cache";
 import {
   listFulfillmentQueue,
@@ -55,6 +56,22 @@ describe("listFulfillmentQueue", () => {
 
     const args = (prisma.salesOrder.findMany as any).mock.calls[0][0];
     expect(args.where.fulfillmentStatus).toBe("PENDING");
+  });
+
+  // Pesanan marketplace yang BATAL atau RETUR bukan pekerjaan gudang (penulis
+  // pemenuhan menolak keduanya) — sama dengan hitungan "belum dikirim" di
+  // Beranda, yang hanya menghitung pesanan NEW/PROCESSING.
+  it.each(["PENDING", "ALL", "SHIPPED"] as const)("tidak pernah memuat pesanan batal atau retur (saringan %s)", async (fulfillmentStatus) => {
+    (auth as any).mockResolvedValue(sessionWithFulfill);
+    (prisma.salesOrder.findMany as any).mockResolvedValue([]);
+    (prisma.salesOrder.count as any).mockResolvedValue(0);
+
+    await listFulfillmentQueue({ fulfillmentStatus, search: "x", page: 1, pageSize: 10 });
+
+    const cari = (prisma.salesOrder.findMany as any).mock.calls[0][0].where;
+    const hitung = (prisma.salesOrder.count as any).mock.calls[0][0].where;
+    expect(cari.status).toEqual({ notIn: ["CANCELLED", "RETURNED"] });
+    expect(hitung.status).toEqual({ notIn: ["CANCELLED", "RETURNED"] });
   });
 
   it("ALL skips the fulfillmentStatus filter", async () => {
@@ -90,9 +107,35 @@ describe("listFulfillmentQueue", () => {
       lte: new Date("2026-06-30T23:59:59Z"),
     });
     expect(args.where.OR).toEqual([
-      { salesorderNo: { contains: "Alice" } },
-      { customerName: { contains: "Alice" } },
+      { salesorderNo: cariTeks("Alice") },
+      { customerName: cariTeks("Alice") },
     ]);
+  });
+
+  // Pencarian harus abai huruf di kedua dialek: di PostgreSQL lewat opsi Prisma,
+  // di MariaDB lewat collation *_ci — dan klien MariaDB menolak opsi itu.
+  it.each([
+    ["postgresql://u:p@127.0.0.1:55432/elorae", true],
+    ["mysql://u:p@127.0.0.1:3306/elorae", false],
+  ])("search filter mengikuti dialek DATABASE_URL (%s)", async (url, pakaiMode) => {
+    vi.stubEnv("DATABASE_URL", url);
+    try {
+      (auth as any).mockResolvedValue(sessionWithFulfill);
+      (prisma.salesOrder.findMany as any).mockResolvedValue([]);
+      (prisma.salesOrder.count as any).mockResolvedValue(0);
+
+      await listFulfillmentQueue({ search: "  Alice ", page: 1, pageSize: 10 });
+
+      const or = (prisma.salesOrder.findMany as any).mock.calls[0][0].where.OR;
+      expect(or).toHaveLength(2);
+      for (const syarat of or) {
+        const filter = Object.values(syarat)[0] as Record<string, unknown>;
+        expect(filter.contains).toBe("Alice");
+        expect("mode" in filter).toBe(pakaiMode);
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("translates sort field + dir to orderBy", async () => {

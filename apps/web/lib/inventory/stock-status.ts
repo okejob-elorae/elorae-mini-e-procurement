@@ -12,6 +12,20 @@ export type StockListItem = StockHealthItem & {
   sku: string;
 };
 
+const STATUS_STOK: readonly StockStatus[] = ["NEGATIF", "HABIS", "MENIPIS", "OK"];
+
+/**
+ * Saringan status dari URL daftar stok: `?status=MENIPIS|HABIS|NEGATIF|OK`,
+ * atau `?oversold=1` (tautan lama) = NEGATIF. Selain itu tanpa saringan.
+ * Tautan kartu Beranda membawa `?status=` dengan definisi yang sama
+ * (`kesehatanStokPerBarang` → `summarizeStockHealth`).
+ */
+export function statusStokDariUrl(status: string | null | undefined, oversold?: string | null): StockStatus | null {
+  const s = (status ?? "").trim().toUpperCase();
+  if ((STATUS_STOK as readonly string[]).includes(s)) return s as StockStatus;
+  return oversold === "1" ? "NEGATIF" : null;
+}
+
 /** Mutually exclusive: Negatif > Habis > Menipis > OK */
 export function deriveStockStatus(
   available: number,

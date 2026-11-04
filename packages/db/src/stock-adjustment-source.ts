@@ -20,7 +20,13 @@ export const STOCK_ADJUSTMENT_SOURCES = [
   "VAN_RETURN",
   "SUPERSEDED_ITEM_RETIRE",
   "KONSI_TRANSFER",
+  // POSITIVE rows for goods back in Gudang Utama when a shipment is refused at the store door or
+  // cancelled whole (owner answers P16/P24/P40). Kept apart from KONSI_TRANSFER, which
+  // `biayaSatuanKonsi` averages, and from FIELD_SALES_CONSUME.
+  "KONSI_TRANSFER_RETURN",
+  "FIELD_SALES_CONSUME_RETURN",
   "FIELD_RETURN",
+  "STORE_RETURN_RECEIVE",
 ] as const;
 
 export type StockAdjustmentSource = (typeof STOCK_ADJUSTMENT_SOURCES)[number];

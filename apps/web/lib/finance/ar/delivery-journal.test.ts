@@ -1,7 +1,34 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "./delivery-journal";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
+
+/*
+ * The nota engine itself (`lib/finance/lapangan/jurnal.ts`) is tested in
+ * `lib/finance/lapangan/jurnal-lapangan.test.ts`. Here its hook is a recorder, so what is pinned is
+ * the routing: which delivery goes to the nota engine, and which completes the old two-journal pair.
+ */
+const { notaHook } = vi.hoisted(() => ({
+  notaHook: { calls: [] as string[], result: null as unknown },
+}));
+vi.mock("@/lib/finance/lapangan/kait", async (importActual) => ({
+  ...(await importActual<typeof import("@/lib/finance/lapangan/kait")>()),
+  postingNotaKait: async (deliveryId: string) => {
+    notaHook.calls.push(deliveryId);
+    return notaHook.result;
+  },
+}));
+
+/*
+ * A completed revenue half debits AR_STORE only for a delivery dated on or after the GL cutover,
+ * so the post reads it. It is shared live config; this stub stands in for the bed's row.
+ */
+const cutover = vi.hoisted(() => ({ mulai: new Date("2026-01-01T00:00:00.000+07:00") as Date | null }));
+vi.mock("@/lib/finance/sales/sweep", async (importActual) => ({
+  ...(await importActual<typeof import("@/lib/finance/sales/sweep")>()),
+  readGlCutover: vi.fn(async () => cutover.mulai),
+}));
+
+import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "./delivery-journal";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -17,6 +44,7 @@ d("delivery journals (test bed only)", () => {
   let orderId = "";
   let deliveryId = "";
   let arId = "";
+  let legacyArId = "";
   let revId = "";
   let cogsId = "";
   let invId = "";
@@ -25,8 +53,11 @@ d("delivery journals (test bed only)", () => {
   beforeEach(async () => {
     token = Math.floor(Math.random() * 1_000_000);
     storeId = ""; userId = ""; orderId = ""; deliveryId = "";
-    arId = ""; revId = ""; cogsId = ""; invId = "";
-    mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
+    arId = ""; legacyArId = ""; revId = ""; cogsId = ""; invId = "";
+    notaHook.calls = [];
+    notaHook.result = null;
+    cutover.mulai = new Date("2026-01-01T00:00:00.000+07:00");
+    mappingSnapshot = await snapshotMappings(["AR_STORE", "AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
 
     const store = await prisma.store.create({
       data: { code: `TEST-DJ-${token}`, name: "test", address: "test", termsType: "PUTUS" },
@@ -61,13 +92,15 @@ d("delivery journals (test bed only)", () => {
     revId = await mk(`9${token}2`, "PENDAPATAN");
     cogsId = await mk(`9${token}3`, "HPP");
     invId = await mk(`9${token}4`, "ASET");
+    legacyArId = await mk(`9${token}5`, "ASET");
     const map = async (role: string, id: string) =>
       prisma.journalAccountMapping.upsert({
         where: { role: role as never },
         create: { role: role as never, chartAccountId: id },
         update: { chartAccountId: id },
       });
-    await map("AR", arId);
+    await map("AR_STORE", arId);
+    await map("AR", legacyArId);
     await map("SALES_REVENUE", revId);
     await map("COGS", cogsId);
     await map("INVENTORY", invId);
@@ -80,21 +113,72 @@ d("delivery journals (test bed only)", () => {
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: seededId(deliveryId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.chartAccount.deleteMany({
-      where: { id: { in: [seededId(arId), seededId(revId), seededId(cogsId), seededId(invId)] } },
+      where: { id: { in: [seededId(arId), seededId(legacyArId), seededId(revId), seededId(cogsId), seededId(invId)] } },
     });
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
   });
 
-  async function journalDate(sourceType: string): Promise<Date | null> {
-    const j = await prisma.journal.findUnique({
+  async function journalOf(sourceType: string) {
+    return prisma.journal.findUnique({
       where: { sourceType_sourceId: { sourceType, sourceId: deliveryId } },
-      select: { date: true },
+      include: { lines: true },
     });
-    return j?.date ?? null;
   }
 
-  it("waits for an in-flight date correction and dates the revenue journal on the committed invoice date", async () => {
+  /* A bare row stands in for a journal posted earlier; only its existence is read. */
+  async function seedJournal(sourceType: string): Promise<string> {
+    return (
+      await prisma.journal.create({
+        data: { date: D1, description: "fixture", sourceType, sourceId: deliveryId, postedById: userId },
+      })
+    ).id;
+  }
+
+  it("sends a delivery with no journal to the nota engine for both kinds, and never starts the old pair", async () => {
+    notaHook.result = { ok: true, journalId: "nota-journal", created: true };
+    expect(await postFieldDeliveryRevenueJournal(deliveryId, userId)).toEqual({ ok: true, journalId: "nota-journal", created: true });
+    expect(await postFieldDeliveryCogsJournal(deliveryId, userId)).toEqual({ ok: true, journalId: "nota-journal", created: true });
+    expect(notaHook.calls).toEqual([deliveryId, deliveryId]);
+    expect(await journalOf("FIELD_DELIVERY_REVENUE")).toBeNull();
+    expect(await journalOf("FIELD_DELIVERY_COGS")).toBeNull();
+  });
+
+  it("reports a failed nota post as NOTHING_TO_POST, so the caller files no second flag beside the engine's own", async () => {
+    notaHook.result = { ok: false, code: "UNMAPPED_ROLE", role: "AR_STORE" };
+    expect(await postFieldDeliveryRevenueJournal(deliveryId, userId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+    notaHook.result = null;
+    expect(await postFieldDeliveryCogsJournal(deliveryId, userId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+  });
+
+  /*
+   * A standing nota journal is resynced, never returned as is: a nota corrected at handover or voided
+   * ("tidak jadi dikirim") posts its difference as the next generation through the nota hook.
+   */
+  it("resyncs a standing nota journal through the nota hook for both kinds", async () => {
+    const notaId = await seedJournal("FIELD_DELIVERY");
+    notaHook.result = { ok: true, journalId: notaId, created: false };
+    expect(await postFieldDeliveryRevenueJournal(deliveryId, userId)).toEqual({ ok: true, journalId: notaId, created: false });
+    expect(await postFieldDeliveryCogsJournal(deliveryId, userId)).toEqual({ ok: true, journalId: notaId, created: false });
+    expect(notaHook.calls).toEqual([deliveryId, deliveryId]);
+  });
+
+  it("passes a resync's new generation back as created", async () => {
+    await seedJournal("FIELD_DELIVERY");
+    notaHook.result = { ok: true, journalId: "nota-generasi-2", created: true };
+    expect(await postFieldDeliveryRevenueJournal(deliveryId, userId)).toEqual({ ok: true, journalId: "nota-generasi-2", created: true });
+    expect(notaHook.calls).toEqual([deliveryId]);
+    expect(await journalOf("FIELD_DELIVERY_REVENUE")).toBeNull();
+  });
+
+  it("returns the old pair's half that already stands, without touching the nota engine", async () => {
+    const revenueId = await seedJournal("FIELD_DELIVERY_REVENUE");
+    expect(await postFieldDeliveryRevenueJournal(deliveryId, userId)).toEqual({ ok: true, journalId: revenueId, created: false });
+    expect(notaHook.calls).toEqual([]);
+  });
+
+  it("completes the old pair's revenue half on the store receivable, dated on the invoice date an in-flight correction commits", async () => {
+    await seedJournal("FIELD_DELIVERY_COGS");
     const { pending } = await prisma.$transaction(
       async (tx) => {
         await tx.fieldSalesDelivery.update({ where: { id: deliveryId }, data: { invoiceDate: D2 } });
@@ -107,25 +191,55 @@ d("delivery journals (test bed only)", () => {
       },
       { timeout: 15000 },
     );
-    const result = await pending;
-    expect(result).toMatchObject({ ok: true, created: true });
-    expect((await journalDate("FIELD_DELIVERY_REVENUE"))?.getTime()).toBe(D2.getTime());
+    expect(await pending).toMatchObject({ ok: true, created: true });
+    expect(notaHook.calls).toEqual([]);
+
+    const journal = await journalOf("FIELD_DELIVERY_REVENUE");
+    expect(journal?.date.getTime()).toBe(D2.getTime());
+    expect(journal!.lines.find((l) => l.chartAccountId === arId)).toMatchObject({ memo: "AR_STORE", storeId });
+    expect(Number(journal!.lines.find((l) => l.chartAccountId === arId)!.debit)).toBe(1000);
+    expect(Number(journal!.lines.find((l) => l.chartAccountId === revId)!.credit)).toBe(1000);
+    expect(journal!.lines.find((l) => l.chartAccountId === legacyArId)).toBeUndefined();
   });
 
-  it("dates the COGS journal on the delivery's current invoice date", async () => {
+  /*
+   * The opening balance already carries a receivable dated before the cutover on AR_STORE unless its
+   * invoice journal stands on AR, so the completed half keeps the old pair's shape there.
+   */
+  it("completes the old pair's revenue half on AR, with no memo or store, for a delivery dated before the cutover", async () => {
+    cutover.mulai = new Date("2026-06-01T00:00:00.000+07:00");
+    await seedJournal("FIELD_DELIVERY_COGS");
+    expect(await postFieldDeliveryRevenueJournal(deliveryId, userId)).toMatchObject({ ok: true, created: true });
+
+    const journal = await journalOf("FIELD_DELIVERY_REVENUE");
+    expect(journal?.date.getTime()).toBe(D1.getTime());
+    const ar = journal!.lines.find((l) => l.chartAccountId === legacyArId);
+    expect(ar).toMatchObject({ memo: null, storeId: null });
+    expect(Number(ar!.debit)).toBe(1000);
+    expect(Number(journal!.lines.find((l) => l.chartAccountId === revId)!.credit)).toBe(1000);
+    expect(journal!.lines.find((l) => l.chartAccountId === arId)).toBeUndefined();
+  });
+
+  it("completes the old pair's revenue half on AR while no GL cutover is set", async () => {
+    cutover.mulai = null;
+    await seedJournal("FIELD_DELIVERY_COGS");
+    expect(await postFieldDeliveryRevenueJournal(deliveryId, userId)).toMatchObject({ ok: true, created: true });
+
+    const journal = await journalOf("FIELD_DELIVERY_REVENUE");
+    expect(Number(journal!.lines.find((l) => l.chartAccountId === legacyArId)!.debit)).toBe(1000);
+    expect(journal!.lines.find((l) => l.chartAccountId === arId)).toBeUndefined();
+  });
+
+  it("completes the old pair's COGS half on the delivery's current invoice date", async () => {
+    await seedJournal("FIELD_DELIVERY_REVENUE");
     await prisma.fieldSalesDelivery.update({ where: { id: deliveryId }, data: { invoiceDate: D2 } });
-    const result = await postFieldDeliveryCogsJournal(deliveryId, userId);
-    expect(result).toMatchObject({ ok: true, created: true });
-    expect((await journalDate("FIELD_DELIVERY_COGS"))?.getTime()).toBe(D2.getTime());
-  });
+    expect(await postFieldDeliveryCogsJournal(deliveryId, userId)).toMatchObject({ ok: true, created: true });
+    expect(notaHook.calls).toEqual([]);
 
-  it("posts revenue and COGS for the same delivery, each in its own transaction", async () => {
-    const [rev, cogs] = await Promise.all([
-      postFieldDeliveryRevenueJournal(deliveryId, userId),
-      postFieldDeliveryCogsJournal(deliveryId, userId),
-    ]);
-    expect(rev).toMatchObject({ ok: true, created: true });
-    expect(cogs).toMatchObject({ ok: true, created: true });
+    const journal = await journalOf("FIELD_DELIVERY_COGS");
+    expect(journal?.date.getTime()).toBe(D2.getTime());
+    expect(Number(journal!.lines.find((l) => l.chartAccountId === cogsId)!.debit)).toBe(600);
+    expect(Number(journal!.lines.find((l) => l.chartAccountId === invId)!.credit)).toBe(600);
   });
 
   it("returns NOTHING_TO_POST for a missing delivery", async () => {
@@ -137,5 +251,6 @@ d("delivery journals (test bed only)", () => {
       ok: false,
       code: "NOTHING_TO_POST",
     });
+    expect(notaHook.calls).toEqual([]);
   });
 });

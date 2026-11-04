@@ -86,7 +86,7 @@ export function PantoneColorDetailDialog({
         if (!cancelled) setDetail(data);
       })
       .catch(() => {
-        if (!cancelled) toast.error("Failed to load color");
+        if (!cancelled) toast.error(t("loadColorFailed"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -94,7 +94,7 @@ export function PantoneColorDetailDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, tcx]);
+  }, [open, tcx, t]);
 
   const copy = async (text: string) => {
     await navigator.clipboard.writeText(text);
@@ -114,8 +114,8 @@ export function PantoneColorDetailDialog({
         </DialogTitle>
 
         {loading && (
-          <p className="px-6 py-12 text-center text-sm text-muted-foreground">
-            Loading…
+          <p className="px-6 py-12 text-center text-sm text-muted-foreground" role="status">
+            {t("memuatWarna")}
           </p>
         )}
 
@@ -142,7 +142,7 @@ export function PantoneColorDetailDialog({
                     className="h-9 w-9 rounded-full bg-black/20 text-white hover:bg-black/30 hover:text-white"
                   >
                     <X className="h-4 w-4" />
-                    <span className="sr-only">Close</span>
+                    <span className="sr-only">{t("close")}</span>
                   </Button>
                 </DialogClose>
               </div>
@@ -223,7 +223,7 @@ export function PantoneColorDetailDialog({
                     {t("gradientTitle")}
                   </div>
                   <span className="text-xs text-muted-foreground">
-                    {t("gradientCopyHint")}
+                    {t("gradientSalinHint")}
                   </span>
                 </div>
                 <div className="grid w-full min-w-0 grid-cols-10 gap-1 rounded-md border p-1">
@@ -234,6 +234,7 @@ export function PantoneColorDetailDialog({
                       className="h-10 min-w-0 w-full rounded-sm hover:opacity-90"
                       style={{ backgroundColor: h }}
                       title={h}
+                      aria-label={t("salinHexCip", { hex: h.toUpperCase() })}
                       onClick={() => copy(h)}
                     />
                   ))}
@@ -246,7 +247,8 @@ export function PantoneColorDetailDialog({
                     {t("similarColorsTitle")}
                   </p>
                   <div className="-mx-1 flex min-w-0 gap-2 overflow-x-auto overscroll-x-contain px-1 pb-2 [-webkit-overflow-scrolling:touch]">
-                    {detail.similar.map((s) => (
+                    {/* Urut ΔE terkecil dulu (daftar sumbernya tidak berurutan ΔE). */}
+                    {[...detail.similar].sort((a, b) => a.deltaE - b.deltaE).map((s) => (
                       <div
                         key={s.tcx}
                         role="button"
@@ -282,7 +284,7 @@ export function PantoneColorDetailDialog({
                             />
                           </div>
                           <p className="text-[10px] text-muted-foreground">
-                            {t("deltaE")} {s.deltaE.toFixed(2)}
+                            {t("deltaE")} {s.deltaE.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
                         </div>
                       </div>

@@ -2,6 +2,9 @@ import { Prisma } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { MAX_TAX_INVOICE_REASON_LENGTH, TaxInvoiceError } from "./errors";
+import { normalisasiNomorFaktur, periksaFormatNomorFaktur } from "./invoice-number-format";
+
+export { normalisasiNomorFaktur, periksaFormatNomorFaktur };
 
 type Status = "PENDING" | "CREATED" | "SENT_TO_STORE" | "NOT_REQUIRED" | "CANCELLED";
 
@@ -15,13 +18,61 @@ type TransitionData = Partial<{
   markedById: string | null;
 }>;
 
-type Transition = {
+/**
+ * Kunci pembanding "NSFP yang sama". Untuk 16 digit, 3 digit depan (kode
+ * transaksi + status) dibuang: faktur pengganti `011.` memakai NSFP yang sama
+ * dengan `010.`, dan 13 digit sisanya sama dengan NSFP alokasi. Panjang lain
+ * (termasuk Coretax 17 digit) dibandingkan utuh.
+ */
+export function kunciNomorFaktur(nomor: string): string {
+  const n = normalisasiNomorFaktur(nomor);
+  return n.length === 16 ? n.slice(3) : n;
+}
+
+/**
+ * Nomor faktur ditolak. `code` tetap `INVALID_REQUEST` agar aksi dan layar yang
+ * ada memetakannya tanpa diubah; `sebab` membedakan format vs ganda.
+ */
+export class NomorFakturError extends TaxInvoiceError {
+  constructor(
+    readonly sebab: "FORMAT" | "GANDA",
+    readonly dipakai: { taxInvoiceId: string; deliveryId: string | null; sellThroughId: string | null; invoiceNo: string } | null = null,
+  ) {
+    super("INVALID_REQUEST");
+    this.name = "NomorFakturError";
+  }
+}
+
+/** Tolak NSFP yang sudah menempel di TaxInvoice lain berstatus CREATED (atau sudah dikirim ke toko). Dipanggil di dalam transaksi serializable. */
+async function tolakNomorGanda(tx: Prisma.TransactionClient, taxInvoiceId: string, invoiceNo: string): Promise<void> {
+  const kunci = kunciNomorFaktur(invoiceNo);
+  // Semua nomor CREATED dibandingkan setelah dinormalisasi di JS. Jangan menyempit
+  // dengan `contains` potongan nomor: nomor tersimpan apa adanya, jadi tanda baca
+  // yang memotong potongan itu (`…000000.01`) meloloskan nomor yang sama.
+  const calon = await tx.taxInvoice.findMany({
+    where: { status: { in: ["CREATED", "SENT_TO_STORE"] }, id: { not: taxInvoiceId }, invoiceNo: { not: null } },
+    select: { id: true, deliveryId: true, sellThroughId: true, invoiceNo: true },
+  });
+  const sama = calon.find((c) => c.invoiceNo !== null && kunciNomorFaktur(c.invoiceNo) === kunci);
+  if (sama && sama.invoiceNo !== null) {
+    throw new NomorFakturError("GANDA", {
+      taxInvoiceId: sama.id,
+      deliveryId: sama.deliveryId,
+      sellThroughId: sama.sellThroughId,
+      invoiceNo: sama.invoiceNo,
+    });
+  }
+}
+
+export type Transition = {
   taxInvoiceId: string;
   userId: string;
   from: Status[];
   to: Status;
   data: TransitionData;
   action: string;
+  /** Pemeriksaan tambahan di dalam transaksi yang sama, sebelum baris diubah. */
+  periksa?: (tx: Prisma.TransactionClient) => Promise<void>;
 };
 
 /**
@@ -31,7 +82,16 @@ type Transition = {
  * field on every transition.
  */
 async function transition(t: Transition): Promise<{ ok: true }> {
-  return runSerializable(async (tx) => {
+  return runSerializable((tx) => transitionInTx(tx, t));
+}
+
+/**
+ * `transition` inside the CALLER's transaction — for a faktur that must move together with its
+ * nota (a void or a correction writes the nota, the receivable and the faktur in one serializable
+ * transaction, with every audit row beside them).
+ */
+export async function transitionInTx(tx: Prisma.TransactionClient, t: Transition): Promise<{ ok: true }> {
+  {
     const row = await tx.taxInvoice.findUnique({
       where: { id: t.taxInvoiceId },
       select: {
@@ -48,6 +108,7 @@ async function transition(t: Transition): Promise<{ ok: true }> {
     });
     if (!row) throw new TaxInvoiceError("NOT_FOUND");
     if (!t.from.includes(row.status as Status)) throw new TaxInvoiceError("INVALID_STATE");
+    if (t.periksa) await t.periksa(tx);
 
     const swapped = await tx.taxInvoice.updateMany({
       where: { id: t.taxInvoiceId, status: row.status },
@@ -114,7 +175,7 @@ async function transition(t: Transition): Promise<{ ok: true }> {
     });
 
     return { ok: true };
-  });
+  }
 }
 
 export async function markTaxInvoiceCreated(input: {
@@ -131,6 +192,7 @@ export async function markTaxInvoiceCreated(input: {
   if (buyerNpwp === "") throw new TaxInvoiceError("INVALID_REQUEST");
   if (!Number.isFinite(input.taxableAmount) || input.taxableAmount < 0) throw new TaxInvoiceError("INVALID_REQUEST");
   if (!Number.isFinite(input.ppnAmount) || input.ppnAmount < 0) throw new TaxInvoiceError("INVALID_REQUEST");
+  if (!periksaFormatNomorFaktur(invoiceNo)) throw new NomorFakturError("FORMAT");
 
   return transition({
     taxInvoiceId: input.taxInvoiceId,
@@ -147,6 +209,8 @@ export async function markTaxInvoiceCreated(input: {
       markedById: input.userId,
     },
     action: "TAX_INVOICE_CREATED",
+    // NSFP tidak unik di skema: penjaganya di sini, di transaksi serializable yang sama dengan penulisannya.
+    periksa: (tx) => tolakNomorGanda(tx, input.taxInvoiceId, invoiceNo),
   });
 }
 
@@ -240,6 +304,60 @@ export async function revertTaxInvoiceToPending(input: {
       taxableAmount: null,
       ppnAmount: null,
       reason,
+      markedAt: null,
+      markedById: null,
+    },
+    action: "TAX_INVOICE_REVERTED",
+  });
+}
+
+/** A system reason (from "tidak jadi dikirim" or the store receipt) cut to what the column keeps. */
+function alasanSistem(reason: string): string {
+  const r = reason.trim() || "-";
+  return r.length > MAX_TAX_INVOICE_REASON_LENGTH ? r.slice(0, MAX_TAX_INVOICE_REASON_LENGTH) : r;
+}
+
+/**
+ * The nota this faktur belongs to was CANCELLED (P25: "faktur pajak nya tidak jadi di buat"). From
+ * any status to CANCELLED, inside the void's transaction. `data` is `{ reason }` ONLY: a faktur
+ * that was already numbered keeps its number on the row, so the tax admin can see which one to
+ * cancel in Coretax (the caller sends TAX_INVOICE_NOTA_CHANGED for a numbered one).
+ */
+export async function batalkanFakturNotaInTx(
+  tx: Prisma.TransactionClient,
+  input: { taxInvoiceId: string; userId: string; reason: string },
+): Promise<{ ok: true }> {
+  return transitionInTx(tx, {
+    taxInvoiceId: input.taxInvoiceId,
+    userId: input.userId,
+    from: ["PENDING", "CREATED", "SENT_TO_STORE", "NOT_REQUIRED"],
+    to: "CANCELLED",
+    data: { reason: alasanSistem(input.reason) },
+    action: "TAX_INVOICE_CANCELLED",
+  });
+}
+
+/**
+ * The nota this NUMBERED faktur belongs to was corrected to what the store received (P34): its
+ * faktur goes back to PENDING — the replacement-faktur queue — exactly as
+ * `revertTaxInvoiceToPending` clears it, the old number and amounts surviving only in the
+ * TAX_INVOICE_REVERTED audit row. Inside the correction's transaction.
+ */
+export async function kembalikanFakturNotaKeAntreanInTx(
+  tx: Prisma.TransactionClient,
+  input: { taxInvoiceId: string; userId: string; reason: string },
+): Promise<{ ok: true }> {
+  return transitionInTx(tx, {
+    taxInvoiceId: input.taxInvoiceId,
+    userId: input.userId,
+    from: ["CREATED", "SENT_TO_STORE"],
+    to: "PENDING",
+    data: {
+      invoiceNo: null,
+      buyerNpwp: null,
+      taxableAmount: null,
+      ppnAmount: null,
+      reason: alasanSistem(input.reason),
       markedAt: null,
       markedById: null,
     },

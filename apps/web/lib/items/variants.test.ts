@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isStockableVariantKey, itemHasSkuVariants } from "./variants";
+import { isStockableVariantKey, itemHasSkuVariants, parseItemVariants, variantSelectOptions } from "./variants";
 
 describe("itemHasSkuVariants", () => {
   it("is true when a variant row has a sku", () => {
@@ -43,5 +43,24 @@ describe("isStockableVariantKey", () => {
 
   it("matches a variant SKU trimmed of surrounding spaces in the JSON", () => {
     expect(isStockableVariantKey([{ sku: "  FG-SHIRT-RED-M  " }], "FG-SHIRT-RED-M")).toBe(true);
+  });
+});
+
+describe("parseItemVariants — data lama", () => {
+  it("reads variants stored as JSON text", () => {
+    expect(parseItemVariants('[{"sku":"A-M","size":"M"}]')).toEqual([{ sku: "A-M", size: "M" }]);
+    expect(parseItemVariants("bukan json")).toEqual([]);
+  });
+
+  it("normalises upper-case SKU and Barcode keys without touching other keys", () => {
+    expect(parseItemVariants([{ SKU: "A-L", Barcode: "123", Size: "L" }])).toEqual([{ sku: "A-L", barcode: "123", Size: "L" }]);
+  });
+});
+
+describe("variantSelectOptions — varian warna bahan", () => {
+  it("label memakai kunci warna", () => {
+    expect(variantSelectOptions([{ warna: "HITAM", sku: "FAB-1-HITAM", pantone: "19-4005 TCX" }])).toEqual([
+      { sku: "FAB-1-HITAM", label: "HITAM (FAB-1-HITAM)" },
+    ]);
   });
 });

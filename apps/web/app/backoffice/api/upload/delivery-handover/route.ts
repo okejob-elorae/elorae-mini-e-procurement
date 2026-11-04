@@ -1,0 +1,59 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@elorae/db";
+import { auth } from "@/lib/auth";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { uploadToR2, isConfigured } from "@/lib/r2";
+import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
+import { exceedsDeclaredLength } from "@/lib/uploads/content-length";
+
+export const dynamic = "force-dynamic";
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+/**
+ * The handover-to-courier photo showing the weight (P35, P43) of an expedition shipment. The key
+ * sits in `delivery-handover/<shipmentId>`, the folder `updateShipmentTracking` binds it to, and the
+ * permission is the one `updateShipmentTrackingAction` enforces (`deliveries:ship`).
+ */
+export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_SHIP)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!isConfigured()) return NextResponse.json({ error: "R2 not configured" }, { status: 503 });
+
+  if (exceedsDeclaredLength(req, MAX_FILE_SIZE)) {
+    return NextResponse.json({ error: "file exceeds 10MB" }, { status: 413 });
+  }
+  const form = await req.formData();
+  const file = form.get("file");
+  const shipmentId = form.get("shipmentId");
+
+  if (!(file instanceof File) || typeof shipmentId !== "string" || !shipmentId) {
+    return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 });
+  }
+  if (!isSafeR2KeySegment(shipmentId)) return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 });
+  if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: `type ${file.type} not allowed` }, { status: 400 });
+  if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "file exceeds 10MB" }, { status: 400 });
+
+  /**
+   * PACKED only — the same state `updateShipmentTracking` accepts. The photo is uploaded before
+   * the tracking save, so a shipment that has left can no longer take one.
+   */
+  const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId }, select: { status: true } });
+  if (!shipment) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+  if (shipment.status !== "PACKED") return NextResponse.json({ error: "INVALID_STATE" }, { status: 409 });
+
+  try {
+    const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+    const key = buildR2Key("delivery-handover", [shipmentId, String(Date.now())], ext);
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const url = await uploadToR2(key, buffer, file.type);
+    return NextResponse.json({ url, key });
+  } catch (e) {
+    console.error("delivery-handover upload error:", e);
+    return NextResponse.json({ error: "upload failed" }, { status: 500 });
+  }
+}

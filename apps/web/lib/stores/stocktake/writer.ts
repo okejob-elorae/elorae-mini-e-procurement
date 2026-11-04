@@ -681,6 +681,14 @@ export async function cancelStoreStocktake(input: {
   stocktakeId: string;
   cancelledById: string;
   reason: string;
+  /**
+   * What the caller may cancel, checked INSIDE the transaction against the status read there: a
+   * DRAFT is stores:manage's, a count awaiting approval is store_stocktakes:approve's (owner,
+   * 2026-11-01). The server action must pass both; omitted (= allowed) only by trusted callers
+   * (tests, scripts).
+   */
+  allowDraft?: boolean;
+  allowPendingVerification?: boolean;
 }): Promise<{ ok: true }> {
   if (!input.reason || !input.reason.trim()) throw new StoreStocktakeError("INVALID_REQUEST");
 
@@ -688,6 +696,9 @@ export async function cancelStoreStocktake(input: {
     const st = await tx.storeStocktake.findUnique({ where: { id: input.stocktakeId }, select: { id: true, status: true } });
     if (!st) throw new StoreStocktakeError("NOT_FOUND");
     if (st.status !== "DRAFT" && st.status !== "PENDING_VERIFICATION") throw new StoreStocktakeError("INVALID_STATE");
+    if (st.status === "PENDING_VERIFICATION" ? input.allowPendingVerification === false : input.allowDraft === false) {
+      throw new StoreStocktakeError("FORBIDDEN");
+    }
 
     await tx.storeStocktake.update({
       where: { id: st.id },

@@ -1,8 +1,10 @@
 import { notFound, redirect } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getReceivable, listAllocationCandidatesForStore, type AllocationCandidate } from "@/lib/finance/ar/queries";
 import { isFieldDeliveryJournalStillPending } from "@/lib/finance/ar/journal-pending";
+import { isKonsiBill } from "@/lib/finance/collections/phone-scope";
 import { listCollectorCandidates } from "@/lib/finance/collections/queries";
 import { ReceivableDetailClient } from "./ReceivableDetailClient";
 
@@ -39,20 +41,29 @@ export default async function ReceivableDetailPage({ params }: PageProps) {
    * `field_delivery_revenue`/`field_delivery_cogs` are delivery-backed journal kinds only — a
    * SELL_THROUGH-sourced receivable has no delivery to retry a journal against, so it never gets a
    * journal-pending alert on this path. Its own journals are retried from the sell-through report's
-   * own page, which this detail links to.
+   * own page, which this detail links to. A CONSIGNMENT_CYCLE bill is the same: its journal belongs
+   * to the cycle, which this detail links to.
+   *
+   * A konsi bill (`isKonsiBill`) is paid only through a BKM: `recordPayment` refuses it
+   * (`KONSI_LEWAT_BKM`), so the payment sheet's trigger is withheld on one and its picker never
+   * offers one (`excludeKonsiBills`) — the same rule, read from the bill's own marks.
    */
   const deliveryId = receivable.source.kind === "DELIVERY" ? receivable.source.deliveryId : null;
-  const [revenueRetryable, cogsRetryable, allocationCandidates, collectorCandidates] = await Promise.all([
+  const [revenueRetryable, cogsRetryable, allocationCandidates, collectorCandidates, marks] = await Promise.all([
     deliveryId ? isFieldDeliveryJournalStillPending("field_delivery_revenue", deliveryId) : Promise.resolve(false),
     deliveryId ? isFieldDeliveryJournalStillPending("field_delivery_cogs", deliveryId) : Promise.resolve(false),
-    canManagePayments ? listAllocationCandidatesForStore(receivable.storeId) : Promise.resolve<AllocationCandidate[]>([]),
+    canManagePayments
+      ? listAllocationCandidatesForStore(receivable.storeId, { excludeKonsiBills: true })
+      : Promise.resolve<AllocationCandidate[]>([]),
     canManageCollections ? listCollectorCandidates() : Promise.resolve<{ id: string; name: string }[]>([]),
+    prisma.receivable.findUnique({ where: { id: receivable.id }, select: { isConsignment: true, sellThroughId: true } }),
   ]);
 
   return (
     <ReceivableDetailClient
       receivable={receivable}
       canManagePayments={canManagePayments}
+      konsiBill={marks ? isKonsiBill(marks) : false}
       canManageCollections={canManageCollections}
       journalRetryable={revenueRetryable || cogsRetryable}
       allocationCandidates={allocationCandidates}

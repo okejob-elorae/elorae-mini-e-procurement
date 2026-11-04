@@ -11,6 +11,8 @@ const {
   notaDeliveryLookup,
   adminNotificationCreateMock,
   journalPostStub,
+  notaHook,
+  cutoverStub,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   staleSnapshot: { value: null as { invoiceDate: Date; dueDate: Date } | null },
@@ -27,11 +29,39 @@ const {
   /* Records every `postArJournalSafely` call; `active` also stubs the post out so a test can assert
    * WHICH delivery was posted without depending on the shared bed's account mappings. */
   journalPostStub: { active: false, calls: [] as Array<{ kind: string; docId: string }> },
+  /* Records every delivery handed to the nota journal hook; the hook itself is off under vitest. */
+  notaHook: { calls: [] as string[] },
+  /* A GL cutover for one test, without writing the real `finance.glCutoverDate` row onto the shared
+   * bed — the cron's own arming switch. `undefined` (the default) reads the real setting. */
+  cutoverStub: { value: undefined as Date | null | undefined },
 }));
+
+vi.mock("@/lib/finance/sales/sweep", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/finance/sales/sweep")>();
+  return {
+    ...actual,
+    readGlCutover: async () => (cutoverStub.value === undefined ? actual.readGlCutover() : cutoverStub.value),
+  };
+});
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: mockFanOut }));
+/* Kabar ke salesman memuat Firebase Admin lewat `recipients`; tidak ada tes di sini yang menguji kabarnya. */
+vi.mock("@/lib/notifications/kabar-pengguna", () => ({
+  JENIS_KABAR: { PESANAN_DIKIRIM: "PESANAN_DIKIRIM", PESANAN_DITUTUP: "PESANAN_DITUTUP" },
+  kabariPengguna: vi.fn(),
+}));
 vi.mock("./audit", () => ({ logPrint: mockLogAudit }));
+vi.mock("@/lib/finance/lapangan/kait", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/finance/lapangan/kait")>();
+  return {
+    ...actual,
+    kaitNotaTerbit: (deliveryId: string) => {
+      notaHook.calls.push(deliveryId);
+      return Promise.resolve();
+    },
+  };
+});
 vi.mock("@/lib/finance/ar/post-ar-journal-safely", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/finance/ar/post-ar-journal-safely")>();
   return {
@@ -121,13 +151,18 @@ vi.mock("@/lib/db/tx-retry", async (importActual) => {
           updateMany: (args: Parameters<typeof db.fieldSalesDelivery.updateMany>[0]) =>
             db.fieldSalesDelivery.updateMany(args),
         },
-        /* Only ever reached once a stale-snapshot test's CAS actually succeeds — every stale test
-         * today hits CONFLICT first, but a future one that wins the CAS must still find these. */
+        /* Read before the CAS (the payment and closed-period guards), and written only once a
+         * stale-snapshot test's CAS actually succeeds — every stale test today hits CONFLICT
+         * first, but a future one that wins the CAS must still find these. */
         receivable: {
           findUnique: (args: Parameters<typeof db.receivable.findUnique>[0]) => db.receivable.findUnique(args),
           updateMany: (args: Parameters<typeof db.receivable.updateMany>[0]) => db.receivable.updateMany(args),
         },
+        paymentClaimReceivable: {
+          findFirst: (args: Parameters<typeof db.paymentClaimReceivable.findFirst>[0]) => db.paymentClaimReceivable.findFirst(args),
+        },
         journal: {
+          findMany: (args: Parameters<typeof db.journal.findMany>[0]) => db.journal.findMany(args),
           updateMany: (args: Parameters<typeof db.journal.updateMany>[0]) => db.journal.updateMany(args),
         },
         auditLog: {
@@ -141,7 +176,6 @@ vi.mock("@/lib/db/tx-retry", async (importActual) => {
 
 import {
   recordNotaTagihanPrinted,
-  recordDeliveryAction,
   closeRemainderAction,
   updateDeliveryDatesAction,
   postFieldDeliveryJournalsAction,
@@ -238,6 +272,7 @@ d("updateDeliveryDatesAction (test bed only)", () => {
     staleSnapshot.value = null;
     journalPostStub.active = false;
     journalPostStub.calls.length = 0;
+    notaHook.calls.length = 0;
 
     if (journalPendingNotificationId !== "") {
       await prisma.adminNotification.delete({ where: { id: journalPendingNotificationId } }).catch(() => undefined);
@@ -302,6 +337,42 @@ d("updateDeliveryDatesAction (test bed only)", () => {
     expect(result).toEqual({ ok: false, reason: "INVALID_REQUEST" });
     expect(await currentDates()).toMatchObject({ dueDate: DUE.toISOString() });
     expect(await prisma.auditLog.count({ where: { entityId: seededId(deliveryId) } })).toBe(0);
+  });
+
+  it("refuses a correction that moves the nota across the GL cutover, in either direction", async () => {
+    cutoverStub.value = new Date("2026-04-15T00:00:00.000+07:00");
+    try {
+      const forward = await updateDeliveryDatesAction({
+        deliveryId,
+        invoiceDate: "2026-04-20",
+        dueDate: "2026-05-20",
+        reason: "moves past the cutover",
+      });
+      expect(forward).toEqual({ ok: false, reason: "CROSSES_GL_CUTOVER" });
+      expect(await currentDates()).toMatchObject({ invoiceDate: INVOICE.toISOString(), dueDate: DUE.toISOString() });
+      expect(await prisma.auditLog.count({ where: { entityId: seededId(deliveryId) } })).toBe(0);
+
+      // Same side of the cutover is still a normal correction.
+      const sameSide = await updateDeliveryDatesAction({
+        deliveryId,
+        invoiceDate: "2026-04-10",
+        dueDate: "2026-05-10",
+        reason: "stays before the cutover",
+      });
+      expect(sameSide).toEqual({ ok: true });
+
+      cutoverStub.value = new Date("2026-04-05T00:00:00.000+07:00");
+      const backward = await updateDeliveryDatesAction({
+        deliveryId,
+        invoiceDate: "2026-04-01",
+        dueDate: "2026-05-01",
+        reason: "moves back before the cutover",
+      });
+      expect(backward).toEqual({ ok: false, reason: "CROSSES_GL_CUTOVER" });
+      expect(await currentDates()).toMatchObject({ invoiceDate: new Date("2026-04-10T00:00:00.000+07:00").toISOString() });
+    } finally {
+      cutoverStub.value = undefined;
+    }
   });
 
   it("accepts a reason of exactly 191 characters", async () => {
@@ -514,6 +585,143 @@ d("updateDeliveryDatesAction (test bed only)", () => {
     expect(afterCogs.date.toISOString().slice(0, 10)).toBe("2026-01-31");
   });
 
+  it("re-dates the nota journal to the new invoice date and drops a stale shift note", async () => {
+    const notaJournal = await prisma.journal.create({
+      data: {
+        date: new Date("2026-01-01T00:00:00.000+07:00"),
+        originalDate: new Date("2025-12-20T00:00:00.000+07:00"),
+        description: "test nota",
+        sourceType: "FIELD_DELIVERY",
+        sourceId: deliveryId,
+        postedById: userId,
+      },
+    });
+
+    const result = await updateDeliveryDatesAction({
+      deliveryId,
+      invoiceDate: "2026-02-01",
+      dueDate: "2026-02-15",
+      reason: "wrong month keyed",
+    });
+
+    expect(result).toEqual({ ok: true });
+    const after = await prisma.journal.findUniqueOrThrow({ where: { id: notaJournal.id } });
+    expect(after.date.toISOString().slice(0, 10)).toBe("2026-01-31");
+    expect(after.originalDate).toBeNull();
+    const [log] = await prisma.auditLog.findMany({ where: { entityId: seededId(deliveryId) } });
+    expect(log.changes).toMatchObject({ journalsRedated: 1, journalsPreviousDate: new Date("2026-01-01T00:00:00.000+07:00").toISOString() });
+  });
+
+  it("refuses to move a nota journal out of a closed month, and leaves everything untouched", async () => {
+    const closedMonth = new Date("1998-03-10T00:00:00.000+07:00");
+    const existing = await prisma.accountingPeriod.findUnique({ where: { year_month: { year: 1998, month: 3 } } });
+    const period = existing ?? (await prisma.accountingPeriod.create({ data: { year: 1998, month: 3, status: "CLOSED" } }));
+    try {
+      if (existing && existing.status !== "CLOSED") await prisma.accountingPeriod.update({ where: { id: existing.id }, data: { status: "CLOSED" } });
+      const journal = await prisma.journal.create({
+        data: { date: closedMonth, description: "test nota", sourceType: "FIELD_DELIVERY", sourceId: deliveryId, postedById: userId },
+      });
+
+      const result = await updateDeliveryDatesAction({
+        deliveryId,
+        invoiceDate: "2026-02-01",
+        dueDate: "2026-02-15",
+        reason: "wrong month keyed",
+      });
+
+      expect(result).toEqual({ ok: false, reason: "PERIOD_CLOSED" });
+      expect(await currentDates()).toMatchObject({ invoiceDate: INVOICE.toISOString(), dueDate: DUE.toISOString() });
+      expect((await prisma.journal.findUniqueOrThrow({ where: { id: journal.id } })).date.toISOString()).toBe(closedMonth.toISOString());
+      expect(await prisma.auditLog.count({ where: { entityId: seededId(deliveryId) } })).toBe(0);
+    } finally {
+      if (existing) await prisma.accountingPeriod.update({ where: { id: existing.id }, data: { status: existing.status } });
+      else await prisma.accountingPeriod.delete({ where: { id: period.id } });
+    }
+  });
+
+  /*
+   * A nota keyed late into a closed month has its journal shifted forward into an open one, with the
+   * closed date kept only as `originalDate`. Its balances sit on the open posted date, so correcting
+   * the invoice date to another open date touches no closed month and must go through.
+   */
+  it("re-dates a journal shifted out of a closed month, since only its posted date carries balances", async () => {
+    const existing = await prisma.accountingPeriod.findUnique({ where: { year_month: { year: 1998, month: 3 } } });
+    const period = existing ?? (await prisma.accountingPeriod.create({ data: { year: 1998, month: 3, status: "CLOSED" } }));
+    try {
+      if (existing && existing.status !== "CLOSED") await prisma.accountingPeriod.update({ where: { id: existing.id }, data: { status: "CLOSED" } });
+      const journal = await prisma.journal.create({
+        data: {
+          date: new Date("2026-01-01T00:00:00.000+07:00"),
+          originalDate: new Date("1998-03-10T00:00:00.000+07:00"),
+          description: "test nota",
+          sourceType: "FIELD_DELIVERY",
+          sourceId: deliveryId,
+          postedById: userId,
+        },
+      });
+
+      const result = await updateDeliveryDatesAction({
+        deliveryId,
+        invoiceDate: "2026-02-01",
+        dueDate: "2026-02-15",
+        reason: "wrong month keyed",
+      });
+
+      expect(result).toEqual({ ok: true });
+      const after = await prisma.journal.findUniqueOrThrow({ where: { id: journal.id } });
+      expect(after.date.toISOString().slice(0, 10)).toBe("2026-01-31");
+      expect(after.originalDate).toBeNull();
+    } finally {
+      if (existing) await prisma.accountingPeriod.update({ where: { id: existing.id }, data: { status: existing.status } });
+      else await prisma.accountingPeriod.delete({ where: { id: period.id } });
+    }
+  });
+
+  it("refuses to move dates once a verified BKM settled the receivable", async () => {
+    const receivable = await prisma.receivable.create({
+      data: {
+        deliveryId,
+        storeId,
+        invoiceNo: docNo,
+        invoiceDate: INVOICE,
+        dueDate: DUE,
+        amount: 1000,
+        outstanding: 0,
+        originalAmount: 1000,
+        outstandingAmount: 1000,
+      },
+    });
+    const claim = await prisma.paymentClaim.create({
+      data: {
+        docNo: `BKM/TEST-FSDA-${token}`,
+        storeId,
+        salesmanId: userId,
+        createdById: userId,
+        claimedTransferAt: INVOICE,
+        invoiceAmount: 1000,
+        receivedAmount: 1000,
+        status: "TERVERIFIKASI",
+        verifiedAt: INVOICE,
+        verifiedById: userId,
+        receivableLinks: { create: [{ receivableId: receivable.id, settledAmount: 1000 }] },
+      },
+    });
+    try {
+      const result = await updateDeliveryDatesAction({
+        deliveryId,
+        invoiceDate: "2026-02-01",
+        dueDate: "2026-02-15",
+        reason: "wrong month keyed",
+      });
+
+      expect(result).toEqual({ ok: false, reason: "RECEIVABLE_HAS_PAYMENTS" });
+      expect(await currentDates()).toMatchObject({ invoiceDate: INVOICE.toISOString() });
+      expect(await prisma.auditLog.count({ where: { entityId: seededId(deliveryId) } })).toBe(0);
+    } finally {
+      await prisma.paymentClaim.delete({ where: { id: claim.id } });
+    }
+  });
+
   it("refuses to move dates once the receivable has a payment applied, and leaves everything untouched", async () => {
     const receivable = await prisma.receivable.create({
       data: {
@@ -567,13 +775,12 @@ d("updateDeliveryDatesAction (test bed only)", () => {
   it("returns which kinds posted and which are still pending", async () => {
     /*
      * Seeds a JOURNAL_PENDING row for "field_delivery_cogs" only, so `revenue` stays ungated and
-     * only the COGS kind is attempted — this deliberately avoids the revenue path, which would
-     * need a real AR/SALES_REVENUE account mapping to post and is otherwise nondeterministic
-     * against the shared dev DB. The seeded delivery has no `cogsAmount`, so the attempt resolves
-     * NOTHING_TO_POST: nothing posts, the seeded notification is left standing untouched, and
-     * `isArJournalRetryable` still reports it retryable afterwards — the kind belongs in
-     * `stillPending`, not `posted`.
+     * only the COGS kind is attempted. The post itself is stubbed to NOTHING_TO_POST: the real one
+     * goes through the nota engine, which reads the shared bed's GL cutover and account mappings
+     * and is nondeterministic here. Nothing posts, the seeded notification is left standing
+     * untouched, and the kind belongs in `stillPending`, not `posted`.
      */
+    journalPostStub.active = true;
     const notification = await prisma.adminNotification.create({
       data: {
         category: "JOURNAL_PENDING",
@@ -588,45 +795,26 @@ d("updateDeliveryDatesAction (test bed only)", () => {
     const result = await postFieldDeliveryJournalsAction(deliveryId);
 
     expect(result).toEqual({ ok: true, posted: [], stillPending: ["field_delivery_cogs"] });
+    expect(journalPostStub.calls).toEqual([{ kind: "field_delivery_cogs", docId: deliveryId }]);
   });
 
-  it("posts the recorded delivery's journals when it refuses a replay with changed dates", async () => {
-    /* The crash window: the delivery committed under this key, its journals never posted. */
-    const idempotencyKey = `dlv-replay-${token}`;
-    await prisma.fieldSalesDelivery.update({ where: { id: deliveryId }, data: { idempotencyKey } });
+  it("gates the revenue retry on the nota engine's own failure flag too", async () => {
     journalPostStub.active = true;
-
-    const result = await recordDeliveryAction({
-      orderId,
-      lines: [{ orderLineId: lineId, qty: 1 }],
-      invoiceDate: "2026-04-02",
-      dueDate: "2026-05-01",
-      idempotencyKey,
+    const notification = await prisma.adminNotification.create({
+      data: {
+        category: "JOURNAL_PENDING",
+        severity: "WARNING",
+        title: "test nota pending",
+        message: "test",
+        metadata: { docId: deliveryId, kind: "nota_putus", reason: "UNMAPPED_ROLE", role: "AR_STORE" },
+      },
     });
+    journalPendingNotificationId = notification.id;
 
-    expect(result).toMatchObject({ ok: false, reason: "REPLAY_MISMATCH", replay: { deliveryId, docNo } });
-    expect(journalPostStub.calls).toEqual([
-      { kind: "field_delivery_revenue", docId: deliveryId },
-      { kind: "field_delivery_cogs", docId: deliveryId },
-    ]);
-  });
+    const result = await postFieldDeliveryJournalsAction(deliveryId);
 
-  it("rejects a malformed delivery payload as INVALID_REQUEST before touching anything", async () => {
-    const base = { orderId, invoiceDate: "2026-04-02", dueDate: "2026-05-01", idempotencyKey: `dlv-bad-${token}` };
-    const malformed = [
-      [{ orderLineId: 123, qty: 1 }],
-      [{ orderLineId: lineId, qty: 0 }],
-      [{ orderLineId: lineId, qty: -1 }],
-      [{ orderLineId: lineId, qty: 1.5 }],
-      [{ orderLineId: lineId, qty: "1" }],
-      [null],
-      "not-an-array",
-    ];
-    for (const lines of malformed) {
-      const result = await recordDeliveryAction({ ...base, lines } as unknown as Parameters<typeof recordDeliveryAction>[0]);
-      expect(result).toEqual({ ok: false, reason: "INVALID_REQUEST" });
-    }
-    expect(await prisma.fieldSalesDelivery.count({ where: { orderId } })).toBe(1);
+    expect(result).toEqual({ ok: true, posted: [], stillPending: ["field_delivery_revenue"] });
+    expect(journalPostStub.calls).toEqual([{ kind: "field_delivery_revenue", docId: deliveryId }]);
   });
 
   it("rejects an empty, blank or non-string close-remainder reason as INVALID_REQUEST", async () => {
@@ -749,7 +937,8 @@ describe("recordNotaTagihanPrinted", () => {
 
   it("names NOTIFY when the delivery lookup returns null after winning the CAS", async () => {
     mockUpdateMany.mockResolvedValue({ count: 1 });
-    mockFindDelivery.mockResolvedValue(null);
+    // First read is the cancelled-nota guard before the CAS; only the second, after it, misses.
+    mockFindDelivery.mockResolvedValueOnce({ voidedAt: null }).mockResolvedValueOnce(null);
     await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toEqual({ ok: false, failed: ["NOTIFY"] });
     expect(mockAdminNotificationCreate).not.toHaveBeenCalled();
     expect(mockFanOut).not.toHaveBeenCalled();

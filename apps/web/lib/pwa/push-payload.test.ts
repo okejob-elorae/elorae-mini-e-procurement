@@ -33,21 +33,31 @@ describe("parsePushPayload", () => {
   });
 
   it("falls back to a generic notice for null", () => {
-    expect(parsePushPayload(null)).toEqual({ title: "Elorae", body: "", url: "/pwa/notifications" });
+    expect(parsePushPayload(null)).toEqual({ title: "Elorae", body: "", url: "/pwa/kabar" });
   });
 
   it("falls back to a generic notice for a bare string", () => {
-    expect(parsePushPayload("hello")).toEqual({ title: "Elorae", body: "", url: "/pwa/notifications" });
+    expect(parsePushPayload("hello")).toEqual({ title: "Elorae", body: "", url: "/pwa/kabar" });
   });
 
-  it("opens the notification list for an unknown type or a missing type", () => {
+  it("opens Kabar for an unknown type or a missing type", () => {
     expect(parsePushPayload({ notification: { title: "X" }, data: { type: "SOMETHING_NEW" } }).url).toBe(
-      "/pwa/notifications",
+      "/pwa/kabar",
     );
-    expect(parsePushPayload({ notification: { title: "X" }, data: {} }).url).toBe("/pwa/notifications");
+    expect(parsePushPayload({ notification: { title: "X" }, data: {} }).url).toBe("/pwa/kabar");
   });
 
   it("never opens a protocol-relative href", () => {
-    expect(parsePushPayload({ data: { type: "TEST", href: "//evil.example/x" } }).url).toBe("/pwa/notifications");
+    expect(parsePushPayload({ data: { type: "TEST", href: "//evil.example/x" } }).url).toBe("/pwa/kabar");
+  });
+
+  it("opens a field-staff kabar on its own phone screen", () => {
+    expect(parsePushPayload({ data: { type: "PESANAN_DISETUJUI", orderId: "o1" } }).url).toBe("/pwa/orders/o1");
+    expect(parsePushPayload({ data: { type: "MUTASI_MASUK", transferId: "t1" } }).url).toBe("/pwa/spg/terima/MUTASI/t1");
+  });
+
+  it("opens Kabar, never an office page, for office work that has no phone screen", () => {
+    expect(parsePushPayload({ data: { type: "PENDING_ORDER_APPROVAL", orderId: "o1" } }).url).toBe("/pwa/kabar");
+    expect(parsePushPayload({ data: { type: "TEST", href: "/backoffice/dashboard" } }).url).toBe("/pwa/kabar");
   });
 });

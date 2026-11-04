@@ -37,6 +37,14 @@
  * every caller of appendStockLedger/moveMainStock/moveStoreStock/moveVanStock/
  * setMainStock/setStoreStock AND every caller of those three costing.ts functions, not
  * by grepping for `refType:` near a mover name.
+ *
+ * "SupplierPayableCorrection" / "SupplierPayableCorrectionReversal" are QUANTITY-0 entries: an
+ * accepted supplier invoice price difference revalues the receipt's goods wherever they still are
+ * — Gudang Utama, a consignment store's gudang or a van (owner answer P49: "stok tersisa ikut
+ * naik") — and voiding the bill reverses it. Only the part on goods gone from every location is
+ * expensed (posting role PURCHASE_PRICE_VARIANCE); that part revalues no stock row. They reach
+ * moveMainStock/moveStoreStock/moveVanStock through a wrapper too
+ * (apps/web/lib/vendor-billing/nilai-ulang-stok.ts), so the literal sits in its caller.
  */
 export const STOCK_LEDGER_REF_TYPES = [
   "FGReceipt",
@@ -57,6 +65,8 @@ export const STOCK_LEDGER_REF_TYPES = [
   "StockOpname",
   "StoreStocktake",
   "StoreTransfer",
+  "SupplierPayableCorrection",
+  "SupplierPayableCorrectionReversal",
   "VanLoad",
   "VanReconcile",
   "VanSale",

@@ -20,37 +20,41 @@ function perQty(seq: number, name: string, days: number, rateQty: number): Resol
   return { seq, name, type: "PER_QTY", days, rateQty };
 }
 
-describe("computeStepDays (BATCH_CEIL)", () => {
+describe("computeStepDays (sebanding jumlah, seperti program SSG)", () => {
   it("FIXED ignores qty", () => {
     expect(computeStepDays(fixed(1, "X", 10), 99999)).toBe(10);
   });
 
-  it("PER_QTY exact 1 batch", () => {
+  it("PER_QTY exactly the rate → its days", () => {
     expect(computeStepDays(perQty(1, "X", 30, 10000), 10000)).toBe(30);
   });
 
-  it("PER_QTY ceil 1.5 → 2 batches", () => {
-    expect(computeStepDays(perQty(1, "X", 30, 10000), 15000)).toBe(60);
+  it("PER_QTY scales in proportion: 1.5× the rate → 1.5× the days", () => {
+    expect(computeStepDays(perQty(1, "X", 30, 10000), 15000)).toBe(45);
   });
 
-  it("PER_QTY under 1 batch → 1", () => {
+  it("owner's example: 12.000 pcs at 7 days per 10.000 pcs → 9 days, not 14", () => {
+    expect(computeStepDays(perQty(1, "X", 7, 10000), 12000)).toBe(9);
+  });
+
+  it("PER_QTY below the rate takes fewer days, rounded up to a whole day", () => {
     expect(computeStepDays(perQty(1, "X", 30, 10000), 9999)).toBe(30);
+    expect(computeStepDays(perQty(1, "X", 30, 10000), 5000)).toBe(15);
+    expect(computeStepDays(perQty(1, "X", 30, 10000), 1)).toBe(1);
   });
 
-  it("PER_QTY ceil 2.0001 → 3", () => {
-    expect(computeStepDays(perQty(1, "X", 30, 10000), 20001)).toBe(90);
+  it("PER_QTY just over 2× rounds up one day", () => {
+    expect(computeStepDays(perQty(1, "X", 30, 10000), 20001)).toBe(61);
   });
 
-  it("PER_QTY null qty → 1 batch", () => {
-    expect(computeStepDays(perQty(1, "X", 30, 10000), null)).toBe(30);
-  });
-
-  it("PER_QTY zero qty → 1 batch", () => {
-    expect(computeStepDays(perQty(1, "X", 30, 10000), 0)).toBe(30);
-  });
-
-  it("PER_QTY sablon 3 batches", () => {
+  it("whole-number results stay exact (no floating-point extra day)", () => {
+    expect(computeStepDays(perQty(1, "X", 10, 10), 3)).toBe(3);
     expect(computeStepDays(perQty(1, "X", 7, 4000), 12000)).toBe(21);
+  });
+
+  it("PER_QTY null or zero qty → the step's own days", () => {
+    expect(computeStepDays(perQty(1, "X", 30, 10000), null)).toBe(30);
+    expect(computeStepDays(perQty(1, "X", 30, 10000), 0)).toBe(30);
   });
 
   it("PER_QTY override-rate example", () => {
@@ -86,8 +90,8 @@ describe("buildChainSnapshot / totals", () => {
       [fixed(1, "A", 10), perQty(2, "B", 30, 10000), fixed(3, "C", 5)],
       15000
     );
-    expect(totalDays).toBe(75);
-    expect(snapshot[1].computedDays).toBe(60);
+    expect(totalDays).toBe(60);
+    expect(snapshot[1].computedDays).toBe(45);
     expect(snapshot[1].qty).toBe(15000);
   });
 

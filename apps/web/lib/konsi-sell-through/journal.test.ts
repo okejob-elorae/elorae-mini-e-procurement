@@ -26,7 +26,12 @@ vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi
 /* Every case drives several real serializable writers end to end, well past vitest's 5s default. */
 const SLOW = 60_000;
 
-const MAPPED_ROLES: PostingRole[] = ["AR", "SALES_REVENUE", "COGS", "INVENTORY", "INVENTORY_VARIANCE"];
+/*
+ * INVENTORY is mapped too, to an account of its own that no sell-through journal may touch: konsi
+ * goods sit in INVENTORY_CONSIGNMENT from the moment their shipment completes, so a line on the
+ * warehouse account would drive it negative.
+ */
+const MAPPED_ROLES: PostingRole[] = ["AR_CONSIGNMENT", "SALES_REVENUE", "COGS", "INVENTORY_CONSIGNMENT", "INVENTORY_VARIANCE", "INVENTORY"];
 
 d("konsi sell-through journals (test bed only)", () => {
   const fx = createSellThroughFixtures();
@@ -36,8 +41,9 @@ d("konsi sell-through journals (test bed only)", () => {
   let arId = "";
   let salesRevenueId = "";
   let cogsId = "";
-  let inventoryId = "";
+  let consignmentId = "";
   let inventoryVarianceId = "";
+  let warehouseInventoryId = "";
   let reportIds: string[] = [];
 
   beforeEach(async () => {
@@ -46,8 +52,9 @@ d("konsi sell-through journals (test bed only)", () => {
     arId = "";
     salesRevenueId = "";
     cogsId = "";
-    inventoryId = "";
+    consignmentId = "";
     inventoryVarianceId = "";
+    warehouseInventoryId = "";
     await fx.beforeEach();
     mappingSnapshot = await snapshotMappings(MAPPED_ROLES);
 
@@ -56,16 +63,18 @@ d("konsi sell-through journals (test bed only)", () => {
     arId = await mk("1", "ASET");
     salesRevenueId = await mk("2", "PENDAPATAN");
     cogsId = await mk("3", "HPP");
-    inventoryId = await mk("4", "ASET");
+    consignmentId = await mk("4", "ASET");
     inventoryVarianceId = await mk("5", "BEBAN");
+    warehouseInventoryId = await mk("6", "ASET");
 
     const mapRole = (role: PostingRole, chartAccountId: string) =>
       prisma.journalAccountMapping.upsert({ where: { role }, create: { role, chartAccountId }, update: { chartAccountId } });
-    await mapRole("AR", arId);
+    await mapRole("AR_CONSIGNMENT", arId);
     await mapRole("SALES_REVENUE", salesRevenueId);
     await mapRole("COGS", cogsId);
-    await mapRole("INVENTORY", inventoryId);
+    await mapRole("INVENTORY_CONSIGNMENT", consignmentId);
     await mapRole("INVENTORY_VARIANCE", inventoryVarianceId);
+    await mapRole("INVENTORY", warehouseInventoryId);
   });
 
   afterEach(async () => {
@@ -80,7 +89,7 @@ d("konsi sell-through journals (test bed only)", () => {
       await prisma.journalLine.deleteMany({ where: { journal: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids.map(seededId) } } } });
       await prisma.journal.deleteMany({ where: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids.map(seededId) } } });
       if (mappingSnapshot) await restoreMappings(mappingSnapshot);
-      const chartAccountIds = [arId, salesRevenueId, cogsId, inventoryId, inventoryVarianceId].map((id) => seededId(id));
+      const chartAccountIds = [arId, salesRevenueId, cogsId, consignmentId, inventoryVarianceId, warehouseInventoryId].map((id) => seededId(id));
       await prisma.chartAccount.deleteMany({ where: { id: { in: chartAccountIds.map(seededId) } } });
     } finally {
       await fx.afterEach();
@@ -99,7 +108,7 @@ d("konsi sell-through journals (test bed only)", () => {
     expect(sellThroughCostTotals([{ billedQty: 0, shrinkageQty: 0, surplusQty: 3, unitCost: 333.34 }]).surplus).toBe(1000.02);
   });
 
-  it("posts revenue Dr AR / Cr SALES_REVENUE for the total and COGS Dr COGS / Cr INVENTORY at unit cost, dated on the invoice date", async () => {
+  it("posts revenue Dr AR_CONSIGNMENT / Cr SALES_REVENUE for the total and COGS Dr COGS / Cr INVENTORY_CONSIGNMENT at unit cost, dated on the invoice date", async () => {
     /* SHELF_COUNT report billing 4 @ 40000, unitCost 10000 → revenue 160000, cogs 40000 */
     await setMethod("SHELF_COUNT");
     await transferIn(6);
@@ -125,10 +134,16 @@ d("konsi sell-through journals (test bed only)", () => {
     expect(cogsJournal!.date.toISOString()).toBe(doc.invoiceDate!.toISOString());
     expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === arId)!.debit)).toBe(160000);
     expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === arId)!.credit)).toBe(0);
+    /* Tagged so a payment receipt credits the same consignment-store receivable back, per store. */
+    expect(revenueJournal!.lines.find((l) => l.chartAccountId === arId)).toMatchObject({ memo: "AR_CONSIGNMENT", storeId: doc.storeId });
     expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === salesRevenueId)!.credit)).toBe(160000);
     expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === salesRevenueId)!.debit)).toBe(0);
     expect(Number(cogsJournal!.lines.find((l) => l.chartAccountId === cogsId)!.debit)).toBe(40000);
-    expect(Number(cogsJournal!.lines.find((l) => l.chartAccountId === inventoryId)!.credit)).toBe(40000);
+    expect(Number(cogsJournal!.lines.find((l) => l.chartAccountId === consignmentId)!.credit)).toBe(40000);
+    /* The goods left the store, not the warehouse: the consignment line carries the store, the COGS line the konsi channel. */
+    expect(cogsJournal!.lines.find((l) => l.chartAccountId === consignmentId)).toMatchObject({ memo: "INVENTORY_CONSIGNMENT", storeId: doc.storeId });
+    expect(cogsJournal!.lines.find((l) => l.chartAccountId === cogsId)).toMatchObject({ channel: "KONSINYASI", storeId: doc.storeId });
+    expect(journals.flatMap((j) => j.lines).some((l) => l.chartAccountId === warehouseInventoryId)).toBe(false);
   }, SLOW);
 
   it("returns NOTHING_TO_POST for shrinkage and surplus when there is none, and for every kind on a baseline report", async () => {
@@ -179,7 +194,7 @@ d("konsi sell-through journals (test bed only)", () => {
     return id;
   }
 
-  it("a resolved surplus owes a surplus journal Dr INVENTORY / Cr INVENTORY_VARIANCE at unit cost, dated on the invoice date", async () => {
+  it("a resolved surplus owes a surplus journal Dr INVENTORY_CONSIGNMENT / Cr INVENTORY_VARIANCE at unit cost, dated on the invoice date", async () => {
     const id = await approvedSurplusReport();
     const line = await onlyLine(id);
     expect(Number(line.billedQty)).toBe(0);
@@ -198,12 +213,14 @@ d("konsi sell-through journals (test bed only)", () => {
     });
     expect(journal.date.toISOString()).toBe(doc.invoiceDate!.toISOString());
     expect(journal.lines).toHaveLength(2);
-    const inventoryLine = journal.lines.find((l) => l.chartAccountId === inventoryId)!;
+    const inventoryLine = journal.lines.find((l) => l.chartAccountId === consignmentId)!;
     const varianceLine = journal.lines.find((l) => l.chartAccountId === inventoryVarianceId)!;
     expect(Number(inventoryLine.debit)).toBe(value);
     expect(Number(inventoryLine.credit)).toBe(0);
+    expect(inventoryLine).toMatchObject({ memo: "INVENTORY_CONSIGNMENT", storeId: doc.storeId });
     expect(Number(varianceLine.credit)).toBe(value);
     expect(Number(varianceLine.debit)).toBe(0);
+    expect(journal.lines.some((l) => l.chartAccountId === warehouseInventoryId)).toBe(false);
     expect(await sellThroughJournalGaps(id)).toEqual([]);
   }, SLOW);
 
@@ -237,7 +254,7 @@ d("konsi sell-through journals (test bed only)", () => {
     /* A zero amount is never owed: only the shrinkage journal is a gap. */
     expect(await sellThroughJournalGaps(id)).toEqual(["konsi_sell_through_shrinkage"]);
 
-    /* revenue & cogs → NOTHING_TO_POST; shrinkage → ok, Dr INVENTORY_VARIANCE 20000 / Cr INVENTORY 20000 */
+    /* revenue & cogs → NOTHING_TO_POST; shrinkage → ok, Dr INVENTORY_VARIANCE 20000 / Cr INVENTORY_CONSIGNMENT 20000 */
     await expect(postSellThroughRevenueJournal(id, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
     await expect(postSellThroughCogsJournal(id, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
     const shrinkage = await postSellThroughShrinkageJournal(id, state.userId);
@@ -248,7 +265,9 @@ d("konsi sell-through journals (test bed only)", () => {
       include: { lines: true },
     });
     expect(Number(journal.lines.find((l) => l.chartAccountId === inventoryVarianceId)!.debit)).toBe(20000);
-    expect(Number(journal.lines.find((l) => l.chartAccountId === inventoryId)!.credit)).toBe(20000);
+    expect(Number(journal.lines.find((l) => l.chartAccountId === consignmentId)!.credit)).toBe(20000);
+    expect(journal.lines.find((l) => l.chartAccountId === consignmentId)).toMatchObject({ storeId: doc.storeId });
+    expect(journal.lines.some((l) => l.chartAccountId === warehouseInventoryId)).toBe(false);
     expect(await sellThroughJournalGaps(id)).toEqual([]);
   }, SLOW);
 
@@ -407,7 +426,7 @@ d("konsi sell-through journals (test bed only)", () => {
 
     it("mirrors the posted accounts even after the mapping changed", async () => {
       const id = await voidedWithOriginals();
-      /* A letter suffix can never match the digit suffixes (1–5) beforeEach gives its five accounts. */
+      /* A letter suffix can never match the digit suffixes (1–6) beforeEach gives its six accounts. */
       const other = await prisma.chartAccount.create({
         data: { code: `9${state.run}R`, name: "t", type: "PENDAPATAN", depth: 1, isActive: true },
       });

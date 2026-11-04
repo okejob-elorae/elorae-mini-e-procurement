@@ -1,6 +1,19 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { prisma } from "@elorae/db";
-import { isArJournalRetryable, findPostableArJournalDocIds, isFieldDeliveryJournalStillPending } from "./journal-pending";
+import { prisma, seededId } from "@elorae/db";
+
+/* The GL cutover is shared live config; the gate reads it through this stub instead of the bed's row. */
+const h = vi.hoisted(() => ({ mulai: new Date("2026-01-01T00:00:00.000+07:00") as Date | null }));
+vi.mock("@/lib/finance/sales/sweep", async (asli) => ({
+  ...(await asli<typeof import("@/lib/finance/sales/sweep")>()),
+  readGlCutover: vi.fn(async () => h.mulai),
+}));
+
+import {
+  isArJournalRetryable,
+  findPostableArJournalDocIds,
+  isFieldDeliveryJournalRetryable,
+  isFieldDeliveryJournalStillPending,
+} from "./journal-pending";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -11,13 +24,62 @@ d("journal-pending gating (test bed only)", () => {
   const flaggedDoc = `test-ar-flagged-${token}`;
   const cleanDoc = `test-ar-clean-${token}`;
   let notificationId = "";
+  let fixture: { storeId: string; userId: string; orderId: string; deliveryId: string } | null = null;
+  let seq = 0;
 
   afterEach(async () => {
+    h.mulai = new Date("2026-01-01T00:00:00.000+07:00");
     if (notificationId !== "") {
       await prisma.adminNotification.delete({ where: { id: notificationId } }).catch(() => undefined);
       notificationId = "";
     }
+    if (fixture) {
+      const f = fixture;
+      fixture = null;
+      await prisma.journal.deleteMany({ where: { sourceId: seededId(f.deliveryId) } });
+      await prisma.fieldSalesDelivery.deleteMany({ where: { id: seededId(f.deliveryId) } });
+      await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(f.orderId) } });
+      await prisma.user.deleteMany({ where: { id: seededId(f.userId) } });
+      await prisma.store.deleteMany({ where: { id: seededId(f.storeId) } });
+    }
   });
+
+  /** A real putus delivery invoiced on `invoiceDate`, which is what the nota journal's cutover gate reads. */
+  async function makeDelivery(invoiceDate: Date): Promise<string> {
+    const n = `${token}-${++seq}`;
+    const store = await prisma.store.create({ data: { code: `TEST-JP-${n}`, name: "test", address: "test", termsType: "PUTUS" } });
+    const f = { storeId: store.id, userId: "", orderId: "", deliveryId: "" };
+    fixture = f;
+    const user = await prisma.user.create({ data: { email: `jp-${n}@test.local`, name: "test", role: "ADMIN" } });
+    f.userId = user.id;
+    const order = await prisma.fieldSalesOrder.create({
+      data: { orderNo: `TEST-JP-ORD-${n}`, storeId: store.id, salesmanId: user.id, subtotal: 100, total: 100 },
+    });
+    f.orderId = order.id;
+    const delivery = await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `TEST-JP-DLV-${n}`, orderId: order.id,
+        deliveredAt: invoiceDate, deliveredById: user.id,
+        invoiceDate, dueDate: invoiceDate,
+        subtotal: 100, total: 100,
+      },
+    });
+    f.deliveryId = delivery.id;
+    return delivery.id;
+  }
+
+  const flag = async (docId: string, kind: string) => {
+    const n = await prisma.adminNotification.create({
+      data: {
+        category: "JOURNAL_PENDING",
+        severity: "WARNING",
+        title: `test ${token}`,
+        message: "test",
+        metadata: { docId, kind, reason: "UNMAPPED_ROLE", role: "AR_STORE" },
+      },
+    });
+    notificationId = n.id;
+  };
 
   it("does not offer a retry for a document that was never flagged", async () => {
     expect(await isArJournalRetryable("field_delivery_revenue", cleanDoc)).toBe(false);
@@ -52,38 +114,71 @@ d("journal-pending gating (test bed only)", () => {
   });
 
   it("stops reporting a flagged delivery journal as pending once the journal exists", async () => {
-    const n = await prisma.adminNotification.create({
-      data: {
-        category: "JOURNAL_PENDING",
-        severity: "WARNING",
-        title: `test ${token}`,
-        message: "test",
-        metadata: { docId: flaggedDoc, kind: "field_delivery_revenue", reason: "UNMAPPED_ROLE", role: "AR" },
-      },
-    });
-    notificationId = n.id;
-    expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", flaggedDoc)).toBe(true);
-
-    const journal = await prisma.journal.create({
-      data: {
-        date: new Date(),
-        description: `test ${token}`,
-        sourceType: "FIELD_DELIVERY_REVENUE",
-        sourceId: flaggedDoc,
-        postedById: "test-user",
-      },
+    await flag(flaggedDoc, "field_delivery_revenue");
+    /* The old pair's COGS half stands, so a retry completes the revenue half — no cutover gates that. */
+    const cogsHalf = await prisma.journal.create({
+      data: { date: new Date(), description: `test ${token}`, sourceType: "FIELD_DELIVERY_COGS", sourceId: flaggedDoc, postedById: "test-user" },
     });
     try {
-      expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", flaggedDoc)).toBe(false);
-      /* The flag still gates: the revenue journal posting says nothing about the cogs kind. */
-      expect(await isFieldDeliveryJournalStillPending("field_delivery_cogs", flaggedDoc)).toBe(false);
+      expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", flaggedDoc)).toBe(true);
+
+      const journal = await prisma.journal.create({
+        data: {
+          date: new Date(),
+          description: `test ${token}`,
+          sourceType: "FIELD_DELIVERY_REVENUE",
+          sourceId: flaggedDoc,
+          postedById: "test-user",
+        },
+      });
+      try {
+        expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", flaggedDoc)).toBe(false);
+        /* The flag still gates: the revenue journal posting says nothing about the cogs kind. */
+        expect(await isFieldDeliveryJournalStillPending("field_delivery_cogs", flaggedDoc)).toBe(false);
+      } finally {
+        await prisma.journal.delete({ where: { id: journal.id } });
+      }
     } finally {
-      await prisma.journal.delete({ where: { id: journal.id } });
+      await prisma.journal.delete({ where: { id: cogsHalf.id } });
     }
   });
 
   it("never reports an unflagged delivery as pending just because it has no journal", async () => {
     expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", cleanDoc)).toBe(false);
+  });
+
+  it("gates the revenue kind on the nota engine's own flag, and clears it once the nota journal exists", async () => {
+    const deliveryId = await makeDelivery(new Date("2026-03-01T00:00:00.000+07:00"));
+    await flag(deliveryId, "nota_putus");
+    expect(await isFieldDeliveryJournalRetryable("field_delivery_revenue", deliveryId)).toBe(true);
+    expect(await isFieldDeliveryJournalRetryable("field_delivery_cogs", deliveryId)).toBe(false);
+    expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", deliveryId)).toBe(true);
+
+    await prisma.journal.create({
+      data: { date: new Date(), description: `test ${token}`, sourceType: "FIELD_DELIVERY", sourceId: deliveryId, postedById: "test-user" },
+    });
+    expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", deliveryId)).toBe(false);
+  });
+
+  /*
+   * The nota journal never posts for a delivery dated before the GL cutover, or for any delivery
+   * while no cutover is set, so a flag on one can never clear — offering a retry would promise a
+   * journal that cannot come.
+   */
+  it("does not report a flagged delivery as pending when no retry could ever post its journal", async () => {
+    const deliveryId = await makeDelivery(new Date("2026-03-01T00:00:00.000+07:00"));
+    await flag(deliveryId, "nota_putus");
+    h.mulai = new Date("2026-06-01T00:00:00.000+07:00");
+    expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", deliveryId)).toBe(false);
+    h.mulai = null;
+    expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", deliveryId)).toBe(false);
+    /* The retry gate itself is unchanged: the flag still names the document. */
+    expect(await isFieldDeliveryJournalRetryable("field_delivery_revenue", deliveryId)).toBe(true);
+  });
+
+  it("never reports a flagged document with no delivery and no journal as pending", async () => {
+    await flag(flaggedDoc, "field_delivery_revenue");
+    expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", flaggedDoc)).toBe(false);
   });
 
   /**

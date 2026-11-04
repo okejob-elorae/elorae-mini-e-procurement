@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +27,8 @@ import {
   type ActionResult,
 } from "@/app/actions/field-sales-orders";
 import type { StagedAddition } from "./KonsiSuggestionsCard";
+import { kunciKonfirmasiTolak } from "./konfirmasi-tolak";
+import { formatRupiah } from "@/lib/format/rupiah";
 
 export type AppealedLine = {
   id: string;
@@ -35,6 +38,14 @@ export type AppealedLine = {
   unitPrice: number;
   requestedUnitPrice: number;
   appealReason: string | null;
+  /**
+   * Potongan promo baris yang tercatat saat pesanan dibuat (rupiah, seluruh baris). Harga final
+   * adalah harga bersih per potong, jadi promo ini GUGUR begitu harga final diberikan. Opsional:
+   * pemanggil yang belum mengirimnya hanya kehilangan peringatan per baris, penjelasan umumnya
+   * tetap tampil.
+   */
+  lineDiscount?: number;
+  promoName?: string | null;
 };
 
 /**
@@ -67,18 +78,22 @@ type Props = {
   orderLines: LineRef[];
   stagedAdditions: StagedAddition[];
   onStagedAdditionsChange: (staged: StagedAddition[]) => void;
-  creditCheck: { exposure: number; limit: number; overLimit: boolean } | null;
+  /**
+   * `sumber`: where the limit came from (`batasKreditBerlaku`) — "BAWAAN" when the store's own
+   * limit is empty and the Settings → Salesman default applies. Absent = not known.
+   */
+  creditCheck: { exposure: number; limit: number; overLimit: boolean; sumber?: "TOKO" | "BAWAAN" } | null;
   creditHoldAtCreate: boolean;
   overCommittedLines: OverCommittedLine[];
+  /** Kredit ditahan saat pesanan dibuat: persetujuan butuh pernyataan sudah memeriksa tagihan. */
+  kreditDitahan?: boolean;
+  /**
+   * Jendela pre-order pesanan ini (`null` = bukan pre-order). Menentukan kalimat konfirmasi
+   * tolak: pre-order yang menunggu belum mencadangkan stok. Tidak dikirim → kalimat netral.
+   */
+  preorder?: { dirilis: boolean } | null;
 };
 
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 function lineDisplayName(ref: Pick<LineRef, "productName" | "variantLabel">): string {
   return ref.variantLabel ? `${ref.productName} (${ref.variantLabel})` : ref.productName;
@@ -97,6 +112,8 @@ export function ApproveRejectCard({
   creditCheck,
   creditHoldAtCreate,
   overCommittedLines,
+  kreditDitahan = false,
+  preorder,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
@@ -112,7 +129,8 @@ export function ApproveRejectCard({
    * (e.g. an appealed-line final price pushed the order over limit after the preview was
    * computed) or absent.
    */
-  const [serverCreditRefusal, setServerCreditRefusal] = useState<{ exposure: number; limit: number } | null>(null);
+  const [serverCreditRefusal, setServerCreditRefusal] = useState<{ exposure: number; limit: number; sumber?: "TOKO" | "BAWAAN" } | null>(null);
+  const [kreditDiperiksa, setKreditDiperiksa] = useState(false);
 
   if (!canApprove || status !== "PENDING_APPROVAL") return null;
 
@@ -125,6 +143,8 @@ export function ApproveRejectCard({
     setFinalPriceInputs(
       Object.fromEntries(appealedLines.map((l) => [l.id, String(l.requestedUnitPrice)])),
     );
+    // Centangnya per keputusan: membuka dialog lagi berarti menyatakan lagi.
+    setKreditDiperiksa(false);
     setApproveDialogOpen(true);
   }
 
@@ -210,9 +230,11 @@ export function ApproveRejectCard({
     } else if (r.reason === "INVALID_FINAL_PRICE") {
       toast.error(t("errInvalidFinalPrice"));
     } else if (r.reason === "CREDIT_LIMIT_EXCEEDED") {
-      setServerCreditRefusal({ exposure: r.credit?.exposure.total ?? 0, limit: r.credit?.creditLimit ?? 0 });
+      setServerCreditRefusal({ exposure: r.credit?.exposure.total ?? 0, limit: r.credit?.creditLimit ?? 0, sumber: r.credit?.sumber });
       const figures = { exposure: formatRupiah(r.credit?.exposure.total ?? 0), limit: formatRupiah(r.credit?.creditLimit ?? 0) };
       toast.error(canOverrideCredit ? t("creditLimitExceeded", figures) : t("creditOverLimitNoOverride", figures));
+    } else if (r.reason === "KREDIT_BELUM_DIPERIKSA") {
+      toast.error(t("kredit.errBelumDiperiksa"));
     } else {
       toast.error(t("errNotFound"));
     }
@@ -220,6 +242,7 @@ export function ApproveRejectCard({
 
   function callApprove(): void {
     if (!finalPricesValid) return;
+    if (kreditDitahan && !kreditDiperiksa) return;
     const finalPrices = hasAppeals
       ? appealedLines.map((l) => ({ lineId: l.id, finalUnitPrice: Number(finalPriceInputs[l.id]) }))
       : undefined;
@@ -231,7 +254,9 @@ export function ApproveRejectCard({
       try {
         /* Never sent without the permission: the action would refuse it FORBIDDEN, so the server's credit gate decides alone. */
         const creditOverrideReason = canOverrideCredit ? creditReason.trim() || undefined : undefined;
-        const r = await approveFieldSalesOrderAction(orderId, finalPrices, addedLines, creditOverrideReason);
+        const r = await approveFieldSalesOrderAction(orderId, finalPrices, addedLines, creditOverrideReason, {
+          kreditDiperiksa: kreditDitahan ? kreditDiperiksa : undefined,
+        });
         handleResult(r, t("approved"));
       } catch {
         toast.error(t("errGeneric"));
@@ -288,6 +313,7 @@ export function ApproveRejectCard({
           {hasAppeals && (
             <div className="space-y-3 max-h-72 overflow-y-auto rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
               <p className="text-xs font-medium text-amber-700">{t("appealSetFinalPriceHint")}</p>
+              <p className="text-xs text-amber-700">{t("appealFinalPriceNetHint")}</p>
               {appealedLines.map((line) => (
                 <div key={line.id} className="space-y-1.5 border-t border-amber-500/20 pt-2 first:border-t-0 first:pt-0">
                   <div className="flex items-center gap-2 text-sm font-medium">
@@ -310,6 +336,13 @@ export function ApproveRejectCard({
                   {line.appealReason && (
                     <p className="text-xs text-muted-foreground italic">
                       {t("appealReasonLabel")}: {line.appealReason}
+                    </p>
+                  )}
+                  {line.lineDiscount !== undefined && line.lineDiscount > 0 && (
+                    <p className="text-xs text-amber-700">
+                      {line.promoName
+                        ? t("appealPromoDropped", { promo: line.promoName, amount: formatRupiah(line.lineDiscount) })
+                        : t("appealPromoDroppedUnnamed", { amount: formatRupiah(line.lineDiscount) })}
                     </p>
                   )}
                   <div className="space-y-1">
@@ -337,6 +370,24 @@ export function ApproveRejectCard({
             </div>
           )}
 
+          {kreditDitahan && (
+            <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+              <p className="text-xs text-destructive">{t("kredit.dialogPenjelasan")}</p>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="kredit-diperiksa"
+                  checked={kreditDiperiksa}
+                  disabled={isPending}
+                  onCheckedChange={(v) => setKreditDiperiksa(v === true)}
+                  className="mt-0.5"
+                />
+                <Label htmlFor="kredit-diperiksa" className="text-sm font-normal leading-snug">
+                  {t("kredit.centang")}
+                </Label>
+              </div>
+            </div>
+          )}
+
           {stagedAdditions.length > 0 && (
             <p className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-700">
               {t("konsiSuggestions.approveSummary", { count: stagedAdditions.length })}
@@ -352,6 +403,9 @@ export function ApproveRejectCard({
                   limit: formatRupiah(serverCreditRefusal?.limit ?? creditCheck?.limit ?? 0),
                 })}
               </p>
+              {(serverCreditRefusal?.sumber ?? creditCheck?.sumber) === "BAWAAN" && (
+                <p className="text-xs text-muted-foreground">{t("creditLimitFromDefault")}</p>
+              )}
               {canOverrideCredit && (
                 <div className="space-y-1">
                   <Label htmlFor="credit-override-reason" className="text-xs">{t("creditOverrideReasonLabel")}</Label>
@@ -392,7 +446,7 @@ export function ApproveRejectCard({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{tCommon("cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              disabled={isPending || (hasAppeals && !finalPricesValid) || creditBlocked}
+              disabled={isPending || (hasAppeals && !finalPricesValid) || creditBlocked || (kreditDitahan && !kreditDiperiksa)}
               onClick={callApprove}
             >
               {t("approve")}
@@ -412,7 +466,7 @@ export function ApproveRejectCard({
           <AlertDialogHeader>
             <AlertDialogTitle>{t("reject")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {orderType === "KONSI" ? t("rejectConfirmKonsi") : t("rejectConfirm")}
+              {t(kunciKonfirmasiTolak(orderType, preorder))}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-1">
@@ -427,6 +481,7 @@ export function ApproveRejectCard({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{tCommon("cancel")}</AlertDialogCancel>
             <AlertDialogAction
+              variant="destructive"
               disabled={isPending || !rejectReason.trim()}
               onClick={callReject}
             >

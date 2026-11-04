@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, seededIds } from "@elorae/db";
 
 /* Creates PO/supplier/user/notification rows — never run against the shared prod DB. */
 const url = process.env.DATABASE_URL ?? "";
@@ -29,6 +29,8 @@ d("retrySupplierPaymentJournalAction (test bed only)", () => {
   let userId = "";
   let supplierTypeId = "";
   let supplierId = "";
+  let apAccountId = "";
+  let bankAccountId = "";
   let perTestPoIds: string[] = [];
   let seq = 0;
 
@@ -71,6 +73,8 @@ d("retrySupplierPaymentJournalAction (test bed only)", () => {
     userId = "";
     supplierTypeId = "";
     supplierId = "";
+    apAccountId = "";
+    bankAccountId = "";
     const user = await prisma.user.create({
       data: { email: `test-rsp-${token}@test.local`, name: "Test Finance User" },
     });
@@ -81,6 +85,13 @@ d("retrySupplierPaymentJournalAction (test bed only)", () => {
       data: { code: `SUP-RSP-${token}`, name: "Test Supplier", typeId: supplierTypeId },
     });
     supplierId = supplier.id;
+    const account = (n: number, type: "LIABILITAS" | "ASET") =>
+      prisma.chartAccount.create({
+        data: { code: `9RSP${token}${n}`, name: `Retry spec ${n}`, type, depth: 1, isActive: true },
+        select: { id: true },
+      });
+    apAccountId = (await account(1, "LIABILITAS")).id;
+    bankAccountId = (await account(2, "ASET")).id;
   }, 60_000);
 
   beforeEach(() => {
@@ -115,6 +126,18 @@ d("retrySupplierPaymentJournalAction (test bed only)", () => {
   });
 
   afterAll(async () => {
+    /* What a posted retry leaves behind: the stand-in journal, its BYR mirror and the mirror's audit row. */
+    try {
+      await prisma.supplierPaymentAllocation.deleteMany({ where: { payment: { supplierId: seededId(supplierId) } } });
+      await prisma.supplierPayment.deleteMany({ where: { supplierId: seededId(supplierId) } });
+      await prisma.auditLog.deleteMany({ where: { userId: seededId(userId) } });
+      const journals = await prisma.journal.findMany({ where: { postedById: seededId(userId) }, select: { id: true } });
+      await prisma.journalLine.deleteMany({ where: { journalId: { in: seededIds(journals.map((j) => j.id)) } } });
+      await prisma.journal.deleteMany({ where: { id: { in: seededIds(journals.map((j) => j.id)) } } });
+      await prisma.chartAccount.deleteMany({ where: { id: { in: seededIds([apAccountId, bankAccountId].filter(Boolean)) } } });
+    } catch (e) {
+      console.warn("[retry-supplier-payment-journal-action.test.ts] failed to delete the posted retry's rows", e);
+    }
     try {
       await prisma.supplier.deleteMany({ where: { id: seededId(supplierId) } });
     } catch (e) {
@@ -165,6 +188,51 @@ d("retrySupplierPaymentJournalAction (test bed only)", () => {
     expect((calledPaidAt as Date).getTime()).toBe(PAID.getTime());
   });
 
+  it("after posting, mirrors the payment in the Supplier payments register once and resolves the payment flag", async () => {
+    const poId = await seedPo(PAID);
+    await writeRow(poId, "UNMAPPED_ROLE", "AP");
+    /* Stands in for the GL writer: the journal it would post at the current generation, in the action's transaction. */
+    postMock.mockImplementation(async (id: string, actor: string, paidAt: Date, tx: typeof prisma) => {
+      const journal = await tx.journal.create({
+        data: {
+          date: paidAt,
+          description: `retry action spec ${token}`,
+          sourceType: "SUPPLIER_PAYMENT",
+          sourceId: `${id}#1`,
+          postedById: actor,
+          lines: {
+            create: [
+              { chartAccountId: apAccountId, debit: 150_000, credit: 0 },
+              { chartAccountId: bankAccountId, debit: 0, credit: 150_000 },
+            ],
+          },
+        },
+        select: { id: true },
+      });
+      return { ok: true, journalId: journal.id, created: true };
+    });
+
+    await expect(retrySupplierPaymentJournalAction(poId)).resolves.toEqual({ ok: true });
+    const mirror = await prisma.supplierPayment.findMany({
+      where: { idempotencyKey: `tandai-lunas:${poId}#1` },
+      select: { status: true, cashAccountId: true, allocations: { select: { targetType: true, targetId: true, amount: true } } },
+    });
+    expect(mirror).toHaveLength(1);
+    expect(mirror[0]).toMatchObject({ status: "POSTED", cashAccountId: bankAccountId });
+    expect(mirror[0].allocations.map((a) => [a.targetType, a.targetId, Number(a.amount)])).toEqual([["PO", poId, 150_000]]);
+    const flags = await prisma.adminNotification.findMany({
+      where: { category: "JOURNAL_PENDING" },
+      select: { metadata: true, readAt: true },
+    });
+    const own = flags.filter((f) => (f.metadata as { docId?: unknown } | null)?.docId === poId);
+    expect(own).toHaveLength(1);
+    expect(own[0].readAt).not.toBeNull();
+
+    // The journal now stands, so a second retry is refused and leaves the one mirror alone.
+    await expect(retrySupplierPaymentJournalAction(poId)).resolves.toEqual({ ok: false, code: "BAD_STATE" });
+    expect(await prisma.supplierPayment.count({ where: { idempotencyKey: `tandai-lunas:${poId}#1` } })).toBe(1);
+  });
+
   it("reports and records a new failure reason", async () => {
     postMock.mockResolvedValue({ ok: false, code: "GRN_JOURNALS_INCOMPLETE" });
     const poId = await seedPo(PAID);
@@ -177,6 +245,16 @@ d("retrySupplierPaymentJournalAction (test bed only)", () => {
     const rows = await paymentRowsFor(poId);
     expect(rows).toHaveLength(2);
     expect(rows.filter((r) => (r.metadata as { reason?: unknown }).reason === "GRN_JOURNALS_INCOMPLETE")).toHaveLength(1);
+  });
+
+  it("reports a PO paid through supplier payment documents without recording a failure", async () => {
+    postMock.mockResolvedValue({ ok: false, code: "ADA_PEMBAYARAN_DOKUMEN" });
+    const poId = await seedPo(PAID);
+    await writeRow(poId, "UNMAPPED_ROLE", "BANK");
+    await expect(retrySupplierPaymentJournalAction(poId)).resolves.toEqual({ ok: false, code: "ADA_PEMBAYARAN_DOKUMEN" });
+    const rows = await paymentRowsFor(poId);
+    expect(rows).toHaveLength(1);
+    expect((rows[0].metadata as { reason?: unknown }).reason).toBe("UNMAPPED_ROLE");
   });
 
   it("does not record the same failure twice", async () => {

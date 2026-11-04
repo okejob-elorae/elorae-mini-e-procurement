@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "./writer";
+import { closeFieldSalesOrderRemainder, CadanganTidakCocokError } from "./writer";
+import { catatNotaUji as recordFieldSalesDelivery } from "./uji-nota";
 import { approveFieldSalesOrder } from "../writer";
 import { DeliveryError } from "../errors";
 import { deliveredGoodsValue } from "./undelivered-residual";
-import { postFieldDeliveryRevenueJournal } from "@/lib/finance/ar/delivery-journal";
+import { bacaBahanNota } from "@/lib/finance/lapangan/jurnal";
+import { barisNota, jumlahSen } from "@/lib/finance/lapangan/aturan";
+import { PPN_BAWAAN } from "@/lib/finance/pajak/ppn";
 import { recordPayment } from "@/lib/finance/ar/payment-writer";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "@/lib/finance/journals/mapping-test-fixture";
@@ -92,6 +95,8 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
+    // Nota = piutang: hapus piutangnya SEBELUM notanya (emulasi relasi 1:1 Prisma gagal pada deleteMany banyak nota).
+    await prisma.receivable.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
@@ -148,6 +153,24 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     expect(err.code).toBe("OVER_DELIVER");
     const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
     expect(Number(inv.qtyOnHand)).toBe(10);
+  });
+
+  it("cadangan yang sudah habis dikonsumsi (balapan deploy) punya kode sendiri, bukan OVER_DELIVER, dan stok tidak bergerak", async () => {
+    // Pesanan disetujui oleh image lama: stoknya sudah keluar, cadangannya CONSUMED, tapi sisa tetap penuh.
+    await prisma.stockReservation.update({ where: { fieldSalesLineId: lineAId }, data: { state: "CONSUMED", consumedQty: 5 } });
+    const err = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(CadanganTidakCocokError);
+    expect(err.code).toBe("RESERVATION_MISMATCH");
+    expect(err).toBeInstanceOf(DeliveryError);
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
+    expect(Number(inv.qtyOnHand)).toBe(10);
+    expect(await prisma.fieldSalesDelivery.count({ where: { orderId: seededId(orderId) } })).toBe(0);
   });
 
   it("hard-blocks when on-hand is short and names every short line", async () => {
@@ -320,7 +343,14 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     expect(Number(inv.qtyOnHand)).toBe(8);
   });
 
+  /*
+   * The key is `shipment-<shipmentId>` inside shipment creation; the SHIPMENT's own key is what
+   * makes a double submit create one shipment. Here the nota is the backstop: the same key returns
+   * the recorded nota untouched — whatever the replay carries, it never writes a second one — and a
+   * key another order recorded is refused INVALID_STATE.
+   */
   describe("a replayed idempotencyKey", () => {
+    const key = () => `dlv-replay-${token}`;
     const recordFirst = (): Promise<{ deliveryId: string; docNo: string }> =>
       recordFieldSalesDelivery({
         orderId,
@@ -328,103 +358,66 @@ d("recordFieldSalesDelivery (test bed only)", () => {
         lines: [{ orderLineId: lineAId, qty: 2 }],
         invoiceDate: defaultInvoiceDate,
         dueDate: defaultDueDate,
-        idempotencyKey: `dlv-replay-${token}`,
+        idempotencyKey: key(),
       });
 
-    const replay = (over: {
-      invoiceDate?: Date;
-      dueDate?: Date;
-      lines?: Array<{ orderLineId: string; qty: number }>;
-      replayCompare?: "datesAndLines" | "linesOnly";
-    }) =>
-      recordFieldSalesDelivery({
+    it("returns the recorded nota when nothing differs", async () => {
+      const first = await recordFirst();
+      await expect(recordFirst()).resolves.toEqual(first);
+    });
+
+    it("returns the recorded nota untouched even when the replay carries other dates or quantities", async () => {
+      const first = await recordFirst();
+      const again = await recordFieldSalesDelivery({
         orderId,
         deliveredById: userId,
-        lines: over.lines ?? [{ orderLineId: lineAId, qty: 2 }],
-        invoiceDate: over.invoiceDate ?? defaultInvoiceDate,
-        dueDate: over.dueDate ?? defaultDueDate,
-        idempotencyKey: `dlv-replay-${token}`,
-        replayCompare: over.replayCompare,
-      });
-
-    it("returns the recorded delivery when nothing differs", async () => {
-      const first = await recordFirst();
-      await expect(replay({})).resolves.toEqual(first);
-    });
-
-    it("refuses a different invoice date and reports the recorded dates and lines", async () => {
-      const first = await recordFirst();
-      const err = await replay({
+        lines: [{ orderLineId: lineAId, qty: 3 }, { orderLineId: lineBId, qty: 1 }],
         invoiceDate: new Date("2026-01-02T00:00:00.000+07:00"),
-      }).catch((e) => e);
-      expect(err).toBeInstanceOf(DeliveryError);
-      expect(err.code).toBe("REPLAY_MISMATCH");
-      expect(err.replay.deliveryId).toBe(first.deliveryId);
-      expect(err.replay.docNo).toBe(first.docNo);
-      expect(err.replay.invoiceDate.getTime()).toBe(defaultInvoiceDate.getTime());
-      expect(err.replay.dueDate.getTime()).toBe(defaultDueDate.getTime());
-      expect(err.replay.lines).toEqual([{ orderLineId: lineAId, qty: 2 }]);
-    });
-
-    it("refuses a different due date", async () => {
-      await recordFirst();
-      const err = await replay({ dueDate: new Date("2026-01-09T00:00:00.000+07:00") }).catch((e) => e);
-      expect(err).toBeInstanceOf(DeliveryError);
-      expect(err.code).toBe("REPLAY_MISMATCH");
-      expect(err.replay.dueDate.getTime()).toBe(defaultDueDate.getTime());
-    });
-
-    it("refuses a different quantity, and a line the recorded delivery lacks", async () => {
-      await recordFirst();
-      const changed = await replay({ lines: [{ orderLineId: lineAId, qty: 3 }] }).catch((e) => e);
-      expect(changed.code).toBe("REPLAY_MISMATCH");
-      expect(changed.replay.lines).toEqual([{ orderLineId: lineAId, qty: 2 }]);
-      const extra = await replay({
-        lines: [{ orderLineId: lineAId, qty: 2 }, { orderLineId: lineBId, qty: 1 }],
-      }).catch((e) => e);
-      expect(extra.code).toBe("REPLAY_MISMATCH");
-    });
-
-    it("treats a repeated orderLineId summing to the recorded quantity as identical", async () => {
-      const first = await recordFirst();
-      await expect(
-        replay({ lines: [{ orderLineId: lineAId, qty: 1 }, { orderLineId: lineAId, qty: 1 }] }),
-      ).resolves.toEqual(first);
-    });
-
-    it("writes nothing when it refuses", async () => {
-      await recordFirst();
-      const err = await replay({ lines: [{ orderLineId: lineAId, qty: 3 }] }).catch((e) => e);
-      expect(err).toBeInstanceOf(DeliveryError);
-      expect(err.code).toBe("REPLAY_MISMATCH");
-      const all = await prisma.fieldSalesDelivery.findMany({ where: { orderId: seededId(orderId) } });
+        dueDate: new Date("2026-01-09T00:00:00.000+07:00"),
+        idempotencyKey: key(),
+      });
+      expect(again).toEqual(first);
+      const all = await prisma.fieldSalesDelivery.findMany({ where: { orderId: seededId(orderId) }, include: { lines: true } });
       expect(all).toHaveLength(1);
-      const receivables = await prisma.receivable.count({ where: { delivery: { orderId: seededId(orderId) } } });
-      expect(receivables).toBe(1);
-      const taxInvoices = await prisma.taxInvoice.count({ where: { delivery: { orderId: seededId(orderId) } } });
-      expect(taxInvoices).toBe(1);
+      expect(all[0].invoiceDate.getTime()).toBe(defaultInvoiceDate.getTime());
+      expect(all[0].lines.map((l) => ({ orderLineId: l.orderLineId, qty: l.qty }))).toEqual([{ orderLineId: lineAId, qty: 2 }]);
+      expect(await prisma.receivable.count({ where: { delivery: { orderId: seededId(orderId) } } })).toBe(1);
+      expect(await prisma.taxInvoice.count({ where: { delivery: { orderId: seededId(orderId) } } })).toBe(1);
       const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
       expect(Number(inv.qtyOnHand)).toBe(8);
     });
 
-    it("ignores the dates under replayCompare linesOnly and returns the recorded delivery", async () => {
-      const first = await recordFirst();
-      await expect(
-        replay({
-          invoiceDate: new Date("2026-01-02T00:00:00.000+07:00"),
-          dueDate: new Date("2026-01-09T00:00:00.000+07:00"),
-          replayCompare: "linesOnly",
-        }),
-      ).resolves.toEqual(first);
-      const recorded = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: first.deliveryId } });
-      expect(recorded.invoiceDate.getTime()).toBe(defaultInvoiceDate.getTime());
-    });
-
-    it("still refuses a different quantity under replayCompare linesOnly", async () => {
+    it("refuses a key another order already recorded, writing nothing", async () => {
       await recordFirst();
-      const err = await replay({ lines: [{ orderLineId: lineAId, qty: 3 }], replayCompare: "linesOnly" }).catch((e) => e);
-      expect(err).toBeInstanceOf(DeliveryError);
-      expect(err.code).toBe("REPLAY_MISMATCH");
+      const other = await prisma.fieldSalesOrder.create({
+        data: {
+          orderNo: `PUTUS/TEST-FSD-OTHER-${token}`,
+          storeId,
+          salesmanId: userId,
+          status: "APPROVED",
+          orderType: "PUTUS",
+          subtotal: 1000,
+          total: 1000,
+          lines: { create: [{ itemId, variantSku: "", productName: "Other", qty: 1, unitPrice: 1000, lineTotal: 1000 }] },
+        },
+        include: { lines: true },
+      });
+      try {
+        const err = await recordFieldSalesDelivery({
+          orderId: other.id,
+          deliveredById: userId,
+          lines: [{ orderLineId: other.lines[0].id, qty: 1 }],
+          invoiceDate: defaultInvoiceDate,
+          dueDate: defaultDueDate,
+          idempotencyKey: key(),
+        }).catch((e) => e);
+        expect(err).toBeInstanceOf(DeliveryError);
+        expect(err.code).toBe("INVALID_STATE");
+        expect(await prisma.fieldSalesDelivery.count({ where: { orderId: seededId(other.id) } })).toBe(0);
+      } finally {
+        await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(other.id) } });
+        await prisma.fieldSalesOrder.delete({ where: { id: seededId(other.id) } });
+      }
     });
   });
 
@@ -482,6 +475,41 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     expect(order.closedById).toBe(userId);
     expect(order.closedAt).not.toBeNull();
     expect(order.note).toBe("titip di kasir");
+  });
+
+  /** Turns the fixture into a konsi order approved at `approvedAt`, its two reservations konsi ones. */
+  const jadikanKonsi = async (approvedAt: Date) => {
+    await prisma.fieldSalesOrder.update({ where: { id: orderId }, data: { orderType: "KONSI", approvedAt, approvedById: userId } });
+    await prisma.stockReservation.updateMany({
+      where: { fieldSalesLineId: { in: [seededId(lineAId), seededId(lineBId)] } },
+      data: { source: "FIELD_SALES_KONSI" },
+    });
+  };
+
+  it("refuses to close an OLD konsi order whose reservation is still held, and writes nothing", async () => {
+    // Approved long before the per-shipment flow reached production: only "tidak jadi dikirim" closes it.
+    await jadikanKonsi(new Date("2026-08-01T03:00:00Z"));
+    const err = await closeFieldSalesOrderRemainder({ orderId, closedById: userId, reason: "stok habis" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DeliveryError);
+    expect((err as DeliveryError).code).toBe("KONSI_PESANAN_LAMA");
+
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+    expect(order.deliveryStatus).toBe("PENDING");
+    expect(order.closedAt).toBeNull();
+    expect(order.lines.every((l) => l.cancelledQty === 0)).toBe(true);
+    const rsv = await prisma.stockReservation.findMany({ where: { fieldSalesLineId: { in: [seededId(lineAId), seededId(lineBId)] } } });
+    expect(rsv.map((r) => r.state)).toEqual(["RESERVED", "RESERVED"]);
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
+    expect(Number(inv.reservedQty)).toBe(10);
+  });
+
+  it("still closes a konsi order approved under the per-shipment flow", async () => {
+    await jadikanKonsi(new Date());
+    await closeFieldSalesOrderRemainder({ orderId, closedById: userId, reason: "stok habis" });
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(order.deliveryStatus).toBe("CLOSED");
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
+    expect(Number(inv.reservedQty)).toBe(0);
   });
 
   it("creates a receivable for the delivery at full outstanding", async () => {
@@ -639,6 +667,8 @@ d("recordFieldSalesDelivery — two distinct items in one call (test bed only)",
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
     await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
+    // Nota = piutang: hapus piutangnya SEBELUM notanya (emulasi relasi 1:1 Prisma gagal pada deleteMany banyak nota).
+    await prisma.receivable.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
     await prisma.stockReservation.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
@@ -751,6 +781,8 @@ d("recordFieldSalesDelivery — discount allocation across two deliveries (test 
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
+    // Nota = piutang: hapus piutangnya SEBELUM notanya (emulasi relasi 1:1 Prisma gagal pada deleteMany banyak nota).
+    await prisma.receivable.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
@@ -893,6 +925,8 @@ d("recordFieldSalesDelivery — residue on a line that finishes before the order
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
+    // Nota = piutang: hapus piutangnya SEBELUM notanya (emulasi relasi 1:1 Prisma gagal pada deleteMany banyak nota).
+    await prisma.receivable.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
@@ -1111,23 +1145,20 @@ d("recordFieldSalesDelivery — whole-rupiah total (test bed only)", () => {
     expect(Number(history.lineTotal)).toBe(1899.4);
   });
 
-  it("posts a balanced revenue journal at the rounded total", async () => {
+  /**
+   * The delivery's one journal is the nota journal (`lib/finance/lapangan`). Its receivable and
+   * revenue lines are read from what the engine reads (`bacaBahanNota`) through its own rule
+   * (`barisNota`), so the rounded total is pinned without the shared bed's GL cutover or mappings.
+   */
+  it("books the nota journal's receivable and revenue at the rounded total", async () => {
     const { deliveryId } = await deliverAll();
-    const posted = await postFieldDeliveryRevenueJournal(deliveryId, userId);
-    expect(posted).toMatchObject({ ok: true, created: true });
+    const bahan = await bacaBahanNota(prisma, deliveryId);
+    expect(bahan).toMatchObject({ total: 1899, putus: true, storeId });
 
-    const journal = await prisma.journal.findUniqueOrThrow({
-      where: { sourceType_sourceId: { sourceType: "FIELD_DELIVERY_REVENUE", sourceId: deliveryId } },
-      include: { lines: true },
-    });
-    const debit = journal.lines.reduce((sum, l) => sum + Number(l.debit), 0);
-    const credit = journal.lines.reduce((sum, l) => sum + Number(l.credit), 0);
-    expect(debit).toBe(1899);
-    expect(credit).toBe(1899);
-    const arLine = journal.lines.find((l) => l.chartAccountId === arAccountId)!;
-    const revenueLine = journal.lines.find((l) => l.chartAccountId === revenueAccountId)!;
-    expect(Number(arLine.debit)).toBe(1899);
-    expect(Number(revenueLine.credit)).toBe(1899);
+    const baris = barisNota({ total: bahan!.total, storeId, tanggal: bahan!.invoiceDate, pengaturanPpn: PPN_BAWAAN, hpp: [] });
+    expect(baris.find((b) => b.role === "AR_STORE")).toMatchObject({ sen: 189900, storeId });
+    expect(baris.find((b) => b.role === "SALES_REVENUE")).toMatchObject({ sen: -189900, storeId });
+    expect(jumlahSen(baris)).toBe(0);
   });
 
   it("settles to PAID on a whole-rupiah cash payment of the total", async () => {

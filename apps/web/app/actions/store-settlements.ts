@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { submitSettlement } from "@/lib/finance/ar-settlement/submit-writer";
@@ -188,6 +189,7 @@ export type SettlementApprovalActionReason =
   | PaymentErrorCode
   | "FORBIDDEN"
   | "INVALID_REQUEST"
+  | "SELF_VERIFICATION"
   | "UNEXPECTED";
 
 export type ApproveSettlementActionResult =
@@ -199,19 +201,31 @@ export type RejectSettlementActionResult =
   | { ok: false; reason: SettlementApprovalActionReason };
 
 /**
- * Both the approve and reject actions gate on `collections:manage` — it already exists, is
- * already seeded on production, and is ADMIN-only (see `PERMISSIONS.COLLECTIONS_MANAGE`'s other
- * callers in `app/actions/collections.ts`), so this ships working with no hand-run seed. A single
- * `FORBIDDEN` for both a missing session and a missing permission mirrors `guardManage` in that
- * same file — an ADMIN-only backoffice action, unlike the salesman-facing submit guard above,
- * which distinguishes an expired session from a missing permission for a very different audience.
+ * Both the approve and reject actions gate on `payments:verify` — approving a settlement turns a
+ * salesman's claim into AR payments that lower the store's receivables, which is payment
+ * verification (owner, 2026-10-29), the same code that checks a BKM against the bank statement.
+ * It used to ride on `collections:manage`, which assigns collectors. A single `FORBIDDEN` for both
+ * a missing session and a missing permission mirrors `guardVerify` in `app/actions/collections.ts`
+ * — a backoffice action, unlike the salesman-facing submit guard above, which distinguishes an
+ * expired session from a missing permission for a very different audience.
  */
-async function guardManage(): Promise<{ userId: string } | { ok: false; reason: "FORBIDDEN" }> {
+async function guardVerify(): Promise<{ userId: string } | { ok: false; reason: "FORBIDDEN" }> {
   const session = await auth();
-  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.COLLECTIONS_MANAGE)) {
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.PAYMENTS_VERIFY)) {
     return { ok: false, reason: "FORBIDDEN" };
   }
   return { userId: session.user.id };
+}
+
+/**
+ * Nobody approves or rejects a settlement they submitted themselves, admin included — the rule
+ * `PEMERIKSA_SAMA` enforces on a BKM. `salesmanId` never changes after submit, so reading it here,
+ * outside the writer's transaction, is race-free. A missing row falls through to the writer's
+ * `SETTLEMENT_NOT_FOUND`.
+ */
+async function guardNotOwnSettlement(settlementId: string, userId: string): Promise<{ ok: false; reason: "SELF_VERIFICATION" } | null> {
+  const settlement = await prisma.storeSettlement.findUnique({ where: { id: settlementId }, select: { salesmanId: true } });
+  return settlement?.salesmanId === userId ? { ok: false, reason: "SELF_VERIFICATION" } : null;
 }
 
 function toApprovalResult(e: unknown): { ok: false; reason: SettlementApprovalActionReason } {
@@ -256,12 +270,14 @@ function isValidRejectSettlementInput(input: unknown): input is { settlementId: 
  * safe rather than merely tolerated.
  */
 export async function approveSettlementAction(input: unknown): Promise<ApproveSettlementActionResult> {
-  const g = await guardManage();
+  const g = await guardVerify();
   if ("ok" in g) return g;
   if (!isValidApproveSettlementInput(input)) return { ok: false, reason: "INVALID_REQUEST" };
 
   let result: ApproveSettlementResult;
   try {
+    const own = await guardNotOwnSettlement(input.settlementId, g.userId);
+    if (own) return own;
     result = await approveSettlement({
       settlementId: input.settlementId,
       approvedById: g.userId,
@@ -302,11 +318,13 @@ export async function approveSettlementAction(input: unknown): Promise<ApproveSe
  * beside the audit write for why it lives there rather than in this action.
  */
 export async function rejectSettlementAction(input: unknown): Promise<RejectSettlementActionResult> {
-  const g = await guardManage();
+  const g = await guardVerify();
   if ("ok" in g) return g;
   if (!isValidRejectSettlementInput(input)) return { ok: false, reason: "INVALID_REQUEST" };
 
   try {
+    const own = await guardNotOwnSettlement(input.settlementId, g.userId);
+    if (own) return own;
     await rejectSettlement({ settlementId: input.settlementId, rejectedById: g.userId, reason: input.reason });
   } catch (e) {
     return toApprovalResult(e);

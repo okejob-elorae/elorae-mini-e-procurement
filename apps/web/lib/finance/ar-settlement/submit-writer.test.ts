@@ -723,7 +723,9 @@ d("submitSettlement (test bed only)", () => {
  * receivable's owning salesman comes from the report's own `salesmanId`, not an order — this pins
  * that the ownership guard (step 3 of the writer) resolves through the source correctly,
  * including the null-salesman case, which must refuse with `NOT_ASSIGNED` rather than throw a
- * TypeError on a null `.salesmanId`.
+ * TypeError on a null `.salesmanId`. A sell-through receivable is a konsi bill, so even its own
+ * salesman is then refused `KONSI_LEWAT_BKM`: its one payment path is the BKM (owner decision
+ * 2026-10-29). The ownership guard runs first, so a stranger still reads only `NOT_ASSIGNED`.
  */
 d("submitSettlement — sell-through source (test bed only)", () => {
   let token = "";
@@ -734,11 +736,13 @@ d("submitSettlement — sell-through source (test bed only)", () => {
   let ownedReceivableId = "";
   let orphanSellThroughId = "";
   let orphanReceivableId = "";
+  let manualKonsiReceivableId = "";
 
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
     storeId = ""; ownerSalesmanId = ""; otherSalesmanId = "";
     ownedSellThroughId = ""; ownedReceivableId = ""; orphanSellThroughId = ""; orphanReceivableId = "";
+    manualKonsiReceivableId = "";
 
     const store = await prisma.store.create({
       data: { code: `TEST-STLST-${token}`, name: `Toko ${token}`, address: "test", termsType: "KONSI" },
@@ -808,6 +812,7 @@ d("submitSettlement — sell-through source (test bed only)", () => {
     await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: settlementIds.map(seededId) } } });
     await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds.map(seededId) } } });
 
+    if (manualKonsiReceivableId) await prisma.receivable.delete({ where: { id: seededId(manualKonsiReceivableId) } });
     /* Children of the 1:1 relation to KonsiSellThrough go before their parents. */
     await prisma.receivable.deleteMany({
       where: { id: { in: [seededId(ownedReceivableId), seededId(orphanReceivableId)] } },
@@ -819,17 +824,40 @@ d("submitSettlement — sell-through source (test bed only)", () => {
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
   });
 
-  it("accepts a sell-through receivable submitted by the report's own salesman", async () => {
-    const result = await submitSettlement({
+  it("refuses a sell-through receivable even from the report's own salesman — a konsi bill is paid by BKM", async () => {
+    await expect(submitSettlement({
       draftId: `stlst-owner-${token}`,
       storeId,
       salesmanId: ownerSalesmanId,
       invoices: [{ receivableId: ownedReceivableId, amount: 400 }],
       deductions: [],
       actualAmount: 400,
-    });
-    expect(result.settlementId).toBeTruthy();
-    expect(result.docNo).toMatch(/^BKM\//);
+    })).rejects.toMatchObject({ code: "KONSI_LEWAT_BKM" });
+    expect(await prisma.storeSettlement.count({ where: { idempotencyKey: `stlst-owner-${token}` } })).toBe(0);
+  });
+
+  it("refuses a konsi bill marked on the bill itself (isConsignment), even from its own salesman", async () => {
+    /* A paper konsi debt typed in by hand (MANUAL + `isConsignment`); a cycle bill carries the same mark. */
+    manualKonsiReceivableId = (
+      await prisma.receivable.create({
+        data: {
+          invoiceNo: `TEST-STLST-KONSI-${token}`, source: "MANUAL", isConsignment: true, storeId,
+          salesmanId: ownerSalesmanId,
+          invoiceDate: new Date("2026-05-31T00:00:00.000+07:00"),
+          dueDate: new Date("2026-06-30T00:00:00.000+07:00"),
+          amount: 300, outstanding: 300, originalAmount: 300, outstandingAmount: 300,
+        },
+      })
+    ).id;
+    await expect(submitSettlement({
+      draftId: `stlst-konsi-${token}`,
+      storeId,
+      salesmanId: ownerSalesmanId,
+      invoices: [{ receivableId: manualKonsiReceivableId, amount: 300 }],
+      deductions: [],
+      actualAmount: 300,
+    })).rejects.toMatchObject({ code: "KONSI_LEWAT_BKM" });
+    expect(await prisma.storeSettlement.count({ where: { idempotencyKey: `stlst-konsi-${token}` } })).toBe(0);
   });
 
   it("refuses a sell-through receivable submitted by a salesman other than the report's own", async () => {

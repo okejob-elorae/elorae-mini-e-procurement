@@ -8,6 +8,8 @@ const {
   mockVrUpdate,
   mockVrFindUnique,
   mockTxVrFindUnique,
+  mockGrnFindUnique,
+  mockRollFindMany,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockFindFirst: vi.fn(),
@@ -16,6 +18,8 @@ const {
   mockVrUpdate: vi.fn(),
   mockVrFindUnique: vi.fn(),
   mockTxVrFindUnique: vi.fn(),
+  mockGrnFindUnique: vi.fn(),
+  mockRollFindMany: vi.fn(),
 }));
 
 const tx = {
@@ -28,9 +32,13 @@ const tx = {
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("@elorae/db", () => ({
   moveMainStock: vi.fn(),
+  // `runSerializable` reads the isolation level when its module loads.
+  Prisma: { TransactionIsolationLevel: { Serializable: "Serializable" } },
   prisma: {
     $transaction: (fn: (t: typeof tx) => unknown) => fn(tx),
     vendorReturn: { findUnique: mockVrFindUnique },
+    gRN: { findUnique: mockGrnFindUnique },
+    fabricRoll: { findMany: mockRollFindMany },
   },
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -77,6 +85,8 @@ describe("vendor return line valuation on a null-spelled variantless inventory r
     mockVrCreate.mockResolvedValue({ id: "r1", docNumber: "RET-1" });
     mockVrUpdate.mockResolvedValue({ id: "r1", docNumber: "RET-1" });
     mockVrFindUnique.mockResolvedValue({ id: "r1", status: "DRAFT", docNumber: "RET-1" });
+    // The draft guard of an edit is read inside its transaction.
+    mockTxVrFindUnique.mockResolvedValue({ status: "DRAFT" });
     mockFindFirst.mockImplementation(async ({ where }: { where: { OR?: unknown[] } }) => {
       const tolerant = JSON.stringify(where.OR) === JSON.stringify([{ variantSku: null }, { variantSku: "" }]);
       return tolerant ? { id: "iv1", avgCost: "2.5", qtyOnHand: "10" } : null;
@@ -100,6 +110,43 @@ describe("vendor return line valuation on a null-spelled variantless inventory r
     mockFindFirst.mockResolvedValue(null);
     await createVendorReturn(input, "u1");
     expect(valuedLines(mockVrCreate.mock.calls[0][0])[0].costValue).toBe(0);
+  });
+});
+
+describe("vendor return against a GRN without a PO (P51a)", () => {
+  const grn = (keadaan: { requiresNoPoConfirmation: boolean; noPoConfirmedAt: Date | null }) => ({
+    items: JSON.stringify([{ itemId: "i1", qty: 10 }]),
+    poId: null,
+    requiresOwnerApproval: false,
+    ownerApprovedAt: null,
+    ...keadaan,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+    tx.item.findUnique.mockResolvedValue({ nameId: "Button" });
+    mockFindFirst.mockResolvedValue(null);
+    mockVrCreate.mockResolvedValue({ id: "r1", docNumber: "RET-1" });
+    mockVrUpdate.mockResolvedValue({ id: "r1", docNumber: "RET-1" });
+    mockTxVrFindUnique.mockResolvedValue({ status: "DRAFT" });
+    mockRollFindMany.mockResolvedValue([]);
+  });
+
+  it("refuses a return from a GRN still waiting for the admin's confirmation — nothing of it entered stock", async () => {
+    mockGrnFindUnique.mockResolvedValue(grn({ requiresNoPoConfirmation: true, noPoConfirmedAt: null }));
+    await expect(createVendorReturn({ ...input, grnId: "g1" }, "u1")).rejects.toThrow("still waiting for the admin's confirmation");
+    await expect(updateVendorReturn("r1", { ...input, grnId: "g1" }, "u1")).rejects.toThrow("still waiting for the admin's confirmation");
+    expect(mockVrCreate).not.toHaveBeenCalled();
+    expect(mockVrUpdate).not.toHaveBeenCalled();
+  });
+
+  it("caps a confirmed GRN without a PO at what it received, like any other GRN", async () => {
+    mockGrnFindUnique.mockResolvedValue(grn({ requiresNoPoConfirmation: true, noPoConfirmedAt: new Date() }));
+    await createVendorReturn({ ...input, grnId: "g1" }, "u1");
+    expect(mockVrCreate).toHaveBeenCalledTimes(1);
+    const lebih = { ...input, grnId: "g1", lines: [{ ...input.lines[0], qty: 11 }] };
+    await expect(createVendorReturn(lebih, "u1")).rejects.toThrow("exceeds amount received on this GRN");
   });
 });
 
@@ -127,14 +174,15 @@ describe("vendor return actor trust", () => {
     }
   );
 
+  // Refusals come back as codes: a thrown server-action message is masked in production.
   it.each([
     ["processReturn", () => processReturn("r1", "u1")],
     ["completeReturn", () => completeReturn("r1", "u1", completeInput)],
   ] as Array<[string, () => Promise<unknown>]>)(
-    "%s rejects an unauthenticated caller",
+    "%s refuses an unauthenticated caller",
     async (_name, call) => {
       mockAuth.mockResolvedValue(null);
-      await expect(call()).rejects.toThrow("Unauthorized");
+      expect(await call()).toEqual({ ok: false, code: "TANPA_AKSES" });
       expect(mockVrFindUnique).not.toHaveBeenCalled();
       expect(mockTxVrFindUnique).not.toHaveBeenCalled();
     }
@@ -144,27 +192,26 @@ describe("vendor return actor trust", () => {
     ["processReturn", () => processReturn("r1", "u1")],
     ["completeReturn", () => completeReturn("r1", "u1", completeInput)],
   ] as Array<[string, () => Promise<unknown>]>)(
-    "%s rejects a caller without vendor_returns:manage",
+    "%s refuses a caller without vendor_returns:manage",
     async (_name, call) => {
       mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["vendor_returns:create"] } });
-      await expect(call()).rejects.toThrow("Forbidden: Insufficient permissions");
+      expect(await call()).toEqual({ ok: false, code: "TANPA_AKSES" });
       expect(mockVrFindUnique).not.toHaveBeenCalled();
       expect(mockTxVrFindUnique).not.toHaveBeenCalled();
     }
   );
 
   it.each([
-    ["processReturn", () => processReturn("r1", "u1"), "Return tidak valid atau sudah diproses"],
+    ["processReturn", () => processReturn("r1", "u1")],
     [
       "completeReturn",
       () => completeReturn("r1", "u1", { trackingNumber: "TRK-1", receiptFileUrl: "https://example.com/r.pdf" }),
-      "Return must be in PROCESSED status to complete",
     ],
-  ] as Array<[string, () => Promise<unknown>, string]>)(
+  ] as Array<[string, () => Promise<unknown>]>)(
     "%s reads the return inside the transaction once the caller passes (positive control)",
-    async (_name, call, message) => {
+    async (_name, call) => {
       mockTxVrFindUnique.mockResolvedValue(null);
-      await expect(call()).rejects.toThrow(message);
+      expect(await call()).toEqual({ ok: false, code: "TIDAK_DITEMUKAN" });
       expect(mockTxVrFindUnique).toHaveBeenCalledWith({ where: { id: "r1" } });
     }
   );

@@ -29,9 +29,10 @@ export type SellThroughFixtureState = {
 
 /**
  * Shared fixture for `writer.test.ts` and `queries.test.ts`. The ledger is built only through the
- * real writers — konsi order approve → shipment → completion for stock in, recordSpgSale for POS,
- * and the store stocktake writer for the closing count — so every StockLedgerEntry the report
- * derives from is authentic.
+ * real writers — konsi order approve → shipment (stock leaves main) → completion, which is the
+ * store's receipt at this SPG-less store, for stock in; recordSpgSale for POS; and the store
+ * stocktake writer for the closing count — so every StockLedgerEntry the report derives from is
+ * authentic.
  *
  * `state` is one mutable object shared by every helper below and by the caller's test bodies —
  * `beforeEach` resets its fields in place (never reassigns `state` itself), so a spec can read
@@ -177,6 +178,10 @@ export function createSellThroughFixtures() {
     await prisma.deliveryShipment.deleteMany({ where: { orderId: { in: seededOrderIds } } });
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(state.storeId) } });
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(state.otherStoreId) } });
+    /* The receipt each completion writes at this SPG-less store, and the store stock book rows (SPG sales, receipts): both Restrict the store. */
+    await prisma.storeReceiptLine.deleteMany({ where: { receipt: { storeId: seededId(state.storeId) } } });
+    await prisma.storeReceipt.deleteMany({ where: { storeId: seededId(state.storeId) } });
+    await prisma.storeStockMovement.deleteMany({ where: { storeId: seededId(state.storeId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(state.itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(state.itemId) } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(state.itemId) } });
@@ -202,7 +207,12 @@ export function createSellThroughFixtures() {
   const setMethod = (method: "SPG_POS" | "SHELF_COUNT" | null) =>
     prisma.store.update({ where: { id: state.storeId }, data: { sellThroughMethod: method } });
 
-  /* One konsi order moved into the store: approve reserves, completion writes the KonsiTransfer store row (+qty). */
+  /**
+   * One konsi order moved into the store: approve reserves, creating the shipment moves the goods
+   * out of main (a short main warehouse refuses there, INSUFFICIENT_STOCK), and the courier's
+   * confirmation is the store's receipt because the fixture store has no SPG (RECEIPT_AT_POD) — it
+   * writes the StoreReceipt and the KonsiTransfer store row (+qty) in one transaction.
+   */
   const transferIn = async (qty: number) => {
     const { orderId } = await createFieldSalesOrder({
       storeId: state.storeId,
@@ -219,8 +229,16 @@ export function createSellThroughFixtures() {
       method: "EXPEDITION",
       lines: [{ orderLineId: orderLine.id, qty }],
       packedById: state.userId,
+      idempotencyKey: `kstw-${state.run}-${state.orderIds.length}`,
     });
-    await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: `RESI-${state.run}-${state.orderIds.length}` });
+    await updateShipmentTracking({
+      shipmentId,
+      carrierName: "JNE",
+      resiNumber: `RESI-${state.run}-${state.orderIds.length}`,
+      weightKg: 1.5,
+      handoverPhotoUrl: `https://r2.example/delivery-handover/${shipmentId}/1.jpg`,
+      handoverPhotoR2Key: `delivery-handover/${shipmentId}/1.jpg`,
+    });
     await shipDeliveryShipment({ shipmentId, shippedById: state.userId });
     const shipment = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId }, include: { lines: true } });
     await completeDeliveryShipment({
@@ -332,6 +350,11 @@ export function createSellThroughFixtures() {
     await prisma.stockLedgerEntry.update({ where: { id: saleRow.id }, data: { createdAt: new Date(periodEnd.getTime() - 1000) } });
   };
 
+  /**
+   * Legacy: the writer's retained INVOICE branch (the approve action refuses INVOICE since konsi
+   * bills come from the consignment cycle). Its receivable carries `isConsignment` — the writer
+   * stamps it, so every invoiced fixture report reads as a konsi bill.
+   */
   async function approve(id: string, overrides: Partial<{ invoiceDate: Date; salesmanId: string | null }> = {}) {
     return approveSellThrough({
       id,
@@ -344,6 +367,11 @@ export function createSellThroughFixtures() {
 
   async function approveBaseline(id: string, reason = "Billed by hand before go-live.") {
     return approveSellThrough({ id, approvedById: state.userId, mode: "BASELINE", reason });
+  }
+
+  /* What the screen does now: freeze and price the report, bill nothing. */
+  async function approveRecord(id: string) {
+    return approveSellThrough({ id, approvedById: state.userId, mode: "RECORD" });
   }
 
   return {
@@ -364,6 +392,7 @@ export function createSellThroughFixtures() {
     lateSale,
     approve,
     approveBaseline,
+    approveRecord,
   };
 }
 

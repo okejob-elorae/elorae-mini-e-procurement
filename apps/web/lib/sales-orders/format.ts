@@ -1,13 +1,8 @@
-const IDR_FORMATTER = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-});
+import { formatRupiah } from "@/lib/format/rupiah";
 
+/** Sama dengan `formatRupiah` — dipertahankan untuk pemakai lama. */
 export function formatIDR(value: string | number | null | undefined): string {
-  if (value === null || value === undefined || value === "") return IDR_FORMATTER.format(0);
-  const n = typeof value === "string" ? Number(value) : value;
-  return IDR_FORMATTER.format(Number.isFinite(n) ? n : 0);
+  return formatRupiah(value === "" ? 0 : value);
 }
 
 /** Format in Asia/Jakarta so list dates match WIB-anchored date filters. */

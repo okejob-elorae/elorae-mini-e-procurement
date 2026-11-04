@@ -1,6 +1,7 @@
 import type { Prisma } from '@elorae/db';
 import type { GetAuditLogsFilters } from '@/types/audit';
 import { prisma } from '@elorae/db';
+import { cariTeks } from "@/lib/db/cari-teks";
 
 export interface AuditLogData {
   userId: string;
@@ -114,7 +115,7 @@ export async function getAuditLogs(
     if (dateTo) (where.createdAt as Record<string, Date>).lte = dateTo;
   }
   if (entitySearch?.trim()) {
-    where.entityId = { contains: entitySearch.trim() };
+    where.entityId = cariTeks(entitySearch.trim());
   }
 
   const [logs, total] = await Promise.all([

@@ -102,6 +102,16 @@ export async function pushItemStockToJubelio(
   return { ok: true, outboxId: row.id };
 }
 
+/** Jumlah barang yang akan masuk antrean bila "Sinkronkan semua stok" ditekan (untuk dialog konfirmasi). */
+export async function countBulkStockPushItems(): Promise<{ ok: boolean; count: number }> {
+  if (!(await isAdmin())) return { ok: false, count: 0 };
+  const mappings = await prisma.jubelioProductMapping.findMany({
+    select: { itemId: true },
+    distinct: ["itemId"],
+  });
+  return { ok: true, count: mappings.length };
+}
+
 export async function bulkPushAllStockToJubelio(): Promise<{
   ok: boolean;
   count: number;

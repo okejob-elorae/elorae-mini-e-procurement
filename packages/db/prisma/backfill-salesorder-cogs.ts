@@ -89,7 +89,7 @@ export async function resolveBackfillCogs(
 // never when the module is imported (e.g. by the spec), so importing has no side effects.
 async function runCli() {
   await import("dotenv/config");
-  const { PrismaMariaDb } = await import("@prisma/adapter-mariadb");
+  const { createDbAdapter } = await import("../src/adapter");
   const { getDatabaseUrl } = await import("../src/db-connection");
   const { assertNotProdApply } = await import("../src/backfill-reservations-classify");
 
@@ -105,7 +105,7 @@ async function runCli() {
     console.warn("⚠ --allow-prod set: applying against the prod tunnel (:3307).");
   }
 
-  const prisma = new PrismaClient({ adapter: new PrismaMariaDb(effectiveDatabaseUrl) });
+  const prisma = new PrismaClient({ adapter: createDbAdapter(effectiveDatabaseUrl) });
   console.log(`SalesOrderItem cogs backfill — mode: ${apply ? "APPLY (writes enabled)" : "DRY-RUN (no writes)"}`);
   try {
     const res = await resolveBackfillCogs(prisma, { apply });

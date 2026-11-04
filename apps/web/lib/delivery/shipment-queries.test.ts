@@ -1,63 +1,38 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { listDeliveryShipments, getDeliveryShipment, getDeliveryShipmentDetail, listMyDeliveries, listShipmentsForOrder } from "./shipment-queries";
-import { createDeliveryShipment, updateShipmentTracking, shipDeliveryShipment } from "./shipment-writer";
+import { shipDeliveryShipment } from "./shipment-writer";
+import { berangkatkanUji, bersihkanPesananUji, buatPesananUji, kemasUji, type PesananUji } from "./uji-pengiriman";
 
+vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
+
+/**
+ * The order comes from `uji-pengiriman.ts` (APPROVED, reserved, in stock), because a putus shipment
+ * now issues its nota — and takes the stock out — the moment it is created. Three lines: the
+ * fixture's shipment carries line 1 (4 pcs); the tests that need more shipments use lines 2 (3) and
+ * 3 (2). `bersihkanPesananUji` removes the shipments, notas, receivables, faktur rows and stock by
+ * explicit id.
+ */
 describe("shipment-queries", () => {
+  let p: PesananUji | null = null;
   let storeId = "";
   let userId = "";
   let orderId = "";
-  let lineId = "";
-  let itemId = "";
   let shipmentId = "";
-  let token = "";
 
   beforeEach(async () => {
-    storeId = userId = orderId = lineId = itemId = shipmentId = "";
-    token = Math.random().toString(36).slice(2, 10);
-    const store = await prisma.store.create({
-      data: { code: `TEST-DSQ-${token}`, name: "Query Store", address: "x", termsType: "PUTUS" },
-    });
-    storeId = store.id;
-    const salesman = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
-    userId = salesman!.id;
-    const uom = await prisma.uOM.findFirst({ where: { code: "PCS" } });
-    const item = await prisma.item.create({
-      data: { sku: `QSKU-${Date.now()}`, nameId: "Query Item", nameEn: "Query Item", type: "FINISHED_GOOD", uomId: uom!.id, sellingPrice: 10000 },
-    });
-    itemId = item.id;
-    const order = await prisma.fieldSalesOrder.create({
-      data: {
-        orderNo: `QFSO-${Date.now()}`,
-        storeId,
-        salesmanId: userId,
-        status: "APPROVED",
-        subtotal: 40000,
-        total: 40000,
-        lines: { create: [{ itemId, productName: "Query Item", qty: 4, unitPrice: 10000, lineTotal: 40000 }] },
-      },
-      include: { lines: true },
-    });
-    orderId = order.id;
-    lineId = order.lines[0].id;
-    const created = await createDeliveryShipment({
-      orderId,
-      method: "EXPEDITION",
-      lines: [{ orderLineId: lineId, qty: 4 }],
-      packedById: userId,
-    });
+    storeId = userId = orderId = shipmentId = "";
+    p = await buatPesananUji({ termsType: "PUTUS", qty: [4, 3, 2] });
+    storeId = p.storeId;
+    userId = p.salesmanId;
+    orderId = p.orderId;
+    const created = await kemasUji(p, { lines: [{ orderLineId: p.lineIds[0], qty: 4 }] });
     shipmentId = created.shipmentId;
   });
 
   afterEach(async () => {
-    /* Scoped by order, not by the fixture's own shipment id, so a shipment a test creates on top
-       is still cleaned up when that test's assertions fail before it could tidy up after itself. */
-    await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: seededId(orderId) } } });
-    await prisma.deliveryShipment.deleteMany({ where: { orderId: seededId(orderId) } });
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
-    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
-    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await bersihkanPesananUji(p);
+    p = null;
   });
 
   it("lists shipments filtered by status", async () => {
@@ -82,16 +57,10 @@ describe("shipment-queries", () => {
   });
 
   it("does not list an EXPEDITION shipment for its carriedById, even when IN_TRANSIT", async () => {
-    await updateShipmentTracking({
-      shipmentId,
-      resiNumber: "RESI-TEST",
-      invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
-      dueDate: new Date("2026-09-20T00:00:00.000Z"),
-    });
-    await prisma.deliveryShipment.update({ where: { id: shipmentId }, data: { carriedById: userId } });
-    /* shipmentId from this describe's beforeEach is still PACKED (never shipped in this
-       describe) — ship it here so it qualifies for the IN_TRANSIT filter. */
-    await shipDeliveryShipment({ shipmentId, shippedById: userId });
+    await prisma.deliveryShipment.update({ where: { id: seededId(shipmentId) }, data: { carriedById: userId } });
+    /* shipmentId from this describe's beforeEach is still PACKED — give it its resi, weight and
+       handover photo (P35, P43) and ship it so it qualifies for the IN_TRANSIT filter. */
+    await berangkatkanUji(p!, shipmentId);
 
     const mine = await listMyDeliveries(userId);
     expect(mine.some((m) => m.id === shipmentId)).toBe(false);
@@ -103,28 +72,16 @@ describe("shipment-queries", () => {
     expect(otherUser).not.toBeNull();
     const otherUserId = otherUser!.id;
 
-    const carryFor = async (carrierId: string, qty: number) => {
-      const line = await prisma.fieldSalesOrderLine.create({
-        data: { orderId, itemId, productName: "Query Item Carry", qty, unitPrice: 10000, lineTotal: qty * 10000 },
-      });
-      const created = await createDeliveryShipment({
-        orderId,
-        method: "SALESMAN_CARRY",
-        lines: [{ orderLineId: line.id, qty }],
-        packedById: userId,
-      });
+    const carryFor = async (carrierId: string, orderLineId: string, qty: number) => {
+      const created = await kemasUji(p!, { method: "SALESMAN_CARRY", lines: [{ orderLineId, qty }] });
       /* Direct write: the seeded users may not be eligible carriers on every database (CI's seed.ts grants no `deliveries:pod`), so the spec assigns the column directly. */
-      await prisma.deliveryShipment.update({ where: { id: created.shipmentId }, data: { carriedById: carrierId } });
-      await updateShipmentTracking({
-        shipmentId: created.shipmentId,
-        invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
-        dueDate: new Date("2026-09-20T00:00:00.000Z"),
-      });
+      await prisma.deliveryShipment.update({ where: { id: seededId(created.shipmentId) }, data: { carriedById: carrierId } });
+      /* A salesman-carry shipment needs only its carrier to leave (no resi, weight or handover photo). */
       await shipDeliveryShipment({ shipmentId: created.shipmentId, shippedById: userId });
       return created.shipmentId;
     };
-    const mineId = await carryFor(userId, 3);
-    const theirsId = await carryFor(otherUserId, 2);
+    const mineId = await carryFor(userId, p!.lineIds[1], 3);
+    const theirsId = await carryFor(otherUserId, p!.lineIds[2], 2);
 
     const mine = await listMyDeliveries(userId);
     expect(mine.some((m) => m.id === mineId)).toBe(true);
@@ -141,24 +98,16 @@ describe("shipment-queries", () => {
   });
 
   it("returns the store's payment tempo on getDeliveryShipment", async () => {
-    await prisma.store.update({ where: { id: storeId }, data: { paymentTempo: 30 } });
+    await prisma.store.update({ where: { id: seededId(storeId) }, data: { paymentTempo: 45 } });
     const detail = await getDeliveryShipment(shipmentId);
-    expect(detail?.storePaymentTempo).toBe(30);
+    expect(detail?.storePaymentTempo).toBe(45);
   });
 
   it("lists shipments for an order, newest first, with lines and productName", async () => {
-    const extraLine = await prisma.fieldSalesOrderLine.create({
-      data: { orderId, itemId, productName: "Query Item 2", qty: 3, unitPrice: 10000, lineTotal: 30000 },
-    });
-    const second = await createDeliveryShipment({
-      orderId,
-      method: "EXPEDITION",
-      lines: [{ orderLineId: extraLine.id, qty: 3 }],
-      packedById: userId,
-    });
+    const second = await kemasUji(p!, { lines: [{ orderLineId: p!.lineIds[1], qty: 3 }] });
     /* Backdate the first shipment so ordering is deterministic rather than racing on `now()`. */
     await prisma.deliveryShipment.update({
-      where: { id: shipmentId },
+      where: { id: seededId(shipmentId) },
       data: { packedAt: new Date(Date.now() - 60_000) },
     });
 
@@ -167,9 +116,9 @@ describe("shipment-queries", () => {
     expect(shipments[0].id).toBe(second.shipmentId);
     expect(shipments[1].id).toBe(shipmentId);
     expect(shipments[0].lines).toHaveLength(1);
-    expect(shipments[0].lines[0].productName).toBe("Query Item 2");
+    expect(shipments[0].lines[0].productName).toBe("Barang uji 2");
     expect(shipments[1].lines).toHaveLength(1);
-    expect(shipments[1].lines[0].productName).toBe("Query Item");
+    expect(shipments[1].lines[0].productName).toBe("Barang uji 1");
   });
 
   describe("getDeliveryShipmentDetail", () => {
@@ -179,7 +128,7 @@ describe("shipment-queries", () => {
 
     it("derives photo URLs from the R2 keys, never from the stored URL columns", async () => {
       await prisma.deliveryShipment.update({
-        where: { id: shipmentId },
+        where: { id: seededId(shipmentId) },
         data: {
           status: "DELIVERED",
           proofPhotoR2Key: `delivery-proofs/${shipmentId}/1700000000.jpg`,
@@ -205,7 +154,7 @@ describe("shipment-queries", () => {
 
     it("binds a SALESMAN_CARRY goods photo to the pod folder", async () => {
       await prisma.deliveryShipment.update({
-        where: { id: shipmentId },
+        where: { id: seededId(shipmentId) },
         data: {
           method: "SALESMAN_CARRY",
           proofPhotoR2Key: `delivery-proofs/${shipmentId}/1700000000.jpg`,
@@ -215,7 +164,7 @@ describe("shipment-queries", () => {
       expect(detail?.goodsPhoto).toEqual({ url: null, unavailable: true });
 
       await prisma.deliveryShipment.update({
-        where: { id: shipmentId },
+        where: { id: seededId(shipmentId) },
         data: { proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg` },
       });
       const bound = await getDeliveryShipmentDetail(shipmentId);
@@ -225,7 +174,7 @@ describe("shipment-queries", () => {
 
     it("yields no URL and flags unavailable for a malformed or foreign key", async () => {
       await prisma.deliveryShipment.update({
-        where: { id: shipmentId },
+        where: { id: seededId(shipmentId) },
         data: {
           proofPhotoR2Key: `delivery-proofs/${shipmentId}/../other/x.jpg`,
           signatureR2Key: "delivery-pod-proofs/another-shipment/nota.jpg",
@@ -241,7 +190,7 @@ describe("shipment-queries", () => {
       const bare = await getDeliveryShipmentDetail(shipmentId);
       expect(bare?.goodsPhoto).toEqual({ url: null, unavailable: false });
       await prisma.deliveryShipment.update({
-        where: { id: shipmentId },
+        where: { id: seededId(shipmentId) },
         data: { proofPhotoUrl: "https://legacy.example/goods.jpg" },
       });
       const legacy = await getDeliveryShipmentDetail(shipmentId);
@@ -251,7 +200,7 @@ describe("shipment-queries", () => {
     it("resolves actor names and renders a missing user as null", async () => {
       const salesman = await prisma.user.findUnique({ where: { id: userId } });
       await prisma.deliveryShipment.update({
-        where: { id: shipmentId },
+        where: { id: seededId(shipmentId) },
         data: { shippedById: "dangling-user-id", carriedById: userId },
       });
       const detail = await getDeliveryShipmentDetail(shipmentId);
@@ -261,14 +210,17 @@ describe("shipment-queries", () => {
       expect(detail?.deliveredByName).toBeNull();
     });
 
-    it("returns store, order and line facts", async () => {
+    it("returns store, order and line facts, with the nota issued at creation", async () => {
       const detail = await getDeliveryShipmentDetail(shipmentId);
-      expect(detail?.storeName).toBe("Query Store");
+      expect(detail?.storeName).toBe(`Toko uji ${p!.token}`);
       expect(detail?.orderId).toBe(orderId);
-      expect(detail?.accountingDocNo).toBeNull();
+      /* A putus shipment carries its nota from creation (owner putus answer 2026-11-02). */
+      const s = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: seededId(shipmentId) }, select: { deliveryId: true } });
+      const nota = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: seededId(s.deliveryId ?? "") }, select: { docNo: true } });
+      expect(detail?.accountingDocNo).toBe(nota.docNo);
       expect(detail?.konsiTransferDocNo).toBeNull();
       expect(detail?.lines).toHaveLength(1);
-      expect(detail?.lines[0]).toMatchObject({ productName: "Query Item", plannedQty: 4, deliveredQty: null });
+      expect(detail?.lines[0]).toMatchObject({ productName: "Barang uji 1", plannedQty: 4, deliveredQty: null });
     });
   });
 });

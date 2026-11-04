@@ -3,6 +3,7 @@ import {
   deriveStockStatus,
   filterAndSortStockItems,
   filterByStockStatus,
+  statusStokDariUrl,
   sortStockItems,
   summarizeStockHealth,
 } from "./stock-status";
@@ -131,5 +132,21 @@ describe("filterAndSortStockItems", () => {
         (i) => i.sku,
       ),
     ).toEqual(["Z", "A"]);
+  });
+});
+
+describe("statusStokDariUrl", () => {
+  it("reads ?status= in any case, and the old ?oversold=1 as NEGATIF", () => {
+    expect(statusStokDariUrl("MENIPIS")).toBe("MENIPIS");
+    expect(statusStokDariUrl("habis")).toBe("HABIS");
+    expect(statusStokDariUrl(null, "1")).toBe("NEGATIF");
+    expect(statusStokDariUrl("HABIS", "1")).toBe("HABIS");
+  });
+
+  it("anything else means no filter", () => {
+    expect(statusStokDariUrl(undefined)).toBeNull();
+    expect(statusStokDariUrl("")).toBeNull();
+    expect(statusStokDariUrl("LOW")).toBeNull();
+    expect(statusStokDariUrl(null, "0")).toBeNull();
   });
 });

@@ -261,7 +261,7 @@ d("production stock movement (test bed only)", () => {
     it("refuses a work order that is already completed and writes nothing", async () => {
       await prisma.workOrder.update({ where: { id: woId }, data: { status: "COMPLETED" } });
 
-      await expect(issue(2)).rejects.toThrow(/tidak valid/);
+      await expect(issue(2)).rejects.toMatchObject({ code: "BAHAN_WO_SELESAI" });
 
       expect(await rawQty(rawNullRowId)).toBe(4);
       expect(await rawQty(rawEmptyRowId)).toBe(10);

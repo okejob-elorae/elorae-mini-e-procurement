@@ -1,4 +1,11 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from "vitest";
+
+/*
+ * Settlement uji bertanggal Juni/Juli 2026 — sebelum tanggal mulai buku besar
+ * di basis data uji. Gerbang tanggal mulai diuji di `periode/gerbang.test.ts`;
+ * di sini dimatikan supaya yang diuji tetap jurnalnya.
+ */
+vi.mock("@/lib/finance/periode/gerbang", () => ({ seluruhnyaSebelumTanggalMulai: async () => false }));
 import { prisma, seededId } from "@elorae/db";
 import { postSettlementJournal } from "./journal";
 import { GL_CUTOVER_SETTING_KEY } from "../sales/sweep";
@@ -32,6 +39,13 @@ d("postSettlementJournal (test bed only)", () => {
   let cutoverTouched = false;
   let orderId = "";
   let orderJournalId = "";
+
+  /*
+   * A fresh seller per test: `postSettlementJournal` first refuses a settlement that twins an
+   * older or journaled one (same marketplace, seller, period and payout — `SETTLEMENT_KEMBAR`),
+   * so a fixed seller would collide with a row another spec — or a failed earlier run — left behind.
+   */
+  const testSeller = (name: string) => `${name}-${token}-${orderSeq}`;
 
   /*
    * The revenue-journal gate needs every line matched to a sales order whose
@@ -105,7 +119,7 @@ d("postSettlementJournal (test bed only)", () => {
     const settlement = await prisma.settlement.create({
       data: {
         marketplace: "SHOPEE",
-        seller: "elorae.official",
+        seller: testSeller("elorae.official"),
         periodFrom: new Date("2026-06-01T00:00:00+07:00"),
         periodTo: new Date("2026-06-30T00:00:00+07:00"),
         fileName: "t-fee-split.xlsx",
@@ -270,7 +284,7 @@ d("postSettlementJournal (test bed only)", () => {
     const settlement = await prisma.settlement.create({
       data: {
         marketplace: "SHOPEE",
-        seller: "elorae.official",
+        seller: testSeller("elorae.official"),
         periodFrom: new Date("2026-06-01T00:00:00+07:00"),
         periodTo: new Date("2026-06-30T00:00:00+07:00"),
         fileName: "t.xlsx",
@@ -424,7 +438,7 @@ d("postSettlementJournal (test bed only)", () => {
     const tiktokSettlement = await prisma.settlement.create({
       data: {
         marketplace: "TIKTOK",
-        seller: "TikTok Shop",
+        seller: testSeller("TikTok Shop"),
         periodFrom: new Date("2026-06-01T00:00:00+07:00"),
         periodTo: new Date("2026-06-30T00:00:00+07:00"),
         fileName: "t-tiktok.xlsx",

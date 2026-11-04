@@ -2,6 +2,17 @@ import { prisma, Prisma } from "@elorae/db";
 
 export type StoreTransferStatusValue = "PENDING" | "APPROVED" | "CANCELLED";
 
+/**
+ * The same table carries the mutasi antar toko statuses (DIAJUKAN … DIKEMBALIKAN). This old screen
+ * reads them in its own three: not yet moved = PENDING, received = APPROVED, ended otherwise = CANCELLED.
+ */
+function statusTransfer(s: string): StoreTransferStatusValue {
+  if (s === "PENDING" || s === "APPROVED" || s === "CANCELLED") return s;
+  if (s === "DITERIMA") return "APPROVED";
+  if (s === "DITOLAK" || s === "DIBATALKAN" || s === "DIKEMBALIKAN") return "CANCELLED";
+  return "PENDING";
+}
+
 export type StoreTransferListRow = {
   id: string;
   docNo: string;
@@ -62,7 +73,7 @@ export async function listStoreTransfers(params: {
       docNo: r.docNo,
       fromStoreName: r.fromStore.name,
       toStoreName: r.toStore.name,
-      status: r.status,
+      status: statusTransfer(r.status),
       lineCount: r._count.lines,
       createdAt: r.createdAt,
     })),
@@ -152,14 +163,14 @@ export async function getStoreTransferById(id: string): Promise<StoreTransferDet
     toStoreId: r.toStoreId,
     toStoreName: r.toStore.name,
     movedAt: r.movedAt,
-    status: r.status,
+    status: statusTransfer(r.status),
     note: r.note,
     createdByLabel: labelFor(r.createdById) ?? "—",
     createdAt: r.createdAt,
     approvedByLabel: labelFor(r.approvedById),
     approvedAt: r.approvedAt,
     lines: r.lines.map((l) => {
-      const qty = l.qty.toNumber();
+      const qty = Number(l.qty);
       const unitCost = l.unitCost.toNumber();
       return {
         id: l.id,

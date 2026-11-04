@@ -7,6 +7,16 @@ import { revalidatePath } from 'next/cache';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 
+/**
+ * Aksi baca UOM dipakai banyak formulir (barang, PO, penyesuaian stok) dan
+ * isinya hanya kode satuan, jadi cukup sesi — tetapi tetap harus ada sesi.
+ */
+async function wajibSesi() {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error('Unauthorized');
+  return session;
+}
+
 const uomSchema = z.object({
   code: z.string().min(1).max(10),
   nameId: z.string().min(1),
@@ -48,11 +58,19 @@ export async function updateUOM(data: z.infer<typeof updateUOMSchema>) {
 }
 
 export async function getUOMs() {
+  await wajibSesi();
   return prisma.uOM.findMany({
     where: { isActive: true },
     orderBy: { code: 'asc' }
   });
 }
+
+const conversionSchema = z.object({
+  fromUomId: z.string().min(1),
+  toUomId: z.string().min(1),
+  factor: z.number().positive(),
+  isDefault: z.boolean().optional(),
+});
 
 export async function createUOMConversion(data: {
   fromUomId: string;
@@ -60,12 +78,16 @@ export async function createUOMConversion(data: {
   factor: number;
   isDefault?: boolean;
 }) {
+  const session = await wajibSesi();
+  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_UOM_MANAGE);
+
+  const valid = conversionSchema.parse(data);
   await prisma.uOMConversion.create({
     data: {
-      fromUomId: data.fromUomId,
-      toUomId: data.toUomId,
-      factor: data.factor,
-      isDefault: data.isDefault || false
+      fromUomId: valid.fromUomId,
+      toUomId: valid.toUomId,
+      factor: valid.factor,
+      isDefault: valid.isDefault ?? false
     }
   });
   revalidatePath('/backoffice/settings/uom');
@@ -82,6 +104,7 @@ export async function deleteUOMConversion(id: string) {
 }
 
 export async function getUOMConversions() {
+  await wajibSesi();
   const rows = await prisma.uOMConversion.findMany({
     include: {
       fromUom: {
@@ -116,6 +139,7 @@ export async function getUOMConversions() {
 
 /** Get item's base UOM and all conversions that involve it (for stock adjustment UOM selector). */
 export async function getItemUomAndConversions(itemId: string) {
+  await wajibSesi();
   const item = await prisma.item.findUnique({
     where: { id: itemId },
     select: { uomId: true, uom: { select: { id: true, code: true, nameId: true, nameEn: true } } },

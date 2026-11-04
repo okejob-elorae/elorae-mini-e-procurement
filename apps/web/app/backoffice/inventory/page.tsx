@@ -9,6 +9,9 @@ import {
 } from '@/lib/inventory/queries';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { InventoryPageClient } from './InventoryPageClient';
+import { statusStokDariUrl } from '@/lib/inventory/stock-status';
+import { SARINGAN_SUMBER_BAWAAN } from '@/lib/inventory/jenis-gerakan-stok';
+import { konfirmasiGrnDariUrl } from './tab-inventori';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +25,9 @@ function serializeGrnRows(
     ownerApprovedAt?: Date | null;
     ownerDeclinedAt?: Date | null;
     supplier: { name: string };
+    poId?: string | null;
     po?: { docNumber: string } | null;
+    menungguKonfirmasi?: boolean;
   }>
 ) {
   return rows.map((grn) => ({
@@ -34,7 +39,9 @@ function serializeGrnRows(
     ownerApprovedAt: grn.ownerApprovedAt?.toISOString() ?? null,
     ownerDeclinedAt: grn.ownerDeclinedAt?.toISOString() ?? null,
     supplier: grn.supplier,
+    poId: grn.poId ?? null,
     po: grn.po ?? undefined,
+    menungguKonfirmasi: grn.menungguKonfirmasi === true,
   }));
 }
 
@@ -45,6 +52,7 @@ function serializeAdjustmentRows(
     type: 'POSITIVE' | 'NEGATIVE';
     qtyChange: number | null;
     reason: string;
+    source: string;
     createdAt: Date;
     evidenceUrl?: string | null;
     item: { sku: string; nameId: string };
@@ -58,6 +66,7 @@ function serializeAdjustmentRows(
     type: adj.type,
     qtyChange: String(adj.qtyChange ?? 0),
     reason: adj.reason,
+    source: adj.source,
     createdAt: adj.createdAt.toISOString(),
     evidenceUrl: adj.evidenceUrl,
     item: adj.item,
@@ -69,7 +78,7 @@ function serializeAdjustmentRows(
 export default async function InventoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; oversold?: string }>;
+  searchParams: Promise<{ tab?: string; oversold?: string; status?: string; konfirmasi?: string }>;
 }) {
   const session = await auth();
   if (!session) redirect('/login');
@@ -77,18 +86,23 @@ export default async function InventoryPage({
   if (!hasPermission(perms, PERMISSIONS.INVENTORY_VIEW)) redirect("/backoffice");
 
   const sp = await searchParams;
-  const statusFilter = sp.oversold === "1" ? ("NEGATIF" as const) : undefined;
+  // `?status=MENIPIS|HABIS|…` (tautan Beranda) atau `?oversold=1` (NEGATIF).
+  const statusFilter = statusStokDariUrl(sp.status, sp.oversold) ?? undefined;
   const pageOpts = {
     page: 1,
     pageSize: DEFAULT_PAGE_SIZE,
     ...(statusFilter ? { status: statusFilter } : {}),
     sort: "stock_desc" as const,
   };
+  // `?konfirmasi=menunggu` (tautan Beranda `grnNoPoPending` / lonceng): hanya GRN tanpa PO yang
+  // menunggu konfirmasi admin — syarat yang sama dengan hitungan Beranda, jadi angka = baris.
+  const konfirmasiTanpaPo = konfirmasiGrnDariUrl(sp.konfirmasi);
 
   const [invData, grnData, adjData, adjustmentItemList] = await Promise.all([
     getInventorySnapshot(pageOpts),
-    getGRNs(undefined, { page: 1, pageSize: DEFAULT_PAGE_SIZE }),
-    getStockAdjustments(undefined, { page: 1, pageSize: DEFAULT_PAGE_SIZE }),
+    getGRNs(konfirmasiTanpaPo ? { konfirmasiTanpaPo } : undefined, { page: 1, pageSize: DEFAULT_PAGE_SIZE }),
+    // Saringan sumber bawaan layar; tanpa `sumber` aksi ini mengembalikan semua sumber.
+    getStockAdjustments(undefined, { page: 1, pageSize: DEFAULT_PAGE_SIZE, sumber: SARINGAN_SUMBER_BAWAAN }),
     getCurrentStockSummary(),
   ]);
 

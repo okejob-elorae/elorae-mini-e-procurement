@@ -7,6 +7,7 @@ import { prisma } from '@elorae/db';
 import { decryptBankAccount } from '@/lib/encryption';
 import { logBankAccountView } from '@/lib/audit';
 import { verifyPin } from '@/lib/security/pin';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 
 const bodySchema = z.object({
   pin: z.string().min(4),
@@ -19,8 +20,14 @@ export async function POST(
   try {
     const { id } = await params;
     const session = await auth();
-    if (!session) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    // Pagar di dalam rute, SEBELUM PIN: `proxy.ts` bukan penjaga, dan tanpa ini
+    // siapa pun yang sudah masuk bisa membuka rekening pemasok dengan PIN-nya
+    // sendiri. Izin sama dengan POST /api/suppliers/[id].
+    if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.SUPPLIERS_VIEW)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const body = await req.json();

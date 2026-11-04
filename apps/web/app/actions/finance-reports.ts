@@ -4,10 +4,14 @@ import * as XLSX from "xlsx";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { parseDateOnly, parseDateOnlyEnd, formatDateOnlyJakarta, endOfTodayJakarta } from "@/lib/date-only";
-import { getAccountBalances, getEarliestJournal } from "@/lib/finance/reports/balances";
-import { buildTrialBalance, type TrialBalance } from "@/lib/finance/reports/trial-balance";
+import { getAccountBalances } from "@/lib/finance/reports/balances";
+import { muatNeraca } from "@/lib/finance/reports/neraca-queries";
+import { sisiSaldo, type TrialBalance } from "@/lib/finance/reports/trial-balance";
+import { muatNeracaSaldo } from "@/lib/finance/reports/neraca-saldo-queries";
+import { barisPohon, dariRollup } from "@/lib/finance/reports/tampil-pohon";
+import { formatAngkaLembar } from "@/lib/finance/reports/excel";
 import { buildIncomeStatement, type IncomeStatement } from "@/lib/finance/reports/income-statement";
-import { buildBalanceSheet, type BalanceSheet } from "@/lib/finance/reports/balance-sheet";
+import type { BalanceSheet } from "@/lib/finance/reports/balance-sheet";
 import type { RollupNode } from "@/lib/finance/reports/rollup";
 import {
   buildCashFlow,
@@ -21,11 +25,14 @@ import {
   type CashFlowComparisonLine,
 } from "@/lib/finance/reports/cash-flow-compare";
 import {
+  getBarisPelepasanAset,
   getCashOpeningBalance,
   getSectionByAccountId,
 } from "@/lib/finance/reports/cash-flow-queries";
 import {
   BALANCE_SHEET_BALANCED_NOTE,
+  BALANCE_SHEET_COVERAGE_BODY,
+  BALANCE_SHEET_COVERAGE_TITLE,
   BALANCE_SHEET_OPENING_TITLE,
   BALANCE_SHEET_UNBALANCED_NOTE,
   CASH_FLOW_COVERAGE_BODY,
@@ -90,34 +97,39 @@ function rangeLabel(from: Date | undefined, to: Date): string {
 }
 
 /**
+ * Akun bersaldo nol ikut ditampilkan? Layar Laba Rugi dan Neraca mengirim `nol`,
+ * Neraca Saldo `includeZero`; keduanya diterima di setiap laporan.
+ */
+type ZeroToggle = { includeZero?: boolean; nol?: boolean };
+
+function showZero(input: ZeroToggle): boolean {
+  return input.nol ?? input.includeZero ?? false;
+}
+
+/**
  * Unauthorized report assembly, shared by the exported read action and its
  * matching export action so a single `assertCanView()` call — made by
  * whichever of the two the caller invoked — gates both.
  */
-async function loadTrialBalanceReport(input: {
-  from?: string;
-  to?: string;
-  includeZero?: boolean;
-}): Promise<TrialBalance & { periodLabel: string }> {
+async function loadTrialBalanceReport(
+  input: { from?: string; to?: string } & ZeroToggle,
+): Promise<TrialBalance & { periodLabel: string }> {
   const to = parseDateOnlyEnd(input.to ?? "") ?? endOfTodayJakarta();
   const from = parseDateOnly(input.from ?? "");
-  const balances = await getAccountBalances({ from, to });
   return {
-    ...buildTrialBalance(balances, { includeZero: input.includeZero ?? false }),
+    ...(await muatNeracaSaldo({ from, to, includeZero: showZero(input) })),
     periodLabel: rangeLabel(from, to),
   };
 }
 
-async function loadIncomeStatementReport(input: {
-  from?: string;
-  to?: string;
-  includeZero?: boolean;
-}): Promise<IncomeStatement & { periodLabel: string }> {
+async function loadIncomeStatementReport(
+  input: { from?: string; to?: string } & ZeroToggle,
+): Promise<IncomeStatement & { periodLabel: string }> {
   const to = parseDateOnlyEnd(input.to ?? "") ?? endOfTodayJakarta();
   const from = parseDateOnly(input.from ?? "");
   const balances = await getAccountBalances({ from, to });
   return {
-    ...buildIncomeStatement(balances, { includeZero: input.includeZero ?? false }),
+    ...buildIncomeStatement(balances, { includeZero: showZero(input) }),
     periodLabel: rangeLabel(from, to),
   };
 }
@@ -126,15 +138,8 @@ async function loadBalanceSheetReport(input: {
   asOf?: string;
 }): Promise<BalanceSheet & { periodLabel: string; openingWarningDate: string | null }> {
   const asOf = parseDateOnlyEnd(input.asOf ?? "") ?? endOfTodayJakarta();
-  const [balances, earliest] = await Promise.all([
-    getAccountBalances({ to: asOf }),
-    getEarliestJournal(),
-  ]);
-  return {
-    ...buildBalanceSheet(balances),
-    periodLabel: `Per ${dateLabel(asOf)}`,
-    openingWarningDate: earliest && !earliest.isManual ? earliest.date.toISOString() : null,
-  };
+  const { report, openingWarningDate } = await muatNeraca(asOf);
+  return { ...report, periodLabel: `Per ${dateLabel(asOf)}`, openingWarningDate };
 }
 
 /**
@@ -144,11 +149,9 @@ async function loadBalanceSheetReport(input: {
  */
 type Attribution = { preparedBy: string; printedAt: string };
 
-export async function getTrialBalanceReport(input: {
-  from?: string;
-  to?: string;
-  includeZero?: boolean;
-}): Promise<
+export async function getTrialBalanceReport(
+  input: { from?: string; to?: string } & ZeroToggle,
+): Promise<
   TrialBalance & { periodLabel: string; notes: TrialBalancePrintNotes } & Attribution
 > {
   const preparedBy = await assertCanView();
@@ -161,11 +164,9 @@ export async function getTrialBalanceReport(input: {
   };
 }
 
-export async function getIncomeStatementReport(input: {
-  from?: string;
-  to?: string;
-  includeZero?: boolean;
-}): Promise<
+export async function getIncomeStatementReport(
+  input: { from?: string; to?: string } & ZeroToggle,
+): Promise<
   IncomeStatement & { periodLabel: string; notes: IncomeStatementPrintNotes } & Attribution
 > {
   const preparedBy = await assertCanView();
@@ -218,12 +219,17 @@ async function buildCashFlowFor(
     .filter(([, section]) => section === "KAS")
     .map(([accountId]) => accountId);
 
-  const [rows, kasAwal] = await Promise.all([
-    getAccountBalances({ from, to }),
-    getCashOpeningBalance(from ? new Date(from.getTime() - 1) : undefined, cashAccountIds),
+  /*
+   * Jurnal saldo awal (`OPENING…`) bukan arus kas periode: dikeluarkan dari
+   * mutasi dan kasnya dihitung sebagai kas awal (s.d. akhir jendela).
+   */
+  const [rows, kasAwal, pelepasanAset] = await Promise.all([
+    getAccountBalances({ from, to }, { kecualiSaldoAwal: true }),
+    getCashOpeningBalance(from ? new Date(from.getTime() - 1) : undefined, cashAccountIds, { saldoAwalSampai: to }),
+    getBarisPelepasanAset({ from, to }),
   ]);
 
-  return buildCashFlow({ rows, sectionByAccountId, kasAwal });
+  return buildCashFlow({ rows, sectionByAccountId, kasAwal, pelepasanAset });
 }
 
 async function loadCashFlowReport(input: {
@@ -299,32 +305,45 @@ function headerRows(title: string, periodLabel: string, preparedBy: string): Cel
 function toWorkbook(rows: Cell[][], sheetName: string, filename: string) {
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
+  // Negatif dalam kurung, sama dengan layar dan cetak.
+  formatAngkaLembar(ws);
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   const buffer = Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }));
   return { base64: buffer.toString("base64"), filename };
 }
 
-/** Flattens a rollup tree into indented label/amount rows for a spreadsheet. */
-function flattenNodes(nodes: RollupNode[], level = 0): Cell[][] {
-  return nodes.flatMap((node) => [
-    [`${"    ".repeat(level)}${node.code} ${node.name}`, node.subtotal],
-    ...flattenNodes(node.children, level + 1),
-  ]);
+/**
+ * Pohon akun → baris Excel tiga kolom (keterangan | rincian | jumlah), aturan
+ * baris yang sama dengan layar dan cetak (`barisPohon`): induk tanpa angka,
+ * rincian di kolom kedua, subtotal "Jumlah …" di kolom ketiga.
+ */
+function flattenNodes(nodes: RollupNode[], tampilkanNol = false): Cell[][] {
+  return barisPohon(dariRollup(nodes), { tampilkanNol }).map((b): Cell[] => {
+    const indent = "    ".repeat(b.level + 1);
+    if (b.jenis === "judul") return [`${indent}${b.code} ${b.name}`];
+    if (b.jenis === "jumlah") return [`${indent}Jumlah ${b.name}`, "", b.nilai[0]];
+    return [`${indent}${b.code} ${b.name}`, b.nilai[0], ""];
+  });
 }
 
-export async function exportTrialBalanceExcel(input: {
-  from?: string;
-  to?: string;
-  includeZero?: boolean;
-}): Promise<{ base64: string; filename: string }> {
+export async function exportTrialBalanceExcel(
+  input: { from?: string; to?: string } & ZeroToggle,
+): Promise<{ base64: string; filename: string }> {
   const preparedBy = await assertCanView();
   const report = await loadTrialBalanceReport(input);
 
+  /* Saldo ditulis sebagai besaran + sisi sebenarnya (D/K), seperti di layar. */
+  const saldo = (type: Parameters<typeof sisiSaldo>[0], nilai: number): Cell[] => {
+    const s = sisiSaldo(type, nilai);
+    return [s.jumlah, s.sisi ?? ""];
+  };
   const rows: Cell[][] = [
     ...headerRows("Neraca Saldo", report.periodLabel, preparedBy),
-    ["Kode", "Nama Akun", "Debit", "Kredit", "Saldo"],
-    ...report.rows.map((r): Cell[] => [r.code, r.name, r.debit, r.credit, r.signed]),
-    ["", "Total", report.totalDebit, report.totalCredit, ""],
+    ["Kode", "Nama akun", "Saldo awal", "D/K", "Debit", "Kredit", "Saldo akhir", "D/K"],
+    ...report.rows.map((r): Cell[] => [r.code, r.name, ...saldo(r.type, r.opening), r.debit, r.credit, ...saldo(r.type, r.closing)]),
+    ["", "Total mutasi", "", "", report.totalDebit, report.totalCredit, "", ""],
+    ["", "Jumlah saldo di sisi debit", report.totalSaldoAwal.debit, "D", "", "", report.totalSaldoAkhir.debit, "D"],
+    ["", "Jumlah saldo di sisi kredit", report.totalSaldoAwal.kredit, "K", "", "", report.totalSaldoAkhir.kredit, "K"],
     [],
     [report.isBalanced ? TRIAL_BALANCE_BALANCED_NOTE : TRIAL_BALANCE_UNBALANCED_NOTE],
   ];
@@ -332,28 +351,27 @@ export async function exportTrialBalanceExcel(input: {
   return toWorkbook(rows, "Neraca Saldo", `neraca-saldo-${dateLabel(new Date())}.xlsx`);
 }
 
-export async function exportIncomeStatementExcel(input: {
-  from?: string;
-  to?: string;
-  includeZero?: boolean;
-}): Promise<{ base64: string; filename: string }> {
+export async function exportIncomeStatementExcel(
+  input: { from?: string; to?: string } & ZeroToggle,
+): Promise<{ base64: string; filename: string }> {
   const preparedBy = await assertCanView();
   const report = await loadIncomeStatementReport(input);
+  const nol = showZero(input);
 
   const rows: Cell[][] = [
     ...headerRows("Laporan Laba Rugi", report.periodLabel, preparedBy),
-    ["Keterangan", "Jumlah"],
-    ["PENDAPATAN", ""],
-    ...flattenNodes(report.pendapatan),
-    ["Total Pendapatan", report.totalPendapatan],
-    ["HARGA POKOK PENJUALAN", ""],
-    ...flattenNodes(report.hpp),
-    ["Total Harga Pokok Penjualan", report.totalHpp],
-    ["Laba Kotor", report.labaKotor],
-    ["BEBAN OPERASIONAL", ""],
-    ...flattenNodes(report.beban),
-    ["Total Beban Operasional", report.totalBeban],
-    ["Laba Bersih", report.labaBersih],
+    ["Keterangan", "Rincian", "Jumlah"],
+    ["PENDAPATAN"],
+    ...flattenNodes(report.pendapatan, nol),
+    ["Total Pendapatan", "", report.totalPendapatan],
+    ["HARGA POKOK PENJUALAN"],
+    ...flattenNodes(report.hpp, nol),
+    ["Total Harga Pokok Penjualan", "", report.totalHpp],
+    ["Laba Kotor", "", report.labaKotor],
+    ["BEBAN OPERASIONAL"],
+    ...flattenNodes(report.beban, nol),
+    ["Total Beban Operasional", "", report.totalBeban],
+    ["Laba Bersih", "", report.labaBersih],
     [],
     [INCOME_STATEMENT_COVERAGE_TITLE],
     [INCOME_STATEMENT_COVERAGE_BODY],
@@ -362,26 +380,30 @@ export async function exportIncomeStatementExcel(input: {
   return toWorkbook(rows, "Laba Rugi", `laba-rugi-${dateLabel(new Date())}.xlsx`);
 }
 
-export async function exportBalanceSheetExcel(input: {
-  asOf?: string;
-}): Promise<{ base64: string; filename: string }> {
+export async function exportBalanceSheetExcel(
+  input: { asOf?: string } & ZeroToggle,
+): Promise<{ base64: string; filename: string }> {
   const preparedBy = await assertCanView();
   const report = await loadBalanceSheetReport(input);
+  const nol = showZero(input);
 
   const rows: Cell[][] = [
     ...headerRows("Neraca", report.periodLabel, preparedBy),
-    ["Keterangan", "Jumlah"],
-    ["ASET", ""],
-    ...flattenNodes(report.aset),
-    ["Total Aset", report.totalAset],
-    ["LIABILITAS", ""],
-    ...flattenNodes(report.liabilitas),
-    ["Total Liabilitas", report.totalLiabilitas],
-    ["EKUITAS", ""],
-    ...flattenNodes(report.ekuitas),
-    ["Total Ekuitas", report.totalEkuitas],
-    ["Laba (Rugi) Belum Ditutup", report.unclosedEarnings],
-    ["Total Liabilitas dan Ekuitas", report.totalLiabilitasEkuitas],
+    ["Keterangan", "Rincian", "Jumlah"],
+    ["ASET"],
+    ...flattenNodes(report.aset, nol),
+    ["Total Aset", "", report.totalAset],
+    ["LIABILITAS"],
+    ...flattenNodes(report.liabilitas, nol),
+    ["Total Liabilitas", "", report.totalLiabilitas],
+    ["EKUITAS"],
+    ...flattenNodes(report.ekuitas, nol),
+    ["Total Ekuitas", "", report.totalEkuitas],
+    ...(report.labaTahunLaluBelumDitutup !== 0
+      ? [["Laba (Rugi) Tahun Lalu Belum Ditutup", "", report.labaTahunLaluBelumDitutup] as Cell[]]
+      : []),
+    ["Laba (Rugi) Tahun Berjalan", "", report.labaTahunBerjalan],
+    ["Total Liabilitas dan Ekuitas", "", report.totalLiabilitasEkuitas],
     [],
     [report.isBalanced ? BALANCE_SHEET_BALANCED_NOTE : BALANCE_SHEET_UNBALANCED_NOTE],
     ...(report.openingWarningDate
@@ -391,6 +413,9 @@ export async function exportBalanceSheetExcel(input: {
           [balanceSheetOpeningBody(formatOpeningDate(report.openingWarningDate))],
         ]
       : []),
+    [],
+    [BALANCE_SHEET_COVERAGE_TITLE],
+    [BALANCE_SHEET_COVERAGE_BODY],
   ];
 
   return toWorkbook(rows, "Neraca", `neraca-${dateLabel(new Date())}.xlsx`);

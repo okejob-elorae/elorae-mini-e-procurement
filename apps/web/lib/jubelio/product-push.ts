@@ -1,27 +1,35 @@
-import { prisma, type JubelioOutboxEntityType } from "@elorae/db";
+import { prisma, type JubelioOutboxEntityType, type Prisma } from "@elorae/db";
 import { apiFetch } from "@/lib/internal-api";
 import { hasPushableChange, type PushableSnapshot } from "@/lib/items/jubelio-push-diff";
 
-async function fireDirectEnqueue(rowId: string, userId: string): Promise<void> {
-  void apiFetch("POST", `/jubelio/outbox/enqueue/${rowId}`, { userId }).catch(() => {
-    // poller picks it up within ~5s if this fails
-  });
-}
+/**
+ * Product pushes from the ERP to Jubelio.
+ *
+ * The selling price is NOT one of the reasons to push (owner decision 2026-11-02): a typed price
+ * waits on Jubelio → Konfirmasi harga (`lib/jubelio/harga`), and only the confirmation queues the
+ * push that carries it. Every push — confirmation, revert, or an ordinary edit of the name,
+ * description, variants, active state or images below — is built by the apps/api handler with the
+ * CONFIRMED price (`Item.jubelioConfirmedPrice`), never the raw `sellingPrice`.
+ *
+ * Creating a product in Jubelio is a REQUEST, not a push: the item form, a ticked item import, the
+ * item page's "Ajukan ke Jubelio" and the bulk migration stamp the request (`lib/jubelio/harga/
+ * pengajuan.ts`), and confirming its price creates it. Edits push only items Jubelio already knows.
+ *
+ * "Toko offline saja" is never pushed by an edit (owner answer P3a, 2026-11-02): a product Jubelio
+ * already has is deactivated once when its channel changes (`lib/items/mutations.ts`, P72), and
+ * after that only a price decision ("Kirim ulang harga ERP") or the release of a held push sends
+ * it again. While Jubelio's price differs from the confirmed one with no decision, the apps/api
+ * handler HOLDS every push (P75, `price_differs_held`), and `lib/jubelio/harga/lepas-tahanan.ts`
+ * re-queues one once the difference is settled.
+ */
 
-export async function enqueueProductPushOnCreate(
+/** Inserts one product_push outbox row. Takes a transaction so a confirmation commits with its push. */
+export async function createProductPushRow(
+  client: Prisma.TransactionClient | typeof prisma,
   itemId: string,
   userId: string | null,
-  opts?: { directEnqueue?: boolean },
-): Promise<void> {
-  const item = await prisma.item.findUnique({
-    where: { id: itemId },
-    select: { id: true, type: true, source: true },
-  });
-  if (!item) return;
-  if (item.type !== "FINISHED_GOOD") return;
-  if (item.source !== "ERP") return;
-
-  const row = await prisma.jubelioOutbox.create({
+): Promise<{ id: string }> {
+  return client.jubelioOutbox.create({
     data: {
       entityType: "product_push" satisfies JubelioOutboxEntityType,
       entityId: itemId,
@@ -30,7 +38,13 @@ export async function enqueueProductPushOnCreate(
     },
     select: { id: true },
   });
-  if (opts?.directEnqueue !== false) void fireDirectEnqueue(row.id, userId ?? "");
+}
+
+/** Best-effort direct enqueue, after commit; the poller picks the row up within ~5s if it fails. */
+export function fireProductPushNow(rowId: string, userId: string | null): void {
+  void apiFetch("POST", `/jubelio/outbox/enqueue/${rowId}`, { userId: userId ?? "" }).catch(() => {
+    // poller picks it up within ~5s if this fails
+  });
 }
 
 export async function enqueueProductPushOnUpdate(
@@ -43,29 +57,22 @@ export async function enqueueProductPushOnUpdate(
 
   const item = await prisma.item.findUnique({
     where: { id: itemId },
-    select: { id: true, type: true },
+    select: { id: true, type: true, salesChannel: true },
   });
   if (!item) return;
   if (item.type !== "FINISHED_GOOD") return;
+  if (item.salesChannel === "OFFLINE") return;
 
   /**
    * Only an item Jubelio already knows is pushed on edit. Creating a product in Jubelio is a
-   * deliberate act — the create-time push, a ticked import, or the item page's "Create in
-   * Jubelio" button — never a side effect of editing a field or an image.
+   * deliberate request that waits for its price to be confirmed — never a side effect of editing
+   * a field or an image.
    */
   const hasMapping = (await prisma.jubelioProductMapping.count({ where: { itemId } })) > 0;
   if (!hasMapping) return;
 
-  const row = await prisma.jubelioOutbox.create({
-    data: {
-      entityType: "product_push" satisfies JubelioOutboxEntityType,
-      entityId: itemId,
-      payload: {},
-      enqueuedById: userId,
-    },
-    select: { id: true },
-  });
-  void fireDirectEnqueue(row.id, userId ?? "");
+  const row = await createProductPushRow(prisma, itemId, userId);
+  fireProductPushNow(row.id, userId);
 }
 
 // Image-only edits don't flow through PushableSnapshot diff (image change isn't
@@ -74,27 +81,20 @@ export async function enqueueProductPushOnUpdate(
 export async function enqueueProductPushOnImageChange(itemId: string, userId: string | null): Promise<void> {
   const item = await prisma.item.findUnique({
     where: { id: itemId },
-    select: { id: true, type: true },
+    select: { id: true, type: true, salesChannel: true },
   });
   if (!item) return;
   if (item.type !== "FINISHED_GOOD") return;
+  if (item.salesChannel === "OFFLINE") return;
 
   /**
    * Only an item Jubelio already knows is pushed on edit. Creating a product in Jubelio is a
-   * deliberate act — the create-time push, a ticked import, or the item page's "Create in
-   * Jubelio" button — never a side effect of editing a field or an image.
+   * deliberate request that waits for its price to be confirmed — never a side effect of editing
+   * a field or an image.
    */
   const hasMapping = (await prisma.jubelioProductMapping.count({ where: { itemId } })) > 0;
   if (!hasMapping) return;
 
-  const row = await prisma.jubelioOutbox.create({
-    data: {
-      entityType: "product_push" satisfies JubelioOutboxEntityType,
-      entityId: itemId,
-      payload: {},
-      enqueuedById: userId,
-    },
-    select: { id: true },
-  });
-  void fireDirectEnqueue(row.id, userId ?? "");
+  const row = await createProductPushRow(prisma, itemId, userId);
+  fireProductPushNow(row.id, userId);
 }

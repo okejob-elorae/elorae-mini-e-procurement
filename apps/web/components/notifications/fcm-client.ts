@@ -22,31 +22,6 @@ const ACTIVATION_TIMEOUT_MS = 10_000;
 const DELETE_TIMEOUT_MS = 3_000;
 
 /**
- * Whether a token reached the server during this page session. Permission alone proves
- * nothing — the token can still have failed to register, or been deleted at a logout — so
- * the PWA reports push as on only once this is true.
- */
-let registeredThisSession = false;
-const registeredListeners = new Set<() => void>();
-
-export function hasRegisteredFcmToken(): boolean {
-  return registeredThisSession;
-}
-
-/** Calls `listener` the next time a token registers; returns the unsubscribe. */
-export function onFcmTokenRegistered(listener: () => void): () => void {
-  registeredListeners.add(listener);
-  return () => {
-    registeredListeners.delete(listener);
-  };
-}
-
-function markRegistered(): void {
-  registeredThisSession = true;
-  for (const listener of Array.from(registeredListeners)) listener();
-}
-
-/**
  * A registration found on a first visit may still be installing, and `PushManager.subscribe`
  * refuses a registration with no active worker. Resolves false when it never activates in time.
  */
@@ -140,7 +115,6 @@ export async function registerFcmToken(opts: RegisterFcmTokenOptions = {}): Prom
       body: JSON.stringify({ token }),
     });
     if (!res.ok) return { outcome: "failed", unsubscribe };
-    markRegistered();
     return { outcome: "registered", unsubscribe };
   } catch {
     /* Permission refused inside getToken, or FCM unreachable. */
@@ -162,7 +136,6 @@ async function deleteTokenIfInitialised(): Promise<void> {
  * never throws, and gives up after a few seconds so an offline phone still logs out.
  */
 export async function deleteFcmToken(): Promise<void> {
-  registeredThisSession = false;
   try {
     await Promise.race([
       deleteTokenIfInitialised(),

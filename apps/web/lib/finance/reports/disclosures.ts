@@ -1,4 +1,14 @@
 import idMessages from "@/lib/i18n/messages/id.json";
+import {
+  BALANCE_SHEET_COVERAGE_BODY,
+  CAKUPAN_LAPORAN_BODY,
+  CASH_FLOW_COVERAGE_BODY,
+  INCOME_STATEMENT_COVERAGE_BODY,
+  LEDGER_NOT_ACTIVE_NOTE,
+  SUMBER_BELUM_BERJURNAL,
+  SUMBER_BERJURNAL,
+  ledgerPendingNote,
+} from "./cakupan-laporan";
 
 /**
  * Disclosures the on-screen reports show, restated for the artifacts that leave
@@ -13,8 +23,21 @@ import idMessages from "@/lib/i18n/messages/id.json";
  * Server-side only. `id.json` is the whole Indonesian catalogue (hundreds of
  * KB), so a client component must never import this module by value — the print
  * pages receive these strings in the `notes` field of their report payload,
- * which the server actions build from the helpers below.
+ * which the server actions build from the helpers below. The coverage texts
+ * built from the source lists live in `cakupan-laporan.ts`, which clients import
+ * directly; they are re-exported here so the server side has one entry point.
  */
+
+export {
+  BALANCE_SHEET_COVERAGE_BODY,
+  CAKUPAN_LAPORAN_BODY,
+  CASH_FLOW_COVERAGE_BODY,
+  INCOME_STATEMENT_COVERAGE_BODY,
+  LEDGER_NOT_ACTIVE_NOTE,
+  SUMBER_BELUM_BERJURNAL,
+  SUMBER_BERJURNAL,
+  ledgerPendingNote,
+};
 
 const reports = idMessages.financeReports;
 
@@ -31,8 +54,6 @@ export const TRIAL_BALANCE_UNBALANCED_NOTE = reports.trialBalance.unbalancedNote
 
 export const INCOME_STATEMENT_COVERAGE_TITLE = reports.incomeStatement.coverageTitle;
 
-export const INCOME_STATEMENT_COVERAGE_BODY = reports.incomeStatement.coverageBody;
-
 export const BALANCE_SHEET_BALANCED_NOTE = reports.balanceSheet.balancedNote;
 
 export const BALANCE_SHEET_UNBALANCED_NOTE = reports.balanceSheet.unbalancedNote;
@@ -40,7 +61,7 @@ export const BALANCE_SHEET_UNBALANCED_NOTE = reports.balanceSheet.unbalancedNote
 export const BALANCE_SHEET_OPENING_TITLE = reports.balanceSheet.openingTitle;
 
 export function balanceSheetOpeningBody(dateLabel: string): string {
-  return fill(reports.balanceSheet.openingBody, { date: dateLabel });
+  return fill(reports.balanceSheet.openingBodySaldoAwal, { date: dateLabel });
 }
 
 /** Day-month-year label for the opening-balance warning, in the business timezone (WIB). */
@@ -54,8 +75,6 @@ export function formatOpeningDate(iso: string): string {
 }
 
 export const CASH_FLOW_COVERAGE_TITLE = reports.cashFlow.coverageTitle;
-
-export const CASH_FLOW_COVERAGE_BODY = reports.cashFlow.coverageBody;
 
 /**
  * Shown in place of the statement when no account is classified KAS. Without a
@@ -89,18 +108,31 @@ export function cashFlowUnclassifiedBodyWithPointer(count: number): string {
   return `${cashFlowUnclassifiedBody(count)} ${CASH_FLOW_UNCLASSIFIED_POINTER}`;
 }
 
-export type TrialBalancePrintNotes = { note: string };
+export const REPORT_EMPTY_PERIOD_NOTE = reports.trialBalance.empty;
+
+/** Laba Rugi kosong: jurnal yang hanya menyentuh akun neraca (mis. penerimaan barang) tidak mengisinya. */
+export const INCOME_STATEMENT_EMPTY_NOTE = reports.incomeStatement.empty;
+
+export const BALANCE_SHEET_EMPTY_NOTE = reports.balanceSheet.empty;
+
+export const BALANCE_SHEET_COVERAGE_TITLE = reports.balanceSheet.coverageTitle;
+
+export type TrialBalancePrintNotes = { note: string; empty: string };
 
 export function trialBalancePrintNotes(isBalanced: boolean): TrialBalancePrintNotes {
-  return { note: isBalanced ? TRIAL_BALANCE_BALANCED_NOTE : TRIAL_BALANCE_UNBALANCED_NOTE };
+  return {
+    note: isBalanced ? TRIAL_BALANCE_BALANCED_NOTE : TRIAL_BALANCE_UNBALANCED_NOTE,
+    empty: REPORT_EMPTY_PERIOD_NOTE,
+  };
 }
 
-export type IncomeStatementPrintNotes = { coverageTitle: string; coverageBody: string };
+export type IncomeStatementPrintNotes = { coverageTitle: string; coverageBody: string; empty: string };
 
 export function incomeStatementPrintNotes(): IncomeStatementPrintNotes {
   return {
     coverageTitle: INCOME_STATEMENT_COVERAGE_TITLE,
     coverageBody: INCOME_STATEMENT_COVERAGE_BODY,
+    empty: INCOME_STATEMENT_EMPTY_NOTE,
   };
 }
 
@@ -108,6 +140,9 @@ export type BalanceSheetPrintNotes = {
   note: string;
   openingTitle: string;
   openingBody: string | null;
+  empty: string;
+  coverageTitle: string;
+  coverageBody: string;
 };
 
 export function balanceSheetPrintNotes(
@@ -120,6 +155,9 @@ export function balanceSheetPrintNotes(
     openingBody: openingWarningDate
       ? balanceSheetOpeningBody(formatOpeningDate(openingWarningDate))
       : null,
+    empty: BALANCE_SHEET_EMPTY_NOTE,
+    coverageTitle: BALANCE_SHEET_COVERAGE_TITLE,
+    coverageBody: BALANCE_SHEET_COVERAGE_BODY,
   };
 }
 

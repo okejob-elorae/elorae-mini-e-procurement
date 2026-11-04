@@ -16,9 +16,15 @@ d("getSellableCatalogForSpg (test bed only)", () => {
   let storeBId = "";
   let discountStoreId = "";
   let putusStoreId = "";
+  /* "Marketplace saja" (P3a): one still in storeA's stock book (P73), one in no book at all. */
+  let mpInBookItemId = "";
+  let mpOutItemId = "";
+  /* Deactivated in the master but still in storeA's stock book: never listed — not at the counter, not through tetapTampilkan. */
+  let inactiveInBookItemId = "";
 
   beforeEach(async () => {
     uomId = ""; itemId = ""; shortItemId = ""; neverHeldItemId = ""; storeAId = ""; storeBId = ""; discountStoreId = ""; putusStoreId = "";
+    mpInBookItemId = ""; mpOutItemId = ""; inactiveInBookItemId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
 
@@ -63,12 +69,53 @@ d("getSellableCatalogForSpg (test bed only)", () => {
     /* storeA holds -2 of shortItemId — the ledger missed something; must render as negative, never clamped. */
     await prisma.storeStock.create({ data: { storeId: storeAId, itemId: shortItemId, variantSku: "", qty: -2, avgCost: 0 } });
     /* Deliberately no StoreStock row for (storeAId, neverHeldItemId) — the store never held it. */
+
+    const mpInBook = await prisma.item.create({
+      data: {
+        sku: `${tag}-MPIN`, nameId: "TMI", nameEn: "TMI", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000,
+        salesChannel: "MARKETPLACE",
+        variants: [{ sku: `${tag}-MPIN-M`, barcode: `${tag}-BC-M` }],
+      },
+    });
+    mpInBookItemId = mpInBook.id;
+    const mpOut = await prisma.item.create({
+      data: { sku: `${tag}-MPOUT`, nameId: "TMO", nameEn: "TMO", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000, salesChannel: "MARKETPLACE" },
+    });
+    mpOutItemId = mpOut.id;
+    await prisma.storeStockMovement.create({
+      data: { storeId: storeAId, itemId: mpInBookItemId, variantSku: `${tag}-MPIN-M`, qty: 2, kind: "TERIMA", createdById: `${tag}-user` },
+    });
+
+    const inactiveInBook = await prisma.item.create({
+      data: {
+        sku: `${tag}-OFF`, nameId: "TOFF", nameEn: "TOFF", type: "FINISHED_GOOD", uomId, isActive: false, sellingPrice: 5000,
+        salesChannel: "BOTH",
+      },
+    });
+    inactiveInBookItemId = inactiveInBook.id;
+    await prisma.storeStockMovement.create({
+      data: { storeId: storeAId, itemId: inactiveInBookItemId, variantSku: "", qty: 4, kind: "TERIMA", createdById: `${tag}-user` },
+    });
   });
 
   afterEach(async () => {
     const storeIds = [storeAId, storeBId, discountStoreId, putusStoreId];
+    await prisma.storeStockMovement.deleteMany({ where: { storeId: { in: storeIds.map(seededId) } } });
     await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds.map(seededId) } } });
-    await prisma.item.deleteMany({ where: { id: { in: [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)] } } });
+    await prisma.item.deleteMany({
+      where: {
+        id: {
+          in: [
+            seededId(itemId),
+            seededId(shortItemId),
+            seededId(neverHeldItemId),
+            seededId(mpInBookItemId),
+            seededId(mpOutItemId),
+            seededId(inactiveInBookItemId),
+          ],
+        },
+      },
+    });
     await prisma.store.deleteMany({ where: { id: { in: storeIds.map(seededId) } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
@@ -118,6 +165,40 @@ d("getSellableCatalogForSpg (test bed only)", () => {
     expect(row).toBeDefined();
     expect(row!.price).toBeNull();
     expect(row!.onCounterQty).toBe(3);
+  });
+
+  it("keeps a Marketplace-only item that is in the store's stock book, with its barcode for the scanner (P73)", async () => {
+    const rows = await getSellableCatalogForSpg(seededId(storeAId));
+    const row = rows.find((r) => r.itemId === mpInBookItemId);
+    expect(row).toBeDefined();
+    expect(row!.barcode).toBe(`${tag}-BC-M`);
+  });
+
+  it("hides a Marketplace-only item the store's book has never held (P3a)", async () => {
+    expect((await getSellableCatalogForSpg(seededId(storeAId))).some((r) => r.itemId === mpOutItemId)).toBe(false);
+    /* Another store's book does not keep it either. */
+    expect((await getSellableCatalogForSpg(seededId(storeBId))).some((r) => r.itemId === mpInBookItemId)).toBe(false);
+    expect((await getSellableCatalogForSpg()).some((r) => r.itemId === mpInBookItemId)).toBe(false);
+  });
+
+  it("keeps an id the caller passes in tetapTampilkan", async () => {
+    const rows = await getSellableCatalogForSpg(undefined, { tetapTampilkan: [seededId(mpOutItemId)] });
+    expect(rows.some((r) => r.itemId === mpOutItemId)).toBe(true);
+  });
+
+  it("an INACTIVE item in the store's stock book is not offered at the counter", async () => {
+    const rows = await getSellableCatalogForSpg(seededId(storeAId));
+    expect(rows.some((r) => r.itemId === inactiveInBookItemId)).toBe(false);
+    /* The active Marketplace-only item in the same book is still offered (P73). */
+    expect(rows.some((r) => r.itemId === mpInBookItemId)).toBe(true);
+  });
+
+  it("tetapTampilkan never lists an inactive id either — the stock screens take its rows from the store's balance", async () => {
+    const rows = await getSellableCatalogForSpg(undefined, { tetapTampilkan: [seededId(inactiveInBookItemId)] });
+    expect(rows.some((r) => r.itemId === inactiveInBookItemId)).toBe(false);
+    /* With the store too: the stock book and the keep-list together still do not bring it back. */
+    const withStore = await getSellableCatalogForSpg(seededId(storeAId), { tetapTampilkan: [seededId(inactiveInBookItemId)] });
+    expect(withStore.some((r) => r.itemId === inactiveInBookItemId)).toBe(false);
   });
 
   it("reads a store's pricing terms as numbers, and null for an unknown store", async () => {

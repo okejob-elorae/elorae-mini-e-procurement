@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -26,6 +27,7 @@ export function Pagination({
   pageSize,
   disabled = false,
 }: PaginationProps) {
+  const t = useTranslations('pagination');
   const start = totalCount != null && pageSize != null ? (page - 1) * pageSize + 1 : null;
   const end =
     totalCount != null && pageSize != null
@@ -36,31 +38,32 @@ export function Pagination({
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mt-4">
       {totalCount != null && pageSize != null && start != null && end != null && (
         <p className="text-sm text-muted-foreground order-2 sm:order-1">
-          Showing {start}–{end} of {totalCount}
+          {t('showing', { start, end, total: totalCount })}
         </p>
       )}
-      <div className="flex items-center gap-2 order-1 sm:order-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 order-1 sm:order-2">
         <p className="text-sm text-muted-foreground whitespace-nowrap">
-          Page {page} of {totalPages}
+          {t('page', { page, total: totalPages })}
         </p>
         <Button
           variant="outline"
           size="sm"
           onClick={() => onPageChange(page - 1)}
           disabled={disabled || page <= 1}
-          aria-label="Previous page"
+          aria-label={t('previousAria')}
         >
           <ChevronLeft className="h-4 w-4" />
-          Previous
+          {/* Label disembunyikan di layar sempit supaya tombol tidak keluar dari kartunya (375 px). */}
+          <span className="hidden sm:inline">{t('previous')}</span>
         </Button>
         <Button
           variant="outline"
           size="sm"
           onClick={() => onPageChange(page + 1)}
           disabled={disabled || page >= totalPages}
-          aria-label="Next page"
+          aria-label={t('nextAria')}
         >
-          Next
+          <span className="hidden sm:inline">{t('next')}</span>
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>

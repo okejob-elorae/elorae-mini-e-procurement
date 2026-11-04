@@ -10,6 +10,9 @@ import { DuplicateVariantBarcodeError, DuplicateVariantSkuError } from "@/lib/it
 
 export type VariantGenerationBase = "category" | "parent";
 
+/** Variant keys that are not attributes: the two codes, and the fabric colour's Pantone code added from the PO form (`lib/purchase-orders/varian-warna.ts`). */
+const NON_ATTRIBUTE_KEYS = new Set(["sku", "barcode", "pantone"]);
+
 /** Normalize attribute value for variant SKU segment (e.g. red → RED, light blue → LIGHTBLUE). */
 export function slugVariantAttributeValue(value: string): string {
   return value
@@ -38,7 +41,7 @@ export function buildVariantSkuCode(
 
 function variantSuffixFromRecord(v: Record<string, string>): string {
   const segments = Object.entries(v)
-    .filter(([key]) => key !== "sku" && key !== "barcode")
+    .filter(([key]) => !NON_ATTRIBUTE_KEYS.has(key))
     .map(([, value]) => slugVariantAttributeValue(value))
     .filter((s) => s.length > 0);
   if (segments.length > 0) return segments.join("-");
@@ -68,7 +71,7 @@ export function validateAndNormalizeVariants(
   if (opts?.fixedAxes) {
     variants = variants.map((v) => normalizeVariantAxisKeys(v));
     for (const v of variants) {
-      const other = Object.keys(v).find((k) => k !== "sku" && k !== "barcode" && canonicalAxisKey(k) == null);
+      const other = Object.keys(v).find((k) => !NON_ATTRIBUTE_KEYS.has(k) && canonicalAxisKey(k) == null);
       if (other !== undefined) {
         throw new Error(`Finished-good variants may only have Warna (colour) and Ukuran (size); found "${other}"`);
       }

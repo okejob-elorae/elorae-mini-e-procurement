@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 const DEFAULT_PAGE_SIZES = [10, 25, 50, 100];
 
@@ -31,6 +32,7 @@ export function Pager({
   onPageSizeChange,
   className,
 }: PagerProps) {
+  const t = useTranslations("pagination");
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(Math.max(1, page), pageCount);
   const pages = buildPageList(safePage, pageCount);
@@ -43,12 +45,12 @@ export function Pager({
       ].join(" ")}
     >
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <span>Rows per page</span>
+        <span>{t("rowsPerPage")}</span>
         <Select
           value={String(pageSize)}
           onValueChange={(v) => onPageSizeChange(Number(v))}
         >
-          <SelectTrigger className="h-8 w-20">
+          <SelectTrigger className="h-8 w-20" aria-label={t("rowsPerPage")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -60,7 +62,13 @@ export function Pager({
           </SelectContent>
         </Select>
         <span className="ml-2">
-          Page {safePage} of {pageCount} ({total} total)
+          {total > 0
+            ? t("showing", {
+                start: (safePage - 1) * pageSize + 1,
+                end: Math.min(safePage * pageSize, total),
+                total,
+              })
+            : t("page", { page: safePage, total: pageCount })}
         </span>
       </div>
 
@@ -71,7 +79,7 @@ export function Pager({
           className="h-8 w-8"
           disabled={safePage <= 1}
           onClick={() => onPageChange(safePage - 1)}
-          aria-label="Previous page"
+          aria-label={t("previousAria")}
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
@@ -98,7 +106,7 @@ export function Pager({
           className="h-8 w-8"
           disabled={safePage >= pageCount}
           onClick={() => onPageChange(safePage + 1)}
-          aria-label="Next page"
+          aria-label={t("nextAria")}
         >
           <ChevronRight className="h-4 w-4" />
         </Button>

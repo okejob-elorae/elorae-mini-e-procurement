@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
-import { payloadHash } from "./signature";
+import { kunciDuplikatWebhook } from "./kunci-duplikat";
 
 export const SUPPORTED_WEBHOOK_EVENTS = ["salesorder", "stock", "salesreturn", "product"] as const;
 export type JubelioWebhookEventName = (typeof SUPPORTED_WEBHOOK_EVENTS)[number];
@@ -25,7 +25,14 @@ export class JubelioWebhooksService {
   constructor(@Inject(PRISMA) private readonly prisma: PrismaService) {}
 
   async persist(input: PersistInput): Promise<PersistOutcome> {
-    const hash = payloadHash(input.rawBody);
+    // Lihat kunciDuplikatWebhook: webhook stok/produk membawa badan yang sama
+    // untuk setiap perubahan, jadi hash badan saja membuang perubahan kedua.
+    const hash = kunciDuplikatWebhook({
+      event: input.event,
+      rawBody: input.rawBody,
+      eventId: input.eventId,
+      diterimaPada: new Date(),
+    });
     const rawPayload = this.safeParse(input.rawBody);
 
     try {

@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { XIcon } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
@@ -39,7 +40,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50",
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:duration-[220ms] data-[state=closed]:duration-150 fixed inset-0 z-50 bg-black/50",
         className
       )}
       {...props}
@@ -55,13 +56,16 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
+  const t = useTranslations("common")
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 outline-none sm:max-w-lg",
+          // Masuk dengan pegas lembut (skala 0,96 → 1), keluar lebih cepat dan tanpa pegas.
+          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-96 data-[state=open]:zoom-in-96 data-[state=open]:ease-pegas data-[state=open]:duration-[220ms] data-[state=closed]:ease-in data-[state=closed]:duration-150 fixed top-[50%] left-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-lg border p-6 shadow-lg outline-none sm:max-w-lg",
+          // ↑ Dialog yang lebih tinggi dari layar bisa digulir, supaya tombol di kakinya selalu terjangkau.
           className
         )}
         {...props}
@@ -72,8 +76,8 @@ function DialogContent({
             data-slot="dialog-close"
             className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
-            <XIcon />
-            <span className="sr-only">Close</span>
+            <XIcon aria-hidden />
+            <span className="sr-only">{t("close")}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Content>
@@ -99,6 +103,7 @@ function DialogFooter({
 }: React.ComponentProps<"div"> & {
   showCloseButton?: boolean
 }) {
+  const t = useTranslations("common")
   return (
     <div
       data-slot="dialog-footer"
@@ -111,7 +116,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>
-          <Button variant="outline">Close</Button>
+          <Button variant="outline">{t("close")}</Button>
         </DialogPrimitive.Close>
       )}
     </div>

@@ -3,6 +3,8 @@ import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { isUniqueViolationOn } from "@/lib/db/unique-violation";
 import { roundCents } from "@elorae/db/pricing";
+import { selaraskanSisaPiutang } from "@/lib/receivables/writer";
+import { isKonsiBill } from "@/lib/finance/collections/phone-scope";
 import { PaymentError } from "./errors";
 import { sumPendingClaimsOnReceivable } from "./pending-claims";
 
@@ -186,7 +188,9 @@ async function postPayment(input: PostPaymentInput): Promise<{ paymentId: string
     for (const a of allocations) {
       const receivable = await tx.receivable.findUnique({
         where: { id: a.receivableId },
-        select: { id: true, storeId: true, outstandingAmount: true, status: true },
+        select: {
+          id: true, storeId: true, outstandingAmount: true, status: true, isConsignment: true, sellThroughId: true,
+        },
       });
       if (!receivable) throw new PaymentError("NOT_FOUND");
       /*
@@ -197,6 +201,18 @@ async function postPayment(input: PostPaymentInput): Promise<{ paymentId: string
       if (receivable.status === "PAID" || receivable.status === "WRITTEN_OFF" || receivable.status === "VOIDED") {
         throw new PaymentError("ALREADY_SETTLED");
       }
+      /*
+       * Owner decision 2026-10-29, "satu jalur bayar (BKM + cek)": a konsi bill is paid only
+       * through a BKM, so an office payment or a retur offset cannot touch it. This is also where
+       * "retur toko konsi tidak bisa jadi potongan BKM tagihan konsi" meets a retur offset: the
+       * retur block above only proves the retur belongs to this store (`WRONG_STORE`), and the
+       * konsi part is the bill, not the retur — the same way the BKM writer applies it
+       * (`RETUR_TOKO_KONSI`, `lib/receivables/claim-writer.ts`). The store's terms are deliberately
+       * not read, as in `isKonsiBill`: a putus invoice at a store whose terms read KONSI today keeps
+       * this path. A rounding adjustment stays allowed so a konsi residue under Rp 1 can still be
+       * written off.
+       */
+      if (!isRounding && isKonsiBill(receivable)) throw new PaymentError("KONSI_LEWAT_BKM");
       if (isRounding) {
         /**
          * The amount was read before this transaction opened, so it is re-proved here against
@@ -271,6 +287,13 @@ async function postPayment(input: PostPaymentInput): Promise<{ paymentId: string
         where: { id: a.receivableId },
         data: { status: outstanding === 0 ? "PAID" : "PARTIAL" },
       });
+      /*
+       * The receivables module keeps its own balance (`outstanding`, `settledAt`), which its lists,
+       * the salesman's bills and the BKM guard read. It is recomputed net of `paidAmount` in this
+       * same transaction, so an invoice settled here can never be shown as open or settled again
+       * by a BKM.
+       */
+      await selaraskanSisaPiutang(tx, a.receivableId);
     }
 
     return { paymentId: payment.id, docNo: payment.docNo, replayed: false };

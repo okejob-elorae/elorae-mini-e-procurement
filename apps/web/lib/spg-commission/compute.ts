@@ -2,19 +2,23 @@ import { compareYearMonth, wibYearMonth } from "./month";
 import { resolveRate } from "./resolve-rate";
 
 /**
- * The SPG commission computation over plain rows: which pieces each SPG earned from an approved
- * konsi sell-through report, at which rate, and in which WIB month, plus the monthly recap built
- * from those events.
+ * The SPG commission computation over plain rows: which pieces each SPG earned from a checked
+ * sales report, at which rate, and in which WIB month, plus the monthly recap built from those
+ * events. This is the ONE commission calculation (owner decision 2026-11-01): a rate per item
+ * category (Settings → Komisi SPG), the pieces split by each SPG's own sales. Every screen that
+ * shows a commission figure — the SPG phone, Komisi SPG, the consignment cycle, the recap — and
+ * every writer that stores one goes through it, by way of `payout.ts`, which turns a consignment
+ * cycle or a putus store's month into the `CommissionReport` read here.
  *
  * Client-safe and import-free apart from `./month` and `./resolve-rate`, which are client-safe
- * themselves; the query layer (`queries.ts`) loads the rows. No commission amount is stored: every
- * event is recomputed from the reports each time, so a month's recap is a reading. Only the split
- * WEIGHTS between SPGs are snapshotted, at approval (`KonsiSellThroughSpgShare`), so a later ledger
- * row cannot shift a closed month's split.
+ * themselves; the query layer (`laporan-queries.ts`) loads the rows.
  *
- * Event-month accounting: a report EARNS in the WIB month of its `approvedAt`; a void REVERSES the
- * exact same pieces and amounts, at the same (approval-month) rate, in the WIB month of its
- * `voidedAt`. Baseline reports confirm nothing and emit no events.
+ * Event-month accounting: a report EARNS in the WIB month it was checked (`approvedAt` — the
+ * consignment cycle's lock, the putus month's "laporan dicek"), which is the month it is paid in;
+ * the pieces themselves belong to `salesMonth`, whose rate applies. A report without
+ * `salesMonth` resolves the rate in the earning month, as the sell-through reports this module
+ * was first written for did. A void REVERSES the exact same pieces and amounts, at the same rate,
+ * in the WIB month of its `voidedAt`. Baseline reports confirm nothing and emit no events.
  */
 
 export type CommissionRate = { itemCategoryId: string; effectiveFrom: string; amountPerPiece: number };
@@ -38,6 +42,8 @@ export type CommissionReport = {
   baseline: boolean;
   approvedAt: Date;
   voidedAt: Date | null;
+  /* The WIB month (`"YYYY-MM"`) the pieces were sold in; its rate applies. Omitted, the earning month. */
+  salesMonth?: string;
   lines: CommissionReportLine[];
 };
 
@@ -52,10 +58,12 @@ export type CommissionEvent = {
   categoryId: string | null;
   /* Positive for EARNED, the negated EARNED figure for REVERSED. */
   pieces: number;
-  /* Whole rupiah per piece in force in the APPROVAL month, or null when the line has no category or the category no rate. */
+  /* Whole rupiah per piece in force in the sales month (else the earning month), or null when the line has no category or the category no rate. */
   ratePerPiece: number | null;
   /* Whole rupiah; 0 when `ratePerPiece` is null. */
   amount: number;
+  /* The report's `salesMonth`, present only when the report carries one. */
+  salesMonth?: string;
 };
 
 export type RecapTotals = {
@@ -203,6 +211,7 @@ export function computeCommissionEvents(reports: readonly CommissionReport[], ra
   for (const report of reports) {
     if (report.baseline) continue;
     const earnedMonth = wibYearMonth(report.approvedAt);
+    const rateMonth = report.salesMonth ?? earnedMonth;
     const reversedMonth = report.voidedAt ? wibYearMonth(report.voidedAt) : null;
 
     const pieces = new Map<string, { salesmanId: string; categoryId: string | null; pieces: number }>();
@@ -219,10 +228,17 @@ export function computeCommissionEvents(reports: readonly CommissionReport[], ra
       (a, b) => compareId(a.salesmanId, b.salesmanId) || compareCategoryNullFirst(a.categoryId, b.categoryId),
     );
     for (const entry of ordered) {
-      const rate = entry.categoryId === null ? null : resolveRate(rates, entry.categoryId, earnedMonth);
+      const rate = entry.categoryId === null ? null : resolveRate(rates, entry.categoryId, rateMonth);
       const ratePerPiece = rate ? rate.amountPerPiece : null;
       const amount = ratePerPiece === null ? 0 : ratePerPiece * entry.pieces;
-      const base = { sellThroughId: report.id, storeId: report.storeId, salesmanId: entry.salesmanId, categoryId: entry.categoryId, ratePerPiece };
+      const base = {
+        sellThroughId: report.id,
+        storeId: report.storeId,
+        salesmanId: entry.salesmanId,
+        categoryId: entry.categoryId,
+        ratePerPiece,
+        ...(report.salesMonth !== undefined ? { salesMonth: report.salesMonth } : {}),
+      };
       events.push({ yearMonth: earnedMonth, kind: "EARNED", ...base, pieces: entry.pieces, amount });
       if (reversedMonth !== null) {
         events.push({ yearMonth: reversedMonth, kind: "REVERSED", ...base, pieces: negate(entry.pieces), amount: negate(amount) });

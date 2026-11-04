@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { Plus, Loader2, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -23,11 +25,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getOpnames } from "@/app/actions/stock-opname";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 
 type OpnameRow = Awaited<ReturnType<typeof getOpnames>>[number];
 
 export function StockOpnameListClient() {
   const t = useTranslations("stockOpname");
+  const locale = useLocale();
   const [rows, setRows] = useState<OpnameRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("__all__");
@@ -53,14 +57,14 @@ export function StockOpnameListClient() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-          <p className="text-muted-foreground">{t("subtitle")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{t("judul")}</h1>
+          <TombolBantuan judul={t("judul")} />
         </div>
         <Link href="/backoffice/inventory/stock-opname/new">
           <Button>
             <Plus className="mr-2 h-4 w-4" />
-            {t("new")}
+            {t("judulBaru")}
           </Button>
         </Link>
       </div>
@@ -70,7 +74,7 @@ export function StockOpnameListClient() {
           <SelectValue placeholder={t("status")} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="__all__">All</SelectItem>
+          <SelectItem value="__all__">{t("filterAllStatuses")}</SelectItem>
           {(["CREATED", "COUNTING", "SUBMITTED", "APPROVED", "CANCELLED"] as const).map((s) => (
             <SelectItem key={s} value={s}>
               {t(`statuses.${s}`)}
@@ -83,7 +87,7 @@ export function StockOpnameListClient() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ClipboardList className="h-5 w-5" />
-            {t("title")}
+            {t("judul")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -92,7 +96,9 @@ export function StockOpnameListClient() {
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : rows.length === 0 ? (
-            <p className="text-center text-muted-foreground py-12">No sessions yet</p>
+            <p className="text-center text-muted-foreground py-12">
+              {statusFilter === "__all__" ? t("emptySessions") : t("emptyFiltered")}
+            </p>
           ) : (
             <Table>
               <TableHeader>
@@ -110,7 +116,7 @@ export function StockOpnameListClient() {
                     <TableCell>
                       <Link
                         href={`/backoffice/inventory/stock-opname/${row.id}`}
-                        className="font-medium text-primary hover:underline"
+                        className={TAUTAN_DOKUMEN}
                       >
                         {String(row.docNumber)}
                       </Link>
@@ -121,7 +127,7 @@ export function StockOpnameListClient() {
                     <TableCell>{t(`statuses.${row.status as string}`)}</TableCell>
                     <TableCell>{Number((row as { rowCount?: number }).rowCount ?? 0)}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">
-                      {row.createdAt ? new Date(String(row.createdAt)).toLocaleString() : "—"}
+                      {row.createdAt ? formatDisplayDateTime(String(row.createdAt), locale) : "—"}
                     </TableCell>
                   </TableRow>
                 ))}

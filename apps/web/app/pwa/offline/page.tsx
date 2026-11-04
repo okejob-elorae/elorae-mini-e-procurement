@@ -8,13 +8,13 @@ export const dynamic = "force-dynamic";
 export default function PwaOfflinePage() {
   return (
     <div className="p-4">
-      <Card>
+      <Card className="py-0">
         <CardContent className="flex flex-col items-center gap-4 p-8 text-center">
           <div className="rounded-full bg-muted p-3">
             <WifiOff className="h-6 w-6 text-muted-foreground" />
           </div>
           <div className="space-y-1">
-            <h1 className="text-lg font-semibold">Kamu sedang offline</h1>
+            <h1 className="text-lg font-semibold">Anda sedang offline</h1>
             <p className="text-sm text-muted-foreground">
               Halaman ini belum tersimpan. Buka dulu saat online, lalu bisa diakses offline.
             </p>

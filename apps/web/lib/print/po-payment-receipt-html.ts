@@ -1,8 +1,10 @@
 /**
- * Payment receipt for a PO marked paid — uses shared print theme (po-payment-receipt visual language).
+ * Bukti bayar PO yang ditandai lunas — tema cetak bersama. Label, angka, dan
+ * tanggal berbahasa Indonesia (WIB); label bawaan `LABEL_BUKTI_BAYAR_PO`.
  */
 
-import { esc, fmtDocDate, money, printCssBase, printPagePortrait } from '@/lib/print/print-theme';
+import { esc, printCssBase, printPagePortrait } from '@/lib/print/print-theme';
+import { tanggalCetak, uangCetak } from '@/lib/print/po-html';
 
 export interface BuildPOPaymentReceiptHtmlOptions {
   receiptNumber: string;
@@ -15,7 +17,10 @@ export interface BuildPOPaymentReceiptHtmlOptions {
   currency: string;
   amountPaid: number;
   issuerName?: string;
-  labels: {
+  labels?: LabelBuktiBayarPo;
+}
+
+export type LabelBuktiBayarPo = {
     title: string;
     issuedBy: string;
     receiptNo: string;
@@ -29,8 +34,23 @@ export interface BuildPOPaymentReceiptHtmlOptions {
     grandLabel: string;
     footerTitle: string;
     footerNote: string;
-  };
-}
+};
+
+export const LABEL_BUKTI_BAYAR_PO: LabelBuktiBayarPo = {
+  title: 'Bukti Pembayaran',
+  issuedBy: 'Diterbitkan oleh',
+  receiptNo: 'No. bukti',
+  paymentDate: 'Tanggal bayar',
+  payee: 'Dibayarkan kepada',
+  supplierCode: 'Kode',
+  poRef: 'Referensi PO',
+  status: 'Status',
+  statusPaid: 'Lunas',
+  printed: 'Dicetak',
+  grandLabel: 'Jumlah dibayar',
+  footerTitle: 'Catatan',
+  footerNote: 'Bukti ini mengikuti status pembayaran yang tercatat di Eloraé. Simpan untuk arsip Anda.',
+};
 
 export function buildPOPaymentReceiptHtml(
   opts: BuildPOPaymentReceiptHtmlOptions
@@ -45,11 +65,11 @@ export function buildPOPaymentReceiptHtml(
     printedAt,
     currency,
     amountPaid,
-    issuerName = 'Elorae ERP',
-    labels,
+    issuerName = 'Eloraé',
+    labels = LABEL_BUKTI_BAYAR_PO,
   } = opts;
 
-  const amountStr = money(currency, amountPaid);
+  const amountStr = uangCetak(currency, amountPaid);
 
   return `<!DOCTYPE html>
 <html lang="id">
@@ -71,7 +91,7 @@ ${printPagePortrait}
       <span class="lbl">${esc(labels.receiptNo)}</span>
       <span class="val">${esc(receiptNumber)}</span>
       <span class="lbl">${esc(labels.paymentDate)}</span>
-      <span class="val">${esc(fmtDocDate(paidAt))}</span>
+      <span class="val">${esc(tanggalCetak(paidAt) || '—')}</span>
     </div>
   </div>
 
@@ -86,7 +106,7 @@ ${printPagePortrait}
       <div class="meta-grid">
         <div class="meta-row"><span class="mk">${esc(labels.poRef)}</span><span class="mv">${esc(poDocNumber)}</span></div>
         <div class="meta-row"><span class="mk">${esc(labels.status)}</span><span class="mv">${esc(labels.statusPaid)}</span></div>
-        <div class="meta-row"><span class="mk">${esc(labels.printed)}</span><span class="mv">${esc(fmtDocDate(printedAt))}</span></div>
+        <div class="meta-row"><span class="mk">${esc(labels.printed)}</span><span class="mv">${esc(tanggalCetak(printedAt) || '—')}</span></div>
       </div>
     </div>
   </div>

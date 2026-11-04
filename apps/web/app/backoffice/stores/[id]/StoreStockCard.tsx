@@ -30,6 +30,12 @@ export type SerializedStockMovement = Omit<StoreStockCardData["movements"][numbe
 
 type Props = {
   rows: StoreStockCardData["rows"];
+  /**
+   * Item × variant that is only on its way to this store (a first konsi shipment, no `StoreStock`
+   * row yet). Rendered under `rows` in the same table so goods that already left the main warehouse
+   * stay visible; never counted in `rows.length`, the empty state's book, or the gap test.
+   */
+  dalamPerjalananTanpaStok: StoreStockCardData["dalamPerjalananTanpaStok"];
   negativeCount: number;
   /** The latest approved stocktake, when it was partial and left current rows uncounted. */
   lastPartialCount: StoreStockCardData["lastPartialCount"];
@@ -95,6 +101,8 @@ const MOVEMENT_BADGE_VARIANT: Record<StockLedgerRefType, "default" | "secondary"
   StockOpname: "secondary",
   StoreStocktake: "secondary",
   StoreTransfer: "default",
+  SupplierPayableCorrection: "secondary",
+  SupplierPayableCorrectionReversal: "secondary",
   VanLoad: "secondary",
   VanReconcile: "secondary",
   VanSale: "secondary",
@@ -112,6 +120,7 @@ function movementBadgeVariant(refType: string): "default" | "secondary" {
 
 export function StoreStockCard({
   rows,
+  dalamPerjalananTanpaStok,
   negativeCount,
   lastPartialCount,
   inTransitAdminReturn,
@@ -123,6 +132,11 @@ export function StoreStockCard({
   const t = useTranslations("stores.stockCard");
   const tMovements = useTranslations("stockMovements");
   const stockedKeys = new Set(rows.map((row) => `${row.itemId}::${row.variantSku}`));
+  /*
+   * Konsi pieces on a surat jalan that the store has not received yet (owner Q1/P26): they left the
+   * main warehouse but are not on `qty` and are not sellable. Quantities only.
+   */
+  const adaDalamPerjalanan = dalamPerjalananTanpaStok.length > 0 || rows.some((row) => row.dalamPerjalanan > 0);
 
   return (
     <>
@@ -156,13 +170,14 @@ export function StoreStockCard({
               )}
             </div>
           )}
-          {rows.length === 0 ? (
+          {rows.length === 0 && dalamPerjalananTanpaStok.length === 0 ? (
             <div className="text-center py-8">
               <Layers className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
               <p className="text-sm text-muted-foreground">{t("empty")}</p>
             </div>
           ) : (
             <div className="space-y-3">
+              {rows.length === 0 && <p className="text-sm text-muted-foreground">{t("empty")}</p>}
               <div className="overflow-auto max-h-96 rounded-md border">
                 <Table>
                   <TableHeader className="sticky top-0 z-10 bg-background">
@@ -170,6 +185,7 @@ export function StoreStockCard({
                       <TableHead>{t("colArticle")}</TableHead>
                       <TableHead>{t("colSize")}</TableHead>
                       <TableHead className="text-right">{t("colQty")}</TableHead>
+                      <TableHead className="text-right">{t("colDalamPerjalanan")}</TableHead>
                       <TableHead>{t("colElsewhere")}</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -195,15 +211,38 @@ export function StoreStockCard({
                               </Badge>
                             )}
                           </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {row.dalamPerjalanan > 0 ? row.dalamPerjalanan : <span className="text-muted-foreground">—</span>}
+                          </TableCell>
                           <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                             {t("elsewhere", { main: row.mainQty, van: row.vanQty })}
                           </TableCell>
                         </TableRow>
                       );
                     })}
+                    {dalamPerjalananTanpaStok.map((row) => (
+                      <TableRow key={`perjalanan::${row.itemId}::${row.variantSku}`}>
+                        <TableCell className="text-sm">{row.itemName}</TableCell>
+                        <TableCell className="font-mono text-xs">{row.variantSku || "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          <span className="text-muted-foreground">0</span>
+                          <Badge variant="outline" className="ml-2">
+                            {t("dalamPerjalananSaja")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{row.dalamPerjalanan}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">—</TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </div>
+              {adaDalamPerjalanan && (
+                <div className="flex items-start gap-2 rounded-md border p-2 text-muted-foreground">
+                  <Info className="h-4 w-4 mt-0.5 shrink-0" />
+                  <p className="text-xs">{t("dalamPerjalananCatatan")}</p>
+                </div>
+              )}
               {negativeCount > 0 && (
                 <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-destructive">
                   <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />

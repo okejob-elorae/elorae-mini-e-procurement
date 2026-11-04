@@ -1,0 +1,1453 @@
+import { prisma, Prisma } from "@elorae/db";
+import { runSerializable } from "@/lib/db/tx-retry";
+import { isiSesiDari, PILIH_PENGGUNA_SESI } from "@/lib/auth/segarkan-sesi";
+import { denganNomorUnik } from "@/lib/receivables/nomor";
+import { cariTeks } from "@/lib/db/cari-teks";
+import { formatDateOnlyJakarta, parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
+import { geserHari, hariIniWib } from "@/lib/tanggal-isian";
+import type { KodeGagalKontenKol } from "./konten-kol-writer";
+import { susunAntreanPantau, BATAS_TELAT_KONTEN_HARI, PENANDA_MINTA, TITIK_KONTEN, kunciBerkala, kunciKonten, kunciProfil } from "./pantau-antrean";
+import {
+  dalamJamKerja,
+  ENTITAS_PERANGKAT,
+  JEDA_MANUAL_SAMPAI,
+  JEJAK_PANTAU,
+  KODE_BERLAKU_MENIT,
+  KODE_BLOKIR,
+  KODE_JEDA,
+  KODE_STATUS_AKUN,
+  KODE_ULANG,
+  LEASE_MENIT,
+  MAKS_PERCOBAAN,
+  NAMA_PERANGKAT_MAKS,
+  normalKodeSambung,
+  type AlasanJeda,
+  type AlasanTanpaTugas,
+  type JejakPantau,
+  type JenisLogPantau,
+  type PengaturanPantau,
+} from "./pantau-aturan";
+import { akunUtama, ikutiTerukur, TOLERANSI_ER } from "./angka-terukur";
+import { menandaiElorae, postingMilik, SUMBER_DETEKSI_TAG, type PengaturanBrand, type PostingBrand } from "./brand-collab";
+import { bacaPengaturanBrand } from "./brand-pengaturan";
+import {
+  catatAngkaPantauDiTx,
+  catatBrandDariPembacaanDiTx,
+  kosongkanRingkasan,
+  masukkanKePerformaDiTx,
+  ringkasanBaru,
+  type AngkaPosting,
+  type KonteksPembacaan,
+  type RingkasanPembacaan,
+} from "./brand-writer";
+import { sinkronJurnalKolAman } from "./jurnal-kol";
+import { simpanProfilKolDiTx } from "./kol-writer";
+import { waktuTayangDariId, waktuTayangInstagram } from "./link-video";
+import { hitungErAkun } from "./pantau-er";
+import {
+  formatDariBentuk,
+  handleCocok,
+  handleDariLink,
+  kontenIdDariLink,
+  normalHandle,
+  pangkasInt,
+  PLATFORM_PANTAU,
+  platformHasil,
+  urlKontenPlatform,
+  urlProfilPantau,
+  type HasilKonten,
+  type HasilPantau,
+  type HasilProfil,
+  type MasalahPantau,
+  type PlatformPantau,
+} from "./pantau-muatan";
+import { bacaPengaturanPantau } from "./pantau-pengaturan";
+import { buatKode, buatToken, hashRahasia } from "./pantau-token";
+import { TAHAP_BERJALAN } from "./tahap";
+import { tempelSatuDiTx } from "./tempel-link-writer";
+
+/*
+ * Penulis pantau KOL — KHUSUS SERVER (klien hanya `import type`).
+ *
+ * Dua pintu masuk:
+ *   - layar Elorae (buat kode sambung, jeda, lanjutkan, cabut, susun antrean):
+ *     setiap tindakan menulis `AuditLog` (nama di `JEJAK_PANTAU`) DI DALAM
+ *     transaksinya;
+ *   - API ekstensi (sambung, pinjam tugas, hasil, masalah, manual): ditulis ke
+ *     `KolLogPantau`, atas nama perangkatnya. Tulisan yang memerlukan pengguna
+ *     (angka konten, maju tahap) memakai orang yang menyambungkan perangkatnya
+ *     (`dibuatOlehId`), dengan `perangkatId` di metadata.
+ *
+ * Peminjaman tugas (`pinjamTugas`) berjalan di `runSerializable`: Prisma
+ * `updateMany` BUKAN compare-and-swap (lihat CLAUDE.md) — di luar transaksi
+ * serializable, dua perangkat bisa sama-sama "berhasil" meminjam tugas yang
+ * sama. Dibuktikan oleh tes balapan di `pantau-writer.test.ts`.
+ *
+ * `sekarang` dan `pengaturan` bisa diberikan pemanggil: tes memakai tahun
+ * 2000–2004 dan pengaturannya sendiri, tanpa menyentuh baris pengaturan
+ * sungguhan atau kuota hari ini.
+ *
+ * Instagram dan YouTube (2026-10-10, D9): setiap hasil membawa `platform`
+ * (tidak ada = TIKTOK). Akun dan konten dicocokkan di platform itu saja; KOL
+ * baru mendapat akun platform itu. Ekstensi menyebut platform yang sanggup
+ * dikerjakannya (`/tugas` `{ platform: [...] }`, tidak ada = TikTok saja —
+ * ekstensi lama tidak pernah meminjam tugas Instagram/YouTube).
+ */
+
+type Klien = Prisma.TransactionClient;
+
+export type PerangkatSah = {
+  id: string;
+  nama: string;
+  dibuatOlehId: string;
+  dijedaSampai: Date | null;
+  alasanJeda: string | null;
+  dicabutAt: Date | null;
+  terakhirLaporAt: Date | null;
+};
+
+const PILIH_PERANGKAT = {
+  id: true,
+  nama: true,
+  dibuatOlehId: true,
+  dijedaSampai: true,
+  alasanJeda: true,
+  dicabutAt: true,
+  terakhirLaporAt: true,
+} satisfies Prisma.KolPerangkatSelect;
+
+/** Kode yang dihitung sebagai kegagalan perangkat untuk aturan "gagal beruntun". */
+const KODE_GAGAL_PERANGKAT: ReadonlySet<string> = new Set([
+  "GAGAL_MUAT",
+  "TIDAK_TERBACA",
+  "AKUN_BERBEDA",
+  "KONTEN_BERBEDA",
+  "ANGKA_KOSONG",
+  "MUATAN_TIDAK_SAH",
+  "JENIS_BERBEDA",
+]);
+/** Kode hasil yang diantrekan lagi bila percobaan masih tersisa. */
+const KODE_HASIL_ULANG: ReadonlySet<string> = new Set([...KODE_ULANG, "ANGKA_KOSONG", "MUATAN_TIDAK_SAH"]);
+
+/**
+ * Satu percobaan dihitung SEKALI per pinjaman: hanya laporan untuk tugas yang
+ * sedang DIPINJAM pelapornya yang menambah percobaan. Begitu dihitung, tugasnya
+ * lepas dari perangkat itu (ANTRE lagi atau GAGAL), jadi laporan susulan untuk
+ * pinjaman yang sama — mis. ekstensi mengirim `/masalah TIDAK_TERBACA` sesudah
+ * `/hasil` ditolak — tidak menghitungnya dua kali. Laporan dari perangkat yang
+ * pinjamannya sudah lewat (tugasnya ANTRE lagi atau dipinjam perangkat lain)
+ * juga tidak dihitung.
+ */
+const dipinjamOleh = (t: { status: string; perangkatId: string | null }, perangkatId: string) =>
+  t.status === "DIPINJAM" && t.perangkatId === perangkatId;
+
+const menit = (n: number) => n * 60_000;
+const terbuka = (d: Date | null, sekarang: Date) => d !== null && d.getTime() > sekarang.getTime();
+
+export async function tulisLog(
+  tx: Klien,
+  isi: { perangkatId: string | null; tugasId?: string | null; jenis: JenisLogPantau; kode?: string | null; pesan?: string | null; waktu: Date },
+) {
+  await tx.kolLogPantau.create({
+    data: {
+      perangkatId: isi.perangkatId,
+      tugasId: isi.tugasId ?? null,
+      jenis: isi.jenis,
+      kode: isi.kode ?? null,
+      pesan: isi.pesan?.slice(0, 1000) ?? null,
+      createdAt: isi.waktu,
+    },
+  });
+}
+
+async function jejak(
+  tx: Klien,
+  isi: { userId: string; action: JejakPantau; entityId: string; changes?: { before?: unknown; after?: unknown }; metadata?: Record<string, unknown>; reason?: string | null },
+) {
+  await tx.auditLog.create({
+    data: {
+      userId: isi.userId,
+      action: isi.action,
+      entityType: ENTITAS_PERANGKAT,
+      entityId: isi.entityId,
+      changes: (isi.changes ?? undefined) as Prisma.InputJsonValue | undefined,
+      metadata: (isi.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+      reason: isi.reason?.trim() || null,
+    },
+  });
+}
+
+const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
+
+/* ═══════════════════════════ Layar Elorae ═══════════════════════════ */
+
+export type HasilBuatKode =
+  | { ok: true; perangkatId: string; nama: string; kode: string; berlakuSampai: Date }
+  | { ok: false; kode: "NAMA_WAJIB" | "NAMA_TERLALU_PANJANG" | "PERANGKAT_TIDAK_ADA" | "SUDAH_DICABUT" };
+
+/**
+ * Buat kode sambung (8 tanda, 15 menit, sekali pakai). Tanpa `perangkatId`
+ * dibuat perangkat baru bernama `nama`; dengan `perangkatId` perangkat lama
+ * diberi kode baru (sambung ulang — token lamanya berhenti berlaku begitu kode
+ * ini dipakai). Kode mentahnya hanya dikembalikan di sini, sekali.
+ */
+export async function buatKodeSambung(input: {
+  nama?: string | null;
+  perangkatId?: string | null;
+  olehUserId: string;
+  sekarang?: Date;
+}): Promise<HasilBuatKode> {
+  const sekarang = input.sekarang ?? new Date();
+  const berlakuSampai = new Date(sekarang.getTime() + menit(KODE_BERLAKU_MENIT));
+  const nama = (input.nama ?? "").trim();
+  if (!input.perangkatId) {
+    if (!nama) return { ok: false, kode: "NAMA_WAJIB" };
+    if (nama.length > NAMA_PERANGKAT_MAKS) return { ok: false, kode: "NAMA_TERLALU_PANJANG" };
+  }
+
+  // Tabrakan hash kode hampir mustahil (31⁸), tapi kolomnya unik: coba ulang dengan kode lain.
+  for (let coba = 0; ; coba++) {
+    const { kode, kodeHash } = buatKode();
+    try {
+      return await runSerializable(async (tx): Promise<HasilBuatKode> => {
+        if (input.perangkatId) {
+          const p = await tx.kolPerangkat.findUnique({ where: { id: input.perangkatId }, select: { id: true, nama: true, dicabutAt: true } });
+          if (!p) return { ok: false, kode: "PERANGKAT_TIDAK_ADA" };
+          if (p.dicabutAt) return { ok: false, kode: "SUDAH_DICABUT" };
+          await tx.kolPerangkat.update({ where: { id: p.id }, data: { kodeHash, kodeBerlakuSampai: berlakuSampai } });
+          await jejak(tx, {
+            userId: input.olehUserId,
+            action: JEJAK_PANTAU.KODE_DIBUAT,
+            entityId: p.id,
+            metadata: { nama: p.nama, berlakuSampai: berlakuSampai.toISOString(), sambungUlang: true },
+          });
+          return { ok: true, perangkatId: p.id, nama: p.nama, kode, berlakuSampai };
+        }
+        const p = await tx.kolPerangkat.create({
+          data: { nama, dibuatOlehId: input.olehUserId, kodeHash, kodeBerlakuSampai: berlakuSampai, createdAt: sekarang },
+          select: { id: true },
+        });
+        await jejak(tx, {
+          userId: input.olehUserId,
+          action: JEJAK_PANTAU.KODE_DIBUAT,
+          entityId: p.id,
+          changes: { after: { nama } },
+          metadata: { nama, berlakuSampai: berlakuSampai.toISOString() },
+        });
+        return { ok: true, perangkatId: p.id, nama, kode, berlakuSampai };
+      });
+    } catch (e) {
+      if (coba < 2 && e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") continue;
+      throw e;
+    }
+  }
+}
+
+export type HasilUbahPerangkat = { ok: true } | { ok: false; kode: "PERANGKAT_TIDAK_ADA" | "SUDAH_DICABUT" };
+
+/** Jeda dari Elorae = sampai dilanjutkan (`JEDA_MANUAL_SAMPAI`). Perangkat yang sedang dijeda otomatis diubah jadi jeda manual. */
+export async function jedaPerangkat(input: { perangkatId: string; olehUserId: string; sekarang?: Date }): Promise<HasilUbahPerangkat> {
+  const sekarang = input.sekarang ?? new Date();
+  return runSerializable(async (tx) => {
+    const p = await tx.kolPerangkat.findUnique({ where: { id: input.perangkatId }, select: PILIH_PERANGKAT });
+    if (!p) return { ok: false, kode: "PERANGKAT_TIDAK_ADA" } as const;
+    if (p.dicabutAt) return { ok: false, kode: "SUDAH_DICABUT" } as const;
+    if (p.alasanJeda === "MANUAL" && terbuka(p.dijedaSampai, sekarang)) return { ok: true } as const;
+    await tx.kolPerangkat.update({ where: { id: p.id }, data: { dijedaSampai: JEDA_MANUAL_SAMPAI, alasanJeda: "MANUAL" } });
+    await tulisLog(tx, { perangkatId: p.id, jenis: "JEDA", kode: "MANUAL", waktu: sekarang });
+    await jejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK_PANTAU.DIJEDA,
+      entityId: p.id,
+      changes: { before: { dijedaSampai: iso(p.dijedaSampai), alasanJeda: p.alasanJeda }, after: { alasanJeda: "MANUAL" } },
+      metadata: { nama: p.nama },
+    });
+    // Tugas yang sedang dipinjamnya kembali ke antrean untuk perangkat lain.
+    await tx.kolTugasPantau.updateMany({
+      where: { perangkatId: p.id, status: "DIPINJAM" },
+      data: { status: "ANTRE", perangkatId: null, pinjamSampai: null },
+    });
+    return { ok: true } as const;
+  });
+}
+
+export async function lanjutkanPerangkat(input: { perangkatId: string; olehUserId: string; sekarang?: Date }): Promise<HasilUbahPerangkat> {
+  const sekarang = input.sekarang ?? new Date();
+  return runSerializable(async (tx) => {
+    const p = await tx.kolPerangkat.findUnique({ where: { id: input.perangkatId }, select: PILIH_PERANGKAT });
+    if (!p) return { ok: false, kode: "PERANGKAT_TIDAK_ADA" } as const;
+    if (p.dicabutAt) return { ok: false, kode: "SUDAH_DICABUT" } as const;
+    if (!p.dijedaSampai && !p.alasanJeda) return { ok: true } as const;
+    await tx.kolPerangkat.update({ where: { id: p.id }, data: { dijedaSampai: null, alasanJeda: null } });
+    await tulisLog(tx, { perangkatId: p.id, jenis: "LANJUT", kode: "MANUAL", waktu: sekarang });
+    await jejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK_PANTAU.DILANJUTKAN,
+      entityId: p.id,
+      changes: { before: { dijedaSampai: iso(p.dijedaSampai), alasanJeda: p.alasanJeda }, after: { dijedaSampai: null, alasanJeda: null } },
+      metadata: { nama: p.nama },
+    });
+    return { ok: true } as const;
+  });
+}
+
+/** Cabut: token dan kode dibuang, tugas yang dipinjam kembali ke antrean. Tidak bisa dibatalkan — sambungkan perangkat baru. */
+export async function cabutPerangkat(input: { perangkatId: string; olehUserId: string; sekarang?: Date }): Promise<HasilUbahPerangkat> {
+  const sekarang = input.sekarang ?? new Date();
+  return runSerializable(async (tx) => {
+    const p = await tx.kolPerangkat.findUnique({ where: { id: input.perangkatId }, select: PILIH_PERANGKAT });
+    if (!p) return { ok: false, kode: "PERANGKAT_TIDAK_ADA" } as const;
+    if (p.dicabutAt) return { ok: true } as const;
+    await tx.kolPerangkat.update({
+      where: { id: p.id },
+      data: { dicabutAt: sekarang, tokenHash: null, kodeHash: null, kodeBerlakuSampai: null, dijedaSampai: null, alasanJeda: null },
+    });
+    await tx.kolTugasPantau.updateMany({
+      where: { perangkatId: p.id, status: "DIPINJAM" },
+      data: { status: "ANTRE", perangkatId: null, pinjamSampai: null },
+    });
+    await jejak(tx, { userId: input.olehUserId, action: JEJAK_PANTAU.DICABUT, entityId: p.id, metadata: { nama: p.nama } });
+    return { ok: true } as const;
+  });
+}
+
+/* ═══════════════════════════ Antrean ═══════════════════════════ */
+
+export type CakupanAntrean = { kontenIds?: readonly string[]; akunIds?: readonly string[] };
+
+const POTONG = 500;
+function potong<T>(xs: readonly T[], n = POTONG): T[][] {
+  const hasil: T[][] = [];
+  for (let i = 0; i < xs.length; i += n) hasil.push(xs.slice(i, i + n));
+  return hasil;
+}
+
+/**
+ * Susun antrean hari ini (cron 06.00 WIB dan tombol "Susun antrean sekarang").
+ * Aturannya murni di `susunAntreanPantau`; di sini hanya membaca bahannya dan
+ * menulis hasilnya. Aman dijalankan berkali-kali: kunci tugas unik
+ * (`skipDuplicates`). Titik konten lama yang belum dikerjakan, atau yang sudah
+ * tertutup bacaan sesudahnya → DILEWATI. Cek berkala sesudah H+30 butuh cek
+ * terakhir per konten (angka terbaru / tugas selesai-gagal) dan tugasnya yang
+ * masih terbuka.
+ * `cakupan` membatasi bacaan ke id tertentu (tes berbagi basis data).
+ */
+export async function susunAntrean(
+  input: { sekarang?: Date; pengaturan?: PengaturanPantau; olehUserId?: string | null; cakupan?: CakupanAntrean } = {},
+): Promise<{ dibuat: number; dilewati: number }> {
+  const sekarang = input.sekarang ?? new Date();
+  const hariIni = hariIniWib(sekarang);
+  const pengaturan = input.pengaturan ?? (await bacaPengaturanPantau());
+  // Konten sejauh titik terakhir + 14 hari telat, atau sejauh batas cek berkala — mana yang lebih jauh.
+  const tertua = parseDateOnly(
+    geserHari(hariIni, -(Math.max(Math.max(...TITIK_KONTEN) + BATAS_TELAT_KONTEN_HARI, pengaturan.batasHariKonten) + 1)),
+  )!;
+
+  const [kontenMentah, akunMentah] = await Promise.all([
+    prisma.kolContent.findMany({
+      where: {
+        OR: ["tiktok.com", "instagram.com", "instagr.am", "youtube.com", "youtu.be"].map((h) => ({ link: cariTeks(h) })),
+        liveAt: { gte: tertua, lte: sekarang },
+        ...(input.cakupan?.kontenIds ? { id: { in: [...input.cakupan.kontenIds] } } : {}),
+      },
+      select: { id: true, link: true, liveAt: true, collab: { select: { kol: { select: { blockedAt: true } } } } },
+    }),
+    prisma.kolAccount.findMany({
+      where: { platform: "TIKTOK", ...(input.cakupan?.akunIds ? { id: { in: [...input.cakupan.akunIds] } } : {}) },
+      select: {
+        id: true,
+        handle: true,
+        lastCheckedAt: true,
+        kol: { select: { blockedAt: true, briefs: { where: { tahap: { in: [...TAHAP_BERJALAN] } }, select: { id: true }, take: 1 } } },
+      },
+    }),
+  ]);
+
+  // `relationMode = "prisma"`: konten/akun bisa sesaat menunjuk kolaborasi/KOL yang sudah terhapus — dilewati.
+  const kontenHidup = kontenMentah.filter((k) => k.collab?.kol != null);
+
+  // Cek terakhir per konten (angka terbaru, atau tugas konten yang selesai/gagal) dan tugasnya yang masih terbuka.
+  const terakhirDicek = new Map<string, Date>();
+  const tugasTerbuka = new Map<string, string[]>();
+  const catatTerakhir = (id: string | null, d: Date | null | undefined) => {
+    if (!id || !d) return;
+    const lama = terakhirDicek.get(id);
+    if (!lama || d.getTime() > lama.getTime()) terakhirDicek.set(id, d);
+  };
+  for (const bagian of potong(kontenHidup.map((k) => k.id))) {
+    const [angka, selesai, terbuka] = await Promise.all([
+      prisma.kolContentMetric.groupBy({ by: ["contentId"], where: { contentId: { in: bagian } }, _max: { recordedAt: true } }),
+      prisma.kolTugasPantau.groupBy({
+        by: ["contentId"],
+        where: { contentId: { in: bagian }, jenis: "KONTEN", status: { in: ["SELESAI", "GAGAL"] } },
+        _max: { selesaiAt: true },
+      }),
+      prisma.kolTugasPantau.findMany({
+        where: { contentId: { in: bagian }, jenis: "KONTEN", status: { in: ["ANTRE", "DIPINJAM"] } },
+        select: { contentId: true, kunci: true },
+      }),
+    ]);
+    for (const r of angka) catatTerakhir(r.contentId, r._max.recordedAt);
+    for (const r of selesai) catatTerakhir(r.contentId, r._max.selesaiAt);
+    for (const r of terbuka) if (r.contentId) tugasTerbuka.set(r.contentId, [...(tugasTerbuka.get(r.contentId) ?? []), r.kunci]);
+  }
+
+  const konten = kontenHidup.map((k) => ({
+    id: k.id,
+    link: k.link,
+    liveAtHari: k.liveAt ? formatDateOnlyJakarta(k.liveAt) : null,
+    kolDiblokir: k.collab.kol.blockedAt !== null,
+    terakhirDicekHari: terakhirDicek.has(k.id) ? formatDateOnlyJakarta(terakhirDicek.get(k.id)!) : null,
+    tugasTerbuka: tugasTerbuka.get(k.id) ?? [],
+  }));
+  const akun = akunMentah
+    .filter((a) => a.kol != null)
+    .map((a) => ({
+      id: a.id,
+      handle: a.handle,
+      kolDiblokir: a.kol.blockedAt !== null,
+      aktif: a.kol.briefs.length > 0,
+      terakhirDicekHari: a.lastCheckedAt ? formatDateOnlyJakarta(a.lastCheckedAt) : null,
+    }));
+
+  const calonKunci = [
+    ...konten.flatMap((k) => [...TITIK_KONTEN.map((n) => kunciKonten(k.id, n)), kunciBerkala(k.id, hariIni)]),
+    ...akun.map((a) => kunciProfil(a.id, hariIni)),
+  ];
+  const kunciAda = new Set<string>();
+  for (const bagian of potong(calonKunci)) {
+    const ada = await prisma.kolTugasPantau.findMany({ where: { kunci: { in: bagian } }, select: { kunci: true } });
+    for (const r of ada) kunciAda.add(r.kunci);
+  }
+  const akunTerbuka = new Set<string>();
+  for (const bagian of potong(akun.map((a) => a.id))) {
+    const ada = await prisma.kolTugasPantau.findMany({
+      where: { jenis: "PROFIL", status: { in: ["ANTRE", "DIPINJAM"] }, accountId: { in: bagian } },
+      select: { accountId: true },
+    });
+    for (const r of ada) if (r.accountId) akunTerbuka.add(r.accountId);
+  }
+
+  const { baru, lewati } = susunAntreanPantau({ hariIni, konten, akun, kunciAda, akunTerbuka, pengaturan });
+
+  let dibuat = 0;
+  for (const bagian of potong(baru)) {
+    const r = await prisma.kolTugasPantau.createMany({
+      data: bagian.map((t) => ({
+        kunci: t.kunci,
+        jenis: t.jenis,
+        platform: t.platform,
+        accountId: t.accountId,
+        contentId: t.contentId,
+        url: t.url,
+        titikH: t.titikH,
+        prioritas: t.prioritas,
+        jatuhAt: parseDateOnly(t.jatuhHari)!,
+        createdAt: sekarang,
+      })),
+      skipDuplicates: true,
+    });
+    dibuat += r.count;
+  }
+  let dilewati = 0;
+  // Hanya kunci yang memang ada di tabel yang bisa dilewati (titik yang tertutup bacaan disebut setiap hari).
+  for (const bagian of potong(lewati.filter((k) => kunciAda.has(k)))) {
+    const r = await prisma.kolTugasPantau.updateMany({
+      where: { kunci: { in: bagian }, status: "ANTRE" },
+      data: { status: "DILEWATI", selesaiAt: sekarang, galatTerakhir: "TITIK_BARU" },
+    });
+    dilewati += r.count;
+  }
+
+  if (input.olehUserId) {
+    await prisma.auditLog.create({
+      data: {
+        userId: input.olehUserId,
+        action: JEJAK_PANTAU.ANTREAN_DISUSUN,
+        entityType: "KolTugasPantau",
+        entityId: hariIni,
+        metadata: { dibuat, dilewati },
+      },
+    });
+  }
+  return { dibuat, dilewati };
+}
+
+/* ═══════════════════════════ API ekstensi ═══════════════════════════ */
+
+export type HasilSambung =
+  | { ok: true; token: string; perangkat: { id: string; nama: string } }
+  | { ok: false; kode: "KODE_TIDAK_SAH" | "KODE_KEDALUWARSA" };
+
+/**
+ * Tukar kode sambung dengan token. Sekali pakai: kode dikosongkan dalam
+ * transaksi yang sama dengan token disimpan (compare-and-swap di dalam
+ * `runSerializable`), jadi dua ekstensi yang mengetik kode yang sama tidak
+ * bisa sama-sama mendapat token.
+ */
+export async function sambungPerangkat(input: { kode: unknown; versi: unknown; sekarang?: Date }): Promise<HasilSambung> {
+  const kode = normalKodeSambung(input.kode);
+  if (!kode) return { ok: false, kode: "KODE_TIDAK_SAH" };
+  const versi = typeof input.versi === "string" && input.versi.trim() ? input.versi.trim().slice(0, 40) : null;
+  const sekarang = input.sekarang ?? new Date();
+  const kodeHash = hashRahasia(kode);
+  const { token, tokenHash } = buatToken();
+  return runSerializable(async (tx): Promise<HasilSambung> => {
+    const p = await tx.kolPerangkat.findUnique({ where: { kodeHash }, select: { id: true, nama: true, dicabutAt: true, kodeBerlakuSampai: true } });
+    if (!p || p.dicabutAt) return { ok: false, kode: "KODE_TIDAK_SAH" };
+    if (!p.kodeBerlakuSampai || p.kodeBerlakuSampai.getTime() < sekarang.getTime()) return { ok: false, kode: "KODE_KEDALUWARSA" };
+    const r = await tx.kolPerangkat.updateMany({
+      where: { id: p.id, kodeHash, dicabutAt: null },
+      data: { kodeHash: null, kodeBerlakuSampai: null, tokenHash, tersambungAt: sekarang, terakhirLaporAt: sekarang, versiEkstensi: versi },
+    });
+    if (r.count !== 1) return { ok: false, kode: "KODE_TIDAK_SAH" };
+    await tulisLog(tx, { perangkatId: p.id, jenis: "SAMBUNG", pesan: versi ? `versi ${versi}` : null, waktu: sekarang });
+    return { ok: true, token, perangkat: { id: p.id, nama: p.nama } };
+  });
+}
+
+/** Selang paling pendek antara dua tulisan `terakhirLaporAt` — status ditanya setiap menit. */
+const SELANG_LAPOR_MS = 60_000;
+
+/**
+ * Perangkat pemilik token, atau `null` (token tidak dikenal / dicabut → 401).
+ * Sekaligus: jeda otomatis yang sudah lewat dilepas (log LANJUT), dan
+ * `terakhirLaporAt` diperbarui paling sering sekali per menit.
+ */
+/** Versi ekstensi dari kepala `x-elorae-versi` ("0.3.1"); bentuk lain diabaikan. */
+const POLA_VERSI = /^\d{1,3}(?:\.\d{1,3}){1,3}$/;
+
+export async function perangkatDariToken(
+  token: string,
+  sekarang: Date = new Date(),
+  opsi: { versi?: string | null } = {},
+): Promise<PerangkatSah | null> {
+  const p = await prisma.kolPerangkat.findUnique({ where: { tokenHash: hashRahasia(token) }, select: { ...PILIH_PERANGKAT, versiEkstensi: true } });
+  if (!p || p.dicabutAt) return null;
+  // Versi yang sedang berjalan — terlihat di Pemantauan, jadi ketahuan apakah ekstensi sudah dimuat ulang.
+  if (opsi.versi && POLA_VERSI.test(opsi.versi) && opsi.versi !== p.versiEkstensi) {
+    await prisma.kolPerangkat.update({ where: { id: p.id }, data: { versiEkstensi: opsi.versi } });
+  }
+  if (p.dijedaSampai && p.dijedaSampai.getTime() <= sekarang.getTime()) {
+    await runSerializable(async (tx) => {
+      const r = await tx.kolPerangkat.updateMany({
+        where: { id: p.id, dijedaSampai: { lte: sekarang } },
+        data: { dijedaSampai: null, alasanJeda: null },
+      });
+      if (r.count === 1) await tulisLog(tx, { perangkatId: p.id, jenis: "LANJUT", kode: "OTOMATIS", pesan: p.alasanJeda, waktu: sekarang });
+    });
+    p.dijedaSampai = null;
+    p.alasanJeda = null;
+  }
+  if (!p.terakhirLaporAt || sekarang.getTime() - p.terakhirLaporAt.getTime() >= SELANG_LAPOR_MS) {
+    await prisma.kolPerangkat.update({ where: { id: p.id }, data: { terakhirLaporAt: sekarang } });
+    p.terakhirLaporAt = sekarang;
+  }
+  return {
+    id: p.id,
+    nama: p.nama,
+    dibuatOlehId: p.dibuatOlehId,
+    dijedaSampai: p.dijedaSampai,
+    alasanJeda: p.alasanJeda,
+    dicabutAt: p.dicabutAt,
+    terakhirLaporAt: p.terakhirLaporAt,
+  };
+}
+
+export type HitunganHariIni = { selesai: number; gagal: number; dipinjam: number; kuota: number; sisa: number };
+
+/**
+ * Kuota hari ini (WIB), semua perangkat bersama: satu pengecekan = satu tugas
+ * yang selesai, gagal, atau sedang dipinjam. Hasil manual (`/manual`, tanpa
+ * tugas) tidak memakan kuota.
+ */
+export async function hitungHariIni(client: Klien | typeof prisma, sekarang: Date, kuota: number): Promise<HitunganHariIni> {
+  const hari = hariIniWib(sekarang);
+  const rentang = { gte: parseDateOnly(hari)!, lte: parseDateOnlyEnd(hari)! };
+  const [selesai, gagal, dipinjam] = await Promise.all([
+    client.kolLogPantau.count({ where: { jenis: "HASIL", tugasId: { not: null }, createdAt: rentang } }),
+    client.kolLogPantau.count({ where: { jenis: "MASALAH", tugasId: { not: null }, createdAt: rentang } }),
+    // Lease yang sah berakhir paling lambat `LEASE_MENIT` dari sekarang; batas atas ini juga
+    // menjaga hitungan tes (tahun 2000–2004) dari pinjaman sungguhan yang berakhir hari ini.
+    client.kolTugasPantau.count({ where: { status: "DIPINJAM", pinjamSampai: { gte: sekarang, lte: new Date(sekarang.getTime() + menit(LEASE_MENIT)) } } }),
+  ]);
+  return { selesai, gagal, dipinjam, kuota, sisa: Math.max(0, kuota - selesai - gagal - dipinjam) };
+}
+
+export type StatusEkstensi = {
+  ok: true;
+  /** Tugas "Cek sekarang" yang menunggu: ekstensi tidak menunggu jam kerja/jeda tunggu untuknya. */
+  permintaanLangsung: number;
+  perangkat: { id: string; nama: string };
+  aktif: boolean;
+  dijedaSampai: string | null;
+  alasanJeda: string | null;
+  pengaturan: Pick<
+    PengaturanPantau,
+    | "jamMulai"
+    | "jamSelesai"
+    | "jedaMinDetik"
+    | "jedaMaksDetik"
+    | "istirahatSetiapMenit"
+    | "istirahatMinMenit"
+    | "istirahatMaksMenit"
+    | "jedaOtomatisMenit"
+  >;
+  hariIni: { selesai: number; gagal: number; kuota: number; sisa: number };
+};
+
+export async function statusPerangkat(
+  p: PerangkatSah,
+  o: { sekarang?: Date; pengaturan?: PengaturanPantau; platforms?: readonly PlatformPantau[] } = {},
+): Promise<StatusEkstensi> {
+  const sekarang = o.sekarang ?? new Date();
+  const pg = o.pengaturan ?? (await bacaPengaturanPantau());
+  const h = await hitungHariIni(prisma, sekarang, pg.kuotaHarian);
+  const dijeda = terbuka(p.dijedaSampai, sekarang);
+  // Hanya permintaan untuk platform yang sanggup dikerjakan perangkat ini (tanpa daftar = TikTok).
+  const permintaanLangsung = await prisma.kolTugasPantau.count({
+    where: {
+      status: "ANTRE",
+      platform: { in: [...(o.platforms ?? PLATFORM_BAWAAN_EKSTENSI)] },
+      kunci: { contains: PENANDA_MINTA },
+      jatuhAt: { lte: sekarang, gte: new Date(sekarang.getTime() - UMUR_MAKS_TUGAS_HARI * 86_400_000) },
+    },
+  });
+  return {
+    ok: true,
+    permintaanLangsung,
+    perangkat: { id: p.id, nama: p.nama },
+    aktif: pg.aktif && !dijeda,
+    dijedaSampai: dijeda ? iso(p.dijedaSampai) : null,
+    alasanJeda: dijeda ? p.alasanJeda : null,
+    pengaturan: {
+      jamMulai: pg.jamMulai,
+      jamSelesai: pg.jamSelesai,
+      jedaMinDetik: pg.jedaMinDetik,
+      jedaMaksDetik: pg.jedaMaksDetik,
+      istirahatSetiapMenit: pg.istirahatSetiapMenit,
+      istirahatMinMenit: pg.istirahatMinMenit,
+      istirahatMaksMenit: pg.istirahatMaksMenit,
+      jedaOtomatisMenit: pg.jedaOtomatisMenit,
+    },
+    hariIni: { selesai: h.selesai, gagal: h.gagal, kuota: h.kuota, sisa: h.sisa },
+  };
+}
+
+export type TugasEkstensi = { id: string; jenis: "PROFIL" | "KONTEN"; platform: PlatformPantau; url: string; handle?: string };
+export type HasilPinjam = { tugas: TugasEkstensi | null; alasan?: AlasanTanpaTugas };
+
+/** Platform yang dikerjakan ekstensi yang tidak menyebut daftarnya (versi ≤ 0.10): TikTok saja. */
+export const PLATFORM_BAWAAN_EKSTENSI: readonly PlatformPantau[] = ["TIKTOK"];
+
+/** Daftar platform dari permintaan ekstensi; tidak ada / rusak → bawaan; isian yang tidak dikenal dibuang. */
+export function bacaPlatformEkstensi(nilai: unknown): readonly PlatformPantau[] {
+  const daftar = typeof nilai === "string" ? nilai.split(",") : Array.isArray(nilai) ? nilai : null;
+  if (!daftar) return PLATFORM_BAWAAN_EKSTENSI;
+  const sah = [
+    ...new Set(
+      daftar
+        .map((x: unknown) => (typeof x === "string" ? x.trim() : x))
+        .filter((x): x is PlatformPantau => typeof x === "string" && (PLATFORM_PANTAU as readonly string[]).includes(x)),
+    ),
+  ];
+  return sah.length ? sah : PLATFORM_BAWAAN_EKSTENSI;
+}
+
+const PILIH_TUGAS = {
+  id: true,
+  jenis: true,
+  platform: true,
+  url: true,
+  account: { select: { handle: true } },
+  content: { select: { link: true, collab: { select: { kol: { select: { accounts: { select: { platform: true, handle: true } } } } } } } },
+} satisfies Prisma.KolTugasPantauSelect;
+
+function keTugasEkstensi(t: Prisma.KolTugasPantauGetPayload<{ select: typeof PILIH_TUGAS }>): TugasEkstensi {
+  const platform = (PLATFORM_PANTAU as readonly string[]).includes(t.platform) ? (t.platform as PlatformPantau) : "TIKTOK";
+  const handle =
+    t.jenis === "PROFIL"
+      ? normalHandle(t.account?.handle)
+      : (handleDariLink(t.content?.link ?? t.url) ?? normalHandle(t.content?.collab?.kol?.accounts.find((a) => a.platform === platform)?.handle));
+  return { id: t.id, jenis: t.jenis === "KONTEN" ? "KONTEN" : "PROFIL", platform, url: t.url, ...(handle ? { handle } : {}) };
+}
+
+/**
+ * Pinjamkan satu tugas ke perangkat (lease `LEASE_MENIT`). Urutan alasan
+ * tanpa tugas: NONAKTIF → DIJEDA → DI_LUAR_JAM → KUOTA_HABIS → ANTREAN_KOSONG.
+ * Tugas DIPINJAM yang lease-nya lewat kembali ANTRE lebih dulu; perangkat
+ * yang masih memegang tugas yang sah mendapat tugas itu lagi (lease
+ * diperpanjang), bukan tugas kedua. Prioritas tertinggi, jatuh tempo paling
+ * awal dulu.
+ */
+/**
+ * Tugas yang jatuh temponya lebih tua dari ini tidak pernah dipinjamkan. Tugas sungguhan selalu
+ * baru (antrean tidak menyusun titik yang terlambat > 14 hari); yang setua ini hanya sisa — atau
+ * baris tes bertanggal 2000–2004 di basis data lokal yang sama, yang pada 2026-10-09 sempat
+ * diambil ekstensi pemilik dan dicoba dibuka di TikTok.
+ */
+export const UMUR_MAKS_TUGAS_HARI = 30;
+
+export async function pinjamTugas(input: {
+  perangkatId: string;
+  sekarang?: Date;
+  pengaturan?: PengaturanPantau;
+  cakupan?: { tugasIds?: readonly string[] };
+  /** Platform yang sanggup dikerjakan perangkat SAAT INI (Instagram hanya bila ada tab instagram.com terbuka). */
+  platforms?: readonly PlatformPantau[];
+}): Promise<HasilPinjam> {
+  const sekarang = input.sekarang ?? new Date();
+  const pg = input.pengaturan ?? (await bacaPengaturanPantau());
+  const lingkup: Prisma.KolTugasPantauWhereInput = input.cakupan?.tugasIds ? { id: { in: [...input.cakupan.tugasIds] } } : {};
+  const platforms = [...(input.platforms ?? PLATFORM_BAWAAN_EKSTENSI)];
+  const sampai = new Date(sekarang.getTime() + menit(LEASE_MENIT));
+
+  return runSerializable(async (tx): Promise<HasilPinjam> => {
+    const p = await tx.kolPerangkat.findUnique({ where: { id: input.perangkatId }, select: { dicabutAt: true, dijedaSampai: true } });
+    if (!p || p.dicabutAt) return { tugas: null, alasan: "NONAKTIF" };
+    if (!pg.aktif) return { tugas: null, alasan: "NONAKTIF" };
+    if (terbuka(p.dijedaSampai, sekarang)) return { tugas: null, alasan: "DIJEDA" };
+    // Di luar jam kerja hanya permintaan langsung ("Cek sekarang") yang dikerjakan — orangnya sedang menunggu.
+    const diLuarJam = !dalamJamKerja(sekarang, pg);
+
+    await tx.kolTugasPantau.updateMany({
+      where: { ...lingkup, status: "DIPINJAM", pinjamSampai: { lt: sekarang } },
+      data: { status: "ANTRE", perangkatId: null, pinjamSampai: null },
+    });
+    // Pinjaman platform yang kini tidak sanggup dikerjakan perangkat ini (tab Instagram ditutup,
+    // Instagram meminta masuk) kembali ke antrean tanpa menambah percobaan.
+    await tx.kolTugasPantau.updateMany({
+      where: { ...lingkup, status: "DIPINJAM", perangkatId: input.perangkatId, platform: { notIn: platforms } },
+      data: { status: "ANTRE", perangkatId: null, pinjamSampai: null },
+    });
+
+    const dipegang = await tx.kolTugasPantau.findFirst({
+      where: { ...lingkup, status: "DIPINJAM", perangkatId: input.perangkatId, platform: { in: platforms }, pinjamSampai: { gte: sekarang } },
+      orderBy: [{ pinjamSampai: "asc" }, { id: "asc" }],
+      select: PILIH_TUGAS,
+    });
+    if (dipegang) {
+      await tx.kolTugasPantau.update({ where: { id: dipegang.id }, data: { pinjamSampai: sampai } });
+      return { tugas: keTugasEkstensi(dipegang) };
+    }
+
+    const h = await hitungHariIni(tx, sekarang, pg.kuotaHarian);
+    if (h.sisa <= 0) return { tugas: null, alasan: "KUOTA_HABIS" };
+
+    const calon = await tx.kolTugasPantau.findFirst({
+      where: {
+        ...lingkup,
+        status: "ANTRE",
+        platform: { in: platforms },
+        jatuhAt: { lte: sekarang, gte: new Date(sekarang.getTime() - UMUR_MAKS_TUGAS_HARI * 86_400_000) },
+        ...(diLuarJam ? { kunci: { contains: PENANDA_MINTA } } : {}),
+      },
+      // Tugas yang belum pernah dicoba lebih dulu: satu video yang terus gagal tidak boleh menahan yang lain.
+      orderBy: [{ prioritas: "desc" }, { percobaan: "asc" }, { jatuhAt: "asc" }, { id: "asc" }],
+      select: PILIH_TUGAS,
+    });
+    if (!calon) return { tugas: null, alasan: diLuarJam ? "DI_LUAR_JAM" : "ANTREAN_KOSONG" };
+    const r = await tx.kolTugasPantau.updateMany({
+      where: { id: calon.id, status: "ANTRE" },
+      data: { status: "DIPINJAM", perangkatId: input.perangkatId, pinjamSampai: sampai },
+    });
+    if (r.count !== 1) return { tugas: null, alasan: "ANTREAN_KOSONG" };
+    return { tugas: keTugasEkstensi(calon) };
+  });
+}
+
+/* ─────────────────────────── Hasil ─────────────────────────── */
+
+/** Penolakan dari penulis angka konten (`catatAngkaDiTx`) yang bisa sampai ke ekstensi. */
+type KodeTolakAngka = Extract<KodeGagalKontenKol, "TIDAK_DITEMUKAN" | "BELUM_TAYANG" | "ANGKA_TIDAK_SAH" | "ANGKA_KOSONG" | "TANGGAL_TIDAK_SAH">;
+
+export type KodeTolakHasil =
+  | "TUGAS_TIDAK_ADA"
+  | "TUGAS_TIDAK_AKTIF"
+  | "JENIS_BERBEDA"
+  | "AKUN_BERBEDA"
+  | "KONTEN_BERBEDA"
+  | "MUATAN_TIDAK_SAH"
+  | KodeTolakAngka;
+
+export type HasilSimpan = { ok: true; ulang?: true } | { ok: false; kode: KodeTolakHasil };
+
+/**
+ * Simpan hasil profil ke akun: catatan pengikut baru (selalu baris baru) + angka akun terbaru, lalu
+ * riwayat brand postingnya (D1) dan video yang menandai Elorae ke Performa video (D2, `brand-writer.ts`).
+ * Dipanggil sekali per akun yang cocok; D2 memeriksa "sudah ada" di transaksi yang sama, jadi akun
+ * kembar di dua KOL tidak membuat video yang sama dua kali.
+ */
+async function simpanProfilDiTx(tx: Klien, akunId: string, data: HasilProfil, k: KonteksPembacaan) {
+  const sekarang = k.sekarang;
+  const perangkatId = k.perangkat.id;
+  const platform = platformHasil(data);
+  // YouTube: angka kanal hanya teks ringkas dan posting tidak dikirim → ER tidak dihitung (null, ER lama tetap).
+  const er = hitungErAkun(platform === "YOUTUBE" ? [] : data.posting, sekarang);
+  const idPlatform = data.secUid ?? data.idPlatform;
+  // Angka terukur SEBELUM pembaruan: dasar untuk tahu apakah angka KOL masih mengikuti pemantauan.
+  const lama = await tx.kolAccount.findUnique({ where: { id: akunId }, select: { kolId: true, platform: true, er: true, avgViews: true } });
+  await tx.kolFollowerSnapshot.create({
+    data: {
+      accountId: akunId,
+      followers: pangkasInt(data.pengikut),
+      recordedAt: sekarang,
+      // Pengikut dari teks ringkas ("46,5 jt") ditandai, supaya tidak dibaca sebagai angka persis.
+      source: data.pengikutPerkiraan ? "ekstensi-perkiraan" : "ekstensi",
+      er: er.er === null ? null : new Prisma.Decimal(er.er),
+      avgViews: er.avgViews,
+      postsCounted: er.postsCounted,
+      perangkatId,
+    },
+  });
+  await tx.kolAccount.update({
+    where: { id: akunId },
+    data: {
+      followers: pangkasInt(data.pengikut),
+      // ER yang tidak bisa dihitung (< 3 posting sah) tidak menghapus ER terakhir yang terukur; `erUpdatedAt` menyebut kapan.
+      ...(er.er !== null ? { er: new Prisma.Decimal(er.er), avgViews: er.avgViews, erUpdatedAt: sekarang } : {}),
+      ...(idPlatform ? { platformUserId: idPlatform.slice(0, 191) } : {}),
+      lastCheckedAt: sekarang,
+      checkStatus: "OK",
+    },
+  });
+  if (er.er !== null && lama && lama.platform === "TIKTOK") {
+    await ikutiAngkaKolDiTx(tx, akunId, lama, { er: er.er, avgViews: er.avgViews });
+  }
+  if (lama) {
+    k.ringkasan.brand += await catatBrandDariPembacaanDiTx(tx, {
+      kolId: lama.kolId,
+      accountId: akunId,
+      platform,
+      handle: data.uniqueId,
+      posting: data.posting,
+      createdById: k.perangkat.dibuatOlehId,
+    });
+    await masukkanKePerformaDiTx(tx, { platform, handle: data.uniqueId, posting: data.posting }, k);
+  }
+}
+
+/** Satu hasil konten dalam bentuk posting (aturan brand dan D2 membaca bentuk yang sama). */
+function postingDariKonten(d: HasilKonten): PostingBrand & AngkaPosting {
+  return {
+    id: d.videoId,
+    ...(d.dibuatPada !== undefined ? { dibuatPada: d.dibuatPada } : {}),
+    ...(d.bentuk !== undefined ? { bentuk: d.bentuk } : {}),
+    views: d.views,
+    like: d.like,
+    komentar: d.komentar,
+    share: d.share,
+    save: d.save,
+    ...(d.teks !== undefined ? { teks: d.teks } : {}),
+    ...(d.sebutan !== undefined ? { sebutan: d.sebutan } : {}),
+    ...(d.tagar !== undefined ? { tagar: d.tagar } : {}),
+    ...(d.iklan !== undefined ? { iklan: d.iklan } : {}),
+    penulis: d.penulis ?? normalHandle(d.uniqueId),
+  };
+}
+
+/** Riwayat brand (D1) sebuah hasil konten, dicatat pada KOL pemilik kontennya. */
+async function catatBrandKontenDiTx(tx: Klien, kontenId: string, d: HasilKonten, k: KonteksPembacaan) {
+  const platform = platformHasil(d);
+  const c = await tx.kolContent.findUnique({
+    where: { id: kontenId },
+    select: { collab: { select: { kol: { select: { id: true, accounts: { where: { platform }, select: { id: true, handle: true } } } } } } },
+  });
+  const kol = c?.collab?.kol;
+  if (!kol) return;
+  const akun = kol.accounts.find((a) => handleCocok(d.uniqueId, [a.handle]));
+  k.ringkasan.brand += await catatBrandDariPembacaanDiTx(tx, {
+    kolId: kol.id,
+    accountId: akun?.id ?? null,
+    platform,
+    handle: d.uniqueId,
+    posting: [postingDariKonten(d)],
+    createdById: k.perangkat.dibuatOlehId,
+  });
+}
+
+/** Konteks satu percobaan transaksi pembacaan: izin pemasang dibaca sekali, lewat `tx` percobaan itu. */
+function konteksPembacaan(
+  tx: Klien,
+  p: Pick<PerangkatSah, "id" | "dibuatOlehId">,
+  sekarang: Date,
+  pengaturan: PengaturanBrand,
+  ringkasan: RingkasanPembacaan,
+): KonteksPembacaan {
+  let izin: boolean | null = null;
+  kosongkanRingkasan(ringkasan);
+  return {
+    perangkat: { id: p.id, dibuatOlehId: p.dibuatOlehId },
+    sekarang,
+    pengaturan,
+    ringkasan,
+    bolehBuat: async () => (izin ??= await pemasangBolehKelola(tx, p.dibuatOlehId)),
+  };
+}
+
+/**
+ * ER dan rata-rata views di tingkat KOL mengikuti akun TikTok UTAMA-nya (pengikut terbanyak) selama
+ * tidak diketik tangan — aturannya murni di `angka-terukur.ts`. Akun TikTok lain milik KOL yang sama
+ * tidak menggeser angka KOL.
+ */
+async function ikutiAngkaKolDiTx(
+  tx: Klien,
+  akunId: string,
+  lama: { kolId: string; er: Prisma.Decimal | null; avgViews: number | null },
+  baru: { er: number; avgViews: number | null },
+) {
+  const akun = await tx.kolAccount.findMany({ where: { kolId: lama.kolId, platform: "TIKTOK" }, select: { id: true, followers: true } });
+  if (akunUtama(akun)?.id !== akunId) return;
+  const kol = await tx.kol.findUnique({ where: { id: lama.kolId }, select: { engagementRate: true, avgViews: true } });
+  if (!kol) return;
+  const erKol = ikutiTerukur(
+    kol.engagementRate === null ? null : Number(kol.engagementRate),
+    lama.er === null ? null : Number(lama.er),
+    baru.er,
+    TOLERANSI_ER,
+  );
+  const viewsKol = ikutiTerukur(kol.avgViews, lama.avgViews, baru.avgViews);
+  if (erKol === null && viewsKol === null) return;
+  await tx.kol.update({
+    where: { id: lama.kolId },
+    data: {
+      ...(erKol !== null ? { engagementRate: new Prisma.Decimal(erKol) } : {}),
+      ...(viewsKol !== null ? { avgViews: viewsKol } : {}),
+    },
+  });
+}
+
+async function simpanKontenDiTx(tx: Klien, kontenId: string, data: HasilKonten, p: Pick<PerangkatSah, "id" | "dibuatOlehId">, sekarang: Date) {
+  // Kolom angka konten adalah Int: video di atas 2,1 miliar views disimpan terpangkas, tidak ditolak.
+  // Angka yang tidak dikirim (Instagram: share/simpan) tersimpan 0 dengan catatan yang menyebutnya.
+  return catatAngkaPantauDiTx(tx, { kontenId, platform: platformHasil(data), angka: data, sekarang, perangkat: p });
+}
+
+/** Handle yang boleh untuk sebuah konten: akun TikTok KOL-nya + handle di link-nya sendiri. */
+function handleKonten(link: string | null, akun: readonly { handle: string }[]): string[] {
+  return [...akun.map((a) => a.handle), handleDariLink(link) ?? ""].filter((h) => normalHandle(h));
+}
+
+/**
+ * Gagalkan tugas karena hasilnya ditolak (akun/konten berbeda, angka kosong),
+ * catat masalahnya, dan terapkan aturan gagal beruntun. Ditulis di transaksi
+ * pemanggil dan DIKEMBALIKAN (bukan dilempar) supaya ikut tersimpan.
+ */
+async function tolakHasil(
+  tx: Klien,
+  tugas: { id: string; percobaan: number; status: string; perangkatId: string | null },
+  kode: KodeTolakHasil,
+  p: PerangkatSah,
+  pg: PengaturanPantau,
+  sekarang: Date,
+): Promise<{ ok: false; kode: KodeTolakHasil }> {
+  if (!dipinjamOleh(tugas, p.id)) return { ok: false, kode };
+  const percobaan = tugas.percobaan + 1;
+  const ulang = KODE_HASIL_ULANG.has(kode) && percobaan < MAKS_PERCOBAAN;
+  await tx.kolTugasPantau.update({
+    where: { id: tugas.id },
+    data: ulang
+      ? { status: "ANTRE", percobaan, perangkatId: null, pinjamSampai: null, galatTerakhir: kode }
+      : { status: "GAGAL", percobaan, perangkatId: p.id, pinjamSampai: null, galatTerakhir: kode, selesaiAt: sekarang },
+  });
+  await tulisLog(tx, { perangkatId: p.id, tugasId: tugas.id, jenis: "MASALAH", kode, waktu: sekarang });
+  await periksaGagalBeruntun(tx, p, pg, sekarang);
+  return { ok: false, kode };
+}
+
+/**
+ * Jeda perangkat bila `maksGagalBeruntun` laporan terakhirnya semuanya
+ * kegagalan perangkat. LANJUT memutus deretnya — perangkat yang baru
+ * dilanjutkan tidak langsung dijeda lagi oleh kegagalan lamanya.
+ *
+ * Hanya tugas TikTok (dan laporan tanpa tugas) yang dihitung: kegagalan
+ * Instagram/YouTube adalah masalah platform itu (bentuk halaman Instagram
+ * untuk pengguna yang sudah masuk belum diukur), dan tidak boleh
+ * menghentikan pemantauan TikTok perangkat yang sama.
+ */
+async function periksaGagalBeruntun(tx: Klien, p: PerangkatSah, pg: PengaturanPantau, sekarang: Date) {
+  const calon = await tx.kolLogPantau.findMany({
+    where: { perangkatId: p.id, jenis: { in: ["HASIL", "MASALAH", "LANJUT"] } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: pg.maksGagalBeruntun * 5,
+    select: { jenis: true, kode: true, tugasId: true },
+  });
+  const tugasIds = [...new Set(calon.flatMap((l) => (l.tugasId ? [l.tugasId] : [])))];
+  const bukanTiktok = new Set(
+    tugasIds.length
+      ? (await tx.kolTugasPantau.findMany({ where: { id: { in: tugasIds }, platform: { not: "TIKTOK" } }, select: { id: true } })).map((t) => t.id)
+      : [],
+  );
+  const akhir = calon.filter((l) => !(l.tugasId && bukanTiktok.has(l.tugasId))).slice(0, pg.maksGagalBeruntun);
+  if (akhir.length < pg.maksGagalBeruntun) return;
+  if (!akhir.every((l) => l.jenis === "MASALAH" && l.kode !== null && KODE_GAGAL_PERANGKAT.has(l.kode))) return;
+  await jedaOtomatis(tx, p, "GAGAL_BERUNTUN", pg, sekarang);
+}
+
+async function jedaOtomatis(tx: Klien, p: PerangkatSah, alasan: Exclude<AlasanJeda, "MANUAL">, pg: PengaturanPantau, sekarang: Date) {
+  const sampai = new Date(sekarang.getTime() + menit(pg.jedaOtomatisMenit));
+  // Jeda manual tidak dipendekkan oleh jeda otomatis.
+  const kini = await tx.kolPerangkat.findUnique({ where: { id: p.id }, select: { dijedaSampai: true, alasanJeda: true } });
+  if (kini?.alasanJeda === "MANUAL" && terbuka(kini.dijedaSampai, sekarang)) return kini.dijedaSampai;
+  await tx.kolPerangkat.update({ where: { id: p.id }, data: { dijedaSampai: sampai, alasanJeda: alasan } });
+  await tx.kolTugasPantau.updateMany({
+    where: { perangkatId: p.id, status: "DIPINJAM" },
+    data: { status: "ANTRE", perangkatId: null, pinjamSampai: null },
+  });
+  await tulisLog(tx, { perangkatId: p.id, jenis: "JEDA", kode: alasan, pesan: `sampai ${sampai.toISOString()}`, waktu: sekarang });
+  return sampai;
+}
+
+/**
+ * Terima hasil satu tugas. Idempoten: hasil kedua untuk tugas SELESAI →
+ * `{ ok: true, ulang: true }` tanpa baris baru. Tugas yang ANTRE (lease-nya
+ * lewat) atau DIPINJAM perangkat lain tetap diterima — angkanya sah, dan
+ * tugasnya selesai sekali saja.
+ */
+export async function simpanHasil(input: {
+  perangkat: PerangkatSah;
+  tugasId: string;
+  data: HasilPantau;
+  sekarang?: Date;
+  pengaturan?: PengaturanPantau;
+  /** Pengaturan brand (D1/D2); tes memberi miliknya sendiri. */
+  pengaturanBrand?: PengaturanBrand;
+}): Promise<HasilSimpan> {
+  const sekarang = input.sekarang ?? new Date();
+  const pg = input.pengaturan ?? (await bacaPengaturanPantau());
+  const pb = input.pengaturanBrand ?? (await bacaPengaturanBrand());
+  const p = input.perangkat;
+  const ringkasan = ringkasanBaru();
+  // Video yang menandai Elorae bisa membuat kolaborasi bernomor (D2): bentrok nomor diulang.
+  const hasil = await denganNomorUnik(() => runSerializable(async (tx): Promise<HasilSimpan> => {
+    const k = konteksPembacaan(tx, p, sekarang, pb, ringkasan);
+    const t = await tx.kolTugasPantau.findUnique({
+      where: { id: input.tugasId },
+      select: {
+        id: true,
+        jenis: true,
+        platform: true,
+        status: true,
+        percobaan: true,
+        perangkatId: true,
+        accountId: true,
+        contentId: true,
+        account: { select: { id: true, handle: true, platform: true } },
+        content: { select: { id: true, link: true, collab: { select: { kol: { select: { accounts: { select: { platform: true, handle: true } } } } } } } },
+      },
+    });
+    if (!t) return { ok: false, kode: "TUGAS_TIDAK_ADA" };
+    if (t.status === "SELESAI") return { ok: true, ulang: true };
+    if (t.status !== "ANTRE" && t.status !== "DIPINJAM") return { ok: false, kode: "TUGAS_TIDAK_AKTIF" };
+    if (input.data.jenis !== t.jenis) return tolakHasil(tx, t, "JENIS_BERBEDA", p, pg, sekarang);
+    // Hasil dari platform lain bukan milik tugas ini (mis. tab Instagram membaca halaman lain).
+    const platform = platformHasil(input.data);
+    if (platform !== t.platform) return tolakHasil(tx, t, input.data.jenis === "PROFIL" ? "AKUN_BERBEDA" : "KONTEN_BERBEDA", p, pg, sekarang);
+
+    if (input.data.jenis === "PROFIL") {
+      if (!t.account) return { ok: false, kode: "TUGAS_TIDAK_ADA" };
+      if (t.account.platform !== platform || !handleCocok(input.data.uniqueId, [t.account.handle])) return tolakHasil(tx, t, "AKUN_BERBEDA", p, pg, sekarang);
+      await simpanProfilDiTx(tx, t.account.id, input.data, k);
+    } else {
+      if (!t.content) return { ok: false, kode: "TUGAS_TIDAK_ADA" };
+      const akunKol = (t.content.collab?.kol?.accounts ?? []).filter((a) => a.platform === platform);
+      const boleh = handleKonten(t.content.link, akunKol);
+      if (boleh.length && !handleCocok(input.data.uniqueId, boleh)) return tolakHasil(tx, t, "AKUN_BERBEDA", p, pg, sekarang);
+      const vid = kontenIdDariLink(t.content.link, platform);
+      if (vid && vid !== input.data.videoId) return tolakHasil(tx, t, "KONTEN_BERBEDA", p, pg, sekarang);
+      const r = await simpanKontenDiTx(tx, t.content.id, input.data, p, sekarang);
+      if (!r.ok) return tolakHasil(tx, t, r.kode as KodeTolakHasil, p, pg, sekarang);
+      await catatBrandKontenDiTx(tx, t.content.id, input.data, k);
+    }
+
+    await tx.kolTugasPantau.update({
+      where: { id: t.id },
+      data: { status: "SELESAI", selesaiAt: sekarang, perangkatId: p.id, pinjamSampai: null, galatTerakhir: null },
+    });
+    await tulisLog(tx, { perangkatId: p.id, tugasId: t.id, jenis: "HASIL", kode: t.jenis, waktu: sekarang });
+    return { ok: true };
+  }));
+  // Sesudah commit: kolaborasi yang dibuat untuk video yang menandai Elorae — selaraskan jurnalnya (best-effort).
+  if (hasil.ok && ringkasan.kolaborasiDisentuh.size) await sinkronJurnalKolAman([...ringkasan.kolaborasiDisentuh], p.dibuatOlehId);
+  return hasil;
+}
+
+/* ─────────────────────────── Masalah ─────────────────────────── */
+
+/**
+ * Laporan masalah dari ekstensi.
+ *   - GAGAL_MUAT / TIDAK_TERBACA: percobaan + 1; ANTRE lagi selama < 3, lalu GAGAL.
+ *   - TIDAK_DITEMUKAN / PRIVAT: GAGAL; tugas profil menandai `KolAccount.checkStatus`
+ *     dan `lastCheckedAt` (akunnya sudah dicek — tidak dicek ulang setiap hari).
+ *   - CAPTCHA / LOGIN: masalah PERANGKAT, bukan tugas — tugasnya kembali ANTRE
+ *     tanpa menambah percobaan, perangkat dijeda `jedaOtomatisMenit`.
+ */
+export async function laporMasalah(input: {
+  perangkat: PerangkatSah;
+  masalah: MasalahPantau;
+  sekarang?: Date;
+  pengaturan?: PengaturanPantau;
+}): Promise<{ ok: true; dijedaSampai: string | null }> {
+  const sekarang = input.sekarang ?? new Date();
+  const pg = input.pengaturan ?? (await bacaPengaturanPantau());
+  const p = input.perangkat;
+  const { kode } = input.masalah;
+  return runSerializable(async (tx) => {
+    let tugasId: string | null = null;
+    if (input.masalah.tugasId) {
+      const t = await tx.kolTugasPantau.findUnique({
+        where: { id: input.masalah.tugasId },
+        select: { id: true, status: true, percobaan: true, perangkatId: true, accountId: true, jenis: true },
+      });
+      if (t && dipinjamOleh(t, p.id)) {
+        tugasId = t.id;
+        if (KODE_JEDA.has(kode)) {
+          await tx.kolTugasPantau.update({ where: { id: t.id }, data: { status: "ANTRE", perangkatId: null, pinjamSampai: null, galatTerakhir: kode } });
+        } else {
+          const percobaan = t.percobaan + 1;
+          const ulang = KODE_ULANG.has(kode) && percobaan < MAKS_PERCOBAAN;
+          await tx.kolTugasPantau.update({
+            where: { id: t.id },
+            data: ulang
+              ? { status: "ANTRE", percobaan, perangkatId: null, pinjamSampai: null, galatTerakhir: kode }
+              : { status: "GAGAL", percobaan, perangkatId: p.id, pinjamSampai: null, galatTerakhir: kode, selesaiAt: sekarang },
+          });
+          if (t.jenis === "PROFIL" && t.accountId) {
+            if (KODE_STATUS_AKUN.has(kode)) {
+              await tx.kolAccount.update({ where: { id: t.accountId }, data: { checkStatus: kode, lastCheckedAt: sekarang } });
+            } else if (kode === "TIDAK_TERBACA") {
+              await tx.kolAccount.update({ where: { id: t.accountId }, data: { checkStatus: "TIDAK_TERBACA" } });
+            }
+          }
+        }
+      }
+    }
+    // Laporan susulan untuk tugas yang sudah dihitung (bukan pinjaman pelapor lagi) tidak dicatat
+    // sebagai masalah kedua — kuota dan deret gagal beruntun menghitung baris MASALAH. Masalah
+    // perangkat (captcha/login) dan laporan tanpa tugas tetap dicatat.
+    const susulan = input.masalah.tugasId !== null && tugasId === null;
+    if (!susulan || KODE_JEDA.has(kode)) {
+      await tulisLog(tx, { perangkatId: p.id, tugasId, jenis: "MASALAH", kode, pesan: input.masalah.pesan, waktu: sekarang });
+    }
+
+    let dijedaSampai: Date | null = null;
+    if (KODE_JEDA.has(kode)) dijedaSampai = (await jedaOtomatis(tx, p, kode as "CAPTCHA" | "LOGIN", pg, sekarang)) ?? null;
+    else if (KODE_BLOKIR.has(kode) && !susulan) dijedaSampai = (await jedaOtomatis(tx, p, "DIBLOKIR_TIKTOK", pg, sekarang)) ?? null;
+    else if (KODE_GAGAL_PERANGKAT.has(kode) && !susulan) await periksaGagalBeruntun(tx, p, pg, sekarang);
+    if (!dijedaSampai) {
+      const kini = await tx.kolPerangkat.findUnique({ where: { id: p.id }, select: { dijedaSampai: true } });
+      dijedaSampai = terbuka(kini?.dijedaSampai ?? null, sekarang) ? kini!.dijedaSampai : null;
+    }
+    return { ok: true as const, dijedaSampai: iso(dijedaSampai) };
+  });
+}
+
+/**
+ * `/hasil` yang muatannya tidak sah (`MUATAN_TIDAK_SAH`) tetap satu percobaan
+ * gagal untuk tugasnya — tanpa ini, bentuk halaman TikTok yang berubah membuat
+ * tugas berputar selamanya lewat lease yang lewat. Dihitung sekali per
+ * pinjaman (lihat `dipinjamOleh`); tugas yang tidak dikenal atau tidak sedang
+ * dipinjam pelapornya tidak disentuh.
+ */
+export async function tolakMuatan(input: {
+  perangkat: PerangkatSah;
+  tugasId: string;
+  sekarang?: Date;
+  pengaturan?: PengaturanPantau;
+}): Promise<{ ok: false; kode: "MUATAN_TIDAK_SAH" }> {
+  const sekarang = input.sekarang ?? new Date();
+  const pg = input.pengaturan ?? (await bacaPengaturanPantau());
+  await runSerializable(async (tx) => {
+    const t = await tx.kolTugasPantau.findUnique({
+      where: { id: input.tugasId },
+      select: { id: true, status: true, percobaan: true, perangkatId: true },
+    });
+    if (t) await tolakHasil(tx, t, "MUATAN_TIDAK_SAH", input.perangkat, pg, sekarang);
+  });
+  return { ok: false, kode: "MUATAN_TIDAK_SAH" };
+}
+
+/**
+ * "Putuskan" dari popup ekstensi: perangkat mencabut tokennya sendiri. Sama
+ * dengan Cabut di Elorae (tugas pinjamannya kembali ke antrean), tetapi
+ * tercatat di log pantau (`SAMBUNG`/`PUTUS`) — tidak ada pengguna Elorae yang
+ * melakukannya, jadi tidak ada baris `AuditLog`.
+ */
+export async function putuskanSendiri(input: { perangkat: PerangkatSah; sekarang?: Date }): Promise<{ ok: true }> {
+  const sekarang = input.sekarang ?? new Date();
+  const p = input.perangkat;
+  await runSerializable(async (tx) => {
+    const r = await tx.kolPerangkat.updateMany({
+      where: { id: p.id, dicabutAt: null },
+      data: { dicabutAt: sekarang, tokenHash: null, kodeHash: null, kodeBerlakuSampai: null, dijedaSampai: null, alasanJeda: null },
+    });
+    if (r.count !== 1) return;
+    await tx.kolTugasPantau.updateMany({
+      where: { perangkatId: p.id, status: "DIPINJAM" },
+      data: { status: "ANTRE", perangkatId: null, pinjamSampai: null },
+    });
+    await tulisLog(tx, { perangkatId: p.id, jenis: "SAMBUNG", kode: "PUTUS", pesan: "diputuskan dari ekstensi", waktu: sekarang });
+  });
+  return { ok: true };
+}
+
+/* ─────────────────────────── Manual ─────────────────────────── */
+
+export type HasilManual =
+  | { ok: true; cocok: { kolId: string; nama: string }; dibuat: { kol: boolean; konten: boolean } }
+  | { ok: false; kode: "AKUN_BERBEDA" | "KOL_DIBLOKIR" | "TANPA_IZIN" | KodeTolakAngka };
+
+export const SUMBER_EKSTENSI = "EKSTENSI";
+
+/** Pemasang perangkat masih boleh menambah KOL (`creative:manage`)? Dibaca dari basis data, bukan token. */
+async function pemasangBolehKelola(tx: Prisma.TransactionClient, userId: string): Promise<boolean> {
+  const u = await tx.user.findUnique({ where: { id: userId }, select: PILIH_PENGGUNA_SESI });
+  if (!u) return false;
+  const izin = isiSesiDari(u).permissions;
+  return izin.includes("*") || izin.includes("creative:manage");
+}
+
+/**
+ * "Simpan ke Elorae" dari panel di halaman TikTok — tanpa tugas, tidak memakan kuota. Profil
+ * dicocokkan lewat handle akun TikTok (abai huruf besar dan "@"); konten lewat link yang memuat id
+ * videonya. Satu akun TikTok yang tercatat di beberapa KOL diperbarui semuanya; yang disebut adalah
+ * yang pertama.
+ *
+ * Belum ada di Elorae → DIBUAT, tanpa isian (pemilik 2026-10-09: "bisa masuk secara otomatis, tidak
+ * perlu saya input"), lewat penulis yang sama dengan "Tempel link" (`metadata.sumber = "EKSTENSI"`):
+ * profil → KOL baru "@handle" + akun TikTok-nya; video → KOL itu (dibuat bila perlu) + kolaborasi
+ * berjalan jenis KOL (dibuat tanpa fee bila belum ada; keputusan sementara, ingatkan pemilik) + konten.
+ * Membuat butuh `creative:manage` milik orang yang memasang perangkat, dibaca ulang di sini.
+ *
+ * Seperti setiap pembacaan, profil juga mencatat riwayat brand postingnya (D1) dan memasukkan video
+ * yang menandai Elorae ke Performa video (D2); video mencatat riwayat brand-nya (`brand-writer.ts`).
+ */
+export async function simpanManual(input: {
+  perangkat: PerangkatSah;
+  url: string;
+  data: HasilPantau;
+  sekarang?: Date;
+  /** Pengaturan brand (D1/D2); tes memberi miliknya sendiri. */
+  pengaturanBrand?: PengaturanBrand;
+}): Promise<HasilManual> {
+  const sekarang = input.sekarang ?? new Date();
+  const p = input.perangkat;
+  const d = input.data;
+  const pb = input.pengaturanBrand ?? (await bacaPengaturanBrand());
+  const kolaborasiDisentuh: string[] = [];
+  const ringkasan = ringkasanBaru();
+  const hasil = await denganNomorUnik(() =>
+    runSerializable(async (tx): Promise<HasilManual> => {
+      kolaborasiDisentuh.length = 0; // percobaan ulang serializable mulai bersih
+      const k = konteksPembacaan(tx, p, sekarang, pb, ringkasan);
+      const platform = platformHasil(d);
+      if (d.jenis === "PROFIL") {
+        const u = normalHandle(d.uniqueId);
+        let cocok = await akunProfil(tx, platform, u);
+        let kolBaru = false;
+        if (!cocok.length) {
+          if (!(await pemasangBolehKelola(tx, p.dibuatOlehId))) return { ok: false, kode: "TANPA_IZIN" };
+          const r = await simpanProfilKolDiTx(tx, {
+            // followers 0 di sini: angka (dan satu-satunya riwayat pengikut) ditulis simpanProfilDiTx di bawah.
+            isi: { name: `@${u}`, akun: [{ platform, handle: u, followers: 0, url: urlProfilPantau(platform, u) }] },
+            olehUserId: p.dibuatOlehId,
+            periksaKembar: false,
+            sumber: SUMBER_EKSTENSI,
+          });
+          if (!r.ok) throw new Error(`EKSTENSI_KOL_${r.alasan}`);
+          const akun = await tx.kolAccount.findMany({
+            where: { kolId: r.id, platform },
+            select: { id: true, handle: true, kol: { select: { id: true, name: true } } },
+          });
+          cocok = akun.filter((a) => a.kol != null);
+          kolBaru = true;
+        }
+        for (const a of cocok) await simpanProfilDiTx(tx, a.id, d, k);
+        await tulisLog(tx, { perangkatId: p.id, jenis: "HASIL", kode: "MANUAL_PROFIL", pesan: input.url.slice(0, 500), waktu: sekarang });
+        return { ok: true, cocok: { kolId: cocok[0].kol.id, nama: cocok[0].kol.name }, dibuat: { kol: kolBaru, konten: false } };
+      }
+
+      const ada = await kontenPlatform(tx, platform, d.videoId);
+      let kontenId: string;
+      let kolId: string;
+      let nama: string;
+      const dibuat = { kol: false, konten: false };
+      if (ada) {
+        const boleh = handleKonten(ada.link, ada.collab.kol.accounts);
+        if (boleh.length && !handleCocok(d.uniqueId, boleh)) return { ok: false, kode: "AKUN_BERBEDA" };
+        kontenId = ada.id;
+        kolId = ada.collab.kol.id;
+        nama = ada.collab.kol.name;
+      } else {
+        if (!(await pemasangBolehKelola(tx, p.dibuatOlehId))) return { ok: false, kode: "TANPA_IZIN" };
+        const handle = normalHandle(d.uniqueId);
+        // Tanggal tayang = waktu unggah yang terbaca di halaman, atau yang tersimpan di id videonya.
+        const unggah = d.dibuatPada ? new Date(d.dibuatPada * 1000) : (waktuTayangDariIdPlatform(platform, d.videoId) ?? sekarang);
+        const r = await tempelSatuDiTx(tx, {
+          baris: input.url,
+          videoId: d.videoId,
+          handle,
+          url: urlKontenPlatform(platform, d.videoId, { handle, bentuk: d.bentuk }),
+          platform,
+          format: formatDariBentuk(platform, d.bentuk),
+          liveAt: unggah.getTime() > sekarang.getTime() ? sekarang : unggah,
+          jenis: "KOL",
+          olehUserId: p.dibuatOlehId,
+          sekarang,
+          sumber: SUMBER_EKSTENSI,
+          tanpaTugasSegera: true,
+        });
+        if (r.status === "GAGAL") return { ok: false, kode: "KOL_DIBLOKIR" }; // satu-satunya GAGAL dari tempelSatuDiTx
+        kontenId = r.kontenId;
+        if (r.status === "DITAMBAHKAN") {
+          dibuat.konten = true;
+          dibuat.kol = r.kolBaru;
+          kolaborasiDisentuh.push(r.kolaborasiId);
+        }
+        const c = await tx.kolContent.findUniqueOrThrow({ where: { id: kontenId }, select: { collab: { select: { kol: { select: { id: true, name: true } } } } } });
+        kolId = c.collab.kol.id;
+        nama = c.collab.kol.name;
+      }
+      const r = await simpanKontenDiTx(tx, kontenId, d, p, sekarang);
+      if (!r.ok) return { ok: false, kode: r.kode as KodeTolakAngka };
+      await catatBrandKontenDiTx(tx, kontenId, d, k);
+      await tulisLog(tx, { perangkatId: p.id, jenis: "HASIL", kode: "MANUAL_KONTEN", pesan: input.url.slice(0, 500), waktu: sekarang });
+      return { ok: true, cocok: { kolId, nama }, dibuat };
+    }),
+  );
+  // Sesudah commit: kolaborasi berbayar yang baru tayang mengakui fee-nya (best-effort, seperti Tempel link).
+  const disentuh = [...kolaborasiDisentuh, ...ringkasan.kolaborasiDisentuh];
+  if (hasil.ok && disentuh.length) await sinkronJurnalKolAman(disentuh, p.dibuatOlehId);
+  return hasil;
+}
+
+/** Waktu unggah yang tersimpan di id konten itu sendiri (TikTok: id video; Instagram: shortcode), atau null. */
+function waktuTayangDariIdPlatform(platform: PlatformPantau, id: string): Date | null {
+  if (platform === "TIKTOK") return waktuTayangDariId(id);
+  if (platform === "INSTAGRAM") return waktuTayangInstagram(id);
+  return null;
+}
+
+/** Akun platform itu yang handle-nya `u` (abai huruf besar dan "@"), dengan KOL-nya. */
+async function akunProfil(tx: Klien, platform: PlatformPantau, u: string) {
+  const calon = await tx.kolAccount.findMany({
+    where: { platform, handle: cariTeks(u) },
+    orderBy: [{ id: "asc" }],
+    select: { id: true, handle: true, kol: { select: { id: true, name: true } } },
+    take: 50,
+  });
+  return calon.filter((a) => a.kol != null && handleCocok(u, [a.handle]));
+}
+
+/** Konten yang sudah dipantau untuk id konten ini di platform itu (yang terbaru bila ada kembarnya). */
+async function kontenPlatform(tx: Klien, platform: PlatformPantau, videoId: string) {
+  const konten = await tx.kolContent.findMany({
+    where: { link: cariTeks(videoId) },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+      link: true,
+      collab: { select: { kol: { select: { id: true, name: true, accounts: { where: { platform }, select: { handle: true } } } } } },
+    },
+    take: 20,
+  });
+  // Shortcode Instagram / id YouTube peka huruf besar-kecil: dicocokkan persis di sini.
+  return konten.find((x) => x.collab?.kol != null && kontenIdDariLink(x.link, platform) === videoId) ?? null;
+}
+
+/* ─────────────────────────── Otomatis (panel) ─────────────────────────── */
+
+export type HasilOtomatis =
+  | { ok: true; hasil: "DISIMPAN" | "DIABAIKAN"; kol?: { id: string; nama: string }; videoMasuk: number; brand: number }
+  | { ok: false; kode: "TANPA_IZIN" | "KOL_DIBLOKIR" };
+
+/**
+ * Kiriman otomatis panel ekstensi (`POST /api/kreatif/ekstensi/otomatis`, D3): panel mengirim
+ * setiap profil/video TikTok yang selesai dibacanya, TANPA tombol. Server yang memutuskan, dan
+ * yang tidak relevan tidak pernah menulis apa pun:
+ *
+ *   - profil yang akun TikTok-nya ada di Elorae → simpan profil (pengikut, ER) + riwayat brand
+ *     (D1) + video yang menandai Elorae (D2) — seperti "Simpan ke Elorae";
+ *   - profil yang belum ada, tetapi salah satu postingnya menandai Elorae → KOL "@handle" dibuat
+ *     (`otomatisKePerforma` nyala dan pemasang perangkat punya `creative:manage`), lalu sama;
+ *   - video yang sudah dipantau → angkanya dicatat bila angka terakhir lebih tua dari 12 jam,
+ *     plus riwayat brandnya; video yang belum ada tetapi menandai Elorae → D2;
+ *   - selain itu `DIABAIKAN`.
+ *
+ * Tanpa tugas, tidak memakan kuota harian. Baris log `OTOMATIS_PROFIL`/`OTOMATIS_KONTEN` hanya
+ * ditulis bila ada yang tersimpan.
+ */
+export async function simpanOtomatis(input: {
+  perangkat: PerangkatSah;
+  url: string;
+  data: HasilPantau;
+  sekarang?: Date;
+  pengaturanBrand?: PengaturanBrand;
+}): Promise<HasilOtomatis> {
+  const sekarang = input.sekarang ?? new Date();
+  const p = input.perangkat;
+  const d = input.data;
+  const pb = input.pengaturanBrand ?? (await bacaPengaturanBrand());
+  const ringkasan = ringkasanBaru();
+  const diabaikan = (kol?: { id: string; nama: string }): HasilOtomatis => ({ ok: true, hasil: "DIABAIKAN", ...(kol ? { kol } : {}), videoMasuk: 0, brand: 0 });
+  const log = (tx: Klien, kode: string) => tulisLog(tx, { perangkatId: p.id, jenis: "HASIL", kode, pesan: input.url.slice(0, 500), waktu: sekarang });
+
+  const hasil = await denganNomorUnik(() =>
+    runSerializable(async (tx): Promise<HasilOtomatis> => {
+      const k = konteksPembacaan(tx, p, sekarang, pb, ringkasan);
+      const platform = platformHasil(d);
+      if (d.jenis === "PROFIL") {
+        const u = normalHandle(d.uniqueId);
+        let cocok = await akunProfil(tx, platform, u);
+        if (!cocok.length) {
+          // Akun Elorae sendiri tidak pernah menjadi KOL; profil yang tidak menandai Elorae tidak disimpan.
+          if (pb.akunElorae.includes(u)) return diabaikan();
+          if (!d.posting.some((x) => postingMilik(x, u) && menandaiElorae(x, pb, [u]))) return diabaikan();
+          if (!pb.otomatisKePerforma) return diabaikan();
+          if (!(await k.bolehBuat())) return { ok: false, kode: "TANPA_IZIN" };
+          const r = await simpanProfilKolDiTx(tx, {
+            // followers 0 di sini: angka (dan satu-satunya riwayat pengikut) ditulis simpanProfilDiTx di bawah.
+            isi: { name: `@${u}`, akun: [{ platform, handle: u, followers: 0, url: urlProfilPantau(platform, u) }] },
+            olehUserId: p.dibuatOlehId,
+            periksaKembar: false,
+            sumber: SUMBER_DETEKSI_TAG,
+          });
+          if (!r.ok) throw new Error(`OTOMATIS_KOL_${r.alasan}`);
+          cocok = await akunProfil(tx, platform, u);
+          if (!cocok.length) throw new Error("OTOMATIS_KOL_TANPA_AKUN");
+        }
+        for (const a of cocok) await simpanProfilDiTx(tx, a.id, d, k);
+        await log(tx, "OTOMATIS_PROFIL");
+        return { ok: true, hasil: "DISIMPAN", kol: { id: cocok[0].kol.id, nama: cocok[0].kol.name }, videoMasuk: ringkasan.videoMasuk, brand: ringkasan.brand };
+      }
+
+      const u = normalHandle(d.uniqueId);
+      const posting = postingDariKonten(d);
+      const ada = await kontenPlatform(tx, platform, d.videoId);
+      if (ada) {
+        const kol = { id: ada.collab.kol.id, nama: ada.collab.kol.name };
+        const boleh = handleKonten(ada.link, ada.collab.kol.accounts);
+        if (boleh.length && !handleCocok(d.uniqueId, boleh)) return diabaikan(kol);
+        await masukkanKePerformaDiTx(tx, { platform, handle: u, posting: [posting] }, k);
+        await catatBrandKontenDiTx(tx, ada.id, d, k);
+        if (ringkasan.angka === 0 && ringkasan.brand === 0) return diabaikan(kol);
+        await log(tx, "OTOMATIS_KONTEN");
+        return { ok: true, hasil: "DISIMPAN", kol, videoMasuk: 0, brand: ringkasan.brand };
+      }
+
+      if (pb.akunElorae.includes(u) || !postingMilik(posting, u) || !menandaiElorae(posting, pb, [u])) return diabaikan();
+      if (!pb.otomatisKePerforma) return diabaikan();
+      if (!(await k.bolehBuat())) return { ok: false, kode: "TANPA_IZIN" };
+      const nasib = (await masukkanKePerformaDiTx(tx, { platform, handle: u, posting: [posting] }, k)).get(d.videoId);
+      if (nasib === "DIBLOKIR") return { ok: false, kode: "KOL_DIBLOKIR" };
+      const baru = await kontenPlatform(tx, platform, d.videoId);
+      if (!baru) return diabaikan();
+      await catatBrandKontenDiTx(tx, baru.id, d, k);
+      await log(tx, "OTOMATIS_KONTEN");
+      return { ok: true, hasil: "DISIMPAN", kol: { id: baru.collab.kol.id, nama: baru.collab.kol.name }, videoMasuk: ringkasan.videoMasuk, brand: ringkasan.brand };
+    }),
+  );
+  // Sesudah commit: kolaborasi yang dibuat untuk video yang menandai Elorae — selaraskan jurnalnya (best-effort).
+  if (hasil.ok && ringkasan.kolaborasiDisentuh.size) await sinkronJurnalKolAman([...ringkasan.kolaborasiDisentuh], p.dibuatOlehId);
+  return hasil;
+}

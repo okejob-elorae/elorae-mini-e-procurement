@@ -136,22 +136,34 @@ describe("checkIn / checkOut server actions", () => {
     await expect(checkIn({ storeId: store.id, lat: 1, lng: 2 })).rejects.toThrow("__REDIRECT__");
     const [visit] = await prisma.storeVisit.findMany({ where: { userId: TEST_USER_ID } });
 
-    const result = await checkOut({ visitId: visit.id, lat: 10, lng: 20 });
+    // Kunjungan tanpa transaksi wajib membawa alasan (aturan hasil kunjungan, bawaan wajib).
+    const result = await checkOut({ visitId: visit.id, lat: 10, lng: 20, outcome: "TOKO_TUTUP" });
     expect(result).toEqual({ alreadyClosed: false, storeId: store.id });
 
     const closed = await prisma.storeVisit.findUnique({ where: { id: visit.id } });
     expect(closed?.checkoutAt).not.toBeNull();
     expect(closed?.checkoutLat?.toNumber()).toBe(10);
     expect(closed?.checkoutLng?.toNumber()).toBe(20);
+    expect(closed?.outcome).toBe("TOKO_TUTUP");
+  });
+
+  it("checkOut without a transaction and without a reason is refused and leaves the visit open", async () => {
+    const store = await makeStore("TEST-A");
+    await expect(checkIn({ storeId: store.id, lat: 1, lng: 2 })).rejects.toThrow("__REDIRECT__");
+    const [visit] = await prisma.storeVisit.findMany({ where: { userId: TEST_USER_ID } });
+
+    await expect(checkOut({ visitId: visit.id, lat: 10, lng: 20 })).resolves.toEqual({ ok: false, code: "HASIL_WAJIB" });
+    const row = await prisma.storeVisit.findUnique({ where: { id: visit.id } });
+    expect(row?.checkoutAt).toBeNull();
   });
 
   it("checkOut returns alreadyClosed on already-closed visit", async () => {
     const store = await makeStore("TEST-A");
     await expect(checkIn({ storeId: store.id, lat: 1, lng: 2 })).rejects.toThrow("__REDIRECT__");
     const [visit] = await prisma.storeVisit.findMany({ where: { userId: TEST_USER_ID } });
-    await checkOut({ visitId: visit.id, lat: 10, lng: 20 });
+    await checkOut({ visitId: visit.id, lat: 10, lng: 20, outcome: "TOKO_TUTUP" });
 
-    const second = await checkOut({ visitId: visit.id, lat: 45, lng: 99 });
+    const second = await checkOut({ visitId: visit.id, lat: 45, lng: 99, outcome: "TOKO_TUTUP" });
     expect("ok" in second && second.ok === false).toBe(false);
     expect((second as { alreadyClosed: boolean }).alreadyClosed).toBe(true);
 

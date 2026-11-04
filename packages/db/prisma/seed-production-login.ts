@@ -10,7 +10,7 @@
  * - No work orders / inventory
  */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { createDbAdapter } from "../src/adapter";
 import { PrismaClient, DocType, Role } from "../generated/prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -27,16 +27,35 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const adapter = new PrismaMariaDb(databaseUrl);
+const adapter = createDbAdapter(databaseUrl);
 const prisma = new PrismaClient({ adapter });
 
 const now = new Date();
 const year = now.getFullYear();
 const month = now.getMonth() + 1;
 
+
+/*
+ * MySQL-only. The truncate path below relies on `SET FOREIGN_KEY_CHECKS`,
+ * `DATABASE()` and backtick quoting — none of which exist in PostgreSQL, where
+ * the equivalent is `TRUNCATE ... CASCADE`. Rather than port a destructive
+ * script that nothing currently needs, refuse to run against Postgres: a
+ * half-applied truncate on Supabase is far worse than a clear stop.
+ */
+function assertMysql(): void {
+  const url = process.env.DATABASE_URL ?? "";
+  if (/^postgres(ql)?:\/\//i.test(url.trim())) {
+    throw new Error(
+      "This script is MySQL-only and DATABASE_URL points at PostgreSQL. " +
+        "Refusing to run — see packages/db/prisma/postgres/README.md.",
+    );
+  }
+}
+
 async function truncateAllTables() {
   // WARNING: This deletes ALL rows in the current database (all base tables).
   // It is intentionally used for "production-login minimal seeder" reset/testing.
+  assertMysql();
   const tables = await prisma.$queryRaw<Array<{ TABLE_NAME: string }>>`
     SELECT TABLE_NAME
     FROM information_schema.tables

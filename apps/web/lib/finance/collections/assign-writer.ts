@@ -2,6 +2,7 @@ import { prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { sendNotificationToUsers } from "@/lib/notifications/recipients";
 import { CollectionError } from "./errors";
+import { isKonsiBill } from "./phone-scope";
 
 /**
  * One push to the collector who just received work: a single receivable opens that receivable, a
@@ -70,12 +71,19 @@ export async function assignCollector(input: {
 
     const receivables = await tx.receivable.findMany({
       where: { id: { in: input.receivableIds } },
-      select: { id: true, status: true, collectorId: true },
+      select: { id: true, status: true, collectorId: true, isConsignment: true, sellThroughId: true },
     });
     if (receivables.length !== input.receivableIds.length) throw new CollectionError("NOT_FOUND");
     for (const r of receivables) {
       if (r.status === "PAID" || r.status === "WRITTEN_OFF" || r.status === "VOIDED") throw new CollectionError("ALREADY_SETTLED");
     }
+    /*
+     * A konsi bill is paid only through a BKM (`isKonsiBill`): a team collector could never see it
+     * in the queue (`RECEIVABLES_ON_PHONE`) and `submitCollection` refuses it, so assigning one only
+     * hands out work nobody can do. Unassigning (`collectorId: null`) stays open, so a konsi bill
+     * that already holds a collector can still be cleared.
+     */
+    if (input.collectorId !== null && receivables.some(isKonsiBill)) throw new CollectionError("KONSI_LEWAT_BKM");
 
     const previousCollectorIds = Array.from(
       new Set(receivables.map((r) => r.collectorId).filter((id): id is string => id !== null)),

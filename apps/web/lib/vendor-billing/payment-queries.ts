@@ -12,6 +12,7 @@ export type VendorPaymentRow = {
   voidedAt: Date | null;
 };
 
+/** Vendor payments made before they closed on 2026-11-01 (`payment-writer.ts`): history only. */
 export async function listVendorPayments(filters: { supplierId?: string; from?: Date; to?: Date; search?: string }): Promise<VendorPaymentRow[]> {
   const search = filters.search?.trim();
   const where: Prisma.VendorPaymentWhereInput = {
@@ -38,31 +39,6 @@ export async function listVendorPayments(filters: { supplierId?: string; from?: 
     take: 500,
   });
   return rows.map(({ _count, ...r }) => ({ ...r, amount: Number(r.amount), billCount: _count.allocations }));
-}
-
-export type OpenBill = {
-  id: string;
-  docNumber: string;
-  vendorInvoiceNo: string;
-  billDate: Date;
-  dueDate: Date | null;
-  total: number;
-  paidAmount: number;
-  outstanding: number;
-};
-
-/** A supplier's bills that can still take a payment, oldest due first. */
-export async function listOpenBills(supplierId: string): Promise<OpenBill[]> {
-  const bills = await prisma.vendorBill.findMany({
-    where: { supplierId, status: { in: ["UNPAID", "PARTIAL"] } },
-    select: { id: true, docNumber: true, vendorInvoiceNo: true, billDate: true, dueDate: true, total: true, paidAmount: true },
-    orderBy: [{ dueDate: "asc" }, { billDate: "asc" }, { docNumber: "asc" }],
-  });
-  return bills.map((b) => {
-    const total = Number(b.total);
-    const paidAmount = Number(b.paidAmount);
-    return { ...b, total, paidAmount, outstanding: Math.round((total - paidAmount) * 100) / 100 };
-  });
 }
 
 export async function getVendorPaymentDetail(id: string) {

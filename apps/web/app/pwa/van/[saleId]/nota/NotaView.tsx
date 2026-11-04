@@ -4,13 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, Printer, Share2 } from "lucide-react";
+import { Printer, Share2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { vanSaleNotaHtml } from "@/lib/print/van-sale-nota-html";
 import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import type { VanSaleDetail } from "@/lib/canvassing/sale-queries";
 
+import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 
 export function NotaView({ sale }: { sale: VanSaleDetail }) {
@@ -43,18 +45,18 @@ export function NotaView({ sale }: { sale: VanSaleDetail }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 p-4">
+    <div className="flex min-h-dvh flex-col gap-3 p-4">
       <header className="-ml-2 print:hidden">
-        <Button asChild variant="ghost" size="sm" className="h-10">
-          <Link href="/pwa/van">
-            <ArrowLeft className="h-4 w-4" />
-            {t("back")}
-          </Link>
+        <Button asChild variant="ghost" size="sm">
+          <TautanKembali cadangan="/pwa/van" />
         </Button>
       </header>
 
       <div className="print:hidden">
-        <h1 className="text-lg font-semibold">{t("notaTitle")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-lg font-semibold">{t("notaTitle")}</h1>
+          <TombolBantuanHp judul={t("notaTitle")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("notaSubtitle", { docNo: sale.docNo })}</p>
       </div>
 
@@ -62,7 +64,7 @@ export function NotaView({ sale }: { sale: VanSaleDetail }) {
         <div dangerouslySetInnerHTML={{ __html: html }} />
       </Card>
 
-      <div className="sticky bottom-0 -mx-4 -mb-4 flex flex-col gap-2 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] print:hidden">
+      <div className="sticky bottom-0 -mx-4 -mb-4 mt-auto flex flex-col gap-2 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] print:hidden">
         <div className="flex gap-2">
           <Button type="button" className="flex-1" onClick={handlePrint}>
             <Printer className="h-4 w-4" />

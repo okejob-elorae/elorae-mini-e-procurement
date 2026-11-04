@@ -1,3 +1,5 @@
+import { roundCents, roundToWholeRupiah } from "@elorae/db/pricing";
+
 export type DeliveryStatusValue = "PENDING" | "PARTIAL" | "DELIVERED" | "CLOSED";
 
 /**
@@ -128,4 +130,59 @@ export function allocateDeliveryDiscounts(input: DiscountAllocationInput): Disco
  */
 export function shortLineClampQty(requested: number, available: number): number {
   return Math.max(0, Math.floor(Math.min(requested, available)));
+}
+
+export type BarisNotaDikoreksi = {
+  orderLineId: string;
+  orderedQty: number;
+  cancelledQty: number;
+  /** The order line's `deliveredQty` AFTER the correction (door refusals lowered it; losses did not). */
+  deliveredQtyAfter: number;
+  lineDiscount: number;
+  /** Line discount already allocated to OTHER notas of the order. */
+  lineDiscountAllocatedElsewhere: number;
+  unitPrice: number;
+  /** What this nota bills for the line after the correction (0 when the line is not on it). */
+  billedQty: number;
+};
+
+/**
+ * Re-allocates ONE nota's line and header discounts after it was corrected to what the store
+ * received (retur langsung or loss in transit, P24) — the same `allocateDeliveryDiscounts` rules,
+ * over the BILLED quantities, with every other nota's allocation taken as already allocated.
+ * `lines` must carry every line of the order, like `allocateDeliveryDiscounts`.
+ *
+ * `closesOrder` = no order line has outstanding qty after the correction AND no line on this nota
+ * lost pieces in transit. A nota with a loss is never the closing one: the lost pieces are still
+ * counted delivered (they are not re-sent, P38), so treating it as closing would pour the whole
+ * remaining discount onto fewer goods. `total` is the whole-rupiah charged figure, as the writer
+ * rounds it; `lineTotal` (qty × unitPrice) stays gross on the nota line.
+ */
+export function alokasiNotaDikoreksi(input: {
+  orderSubtotal: number;
+  orderDiscount: number;
+  orderDiscountAllocatedElsewhere: number;
+  adaHilang: boolean;
+  lines: BarisNotaDikoreksi[];
+}): DiscountAllocation & { subtotal: number; total: number } {
+  const closesOrder =
+    !input.adaHilang && input.lines.every((l) => l.orderedQty - l.deliveredQtyAfter - l.cancelledQty <= 0);
+  const allocation = allocateDeliveryDiscounts({
+    closesOrder,
+    orderSubtotal: input.orderSubtotal,
+    orderDiscount: input.orderDiscount,
+    orderDiscountAllocated: input.orderDiscountAllocatedElsewhere,
+    lines: input.lines.map((l) => ({
+      orderLineId: l.orderLineId,
+      lineDiscount: l.lineDiscount,
+      orderedQty: l.orderedQty,
+      deliveredQty: l.billedQty,
+      lineDiscountAllocated: l.lineDiscountAllocatedElsewhere,
+      deliveredSubtotal: l.billedQty * l.unitPrice,
+    })),
+  });
+  const subtotal = input.lines.reduce((s, l) => s + l.billedQty * l.unitPrice, 0);
+  const lineDiscountTotal = allocation.lineDiscounts.reduce((s, l) => s + l.discountAmount, 0);
+  const total = Math.max(0, roundToWholeRupiah(roundCents(subtotal - lineDiscountTotal - allocation.orderDiscountAmount)));
+  return { ...allocation, subtotal, total };
 }

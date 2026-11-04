@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -36,6 +37,8 @@ export interface SearchableComboboxProps {
   className?: string;
   id?: string;
   "aria-invalid"?: boolean;
+  /** Nama untuk pembaca layar bila tidak ada `<Label htmlFor>`. */
+  "aria-label"?: string;
   /** Trigger width class (e.g. w-full, min-w-[200px]) */
   triggerClassName?: string;
 }
@@ -46,15 +49,21 @@ export function SearchableCombobox({
   options,
   value,
   onValueChange,
-  placeholder = "Select...",
-  searchPlaceholder = "Search...",
-  emptyMessage = "No results found.",
+  placeholder: placeholderProp,
+  searchPlaceholder: searchPlaceholderProp,
+  emptyMessage: emptyMessageProp,
   disabled = false,
   className,
   id,
   "aria-invalid": ariaInvalid,
+  "aria-label": ariaLabel,
   triggerClassName,
 }: SearchableComboboxProps) {
+  // Bawaan lewat i18n: formulir yang tidak mengisinya dulu tampil berbahasa Inggris (Search…).
+  const t = useTranslations("common");
+  const placeholder = placeholderProp ?? t("pilihElipsis");
+  const searchPlaceholder = searchPlaceholderProp ?? t("cariElipsis");
+  const emptyMessage = emptyMessageProp ?? t("tidakAdaHasil");
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
 
@@ -79,6 +88,7 @@ export function SearchableCombobox({
           role="combobox"
           aria-expanded={open}
           aria-invalid={ariaInvalid}
+          aria-label={ariaLabel}
           disabled={disabled}
           className={cn(
             "border-input data-[placeholder]:text-muted-foreground flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-sm font-normal shadow-xs transition-[color,box-shadow] outline-none hover:bg-transparent focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20",

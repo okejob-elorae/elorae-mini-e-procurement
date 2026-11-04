@@ -13,6 +13,8 @@ d("loadSmartRequestCandidates (test bed only)", () => {
   let itemAId = "";
   let itemBId = "";
   let inactiveItemId = "";
+  let marketplaceItemId = "";
+  let offlineItemId = "";
 
   beforeEach(async () => {
     uomId = "";
@@ -20,6 +22,8 @@ d("loadSmartRequestCandidates (test bed only)", () => {
     itemAId = "";
     itemBId = "";
     inactiveItemId = "";
+    marketplaceItemId = "";
+    offlineItemId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const category = await prisma.itemCategory.create({ data: { code: `C-${sku}`, name: "Test Category", isActive: true } });
@@ -46,11 +50,22 @@ d("loadSmartRequestCandidates (test bed only)", () => {
       data: { sku: `${sku}-C`, nameId: "C", nameEn: "C", type: "FINISHED_GOOD", uomId, isActive: false, categoryId },
     });
     inactiveItemId = inactive.id;
+
+    // "Marketplace saja" (P3a) — must be excluded; "Toko offline saja" — kept.
+    const marketplace = await prisma.item.create({
+      data: { sku: `${sku}-MP`, nameId: "MP", nameEn: "MP", type: "FINISHED_GOOD", uomId, isActive: true, categoryId, salesChannel: "MARKETPLACE" },
+    });
+    marketplaceItemId = marketplace.id;
+    const offline = await prisma.item.create({
+      data: { sku: `${sku}-OFF`, nameId: "OFF", nameEn: "OFF", type: "FINISHED_GOOD", uomId, isActive: true, categoryId, salesChannel: "OFFLINE" },
+    });
+    offlineItemId = offline.id;
   });
 
   afterEach(async () => {
-    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: [itemAId, itemBId, inactiveItemId].map(seededId) } } });
-    await prisma.item.deleteMany({ where: { id: { in: [itemAId, itemBId, inactiveItemId].map(seededId) } } });
+    const semua = () => [itemAId, itemBId, inactiveItemId, marketplaceItemId, offlineItemId].map(seededId);
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: semua() } } });
+    await prisma.item.deleteMany({ where: { id: { in: semua() } } });
     await prisma.itemCategory.deleteMany({ where: { id: seededId(categoryId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
@@ -58,7 +73,7 @@ d("loadSmartRequestCandidates (test bed only)", () => {
   it("returns active FG items keyed by category, with trimmed variants and available = qtyOnHand - reservedQty", async () => {
     const byCategory = await loadSmartRequestCandidates([categoryId]);
     const list = byCategory.get(categoryId) ?? [];
-    expect(list).toHaveLength(2);
+    expect(list).toHaveLength(3);
 
     const candA = list.find((c) => c.itemId === itemAId);
     expect(candA).toBeDefined();
@@ -74,5 +89,11 @@ d("loadSmartRequestCandidates (test bed only)", () => {
     expect(candB!.variants).toEqual([]);
 
     expect(list.some((c) => c.itemId === inactiveItemId)).toBe(false);
+  });
+
+  it("leaves out a Marketplace-only item and keeps an offline-only one (P3a)", async () => {
+    const list = (await loadSmartRequestCandidates([categoryId])).get(categoryId) ?? [];
+    expect(list.some((c) => c.itemId === marketplaceItemId)).toBe(false);
+    expect(list.some((c) => c.itemId === offlineItemId)).toBe(true);
   });
 });

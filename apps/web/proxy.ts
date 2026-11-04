@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { getRequiredPermission } from "./lib/rbac";
+import { jawabTanpaSesiDenganJson } from "./lib/auth/tanpa-sesi";
 
 const SESSION_COOKIE_NAMES = [
   "authjs.session-token",
@@ -45,7 +46,17 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/workbox") ||
     pathname === "/pwa/sw.js" ||
     pathname.startsWith("/pwa/swe-worker") ||
-    pathname.startsWith("/icons")
+    pathname.startsWith("/icons") ||
+    // Aset pihak ketiga yang disajikan sendiri (mis. mesin WASM pemindai barcode).
+    pathname.startsWith("/vendor/") ||
+    // Portal pesan mandiri toko: tanpa masuk; token tautannya diperiksa ulang di setiap halaman dan aksi.
+    pathname.startsWith("/toko/") ||
+    // Formulir data KOL (link dari WhatsApp): tanpa masuk; token linknya diperiksa ulang di halaman dan aksinya.
+    pathname.startsWith("/data-kol/") ||
+    // API ekstensi Chrome pantau KOL: tanpa sesi; setiap handler memeriksa token perangkatnya sendiri.
+    pathname.startsWith("/api/kreatif/ekstensi/") ||
+    // Langganan Kalender Kreatif (Google/Apple Calendar): dibaca server kalender tanpa sesi; rutenya memeriksa token dan izin pemiliknya.
+    pathname.startsWith("/api/kreatif/kalender/")
   ) {
     return NextResponse.next();
   }
@@ -61,8 +72,13 @@ export async function proxy(request: NextRequest) {
 
   // Handle login page
   if (pathname === "/login") {
+    // Already signed in: let the post-login redirect pick the area (and honour
+    // a safe callbackUrl), instead of sending phone users to /backoffice.
     if (authed) {
-      return NextResponse.redirect(new URL("/backoffice", request.url));
+      const tujuan = new URL("/login/redirect", request.url);
+      const kembali = request.nextUrl.searchParams.get("callbackUrl");
+      if (kembali) tujuan.searchParams.set("callbackUrl", kembali);
+      return NextResponse.redirect(tujuan);
     }
     // Stale/invalid session cookie — clear so login stays reachable.
     if (token) {
@@ -74,12 +90,16 @@ export async function proxy(request: NextRequest) {
   // Require authentication for protected routes
   if (!authed) {
     /* A fetch() follows a 307 and would re-POST its body to /login, so the offline photo queue never saw the 401. */
-    if (pathname.startsWith("/pwa/api/")) {
+    if (jawabTanpaSesiDenganJson(pathname)) {
       const unauthenticated = NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
       if (token) clearSessionCookies(unauthenticated);
       return unauthenticated;
     }
     const loginUrl = new URL("/login", request.url);
+    // Remember the page so sign-in can return to it (validated after login).
+    if (request.method === "GET") {
+      loginUrl.searchParams.set("callbackUrl", `${pathname}${request.nextUrl.search}`);
+    }
     const response = NextResponse.redirect(loginUrl);
     if (token) clearSessionCookies(response);
     return response;

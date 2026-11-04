@@ -70,4 +70,36 @@ describe("resolveCashFlowSection", () => {
     expect(resolveCashFlowSection({ type: "ASET" })).toBeNull();
     expect(resolveCashFlowSection({ type: "LIABILITAS" })).toBeNull();
   });
+
+  it("menempatkan peran akuntansi & pajak lengkap di seksi yang benar", () => {
+    for (const role of [
+      "AR_STORE",
+      "AR_CONSIGNMENT",
+      "INVENTORY_CONSIGNMENT",
+      "INVENTORY_DAMAGED",
+      "PPN_MASUKAN",
+      "PPH22_PREPAID",
+      "PPH23_PREPAID",
+      "PPH25_PREPAID",
+      "PREPAID_EXPENSE",
+      "ACCUM_DEPRECIATION",
+    ] as const) {
+      expect(resolveCashFlowSection({ type: "ASET", roles: [role] }), role).toBe("OPERASIONAL");
+    }
+    for (const role of [
+      "PPN_KELUARAN",
+      "PPN_PAYABLE",
+      "PPH4_2_PAYABLE",
+      "PPH_FINAL_PAYABLE",
+      "COMMISSION_PAYABLE",
+      "REIMBURSE_PAYABLE",
+      "ACCRUED_EXPENSE",
+    ] as const) {
+      expect(resolveCashFlowSection({ type: "LIABILITAS", roles: [role] }), role).toBe("OPERASIONAL");
+    }
+    expect(resolveCashFlowSection({ type: "ASET", roles: ["FIXED_ASSET"] })).toBe("INVESTASI");
+    // Ekuitas baru jatuh ke konvensi tipe; jurnal penutup/saldo awal dikecualikan oleh penyusun laporan.
+    expect(resolveCashFlowSection({ type: "EKUITAS", roles: ["RETAINED_EARNINGS"] })).toBe("PENDANAAN");
+    expect(resolveCashFlowSection({ type: "EKUITAS", roles: ["OPENING_EQUITY"] })).toBe("PENDANAAN");
+  });
 });

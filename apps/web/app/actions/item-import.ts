@@ -12,7 +12,7 @@ import {
   type ItemImportPreviewResult,
   type ItemImportValidatedResult,
 } from "@/lib/items/import/types";
-import { enqueueProductPushOnCreate } from "@/lib/jubelio/product-push";
+import { bacaSaluranJual, dijualDiMarketplace } from "@/lib/items/saluran-jual";
 import { getActorName } from "@/lib/notifications/actor-name";
 import { getUsersWithPermission, sendNotificationToUsers } from "@/lib/notifications/recipients";
 
@@ -46,15 +46,23 @@ export async function commitItemImport(rawRows: unknown, options: unknown): Prom
   if (!user) return { status: "forbidden" };
   const rows = parseItemImportPayload(rawRows);
   if (rows === null) return { status: "invalid", ...INVALID_PAYLOAD };
-  const pushToJubelio =
-    typeof options === "object" && options !== null && (options as { pushToJubelio?: unknown }).pushToJubelio === true;
+  // The two ticks (owner answer P3, 2026-11-02): one channel for every product of the file; required.
+  const salesChannel = bacaSaluranJual(
+    typeof options === "object" && options !== null ? (options as { salesChannel?: unknown }).salesChannel : undefined,
+  );
+  if (!salesChannel) {
+    return { status: "invalid", errors: [importError("SALES_CHANNEL_REQUIRED")], preview: [], artikelCount: 0, variantCount: 0 };
+  }
+  const jubelioRequested = dijualDiMarketplace(salesChannel);
 
   const v = validateItemImport(rows, await loadItemImportLookups());
   if (!v.plan) return { status: "invalid", ...validatedPart(v) };
 
   let created: Array<{ id: string; sku: string; nameId: string }>;
   try {
-    created = await createItemsFromImport(v.plan);
+    // Marketplace / both REQUESTS the products in the import's own transaction; each waits on
+    // Jubelio → Konfirmasi harga and nothing is pushed from here (owner decisions 2026-11-02).
+    created = await createItemsFromImport(v.plan, { salesChannel, olehUserId: user.id });
   } catch (e) {
     if (e instanceof ItemImportSkuTakenError) {
       const again = validateItemImport(rows, await loadItemImportLookups());
@@ -65,21 +73,10 @@ export async function commitItemImport(rawRows: unknown, options: unknown): Prom
     return { status: "failed" };
   }
 
-  let jubelioFailed = 0;
-  if (pushToJubelio) {
-    for (const item of created) {
-      try {
-        await enqueueProductPushOnCreate(item.id, user.id, { directEnqueue: false });
-      } catch (e) {
-        jubelioFailed += 1;
-        console.error("[item-import] jubelio enqueue failed", item.id, e);
-      }
-    }
-  }
-
   void notifyItemsImported(user.id, created.length, v.variantCount).catch(() => {});
   revalidatePath("/backoffice/items");
-  return { status: "created", items: created, variantCount: v.variantCount, jubelioRequested: pushToJubelio, jubelioFailed };
+  if (jubelioRequested) revalidatePath("/backoffice/jubelio/harga");
+  return { status: "created", items: created, variantCount: v.variantCount, salesChannel, jubelioRequested };
 }
 
 /**

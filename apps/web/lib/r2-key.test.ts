@@ -12,6 +12,18 @@ describe("buildR2Key", () => {
     expect(buildR2Key("settlement-proofs", [uuid, "program-3"], "jpg")).toBe(`settlement-proofs/${uuid}/program-3.jpg`);
     expect(buildR2Key("items", ["_pending", uuid], "jpeg")).toBe(`items/_pending/${uuid}.jpeg`);
     expect(buildR2Key("delivery-proofs", [cuid, String(Date.now())], "jpg")).toMatch(/^delivery-proofs\/[a-z0-9]+\/\d+\.jpg$/);
+    // Handover-to-courier photo showing the weight (P35/P43): bound to the shipment's own folder.
+    const serah = buildR2Key("delivery-handover", [cuid, String(Date.now())], "jpg");
+    expect(serah).toMatch(/^delivery-handover\/[a-z0-9]+\/\d+\.jpg$/);
+    expect(isR2KeyInFolder(serah, `delivery-handover/${cuid}`)).toBe(true);
+    // SPG shopper-return photos: <store>/<report key>/<barang|struk> (owner answers P14/P77).
+    const fotoRetur = buildR2Key("spg-sale-returns", [cuid, local, "barang"], "jpg");
+    expect(fotoRetur).toBe(`spg-sale-returns/${cuid}/${local}/barang.jpg`);
+    expect(isR2KeyInFolder(fotoRetur, `spg-sale-returns/${cuid}/${local}`)).toBe(true);
+    // Store receipt by the holding salesman: <store>/<source type>-<source id>/<file> (P45a).
+    expect(buildR2Key("store-receipt-photos", [cuid, `KONSI_TRANSFER-${cuid}`, uuid], "jpg")).toBe(
+      `store-receipt-photos/${cuid}/KONSI_TRANSFER-${cuid}/${uuid}.jpg`,
+    );
   });
 
   it.each([

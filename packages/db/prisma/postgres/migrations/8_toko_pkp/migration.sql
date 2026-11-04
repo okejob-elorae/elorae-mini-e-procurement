@@ -1,0 +1,11 @@
+-- Penanda PKP pada toko.
+--
+-- Sebelum ini `DeductionType.pkpOnly` ada tapi tidak menjaga apa pun: tidak ada
+-- satu kolom pun yang bisa ditanya "toko ini PKP atau bukan", jadi aturannya
+-- hanya kalimat di layar. PPh 23 bisa dipotongkan ke toko non-PKP tanpa ada
+-- yang menahan.
+--
+-- Default FALSE karena non-PKP adalah keadaan yang aman: potongan pajak yang
+-- terlewat ketahuan saat rekonsiliasi, sedangkan potongan pajak yang seharusnya
+-- tidak ada mengurangi tagihan dan baru ketahuan jauh di belakang.
+ALTER TABLE "Store" ADD COLUMN IF NOT EXISTS "isPkp" BOOLEAN NOT NULL DEFAULT false;

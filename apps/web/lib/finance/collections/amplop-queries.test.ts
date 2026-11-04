@@ -97,14 +97,17 @@ d("amplop queries (test bed only)", () => {
   let uomId = "";
 
   /**
-   * Sell-through source coverage: a store whose receivable is backed by a KonsiSellThrough
-   * report rather than a delivery, with its own salesman and a real TaxInvoice.
+   * Konsi coverage: a KONSI store whose receivable is backed by a KonsiSellThrough report rather
+   * than a delivery, with its own salesman and a real TaxInvoice. The phone must never show it.
    */
   let sellThroughStoreId = "";
   let sellThroughSalesmanId = "";
   let sellThroughId = "";
   let sellThroughReceivableId = "";
   let sellThroughTaxInvoiceId = "";
+
+  /* A MANUAL receivable on collectorStoreId, created only by the test that needs it. */
+  let manualReceivableId = "";
 
   const remainingCreditForFixture = 300;
   const pendingAmountForFixture = 150;
@@ -128,6 +131,7 @@ d("amplop queries (test bed only)", () => {
     returId = ""; itemId = ""; uomId = "";
     sellThroughStoreId = ""; sellThroughSalesmanId = ""; sellThroughId = ""; sellThroughReceivableId = "";
     sellThroughTaxInvoiceId = "";
+    manualReceivableId = "";
 
     const [collectorUser, salesmanUser, adminUser, bothRoleUser, multiStoreUser, emptyUser] = await Promise.all([
       prisma.user.create({ data: { email: `amplop-collector-${token}@test.local`, name: `Collector ${token}` } }),
@@ -351,8 +355,9 @@ d("amplop queries (test bed only)", () => {
     returId = fieldReturn.id;
 
     /**
-     * Sell-through source: a separate store, a dedicated salesman, and a receivable whose docNo
-     * and salesman are read off the KonsiSellThrough report rather than a delivery's order.
+     * Sell-through source: a separate konsi store, a dedicated salesman, and a fully formed
+     * receivable (report, faktur) that would otherwise reach that salesman's amplop through the
+     * report — the shape the phone must still never show.
      */
     const sellThroughSalesman = await prisma.user.create({
       data: { email: `amplop-st-${token}@test.local`, name: `Sales ST ${token}` },
@@ -413,7 +418,7 @@ d("amplop queries (test bed only)", () => {
     const receivableIds = [
       writtenOffReceivableId, paidReceivableId, noFakturReceivableId, submittedReceivableId,
       partialReceivableId, salesmanReceivableId, bothReceivableId, storeHighReceivableId, storeMedReceivableId,
-      storeLowReceivableId, storeZeroReceivableId,
+      storeLowReceivableId, storeZeroReceivableId, manualReceivableId,
     ].map(seededId);
     await prisma.receivable.deleteMany({ where: { id: { in: receivableIds.map(seededId) } } });
 
@@ -597,32 +602,80 @@ d("amplop queries (test bed only)", () => {
     expect(amplop).toEqual({ stores: [], totalOutstanding: 0, totalOverdue: 0 });
   });
 
-  it("includes a store where the user is a sell-through report's own salesman", async () => {
-    const amplop = await listAmplop(sellThroughSalesmanId, asOf);
-    const card = amplop.stores.find((s) => s.storeId === sellThroughStoreId);
-    expect(card).toBeDefined();
-    const row = card?.rows.find((r) => r.receivableId === sellThroughReceivableId);
-    expect(row?.docNo).toBe(`TEST-AMP-KST-${token}`);
-  });
-
-  it("puts a receivable whose report names no salesman in no salesman's amplop", async () => {
-    await prisma.konsiSellThrough.update({ where: { id: sellThroughId }, data: { salesmanId: null } });
-
-    const formerOwner = await listAmplop(sellThroughSalesmanId, asOf);
-    expect(formerOwner.stores.find((s) => s.storeId === sellThroughStoreId)).toBeUndefined();
-
-    const putusSalesman = await listAmplop(salesmanUserId, asOf);
-    expect(putusSalesman.stores.find((s) => s.storeId === sellThroughStoreId)).toBeUndefined();
-
-    const reportCreator = await listAmplop(adminUserId, asOf);
-    expect(reportCreator.stores.find((s) => s.storeId === sellThroughStoreId)).toBeUndefined();
-  });
-
-  it("resolves a sell-through receivable's faktur status off the report, not the delivery", async () => {
-    const amplop = await listAmplop(sellThroughSalesmanId, asOf);
+  it("reads a MANUAL receivable's own invoice number as its docNo instead of throwing", async () => {
+    /*
+     * A receivable typed in by hand carries neither a delivery nor a sell-through report, so its
+     * document number is its own `invoiceNo` — and `resolveReceivableSource` can tell it from an
+     * orphan only when the query selects `invoiceNo` and `source`. Without them the whole amplop
+     * throws for every collector holding one.
+     */
+    manualReceivableId = (
+      await prisma.receivable.create({
+        data: {
+          invoiceNo: `TEST-AMP-MAN-${token}`,
+          source: "MANUAL",
+          storeId: collectorStoreId,
+          invoiceDate: new Date("2026-05-10T00:00:00.000+07:00"),
+          dueDate: new Date("2026-05-10T00:00:00.000+07:00"),
+          amount: 120, outstanding: 120,
+          originalAmount: 120, outstandingAmount: 120,
+          collectorId: collectorUserId,
+        },
+      })
+    ).id;
+    const amplop = await listAmplop(collectorUserId, asOf);
     const row = amplop.stores
       .flatMap((s) => s.rows)
-      .find((r) => r.receivableId === sellThroughReceivableId);
-    expect(row?.taxInvoiceStatus).toBe("CREATED");
+      .find((r) => r.receivableId === manualReceivableId);
+    expect(row?.docNo).toBe(`TEST-AMP-MAN-${token}`);
+    expect(row?.taxInvoiceStatus).toBeNull();
+  });
+
+  it("keeps a konsi bill (isConsignment) off the phone even at a store whose terms read PUTUS", async () => {
+    /*
+     * The konsi mark lives on the bill itself, not on the store's terms today: a consignment cycle
+     * bill, or a paper konsi debt typed in by hand (P32), is paid from the phone only through a BKM.
+     * Reuses `manualReceivableId` so the shared teardown removes it.
+     */
+    manualReceivableId = (
+      await prisma.receivable.create({
+        data: {
+          invoiceNo: `TEST-AMP-KONSI-${token}`,
+          source: "MANUAL",
+          isConsignment: true,
+          storeId: collectorStoreId,
+          invoiceDate: new Date("2026-05-10T00:00:00.000+07:00"),
+          dueDate: new Date("2026-05-10T00:00:00.000+07:00"),
+          amount: 120, outstanding: 120,
+          originalAmount: 120, outstandingAmount: 120,
+          collectorId: collectorUserId,
+        },
+      })
+    ).id;
+    const amplop = await listAmplop(collectorUserId, asOf);
+    expect(amplop.stores.flatMap((st) => st.rows).find((r) => r.receivableId === manualReceivableId)).toBeUndefined();
+  });
+
+  it("keeps a konsi sell-through receivable off the phone, for the report's own salesman and for its collector", async () => {
+    /*
+     * Its total is a konsi figure, and konsi totals never reach the salesman's phone. Both ways a
+     * user could reach it are pinned: as the report's own salesman, and as its assigned collector.
+     */
+    const asSalesman = await listAmplop(sellThroughSalesmanId, asOf);
+    expect(asSalesman.stores.find((s) => s.storeId === sellThroughStoreId)).toBeUndefined();
+
+    await prisma.receivable.update({ where: { id: sellThroughReceivableId }, data: { collectorId: sellThroughSalesmanId } });
+    const asCollector = await listAmplop(sellThroughSalesmanId, asOf);
+    expect(asCollector).toEqual({ stores: [], totalOutstanding: 0, totalOverdue: 0 });
+  });
+
+  it("keeps a delivery-backed receivable off the phone once its store is konsi", async () => {
+    /* Positive control first: the same store is in the salesman's amplop while it is putus. */
+    const before = await listAmplop(salesmanUserId, asOf);
+    expect(before.stores.map((s) => s.storeId)).toContain(salesmanStoreId);
+
+    await prisma.store.update({ where: { id: salesmanStoreId }, data: { termsType: "KONSI" } });
+    const after = await listAmplop(salesmanUserId, asOf);
+    expect(after.stores.map((s) => s.storeId)).not.toContain(salesmanStoreId);
   });
 });

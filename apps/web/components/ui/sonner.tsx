@@ -1,40 +1,45 @@
 "use client"
 
-import {
-  CircleCheckIcon,
-  InfoIcon,
-  Loader2Icon,
-  OctagonXIcon,
-  TriangleAlertIcon,
-} from "lucide-react"
-import { useTheme } from "next-themes"
-import { Toaster as Sonner, type ToasterProps } from "sonner"
+import { useEffect, useRef } from "react"
+import { toast, useSonner } from "sonner"
+import { idPerluDilepas, teruskanToast, type ToastMirip } from "@/lib/pulau/jembatan-toast"
+import { ambilKeadaan, langgan } from "@/lib/pulau/pulau"
 
-const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
+/**
+ * Jembatan toast → pulau status.
+ *
+ * Semua pemanggil `toast.success/error/info/warning/loading/promise/message`
+ * dari "sonner" tetap seperti apa adanya; komponen ini membaca toast aktif
+ * lewat `useSonner()` dan meneruskannya ke pulau status di tengah atas.
+ * Tumpukan bawaan sonner (komponen `Toaster` milik sonner) TIDAK lagi dipasang —
+ * tes penjaga `lib/pulau/pemasangan.penjaga.test.ts` memastikannya.
+ *
+ * Saat pulau menutup sebuah pesan (waktunya habis atau diketuk), toast-nya
+ * juga di-dismiss di sonner supaya daftar aktifnya tidak menumpuk sepanjang sesi.
+ */
+function Toaster() {
+  const { toasts } = useSonner()
+  const dikenal = useRef(new Map<string | number, ToastMirip>())
+  const sudahDilepas = useRef(new Set<string | number>())
 
-  return (
-    <Sonner
-      theme={theme as ToasterProps["theme"]}
-      className="toaster group"
-      icons={{
-        success: <CircleCheckIcon className="size-4" />,
-        info: <InfoIcon className="size-4" />,
-        warning: <TriangleAlertIcon className="size-4" />,
-        error: <OctagonXIcon className="size-4" />,
-        loading: <Loader2Icon className="size-4 animate-spin" />,
-      }}
-      style={
-        {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
-        } as React.CSSProperties
-      }
-      {...props}
-    />
+  useEffect(() => {
+    dikenal.current = teruskanToast(dikenal.current, toasts)
+    // Id yang muncul lagi (toast diperbarui sesudah ditutup) boleh dilepas lagi nanti.
+    for (const id of sudahDilepas.current) if (!dikenal.current.has(id)) sudahDilepas.current.delete(id)
+  }, [toasts])
+
+  useEffect(
+    () =>
+      langgan(() => {
+        for (const id of idPerluDilepas(dikenal.current.keys(), ambilKeadaan().pesan, sudahDilepas.current)) {
+          sudahDilepas.current.add(id)
+          toast.dismiss(id)
+        }
+      }),
+    [],
   )
+
+  return null
 }
 
 export { Toaster }

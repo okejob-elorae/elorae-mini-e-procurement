@@ -2,9 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { AlertTriangle } from "lucide-react";
+import { formatDisplayDateTime } from "@/lib/date-only";
+import { reconciliationFailureReason } from "../failure-reason";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,6 +72,7 @@ export function ReconciliationRunDetailClient({
   initialPushEnabled: boolean;
 }) {
   const t = useTranslations("stockReconciliation");
+  const locale = useLocale();
   const { data: session } = useSession();
   const canManage = hasPermission(
     session?.user?.permissions ?? [],
@@ -142,31 +147,52 @@ export function ReconciliationRunDetailClient({
   }
 
   const failedRowCount = run.results.filter(isUnresolvedFailure).length;
+  const failure = run.status === "FAILED" ? reconciliationFailureReason(run.errorMessage, t) : null;
+  // Judul memakai waktu pemeriksaan, bukan potongan id basis data ("Pemeriksaan cmuw7me8").
+  const judul = t("runTitleWaktu", { waktu: formatDisplayDateTime(run.startedAt, locale) });
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold">{t("runTitle", { id: runId.slice(0, 8) })}</h1>
+            <div className="flex items-center gap-1">
+              <h1 className="text-2xl font-bold">{judul}</h1>
+              <TombolBantuan judul={judul} />
+            </div>
             <Badge variant={runStatusBadgeVariant(run.status)}>
               {t(`runStatuses.${run.status as "RUNNING" | "COMPLETED" | "FAILED"}`)}
             </Badge>
           </div>
-          <p className="text-muted-foreground">{new Date(run.startedAt).toLocaleString()}</p>
+          <p className="text-muted-foreground">{t("jumlahHasil", { count: run.results.length })}</p>
           {run.status === "COMPLETED" && failedRowCount > 0 ? (
             <p className="text-sm text-destructive">
               {t("rowsFailedSummary", { failed: failedRowCount, total: run.totalScanned })}
             </p>
-          ) : null}
-          {run.status === "FAILED" && run.errorMessage ? (
-            <p className="text-sm text-destructive">{run.errorMessage}</p>
           ) : null}
         </div>
         <Link href="/backoffice/inventory/reconciliation">
           <Button variant="outline">{t("back")}</Button>
         </Link>
       </div>
+
+      {failure && (
+        <div
+          role="alert"
+          className="flex gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"
+        >
+          <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" aria-hidden />
+          <div className="space-y-1">
+            <p className="font-medium">{t("failureTitle")}</p>
+            <p className="text-muted-foreground">{failure.reason}</p>
+            {failure.technical && (
+              <p className="text-xs text-muted-foreground">
+                {t("failureTechnical", { detail: failure.technical })}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -293,7 +319,7 @@ export function ReconciliationRunDetailClient({
               {run.results.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={canManage ? 7 : 5} className="py-8 text-center text-muted-foreground">
-                    —
+                    {run.status === "FAILED" ? t("hasilKosongGagal") : t("hasilKosong")}
                   </TableCell>
                 </TableRow>
               )}

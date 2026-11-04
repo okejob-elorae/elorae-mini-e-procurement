@@ -2,6 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getSettlementById } from "@/lib/finance/settlement/queries";
+import { tandaiSettlementGanda } from "@/lib/finance/settlement/persist";
 import { SettlementDetailClient } from "./SettlementDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -25,5 +26,10 @@ export default async function SettlementDetailPage({ params }: PageProps) {
 
   const canManage = hasPermission(permissions, PERMISSIONS.SETTLEMENTS_MANAGE);
 
-  return <SettlementDetailClient settlement={settlement} canManage={canManage} />;
+  const p = (await tandaiSettlementGanda([settlement.id]))[settlement.id];
+  const ganda = p
+    ? { id: p.id, fileName: p.fileName, uploadedAtIso: p.uploadedAt.toISOString(), uploadedByName: p.uploadedByName }
+    : null;
+
+  return <SettlementDetailClient settlement={settlement} canManage={canManage} ganda={ganda} />;
 }

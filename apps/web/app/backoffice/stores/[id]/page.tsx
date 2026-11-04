@@ -12,7 +12,17 @@ import { getInTransitAdminReturnQty } from "@/lib/field-sales/retur/queries";
 import { listAssortmentGaps, listAssortmentLines } from "@/lib/stores/assortment/queries";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { getStorePiutangSummary, type StorePiutangSummary } from "@/lib/finance/ar/queries";
+import { detailKunjunganToko } from "@/lib/stores/visit-queries";
+import { formatDisplayDateTime } from "@/lib/date-only";
+import { stokToko } from "@/lib/spg/queries";
+import { gerakanStokToko } from "@/lib/spg/kantor-queries";
 import { StoreDetailView } from "./StoreDetailView";
+import { catatanTokoUntuk } from "@/lib/stores/catatan-queries";
+import { muatKreditToko } from "@/lib/field-sales/kredit-toko";
+import { bacaAturanKreditDb } from "@/lib/salesman/tagihan-toko";
+import { bolehMembacaPiutang } from "@/lib/receivables/izin";
+import { batasKreditBerlaku, type BatasToko } from "@/lib/salesman/kredit";
+import type { KreditTokoTampil } from "./StoreDetailView";
 
 const STOCKTAKE_HISTORY_PAGE_SIZE = 10;
 const DETAIL_CARD_PAGE_SIZE = 10;
@@ -48,13 +58,31 @@ export default async function StoreDetailPage({
   const piutang: StorePiutangSummary | null = canViewReceivables
     ? await getStorePiutangSummary(store.id, piutangAsOf)
     : null;
+  /*
+   * Batas kredit yang BERLAKU, lewat pemutus yang sama dengan pemeriksaan kredit: kolom kosong
+   * pada toko PUTUS ikut bawaan Pengaturan → Salesman; kolom kosong pada toko KONSI berarti tanpa
+   * batas sama sekali (P21, `BAWAAN_BERLAKU_UNTUK_KONSI`); "Tanpa batas kredit" membebaskan toko.
+   * Eksposur dan sisa limit hanya dihitung kalau ada batas yang dinilai.
+   */
+  const aturanKredit = await bacaAturanKreditDb();
+  const batasToko: BatasToko = {
+    creditLimit: store.creditLimit,
+    maxOpenInvoices: store.maxOpenInvoices,
+    noCreditLimit: store.noCreditLimit,
+    termsType: store.termsType,
+  };
+  const batasKredit = batasKreditBerlaku(batasToko, aturanKredit);
+  const batasNilaiKredit = batasKredit.nilai.nilai;
   const creditExposure =
-    store.creditLimit !== null
-      ? await computeStoreCreditExposure(prisma, store.id).then((e) => ({ exposure: e.total, headroom: store.creditLimit! - e.total }))
+    batasNilaiKredit !== null
+      ? await computeStoreCreditExposure(prisma, store.id).then((e) => ({ exposure: e.total, headroom: batasNilaiKredit - e.total }))
       : null;
   const visitsPage = await listVisitsForStorePage(store.id, { page: parsePageParam(query.visitsPage), pageSize: DETAIL_CARD_PAGE_SIZE });
   const visits = visitsPage.rows;
-  const photosByVisit = await listVisitPhotosForVisits(visits.map((v) => v.id));
+  const [photosByVisit, detailKunjungan] = await Promise.all([
+    listVisitPhotosForVisits(visits.map((v) => v.id)),
+    detailKunjunganToko(visits.map((v) => v.id)),
+  ]);
   const pending = await getPendingStoreChangeRequest(store.id);
   const orders = await getStoreOrderSummary(store.id);
   const sentItemsPage = await getStoreSentItemsPage(store.id, { page: parsePageParam(query.sentPage), pageSize: DETAIL_CARD_PAGE_SIZE });
@@ -90,6 +118,30 @@ export default async function StoreDetailPage({
       ? stocktakes.rows[0].id
       : null;
 
+  const [area, pemegang, stok, gerakan] = await Promise.all([
+    store.groupId ? prisma.storeGroup.findUnique({ where: { id: store.groupId }, select: { code: true, name: true } }) : null,
+    store.salesmanId ? prisma.user.findUnique({ where: { id: store.salesmanId }, select: { name: true, email: true } }) : null,
+    // Buku stok toko (gerakan SPG). Toko tanpa SPG hanya mendapat keterangan kosong.
+    stokToko(store.id),
+    gerakanStokToko(store.id, 30),
+  ]);
+
+  // stores:view (dijaga di atas) = baca & tambah catatan; stores:manage = kelola semua catatan.
+  const catatan = await catatanTokoUntuk(store.id, { userId: session.user.id ?? "", kelolaSemua: canEdit });
+
+  // Lapisan mode kredit dan batas jumlah faktur terbuka hanya untuk toko PUTUS; tagihan
+  // konsi ada di Faktur & piutang. Batasnya data toko (boleh dilihat pemegang stores:view);
+  // ringkasan piutang hanya untuk yang boleh membaca piutang.
+  let kredit: KreditTokoTampil | null = null;
+  if (store.termsType === "PUTUS") {
+    const bolehPiutang = bolehMembacaPiutang(perms);
+    const muat = bolehPiutang ? await muatKreditToko(store.id) : null;
+    kredit = {
+      batasFaktur: batasKredit.faktur,
+      piutang: !bolehPiutang ? "TERSEMBUNYI" : muat?.keadaan ?? "GAGAL",
+    };
+  }
+
   return (
     <StoreDetailView
       store={store}
@@ -107,6 +159,7 @@ export default async function StoreDetailPage({
         stockCard
           ? {
               rows: stockCard.rows,
+              dalamPerjalananTanpaStok: stockCard.dalamPerjalananTanpaStok,
               negativeCount: stockCard.negativeCount,
               lastPartialCount: stockCard.lastPartialCount,
               inTransitAdminReturn,
@@ -162,6 +215,18 @@ export default async function StoreDetailPage({
         pageSize: DETAIL_CARD_PAGE_SIZE,
         latestCheckinAtIso: visitsPage.latestCheckinAt ? visitsPage.latestCheckinAt.toISOString() : null,
       }}
+      catatan={catatan}
+      kredit={kredit}
+      batasKredit={batasKredit.nilai}
+      stokToko={{
+        stok,
+        // Waktu diformat di server: format tanggal browser dan Node bisa berbeda.
+        gerakan: gerakan.map((g) => ({ ...g, waktu: formatDisplayDateTime(g.waktu) })),
+      }}
+      pembagian={{
+        area: area ? `${area.code} — ${area.name}` : null,
+        pemegang: pemegang ? pemegang.name ?? pemegang.email : null,
+      }}
       visits={visits.map(v => ({
         id: v.id,
         checkinAtIso: v.checkinAt.toISOString(),
@@ -172,6 +237,7 @@ export default async function StoreDetailPage({
         userLabel: v.user.name ?? v.user.email,
         checkinOutOfRadius: v.checkinOutOfRadius,
         checkinDistanceMeters: v.checkinDistanceMeters,
+        hasil: detailKunjungan.get(v.id) ?? null,
         photos: (photosByVisit.get(v.id) ?? []).map(p => ({
           id: p.id, url: p.url, caption: p.caption, capturedAtIso: p.capturedAt.toISOString(),
         })),

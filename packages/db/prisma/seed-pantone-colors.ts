@@ -89,7 +89,7 @@ if (require.main === module) {
     const { existsSync } = await import("node:fs");
     const { dirname, join } = await import("node:path");
     const { config: loadEnv } = await import("dotenv");
-    const { PrismaMariaDb } = await import("@prisma/adapter-mariadb");
+    const { createDbAdapter } = await import("../src/adapter");
     const { PrismaClient } = await import("../generated/prisma/client");
     const { getDatabaseUrl } = await import("../src/db-connection");
 
@@ -111,7 +111,7 @@ if (require.main === module) {
       process.exit(1);
     }
 
-    const adapter = new PrismaMariaDb(databaseUrl);
+    const adapter = createDbAdapter(databaseUrl);
     const prisma = new PrismaClient({ adapter });
     try {
       await seedPantoneColors(prisma);

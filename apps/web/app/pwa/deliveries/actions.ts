@@ -6,17 +6,18 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { completeDeliveryShipment } from "@/lib/delivery/shipment-writer";
 import { listMyDeliveries } from "@/lib/delivery/shipment-queries";
 import { mapError, type ShipmentActionResult } from "@/lib/delivery/action-errors";
-import { DeliveryError } from "@/lib/field-sales/errors";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { kaitPindahKonsiPengiriman } from "@/lib/finance/operasional/kait";
+import { kabarkanPengirimanDiserahkan } from "@/lib/spg/kabar-pengiriman";
+import { sebarSesudahTerima } from "@/lib/spg/stok-writer";
 
 const ERROR_TAG = "pwa/deliveries";
 
 /**
  * Same body as `postDeliveryJournals` in `@/app/actions/delivery-shipments`: both of a PUTUS
- * delivery's journals through `postArJournalSafely`, shared by the success path and the
- * `REPLAY_MISMATCH` refusal. Duplicated rather than imported because exporting it from either
+ * delivery's journals through `postArJournalSafely`. Duplicated rather than imported because exporting it from either
  * `"use server"` module would publish it as a network-callable action that posts journals for any
  * delivery id. Keep the two in sync by hand.
  */
@@ -27,6 +28,35 @@ async function postDeliveryJournals(deliveryId: string, postedById: string): Pro
   await postArJournalSafely("field_delivery_cogs", deliveryId, () =>
     postFieldDeliveryCogsJournal(deliveryId, postedById),
   );
+}
+
+/**
+ * Same body as `notifyStoreSpg` in `@/app/actions/delivery-shipments`, duplicated for the same
+ * reason as `postDeliveryJournals` above — keep the two in sync by hand. Tells the store's SPG the
+ * goods of THIS shipment were handed over (count and receive them), putus and konsi alike, keyed
+ * on the shipment; a 0-pcs completion says nothing was handed over. The notifier never throws and
+ * notifies once per shipment.
+ */
+async function notifyStoreSpg(shipmentId: string, deliveryId: string, actorId: string): Promise<void> {
+  void kabarkanPengirimanDiserahkan({ shipmentId, deliveryId: deliveryId || null, pelakuId: actorId });
+}
+
+/**
+ * Same body as `postKonsiMoveJournal` in `@/app/actions/delivery-shipments` — keep the two in sync
+ * by hand. The consignment move journal of a konsi shipment (posted at creation, re-synced after a
+ * receipt at the POD); the hook is idempotent and never throws.
+ */
+async function postKonsiMoveJournal(shipmentId: string, actorId: string): Promise<void> {
+  try {
+    const shipment = await prisma.deliveryShipment.findUnique({
+      where: { id: shipmentId },
+      select: { order: { select: { orderType: true } } },
+    });
+    if (shipment?.order.orderType !== "KONSI") return;
+    await kaitPindahKonsiPengiriman(shipmentId, actorId);
+  } catch (error) {
+    console.error(`[${ERROR_TAG}] konsi move journal hook failed`, error);
+  }
 }
 
 export async function listMyDeliveriesAction(): Promise<
@@ -62,7 +92,7 @@ export async function completePodAction(input: {
   signedByName?: string;
   deliveredAt?: Date;
   completedOffline?: boolean;
-  lines: Array<{ shipmentLineId: string; deliveredQty: number }>;
+  lines: Array<{ shipmentLineId: string; deliveredQty: number; returnedQty?: number; lostQty?: number }>;
 }): Promise<ShipmentActionResult> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_POD)) {
@@ -84,26 +114,26 @@ export async function completePodAction(input: {
     });
 
     /**
-     * Same placement and same guard `completeShipmentAction` uses in
-     * `@/app/actions/delivery-shipments` — posted AFTER `completeDeliveryShipment`'s transaction
-     * commits, guarded on `result.deliveryId` being non-empty (it is `""` for a KONSI order,
-     * whose completion never creates a `FieldSalesDelivery`). Without this, every PUTUS delivery
-     * completed through the PWA would create a `FieldSalesDelivery` + `Receivable` with no GL
-     * entry and no repair path.
+     * Same tail as `completeShipmentAction` in `@/app/actions/delivery-shipments`, after the
+     * completion committed and also on a same-actor replay (every step is idempotent): the store
+     * receipt's post-commit half when the POD was the receipt (a store without an SPG), the
+     * journals of the nota or the konsi transfer, and the SPG notice.
      */
+    if (result.podReceipt) {
+      await sebarSesudahTerima({
+        storeId: result.podReceipt.storeId,
+        userId: session.user.id,
+        sourceType: result.podReceipt.sourceType,
+        receiptId: result.podReceipt.receiptId,
+        sesudah: result.podReceipt.sesudah,
+      });
+    }
     if (result.deliveryId) await postDeliveryJournals(result.deliveryId, session.user.id);
+    else await postKonsiMoveJournal(input.shipmentId, session.user.id);
+    await notifyStoreSpg(input.shipmentId, result.deliveryId, session.user.id);
 
     return { ok: true };
   } catch (error) {
-    if (error instanceof DeliveryError && error.code === "REPLAY_MISMATCH" && error.replay) {
-      /**
-       * Same reasoning as `completeShipmentAction`: the refused replay's delivery is real and its
-       * journals may never have posted, so they post here before the refusal goes back. It
-       * matters most on this path — the offline queue classifies REPLAY_MISMATCH as terminal and
-       * never resubmits.
-       */
-      await postDeliveryJournals(error.replay.deliveryId, session.user.id);
-    }
     return mapError(error, ERROR_TAG);
   }
 }

@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import {
   DEFAULT_PAYOUT_DELAY_DAYS,
+  loadKonsiReports,
   loadMarketplaceDemandInput,
   orderNumbersFor,
   parsePayoutDelayDays,
 } from "./demand-sources";
+import { buildKonsiDemand } from "./konsi-demand";
 import { buildMarketplaceDemand } from "./marketplace-demand";
 
 describe("orderNumbersFor", () => {
@@ -157,6 +159,92 @@ d("loadMarketplaceDemandInput (test bed only)", () => {
     } finally {
       if (settlementId) await prisma.settlement.delete({ where: { id: settlementId } });
       await prisma.salesOrder.deleteMany({ where: { id: { in: orderIds.map(seededId) } } });
+      if (itemId) await prisma.item.delete({ where: { id: itemId } });
+      if (uomId) await prisma.uOM.delete({ where: { id: uomId } });
+    }
+  });
+});
+
+/*
+ * Since the owner chose the consignment cycle for konsi billing (decision 2026-10-29), a konsi
+ * sell-through report is approved in RECORD mode: no invoice date, no due date, no total, no
+ * salesman, no receivable. It still prices its lines, and the forecast must keep reading that
+ * revenue — a RECORD report is a demand source exactly like the invoiced reports before it.
+ */
+d("loadKonsiReports (test bed only)", () => {
+  it("reads a RECORD-approved report with its line price and leaves a baseline out", async () => {
+    const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
+    const tag = `FCSTK-${Math.random().toString(36).slice(2, 10)}`;
+    // August 2031 holds no real dev rows, so every report the window loads that names this item is the spec's own.
+    const akhir = new Date("2031-08-31T12:00:00+07:00");
+
+    let uomId = "";
+    let itemId = "";
+    let storeId = "";
+    const reportIds: string[] = [];
+
+    const laporan = async (n: number, baseline: boolean) => {
+      const r = await prisma.konsiSellThrough.create({
+        data: {
+          docNo: `${tag}/${n}`,
+          storeId,
+          method: "SHELF_COUNT",
+          status: "APPROVED",
+          closingStocktakeId: `${tag}-stk-${n}`,
+          periodStart: new Date("2031-08-01T00:00:00+07:00"),
+          periodEnd: akhir,
+          baseline,
+          baselineReason: baseline ? "uji" : null,
+          createdById: admin.id,
+          approvedById: admin.id,
+          approvedAt: akhir,
+          lines: {
+            create: {
+              itemId,
+              productName: "Kylie Vest",
+              openingQty: 5,
+              inQty: 0,
+              outQty: 0,
+              posSoldQty: 1,
+              gapQty: 0,
+              closingQty: 1,
+              billedQty: 4,
+              unitCost: 50_000,
+              unitPrice: baseline ? null : 150_000,
+              lineTotal: baseline ? null : 600_000,
+            },
+          },
+        },
+      });
+      reportIds.push(r.id);
+      return r;
+    };
+
+    try {
+      uomId = (await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } })).id;
+      itemId = (await prisma.item.create({ data: { sku: tag, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 150_000 } })).id;
+      storeId = (await prisma.store.create({ data: { code: `S-${tag}`, name: "Toko Konsi Ramalan", address: "T", termsType: "KONSI", isActive: true } })).id;
+      const record = await laporan(1, false);
+      await laporan(2, true);
+
+      const reports = await loadKonsiReports({
+        start: new Date("2031-08-01T00:00:00+07:00"),
+        end: new Date("2031-08-31T23:59:59+07:00"),
+      });
+
+      const milik = reports.filter((r) => r.lines.some((l) => l.itemId === itemId));
+      expect(milik).toHaveLength(1);
+      expect(record.invoiceDate).toBeNull();
+      expect(record.total).toBeNull();
+      expect(milik[0].lines[0]).toMatchObject({ itemId, itemSku: tag, billedQty: 4, posSoldQty: 1, unitPrice: 150_000 });
+
+      // Units the SPG POS already wrote to SalesHistory are left out; the rest carries the price.
+      const demand = buildKonsiDemand(milik);
+      expect(demand.rows.map((r) => [r.itemId, r.netQuantity, r.lineTotal])).toEqual([[itemId, 3, 450_000]]);
+    } finally {
+      await prisma.konsiSellThroughLine.deleteMany({ where: { sellThroughId: { in: reportIds.map(seededId) } } });
+      await prisma.konsiSellThrough.deleteMany({ where: { id: { in: reportIds.map(seededId) } } });
+      if (storeId) await prisma.store.delete({ where: { id: storeId } });
       if (itemId) await prisma.item.delete({ where: { id: itemId } });
       if (uomId) await prisma.uOM.delete({ where: { id: uomId } });
     }

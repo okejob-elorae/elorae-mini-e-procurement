@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   aggregateUmkmExcelByParent,
   excelSerialToDate,
   parseUmkmExcelDate,
 } from "./umkm-excel-parse";
-import { buildInventoryQtyMap, readInventoryQty } from "./umkm-opening-stock";
+import { buildInventoryQtyMap, readInventoryQty, resolveScriptUserId } from "./umkm-opening-stock";
 
 describe("parseUmkmExcelDate", () => {
   it("parses Excel serial numbers", () => {
@@ -76,5 +76,19 @@ describe("UMKM inventory map", () => {
 
   it("returns 0 for a missing key", () => {
     expect(readInventoryQty(new Map(), "i1", "X")).toBe(0);
+  });
+});
+
+describe("resolveScriptUserId", () => {
+  it("picks the oldest system-role user, never the legacy role column", async () => {
+    const findFirst = vi.fn().mockResolvedValue({ id: "u-sys", email: "sys@uji.local" });
+    await expect(resolveScriptUserId({ user: { findFirst } } as never)).resolves.toBe("u-sys");
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { roleDefinition: { isSystem: true } } }));
+  });
+
+  it("refuses when there is no system admin", async () => {
+    await expect(
+      resolveScriptUserId({ user: { findFirst: vi.fn().mockResolvedValue(null) } } as never),
+    ).rejects.toThrow("No system admin user found");
   });
 });
