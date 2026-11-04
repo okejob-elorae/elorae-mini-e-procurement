@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
  * ("Pelunasan terverifikasi" bulan ini) mendarat di daftar yang angkanya sama,
  * dan peramban hanya menerima satu halaman.
  */
-export default async function PelunasanPage(props?: {
+export default async function PelunasanPage(props: {
   searchParams: Promise<{
     status?: string;
     koreksi?: string;

@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
  * retur"), `?langkah=`, `?cari=`, `?halaman=`. Bawaannya daftar kerja (yang
  * belum beres). Ringkasan di kepala tetap atas SEMUA nota.
  */
-export default async function ReturTokoPage(props?: {
+export default async function ReturTokoPage(props: {
   searchParams: Promise<{ koreksi?: string; langkah?: string; cari?: string; halaman?: string }>;
 }) {
   const session = await auth();

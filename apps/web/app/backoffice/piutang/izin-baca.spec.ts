@@ -119,7 +119,7 @@ const HALAMAN: { nama: string; buka: () => Promise<unknown>; sah: string[][] }[]
   },
   {
     nama: "pelunasan",
-    buka: () => halamanPelunasan(),
+    buka: () => halamanPelunasan({ searchParams: Promise.resolve({}) }),
     sah: [["receivables:view"], ["receivables:manage"], ["payments:verify"]],
   },
   {
@@ -140,7 +140,7 @@ const HALAMAN: { nama: string; buka: () => Promise<unknown>; sah: string[][] }[]
   },
   {
     nama: "retur-toko",
-    buka: () => halamanRetur(),
+    buka: () => halamanRetur({ searchParams: Promise.resolve({}) }),
     sah: [["receivables:view"], ["receivables:manage"], ["inventory_opname:count"], ["payments:verify"]],
   },
   {
@@ -148,7 +148,7 @@ const HALAMAN: { nama: string; buka: () => Promise<unknown>; sah: string[][] }[]
     buka: () => halamanRincianRetur(id),
     sah: [["receivables:view"], ["receivables:manage"], ["inventory_opname:count"], ["payments:verify"]],
   },
-  { nama: "kontrabon", buka: () => halamanKontrabon(), sah: [["receivables:view"], ["receivables:manage"]] },
+  { nama: "kontrabon", buka: () => halamanKontrabon({ searchParams: Promise.resolve({}) }), sah: [["receivables:view"], ["receivables:manage"]] },
   {
     nama: "kontrabon/[id]",
     buka: () => halamanRincianKontrabon(id),

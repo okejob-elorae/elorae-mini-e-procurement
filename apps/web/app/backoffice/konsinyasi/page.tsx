@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  * Saringan di server: `?tahap=` (bawaannya yang belum selesai), `?cari=`,
  * `?halaman=`. Jumlah per tahap dan peringatan gaji tetap atas SEMUA siklus.
  */
-export default async function KonsinyasiPage(props?: {
+export default async function KonsinyasiPage(props: {
   searchParams: Promise<{ tahap?: string; cari?: string; halaman?: string }>;
 }) {
   const session = await auth();

@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * Saringan di server: `?saring=belum` (tautan Beranda "Belum dikonfirmasi"),
  * `?saring=semua`, `?cari=`, `?halaman=`. Bawaannya hanya yang berjalan.
  */
-export default async function KontrabonPage(props?: {
+export default async function KontrabonPage(props: {
   searchParams: Promise<{ saring?: string; cari?: string; halaman?: string }>;
 }) {
   const session = await auth();
