@@ -381,7 +381,7 @@ async function siklusDenganLaporan(qty: number) {
 }
 
 const kunci = (qty: number) =>
-  kunciAngka({ cycleId: siklusId, olehUserId: adminId, gajiPokokPerSpg: 1_000_000, baris: [{ itemId: barangId, itemName: `${tag} Kaos`, qty, price: 75_000 }] });
+  kunciAngka({ cycleId: siklusId, olehUserId: adminId, baris: [{ itemId: barangId, itemName: `${tag} Kaos`, qty, price: 75_000 }] });
 
 /**
  * Bahan komisi SPG versi tim (`lib/spg-commission/payout.ts`): tarif per KATEGORI barang yang

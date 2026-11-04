@@ -6,6 +6,7 @@ import { JENIS_KABAR, kabariPengguna, type Kabar } from "@/lib/notifications/kab
 import { bentrokKunciKiriman } from "@/lib/receivables/idempoten";
 import { denganNomorUnik } from "@/lib/receivables/nomor";
 import {
+  statusMutasi,
   awalanNomorMutasi,
   ENTITAS_MUTASI,
   JEJAK_MUTASI,
@@ -154,7 +155,8 @@ type MutasiRingkas = {
 };
 
 async function muatMutasi(tx: Tx, id: string): Promise<MutasiRingkas | null> {
-  return tx.storeTransfer.findUnique({ where: { id }, select: PILIH_MUTASI });
+  const m = await tx.storeTransfer.findUnique({ where: { id }, select: PILIH_MUTASI });
+  return m ? { ...m, status: statusMutasi(m.status) } : null;
 }
 
 const berhasil = (m: { id: string; docNo: string }, status: StatusMutasi, ulang = false) =>
@@ -229,7 +231,7 @@ async function ajuanDenganKunci(db: BacaMutasi, kunci: string, userId: string): 
   });
   if (!ada) return null;
   return ada.createdById === userId
-    ? { ok: true, id: ada.id, docNo: ada.docNo, status: ada.status, ulang: true, kurangSaldo: [] }
+    ? { ok: true, id: ada.id, docNo: ada.docNo, status: statusMutasi(ada.status), ulang: true, kurangSaldo: [] }
     : { ok: false, kode: "KUNCI_DIPAKAI" };
 }
 
@@ -247,7 +249,7 @@ async function kirimanDenganKunci(db: BacaMutasi, transferId: string, kunci: str
   });
   if (!jejak.some((j) => (j.metadata as { kunciKirim?: unknown } | null)?.kunciKirim === kunci)) return null;
   const m = await db.storeTransfer.findUnique({ where: { id: transferId }, select: { id: true, docNo: true, status: true, fromStoreId: true } });
-  return m && m.fromStoreId === storeId ? berhasil(m, m.status, true) : null;
+  return m && m.fromStoreId === storeId ? berhasil(m, statusMutasi(m.status), true) : null;
 }
 
 /** Mutasi yang tidak lagi bisa dikirim, untuk tanda dikirim dari antrean HP. */

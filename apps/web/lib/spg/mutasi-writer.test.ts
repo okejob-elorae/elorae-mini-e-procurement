@@ -431,10 +431,11 @@ d("mutasi antar toko — penulis (test bed only)", () => {
     ).id;
     const siklusAsal = (await prisma.consignmentCycle.create({ data: { noKonsi: `${tag}-S2`, storeId: asal, periodYear: tahun, periodMonth: bulan } })).id;
     siklus.push(siklusTujuan, siklusAsal);
-    const titipanTujuan = (await rincianSiklus(siklusTujuan))?.titipan ?? [];
-    expect(titipanTujuan.find((x) => x.itemName === "Kaos Uji")?.sisa).toBe(3);
-    const titipanAsal = (await rincianSiklus(siklusAsal))?.titipan ?? [];
-    expect(titipanAsal.find((x) => x.itemName === "Kaos Uji")?.sisa).toBe(-3);
+    // The cycle's consigned stock now lives in `stokToko.baris` (was `titipan`).
+    const titipanTujuan = (await rincianSiklus(siklusTujuan))?.stokToko.baris ?? [];
+    expect(titipanTujuan.find((x) => x.nama === "Kaos Uji")?.sisa).toBe(3);
+    const titipanAsal = (await rincianSiklus(siklusAsal))?.stokToko.baris ?? [];
+    expect(titipanAsal.find((x) => x.nama === "Kaos Uji")?.sisa).toBe(-3);
   });
 
   it("keeps the office out while the destination's SPG can still receive, until the reminder period passes", async () => {

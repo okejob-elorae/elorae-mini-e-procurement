@@ -103,6 +103,18 @@ export function bacaAturanMutasi(raw: string | null | undefined): AturanMutasi {
 export const STATUS_MUTASI = ["DIAJUKAN", "DISETUJUI", "DIKIRIM", "DITERIMA", "DITOLAK", "DIBATALKAN", "DIKEMBALIKAN"] as const;
 export type StatusMutasi = (typeof STATUS_MUTASI)[number];
 
+/**
+ * Status mutasi dari satu baris `StoreTransfer`. Tabel itu juga dipakai layar transfer toko versi
+ * tim (PENDING / APPROVED / CANCELLED); barisnya dibaca dengan arti mutasinya: permintaan yang belum
+ * disetujui = DIAJUKAN, yang disetujui sudah memindahkan stok = DITERIMA, yang batal = DIBATALKAN.
+ */
+export function statusMutasi(s: string): StatusMutasi {
+  if (s === "PENDING") return "DIAJUKAN";
+  if (s === "APPROVED") return "DITERIMA";
+  if (s === "CANCELLED") return "DIBATALKAN";
+  return s as StatusMutasi;
+}
+
 export const SELISIH_MUTASI = ["TERBUKA", "HILANG", "KEMBALI"] as const;
 export type SelisihMutasi = (typeof SELISIH_MUTASI)[number];
 

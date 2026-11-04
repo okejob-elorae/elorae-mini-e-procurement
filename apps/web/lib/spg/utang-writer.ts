@@ -472,6 +472,7 @@ export async function catatPenerimaanUtangSpg(input: {
     sesudah.notif = await tx.adminNotification.create({
       data: {
         category: KATEGORI_NOTIF_UTANG_SPG.BAYAR_DIAJUKAN,
+        severity: "INFO",
         title: capNotificationText(`Pembayaran utang ${nama} ${formatIDR(dariSen(jumlahSen))} menunggu cek`),
         message: capNotificationText("Cocokkan dengan mutasi rekening sebelum utang SPG berkurang."),
         metadata: { paymentId: p.id, spgUserId: input.spgUserId },
@@ -544,6 +545,7 @@ export async function revisiPenerimaanUtangSpg(input: {
     sesudah.notif = await tx.adminNotification.create({
       data: {
         category: KATEGORI_NOTIF_UTANG_SPG.BAYAR_DIAJUKAN,
+        severity: "INFO",
         title: capNotificationText(`Pembayaran utang ${nama} direvisi, menunggu cek`),
         message: capNotificationText("Cocokkan dengan mutasi rekening sebelum utang SPG berkurang."),
         metadata: { paymentId: p.id, spgUserId: p.spgUserId },
@@ -640,6 +642,7 @@ export async function periksaPenerimaanUtangSpg(input: {
       sesudah.notif = await tx.adminNotification.create({
         data: {
           category: KATEGORI_NOTIF_UTANG_SPG.BAYAR_DIKEMBALIKAN,
+          severity: "WARNING",
           title: capNotificationText(`Pembayaran utang ${nama} dikembalikan pemeriksa`),
           message: capNotificationText("Perbaiki sesuai catatan pemeriksa, lalu ajukan lagi."),
           metadata: { paymentId: p.id, spgUserId: p.spgUserId },

@@ -255,6 +255,7 @@ export async function ajukanJadwalBulan(input: { userId: string; storeId: string
     sesudah.notif = await tx.adminNotification.create({
       data: {
         category: KATEGORI_NOTIF_JADWAL_BULAN,
+        severity: "INFO",
         title: capNotificationText(`Jadwal kerja ${label} diajukan SPG`),
         message: capNotificationText(`Jadwal kerja ${label} menunggu persetujuan kantor.`),
         metadata: { userId: input.userId, storeId: input.storeId, bulan: input.bulan },

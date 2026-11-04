@@ -1,3 +1,4 @@
+import { statusMutasi } from "./mutasi-aturan";
 import { prisma } from "@elorae/db";
 import { logAudit } from "@/lib/audit";
 import { buildSuratJalanMutasiHtml } from "@/lib/print/surat-jalan-mutasi-html";
@@ -65,7 +66,7 @@ export async function dataSuratJalanMutasi(id: string): Promise<DataSuratJalan |
   return {
     id: m.id,
     docNo: m.docNo,
-    status: m.status,
+    status: statusMutasi(m.status),
     asal: toko(m.fromStore),
     tujuan: toko(m.toStore),
     diajukanIso: m.createdAt.toISOString(),

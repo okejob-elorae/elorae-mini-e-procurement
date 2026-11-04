@@ -27,6 +27,7 @@ type Props = ComponentProps<typeof DashboardPageClient>;
 
 const props: Props = {
   actionItems: [],
+  warnaGrafik: {},
   initialStats: {
     po: { draft: 1 },
     workOrders: { sedangDiproduksi: 3, selesaiSebagian: 1, completedToday: 0 },

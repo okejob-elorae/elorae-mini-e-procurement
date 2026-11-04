@@ -225,7 +225,7 @@ export async function approveStoreTransfer(input: {
     }
 
     for (const line of transfer.lines) {
-      const qty = line.qty.toNumber();
+      const qty = Number(line.qty);
 
       /*
        * Both reads below run INSIDE this transaction, after the CAS above has already claimed

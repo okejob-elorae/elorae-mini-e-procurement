@@ -128,6 +128,7 @@ export async function simpanCatatanHadir(input: {
     sesudah.notif = await tx.adminNotification.create({
       data: {
         category: KATEGORI_NOTIF_CATATAN_HADIR.DIAJUKAN,
+        severity: "INFO",
         title: capNotificationText(`Catatan check-in toko ${nama} ${label} menunggu diperiksa`),
         message: capNotificationText(`Cocokkan dengan kertas atau berkas aslinya sebelum gaji ${label} dihitung.`),
         metadata: { recordId, userId: input.userId, bulan: input.bulan },
@@ -206,6 +207,7 @@ async function putuskanCatatan(input: {
       sesudah.notif = await tx.adminNotification.create({
         data: {
           category: KATEGORI_NOTIF_CATATAN_HADIR.DIKEMBALIKAN,
+          severity: "WARNING",
           title: capNotificationText(`Catatan check-in toko ${nama} ${salesMonthLabelId(r.month)} dikembalikan`),
           message: capNotificationText("Perbaiki sesuai catatan pemeriksa, lalu simpan lagi."),
           metadata: { recordId: r.id, userId: r.userId, bulan: r.month },
@@ -247,6 +249,7 @@ export async function ingatkanCatatanHadirPerlu(
   return tx.adminNotification.create({
     data: {
       category: KATEGORI_NOTIF_CATATAN_HADIR.PERLU,
+      severity: "WARNING",
       title: capNotificationText(`Catatan check-in toko ${nama} ${label} belum dimasukkan`),
       message: capNotificationText(`Gaji pokok dan komisi ${label} menunggu sampai catatan check-in toko dimasukkan dan diperiksa.`),
       metadata: { userId: input.userId, storeId: input.storeId, bulan: input.bulan, hari: [...input.hari] },

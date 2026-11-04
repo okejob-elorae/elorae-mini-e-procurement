@@ -35,7 +35,7 @@ export async function muatPerbandinganLabaRugi(periode: RentangTanggal): Promise
   const kolom: [RentangTanggal, RentangTanggal, RentangTanggal] = [periode, sebelumnya, tahunLalu];
   const baca = (r: RentangTanggal) => getAccountBalances({ from: parseDateOnly(r.dari)!, to: parseDateOnlyEnd(r.sampai)! });
   const saldo = await Promise.all(kolom.map(baca));
-  const laporan = saldo.map(buildIncomeStatement);
+  const laporan = saldo.map((s) => buildIncomeStatement(s));
   const ambil = (k: (l: (typeof laporan)[number]) => number) => laporan.map(k);
 
   const labaRugi = (r: BalanceRow) => r.type === "PENDAPATAN" || r.type === "HPP" || r.type === "BEBAN";

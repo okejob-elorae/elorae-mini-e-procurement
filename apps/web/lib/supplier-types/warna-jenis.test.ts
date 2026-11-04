@@ -26,7 +26,7 @@ describe("penulis jenis pemasok: hex dari katalog Pantone (basis data sungguhan)
   });
 
   it("kode Pantone → color = hex katalog; null → otomatis; kode tak dikenal ditolak tanpa mengubah apa pun", async () => {
-    id = (await createSupplierType({ code: kode, name: "Uji warna", colorTcx: "19-4052" })).id;
+    id = (await createSupplierType({ code: kode, name: "Uji warna", isActive: true, colorTcx: "19-4052" })).id;
     expect(await prisma.supplierType.findUniqueOrThrow({ where: { id }, select: { color: true, colorTcx: true } })).toEqual({ color: "#0f4c81", colorTcx: "19-4052" });
 
     await expect(updateSupplierType(id, { colorTcx: "99-9999" })).rejects.toBeInstanceOf(SupplierTypeError);

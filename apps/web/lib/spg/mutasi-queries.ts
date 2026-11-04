@@ -2,6 +2,7 @@ import { prisma } from "@elorae/db";
 import { cariTeks } from "@/lib/db/cari-teks";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import {
+  statusMutasi,
   bacaAturanMutasi,
   ENTITAS_MUTASI,
   keputusanArah,
@@ -106,7 +107,7 @@ export async function daftarMutasiHp(storeId: string): Promise<{ keluar: MutasiH
       id: m.id,
       docNo: m.docNo,
       arah,
-      status: m.status,
+      status: statusMutasi(m.status),
       selisihStatus: m.selisihStatus,
       tokoLain: arah === "KELUAR" ? m.toStore.name : m.fromStore.name,
       tanggal: formatDisplayDate(m.shippedAt ?? m.createdAt),
@@ -189,7 +190,7 @@ export async function rincianMutasiHp(id: string, storeId: string): Promise<Rinc
     id: m.id,
     docNo: m.docNo,
     arah,
-    status: m.status,
+    status: statusMutasi(m.status),
     selisihStatus: m.selisihStatus,
     asal: m.fromStore.name,
     tujuan: m.toStore.name,
@@ -309,12 +310,12 @@ export async function daftarMutasiKantor(opsi: {
   ]);
   const nama = await namaPengguna(rows.map((r) => r.createdById));
   const perStatus = Object.fromEntries(STATUS_MUTASI.map((s) => [s, 0])) as Record<StatusMutasi, number>;
-  for (const g of grup) perStatus[g.status] = g._count._all;
+  for (const g of grup) perStatus[statusMutasi(g.status)] += g._count._all;
   return {
     baris: rows.map((r) => ({
       id: r.id,
       docNo: r.docNo,
-      status: r.status,
+      status: statusMutasi(r.status),
       selisihStatus: r.selisihStatus,
       asal: r.fromStore.name,
       tujuan: r.toStore.name,
@@ -441,7 +442,7 @@ export async function rincianMutasiKantor(id: string, sekarang = new Date()): Pr
   return {
     id: m.id,
     docNo: m.docNo,
-    status: m.status,
+    status: statusMutasi(m.status),
     selisihStatus: m.selisihStatus,
     selisihCatatan: m.selisihNote,
     asal: { id: m.fromStore.id, name: m.fromStore.name, termsType: m.fromStore.termsType, spg: spgAsal.map(orang) },

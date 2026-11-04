@@ -93,7 +93,7 @@ describe("tiga peran kantor", () => {
         expect(izin.filter((k) => !penjelasanIzin(k))).toEqual([]);
         const butuhHilang = izin
           .map((k) => penjelasanIzin(k)?.butuh)
-          .filter((b): b is string => b !== undefined && !izin.includes(b));
+          .filter((b) => b !== undefined && !izin.includes(b));
         expect(butuhHilang).toEqual([]);
       });
 

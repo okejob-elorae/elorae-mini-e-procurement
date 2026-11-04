@@ -12,7 +12,8 @@ describe("nasibNotaSpg", () => {
 
   it("stops on EVERY returned code, so the SPG sees why instead of 'waiting for signal' forever", () => {
     for (const code of KODE_ALASAN_NOTA_SPG) {
-      expect(nasibNotaSpg({ ok: false, code }), code).toBe("terminal");
+      // Cast: the list also holds queue-only codes (KUNJUNGAN_DITOLAK) the action type does not name.
+      expect(nasibNotaSpg({ ok: false, code } as Parameters<typeof nasibNotaSpg>[0]), code).toBe("terminal");
     }
   });
 });
