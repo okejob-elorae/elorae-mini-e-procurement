@@ -20,9 +20,13 @@ import { ENTRI as pwaSpg } from "./pwaSpg";
 import { ENTRI as pwaBersama } from "./pwaBersama";
 
 /**
- * Semua penjelasan halaman, satu berkas per kelompok menu. Urutan kelompok
- * mengikuti `BAGIAN_KANTOR` lalu `BAGIAN_HP`; urutan di dalam berkas adalah
- * urutan di halaman Bantuan.
+ * Semua penjelasan halaman. Kelompoknya ditentukan `bagian` tiap entri (sama
+ * dengan grup menu samping tempat halamannya), bukan nama berkasnya: sejak menu
+ * gabungan 2026-11-04 `sales.ts` berisi Penjualan Marketplace dan Penjualan
+ * Canvassing, `navGroupReceivables.ts` berisi Keuangan (termasuk pembayaran
+ * pemasok), `navGroupLedger.ts` berisi Pembukuan, dan `konsinyasi.ts` berisi
+ * Penjualan Konsinyasi. Urutan kelompok mengikuti `BAGIAN_KANTOR` lalu
+ * `BAGIAN_HP`; urutan di dalam satu kelompok adalah urutan entri di sini.
  *
  * Halaman baru dengan penjelasan menambah entrinya di sini, BUKAN di bawah
  * judul halamannya (`daftar.test.ts` menjaga rute, kunci i18n, dan duplikat).

@@ -41,16 +41,17 @@ const PAGAR: Record<string, (izin: string[]) => boolean> = {
   "/backoffice/retur-toko": bolehMembacaRetur,
   "/backoffice/beban-selisih": bolehMembacaPiutang,
   "/backoffice/arsip-retur": bolehMembacaArsip,
-  // Layar `/backoffice/finance/*` memagari dirinya di `page.tsx`-nya.
-  "/backoffice/finance/piutang": (izin) => hasPermission(izin, PERMISSIONS.RECEIVABLES_VIEW),
-  "/backoffice/finance/payments": (izin) => hasPermission(izin, PERMISSIONS.PAYMENTS_MANAGE),
-  // Pelunasan toko dan setoran penagih: dikelola penagihan, disetujui/diverifikasi pemeriksa pembayaran
-  // (aksinya menuntut `payments:verify`), jadi pagar halamannya menerima salah satu.
-  "/backoffice/finance/pelunasan": (izin) =>
-    hasPermission(izin, PERMISSIONS.COLLECTIONS_MANAGE) || hasPermission(izin, PERMISSIONS.PAYMENTS_VERIFY),
+  // Layar `/backoffice/finance/*` memagari dirinya di `page.tsx`-nya. Setoran penagih: dikelola
+  // penagihan, diverifikasi pemeriksa pembayaran (aksinya menuntut `payments:verify`).
   "/backoffice/finance/collections": (izin) =>
     hasPermission(izin, PERMISSIONS.COLLECTIONS_MANAGE) || hasPermission(izin, PERMISSIONS.PAYMENTS_VERIFY),
+  // Pembayaran pemasok dan umur utang (pindah dari Pembelian, menu gabungan 2026-11-04): ROUTE_PERMISSIONS.
+  "/backoffice/supplier-payments": (izin) => hasPermission(izin, PERMISSIONS.SUPPLIER_PAYMENTS_VIEW),
+  "/backoffice/supplier-payments/umur-hutang": (izin) => hasPermission(izin, PERMISSIONS.SUPPLIER_PAYMENTS_VIEW),
 };
+
+/** Halaman lama versi tim yang isinya diganti versi Max (keputusan 29 Okt): tidak di menu, belum dihapus. */
+const LAMA_TIM = ["/backoffice/finance/piutang", "/backoffice/finance/payments", "/backoffice/finance/pelunasan"];
 
 const DASAR = [
   "receivables:view",
@@ -69,9 +70,14 @@ const GABUNGAN: string[][] = [
   ["dashboard:view", "inventory:view"],
 ];
 
-const grup = navItems.find((i) => i.labelKey === "navGroupReceivablesKalimat");
+const grup = navItems.find((i) => i.labelKey === "finance");
 
-describe("menu Piutang & Pelunasan mengikuti pagar halaman", () => {
+describe("menu Keuangan (piutang, pelunasan, pembayaran pemasok) mengikuti pagar halaman", () => {
+  it("halaman lama versi tim (Piutang, Pembayaran, Pelunasan Toko) tidak muncul di mana pun di menu", () => {
+    const semua = navItems.flatMap((i) => [i.href, ...(i.children ?? []).map((c) => c.href)]);
+    for (const h of LAMA_TIM) expect(semua, h).not.toContain(h);
+  });
+
   it("grupnya ada dan setiap anak punya pagar halaman yang dikenal", () => {
     expect(grup).toBeDefined();
     const href = (grup?.children ?? []).map((c) => c.href).sort();
@@ -100,12 +106,11 @@ describe("menu Piutang & Pelunasan mengikuti pagar halaman", () => {
     }
   });
 
-  it("pemeriksa pembayaran (payments:verify) menemukan BKM, nota retur, pelunasan toko, dan setoran penagih — bukan buku piutang", () => {
+  it("pemeriksa pembayaran (payments:verify) menemukan BKM, nota retur, dan setoran penagih — bukan buku piutang", () => {
     const pemeriksa = ["dashboard:view", "payments:verify"];
     const terlihat = (grup?.children ?? []).filter((c) => bolehAnak(pemeriksa, c.permission)).map((c) => c.href);
     expect(terlihat.sort()).toEqual([
       "/backoffice/finance/collections",
-      "/backoffice/finance/pelunasan",
       "/backoffice/pelunasan",
       "/backoffice/retur-toko",
     ]);

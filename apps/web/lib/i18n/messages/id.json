@@ -264,10 +264,10 @@
     "navGroupFieldTeamKalimat": "Tim lapangan",
     "navGroupReceivablesKalimat": "Piutang & pelunasan",
     "navGroupLedgerKalimat": "Buku besar",
-    "navGroupArchiveKalimat": "Arsip & jejak",
+    "navGroupArchiveKalimat": "Arsip & Audit Trail",
     "secReceivablesKalimat": "Piutang & konsinyasi",
     "archiveKalimat": "Arsip dokumen",
-    "auditTrailKalimat": "Jejak audit",
+    "auditTrailKalimat": "Audit Trail",
     "hppReportKalimat": "HPP (harga pokok produksi)",
     "navFinanceRekonsiliasiPersediaan": "Rekonsiliasi persediaan",
     "navFinanceBukuBesar": "Buku besar",
@@ -296,7 +296,9 @@
     "navSpgReturPembeli": "Retur pembeli",
     "navInvoiceBelumDitagih": "Invoice belum ditagih",
     "navSelisihHargaInvoice": "Selisih harga invoice",
-    "navCatatanHadirSpg": "Catatan check-in toko"
+    "navCatatanHadirSpg": "Catatan check-in toko",
+    "secSales": "Penjualan",
+    "navSiklusKonsinyasi": "Siklus konsinyasi"
   },
   "notifications": {
     "title": "Notifikasi",

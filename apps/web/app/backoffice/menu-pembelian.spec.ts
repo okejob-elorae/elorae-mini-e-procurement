@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { getRequiredPermission, PERMISSIONS } from "@/lib/rbac";
 
 /*
- * Pembelian (PO, permintaan barang, pembayaran pemasok, tagihan pemasok, retur
- * ke pemasok) dulu terselip di grup Produksi. Sekarang satu grup sendiri —
- * tanpa menggeser satu pun hak akses: izin tiap anak tetap persis pagar rutenya.
+ * Pembelian (PO, permintaan barang, tagihan pemasok, retur ke pemasok) dulu
+ * terselip di grup Produksi. Sekarang satu grup sendiri — tanpa menggeser satu
+ * pun hak akses: izin tiap anak tetap persis pagar rutenya. Pembayaran pemasok
+ * dan umur utang ada di grup Keuangan (menu gabungan, keputusan pemilik 2026-11-04).
  */
 
 vi.mock("@/components/offline/OfflineIndicator", () => ({ OfflineIndicator: () => null }));
@@ -19,8 +20,6 @@ const { navItems, bolehAnak } = await import("./BackofficeShell");
 const PEMBELIAN = [
   { href: "/backoffice/purchase-orders", permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
   { href: "/backoffice/item-requests", permission: PERMISSIONS.ITEM_REQUESTS_VIEW },
-  { href: "/backoffice/supplier-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
-  { href: "/backoffice/supplier-payments/umur-hutang", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
   { href: "/backoffice/vendor-bills", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
   // P19 dan P27 (jawaban pemilik 2026-11-02): satu izin dengan Vendor Billing, awalan rute yang sama.
   { href: "/backoffice/vendor-bills/belum-ditagih", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
@@ -32,7 +31,7 @@ const PEMBELIAN = [
 const grup = navItems.find((i) => i.labelKey === "navGroupPurchasing");
 
 describe("menu Pembelian", () => {
-  it("satu grup berisi PO, permintaan barang, pembayaran pemasok, umur utang, tagihan pemasok (dengan invoice belum ditagih dan selisih harga invoice), pembayaran tagihan, dan retur ke pemasok — izinnya sama dengan pagar rutenya", () => {
+  it("satu grup berisi PO, permintaan barang, tagihan pemasok (dengan invoice belum ditagih dan selisih harga invoice), riwayat pembayaran tagihan, dan retur ke pemasok — izinnya sama dengan pagar rutenya", () => {
     expect(grup).toBeDefined();
     expect(grup?.section).toBe("secOperations");
     expect(grup?.children?.map((c) => ({ href: c.href, permission: c.permission }))).toEqual(PEMBELIAN);
@@ -73,13 +72,16 @@ describe("menu Pembelian", () => {
     ]);
   });
 
-  it("pemegang izin pembayaran pemasok saja melihat pembayaran, umur utang, dan pembayaran tagihan, bukan PO", () => {
+  it("pemegang izin pembayaran pemasok saja melihat riwayat pembayaran tagihan di sini, bukan PO", () => {
     const izin = [PERMISSIONS.SUPPLIER_PAYMENTS_VIEW];
     const terlihat = (grup?.children ?? []).filter((c) => bolehAnak(izin, c.permission)).map((c) => c.href);
-    expect(terlihat).toEqual([
-      "/backoffice/supplier-payments",
-      "/backoffice/supplier-payments/umur-hutang",
-      "/backoffice/vendor-payments",
-    ]);
+    expect(terlihat).toEqual(["/backoffice/vendor-payments"]);
+  });
+
+  it("pembayaran pemasok dan umur utang ada di grup Keuangan", () => {
+    const keuangan = navItems.find((i) => i.labelKey === "finance");
+    const href = keuangan?.children?.map((c) => c.href) ?? [];
+    expect(href).toContain("/backoffice/supplier-payments");
+    expect(href).toContain("/backoffice/supplier-payments/umur-hutang");
   });
 });

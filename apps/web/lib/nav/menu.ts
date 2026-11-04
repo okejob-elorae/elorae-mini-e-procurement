@@ -17,7 +17,7 @@ import {
   ShoppingBag,
   ShoppingCart,
   Store,
-  Warehouse,
+  Truck,
 } from "lucide-react";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 
@@ -140,6 +140,33 @@ export const navItems: NavItem[] = [
       { labelKey: "leadTime", href: "/backoffice/lead-time", permission: PERMISSIONS.LEAD_TIME_VIEW },
     ],
   },
+  /*
+   * Pembelian berdiri sendiri: PO, tagihan pemasok, dan retur ke pemasok dulu
+   * terselip di Produksi. Membayar pemasok dan umur utang dikerjakan keuangan,
+   * jadi ada di grup Keuangan (menu gabungan, keputusan pemilik 2026-11-04).
+   * Izin tiap anak SAMA dengan sebelumnya. Master Pemasok tetap di Data Master;
+   * daftar GRN tetap tab di Inventori.
+   */
+  {
+    section: "secOperations",
+    labelKey: "navGroupPurchasing",
+    href: "/backoffice/purchase-orders",
+    icon: ShoppingBag,
+    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
+    children: [
+      { labelKey: "navPesananPembelian", href: "/backoffice/purchase-orders", permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
+      { labelKey: "navItemRequests", href: "/backoffice/item-requests", permission: PERMISSIONS.ITEM_REQUESTS_VIEW },
+      { labelKey: "navVendorBills", href: "/backoffice/vendor-bills", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
+      // Penerimaan yang belum ada invoice pemasoknya (P19) dan selisih harga invoice yang menunggu
+      // keputusan (P27). Keduanya di bawah awalan `/backoffice/vendor-bills` di ROUTE_PERMISSIONS.
+      { labelKey: "navInvoiceBelumDitagih", href: "/backoffice/vendor-bills/belum-ditagih", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
+      { labelKey: "navSelisihHargaInvoice", href: "/backoffice/vendor-bills/selisih-harga", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
+      // Riwayat saja: Vendor Billing tidak menerima pembayaran baru sejak 2026-11-01 — tagihan
+      // vendor dibayar lewat Pembayaran pemasok. Tetap di samping Tagihan vendor untuk dicari.
+      { labelKey: "navVendorPayments", href: "/backoffice/vendor-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
+      { labelKey: "navReturKePemasok", href: "/backoffice/vendor-returns", permission: PERMISSIONS.VENDOR_RETURNS_VIEW },
+    ],
+  },
   {
     section: "secOperations",
     labelKey: "inventory",
@@ -172,7 +199,27 @@ export const navItems: NavItem[] = [
   },
   {
     section: "secOperations",
-    labelKey: "sales",
+    labelKey: "production",
+    href: "/backoffice/production/planning",
+    icon: Factory,
+    permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
+    children: [
+      { labelKey: "navForecast", href: "/backoffice/forecast", permission: PERMISSIONS.FORECAST_VIEW },
+      { labelKey: "navProductionPlanning", href: "/backoffice/production/planning", permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW },
+      { labelKey: "navProductionFollowUp", href: "/backoffice/production/follow-up", permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW },
+      { labelKey: "navProductionColors", href: "/backoffice/production/colors", permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
+      { labelKey: "navProductionPalette", href: "/backoffice/production/palette", permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
+      { labelKey: "navWorkOrdersList", href: "/backoffice/work-orders", permission: PERMISSIONS.WORK_ORDERS_VIEW },
+      { labelKey: "registerNotaCmt", href: "/backoffice/work-orders/nota-register", permission: PERMISSIONS.NOTA_REGISTER_VIEW },
+    ],
+  },
+
+  // ── Penjualan ──────────────────────────────────────────────────────────────
+  // Dipisah per saluran seperti versi tim: marketplace, canvassing, konsinyasi
+  // (menu gabungan, keputusan pemilik 2026-11-04).
+  {
+    section: "secSales",
+    labelKey: "marketplaceSales",
     href: "/backoffice/sales-orders",
     icon: ShoppingCart,
     permission: PERMISSIONS.SALES_ORDERS_VIEW,
@@ -183,24 +230,34 @@ export const navItems: NavItem[] = [
       // Pencatatan pengemas pesanan marketplace — layarnya di luar /backoffice.
       { labelKey: "navRecordPacker", href: "/packer", permission: PERMISSIONS.PACKER_MENU },
       { labelKey: "navSalesReturns", href: "/backoffice/returns", permission: PERMISSIONS.SALES_ORDERS_VIEW },
+      // Settlement marketplace di sini, bukan di Pembukuan: pencocokannya per pesanan marketplace.
+      { labelKey: "navFinanceSettlementsKalimat", href: "/backoffice/finance/settlements", permission: PERMISSIONS.SETTLEMENTS_VIEW },
+    ],
+  },
+  {
+    section: "secSales",
+    labelKey: "canvassingSales",
+    href: "/backoffice/field-sales-orders",
+    icon: Truck,
+    permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
+    children: [
       { labelKey: "navPesananLapangan", href: "/backoffice/field-sales-orders", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
       { labelKey: "navInden", href: "/backoffice/inden", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      { labelKey: "navSalesKanvas", href: "/backoffice/canvassing", permission: PERMISSIONS.CANVASSING_MANAGE },
+      { labelKey: "navPenjualanKanvas", href: "/backoffice/van-sales", permission: PERMISSIONS.CANVASSING_MANAGE },
       // Sama dengan `canViewFieldReturns`: pembaca pesanan lapangan ATAU gudang yang menerima returnya.
       {
         labelKey: "navFieldReturns",
         href: "/backoffice/field-returns",
         permission: [PERMISSIONS.FIELD_SALES_ORDERS_VIEW, PERMISSIONS.FIELD_RETURNS_MANAGE],
       },
-      { labelKey: "navSalesKanvas", href: "/backoffice/canvassing", permission: PERMISSIONS.CANVASSING_MANAGE },
-      { labelKey: "navPenjualanKanvas", href: "/backoffice/van-sales", permission: PERMISSIONS.CANVASSING_MANAGE },
       { labelKey: "promos", href: "/backoffice/promos", permission: PERMISSIONS.PROMOS_VIEW },
     ],
   },
   // Pekerjaan MENGAWASI tim lapangan (kehadiran, biaya, ringkasan, komisi) —
-  // dipisah dari Penjualan, yang berisi DOKUMEN penjualan. Penjualan sudah
-  // sepuluh anak; menambah enam lagi di sana membuatnya tidak terbaca.
+  // dipisah dari Penjualan Canvassing, yang berisi DOKUMEN penjualan.
   {
-    section: "secOperations",
+    section: "secSales",
     labelKey: "navGroupFieldTeamKalimat",
     href: "/backoffice/sales-lapangan",
     icon: MapPinned,
@@ -231,10 +288,35 @@ export const navItems: NavItem[] = [
       { labelKey: "navHargaPesaingToko", href: "/backoffice/harga-pesaing", permission: PERMISSIONS.STORES_VIEW },
     ],
   },
+  // Konsinyasi: siklus bulanan, hitung stok toko (dengan persetujuan), laporan
+  // sell-through, dan transfer antar toko. Menyetujui hitungan dan transfer punya izinnya
+  // sendiri (keputusan manager, 2026-11-01), jadi penyetujunya ikut menemukan halamannya.
+  {
+    section: "secSales",
+    labelKey: "consignmentSales",
+    href: "/backoffice/konsinyasi",
+    icon: Handshake,
+    permission: PERMISSIONS.STORES_VIEW,
+    children: [
+      // Siklus bulanan satu toko × satu bulan (dulu entri tunggal di tingkat atas).
+      { labelKey: "navSiklusKonsinyasi", href: "/backoffice/konsinyasi", permission: PERMISSIONS.CONSIGNMENT_VIEW },
+      {
+        labelKey: "storeStocktakes",
+        href: "/backoffice/store-stocktakes",
+        permission: [PERMISSIONS.STORES_MANAGE, PERMISSIONS.STORE_STOCKTAKES_APPROVE],
+      },
+      { labelKey: "navKonsiSellThrough", href: "/backoffice/konsi-sell-through", permission: PERMISSIONS.STORES_VIEW },
+      {
+        labelKey: "storeTransfers",
+        href: "/backoffice/store-transfers",
+        permission: [PERMISSIONS.STORES_MANAGE, PERMISSIONS.STORE_TRANSFERS_APPROVE],
+      },
+    ],
+  },
   // Semua pekerjaan SPG di satu tempat: nota konter, promo konter, tutup hari,
   // pelanggan, jadwal, komisi, kiriman, dan barang rusak.
   {
-    section: "secOperations",
+    section: "secSales",
     labelKey: "navGroupSpg",
     href: "/backoffice/spg-sales",
     icon: Store,
@@ -290,108 +372,6 @@ export const navItems: NavItem[] = [
       },
     ],
   },
-  {
-    section: "secOperations",
-    labelKey: "production",
-    href: "/backoffice/production/planning",
-    icon: Factory,
-    permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
-    children: [
-      { labelKey: "navForecast", href: "/backoffice/forecast", permission: PERMISSIONS.FORECAST_VIEW },
-      { labelKey: "navProductionPlanning", href: "/backoffice/production/planning", permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW },
-      { labelKey: "navProductionFollowUp", href: "/backoffice/production/follow-up", permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW },
-      { labelKey: "navProductionColors", href: "/backoffice/production/colors", permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
-      { labelKey: "navProductionPalette", href: "/backoffice/production/palette", permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
-      { labelKey: "navWorkOrdersList", href: "/backoffice/work-orders", permission: PERMISSIONS.WORK_ORDERS_VIEW },
-      { labelKey: "registerNotaCmt", href: "/backoffice/work-orders/nota-register", permission: PERMISSIONS.NOTA_REGISTER_VIEW },
-    ],
-  },
-  /*
-   * Pembelian berdiri sendiri: PO, pembayaran ke pemasok, dan retur ke pemasok
-   * dulu terselip di Produksi, padahal dikerjakan bagian pembelian/keuangan.
-   * Izin tiap anak SAMA dengan sebelumnya. Master Pemasok tetap di Data Master;
-   * daftar GRN tetap tab di Inventori.
-   */
-  {
-    section: "secOperations",
-    labelKey: "navGroupPurchasing",
-    href: "/backoffice/purchase-orders",
-    icon: ShoppingBag,
-    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
-    children: [
-      { labelKey: "navPesananPembelian", href: "/backoffice/purchase-orders", permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
-      { labelKey: "navItemRequests", href: "/backoffice/item-requests", permission: PERMISSIONS.ITEM_REQUESTS_VIEW },
-      { labelKey: "navPembayaranPemasok", href: "/backoffice/supplier-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
-      { labelKey: "navUmurHutang", href: "/backoffice/supplier-payments/umur-hutang", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
-      { labelKey: "navVendorBills", href: "/backoffice/vendor-bills", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
-      // Penerimaan yang belum ada invoice pemasoknya (P19) dan selisih harga invoice yang menunggu
-      // keputusan (P27). Keduanya di bawah awalan `/backoffice/vendor-bills` di ROUTE_PERMISSIONS.
-      { labelKey: "navInvoiceBelumDitagih", href: "/backoffice/vendor-bills/belum-ditagih", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
-      { labelKey: "navSelisihHargaInvoice", href: "/backoffice/vendor-bills/selisih-harga", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
-      // Riwayat saja: Vendor Billing tidak menerima pembayaran baru sejak 2026-11-01 — tagihan
-      // vendor dibayar lewat Pembayaran pemasok. Tetap di samping Tagihan vendor untuk dicari.
-      { labelKey: "navVendorPayments", href: "/backoffice/vendor-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
-      { labelKey: "navReturKePemasok", href: "/backoffice/vendor-returns", permission: PERMISSIONS.VENDOR_RETURNS_VIEW },
-    ],
-  },
-
-  // ── Piutang & konsinyasi ───────────────────────────────────────────────────
-  // Berdiri sebagai bagiannya sendiri, bukan diselipkan ke Keuangan: orang yang
-  // mengerjakannya berbeda (sales melapor, admin keuangan memverifikasi, gudang
-  // menghitung), dan izinnya pun terpisah.
-  {
-    section: "secReceivablesKalimat",
-    labelKey: "navGroupReceivablesKalimat",
-    href: "/backoffice/pelunasan-dasbor",
-    icon: ReceiptText,
-    permission: PERMISSIONS.RECEIVABLES_VIEW,
-    children: [
-      { labelKey: "navBerandaPiutang", href: "/backoffice/pelunasan-dasbor", permission: IZIN_BACA_PIUTANG },
-      { labelKey: "navFakturPiutang", href: "/backoffice/piutang", permission: IZIN_BACA_PIUTANG },
-      { labelKey: "collections", href: "/backoffice/kontrabon", permission: IZIN_BACA_PIUTANG },
-      { labelKey: "navPelunasanBkm", href: "/backoffice/pelunasan", permission: IZIN_BACA_PELUNASAN },
-      { labelKey: "navTugasTagih", href: "/backoffice/tugas-tagih", permission: IZIN_BACA_ARSIP },
-      { labelKey: "navReturPencocokan", href: "/backoffice/retur-toko", permission: IZIN_BACA_RETUR },
-      { labelKey: "navBebanSelisih", href: "/backoffice/beban-selisih", permission: IZIN_BACA_PIUTANG },
-      { labelKey: "navArsipNotaRetur", href: "/backoffice/arsip-retur", permission: IZIN_BACA_ARSIP },
-      // Layar `/backoffice/finance/*` memagari dirinya di `page.tsx`-nya (dan ROUTE_PERMISSIONS bila
-      // satu izin), bukan lewat `lib/receivables/izin.ts`; izin di sini sama dengan pagar itu.
-      { labelKey: "navFinancePiutang", href: "/backoffice/finance/piutang", permission: PERMISSIONS.RECEIVABLES_VIEW },
-      { labelKey: "navFinancePayments", href: "/backoffice/finance/payments", permission: PERMISSIONS.PAYMENTS_MANAGE },
-      { labelKey: "navFinanceStoreSettlements", href: "/backoffice/finance/pelunasan", permission: IZIN_PENAGIHAN_TIM },
-      { labelKey: "navFinanceCollections", href: "/backoffice/finance/collections", permission: IZIN_PENAGIHAN_TIM },
-    ],
-  },
-  {
-    section: "secReceivablesKalimat",
-    labelKey: "konsinyasi",
-    href: "/backoffice/konsinyasi",
-    icon: Handshake,
-    permission: PERMISSIONS.CONSIGNMENT_VIEW,
-  },
-  // Stok di toko konsinyasi: hitung stok toko (dengan persetujuan), laporan
-  // sell-through, dan transfer antar toko. Menyetujui hitungan dan transfer punya izinnya
-  // sendiri (keputusan manager, 2026-11-01), jadi penyetujunya ikut menemukan halamannya.
-  {
-    section: "secReceivablesKalimat",
-    labelKey: "consignmentSales",
-    href: "/backoffice/store-stocktakes",
-    icon: Warehouse,
-    permission: PERMISSIONS.STORES_VIEW,
-    children: [
-      {
-        labelKey: "storeStocktakes",
-        href: "/backoffice/store-stocktakes",
-        permission: [PERMISSIONS.STORES_MANAGE, PERMISSIONS.STORE_STOCKTAKES_APPROVE],
-      },
-      { labelKey: "navKonsiSellThrough", href: "/backoffice/konsi-sell-through", permission: PERMISSIONS.STORES_VIEW },
-      {
-        labelKey: "storeTransfers",
-        href: "/backoffice/store-transfers",
-        permission: [PERMISSIONS.STORES_MANAGE, PERMISSIONS.STORE_TRANSFERS_APPROVE],
-      },
-    ],
-  },
 
   // ── Kreatif ────────────────────────────────────────────────────────────────
   // Bagiannya sendiri, bukan anak Penjualan: orang yang merencanakan konten
@@ -426,11 +406,39 @@ export const navItems: NavItem[] = [
   },
 
   // ── Keuangan ───────────────────────────────────────────────────────────────
-  // Dipecah dua: yang MENCATAT dan yang MEMBACA. Sebelas anak dalam satu daftar
-  // tidak lagi bisa dipindai, dan keduanya memang pekerjaan yang berbeda.
+  // Keuangan = piutang dan pelunasan versi Max ditambah pembayaran pemasok dan
+  // umur utang (menu gabungan, keputusan pemilik 2026-11-04). Izin tiap anak
+  // tetap sama dengan pagar halamannya: orangnya berbeda (sales melapor, admin
+  // keuangan memverifikasi, gudang menghitung). Halaman lama versi tim — Piutang,
+  // Pembayaran, Pelunasan Toko (`/backoffice/finance/piutang|payments|pelunasan`)
+  // — TIDAK di menu: isinya sudah diganti versi Max (keputusan 29 Okt), halamannya
+  // belum dihapus.
   {
     section: "secFinance",
-    labelKey: "navGroupLedgerKalimat",
+    labelKey: "finance",
+    href: "/backoffice/pelunasan-dasbor",
+    icon: ReceiptText,
+    permission: PERMISSIONS.RECEIVABLES_VIEW,
+    children: [
+      { labelKey: "navBerandaPiutang", href: "/backoffice/pelunasan-dasbor", permission: IZIN_BACA_PIUTANG },
+      { labelKey: "navFakturPiutang", href: "/backoffice/piutang", permission: IZIN_BACA_PIUTANG },
+      { labelKey: "collections", href: "/backoffice/kontrabon", permission: IZIN_BACA_PIUTANG },
+      { labelKey: "navPelunasanBkm", href: "/backoffice/pelunasan", permission: IZIN_BACA_PELUNASAN },
+      // Layar `/backoffice/finance/*` memagari dirinya di `page.tsx`-nya (dan ROUTE_PERMISSIONS bila
+      // satu izin), bukan lewat `lib/receivables/izin.ts`; izin di sini sama dengan pagar itu.
+      { labelKey: "navFinanceCollections", href: "/backoffice/finance/collections", permission: IZIN_PENAGIHAN_TIM },
+      { labelKey: "navTugasTagih", href: "/backoffice/tugas-tagih", permission: IZIN_BACA_ARSIP },
+      { labelKey: "navReturPencocokan", href: "/backoffice/retur-toko", permission: IZIN_BACA_RETUR },
+      { labelKey: "navBebanSelisih", href: "/backoffice/beban-selisih", permission: IZIN_BACA_PIUTANG },
+      { labelKey: "navArsipNotaRetur", href: "/backoffice/arsip-retur", permission: IZIN_BACA_ARSIP },
+      { labelKey: "navPembayaranPemasok", href: "/backoffice/supplier-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
+      { labelKey: "navUmurHutang", href: "/backoffice/supplier-payments/umur-hutang", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
+    ],
+  },
+  // Pembukuan MENCATAT, Laporan MEMBACA — dua pekerjaan yang berbeda.
+  {
+    section: "secFinance",
+    labelKey: "accounting",
     href: "/backoffice/finance/journals",
     icon: BookOpenText,
     permission: PERMISSIONS.JOURNALS_VIEW,
@@ -448,7 +456,6 @@ export const navItems: NavItem[] = [
       { labelKey: "navFinanceMulaiBukuBesar", href: "/backoffice/finance/mulai-buku-besar", permission: PERMISSIONS.JOURNALS_VIEW },
       { labelKey: "navFinanceSaldoAwal", href: "/backoffice/finance/saldo-awal", permission: PERMISSIONS.JOURNALS_VIEW },
       { labelKey: "navFinanceCashFlowSectionsKalimat", href: "/backoffice/finance/cash-flow-sections", permission: PERMISSIONS.JOURNALS_VIEW },
-      { labelKey: "navFinanceSettlementsKalimat", href: "/backoffice/finance/settlements", permission: PERMISSIONS.SETTLEMENTS_VIEW },
       { labelKey: "navFakturPajakKalimat", href: "/backoffice/finance/faktur-pajak", permission: PERMISSIONS.TAX_INVOICES_VIEW },
       { labelKey: "navFinancePphDipotong", href: "/backoffice/finance/pph-dipotong", permission: PERMISSIONS.JOURNALS_VIEW },
       { labelKey: "navFinancePajak", href: "/backoffice/finance/pajak", permission: PERMISSIONS.JOURNALS_VIEW },
@@ -485,6 +492,19 @@ export const navItems: NavItem[] = [
   // ── Sistem ─────────────────────────────────────────────────────────────────
   {
     section: "secSystem",
+    labelKey: "navGroupArchiveKalimat",
+    href: "/backoffice/archive",
+    icon: FolderArchive,
+    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
+    children: [
+      // Sama dengan penjaga halamannya: pembelian ATAU pembaca piutang.
+      { labelKey: "archiveKalimat", href: "/backoffice/archive", permission: [PERMISSIONS.PURCHASE_ORDERS_VIEW, PERMISSIONS.RECEIVABLES_VIEW, PERMISSIONS.RECEIVABLES_MANAGE] },
+      { labelKey: "auditTrailKalimat", href: "/backoffice/audit-trail", permission: PERMISSIONS.AUDIT_TRAIL_VIEW },
+    ],
+  },
+
+  {
+    section: "secSystem",
     labelKey: "jubelio",
     href: "/backoffice/jubelio/admin",
     icon: Plug,
@@ -499,18 +519,6 @@ export const navItems: NavItem[] = [
       { labelKey: "navJubelioHarga", href: "/backoffice/jubelio/harga", permission: PERMISSIONS.JUBELIO_PRICES_CONFIRM },
       { labelKey: "navJubelioCouriers", href: "/backoffice/jubelio/couriers", permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
       { labelKey: "navJubelioAdmin", href: "/backoffice/jubelio/admin", permission: PERMISSIONS.JUBELIO_ADMIN_VIEW },
-    ],
-  },
-  {
-    section: "secSystem",
-    labelKey: "navGroupArchiveKalimat",
-    href: "/backoffice/archive",
-    icon: FolderArchive,
-    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
-    children: [
-      // Sama dengan penjaga halamannya: pembelian ATAU pembaca piutang.
-      { labelKey: "archiveKalimat", href: "/backoffice/archive", permission: [PERMISSIONS.PURCHASE_ORDERS_VIEW, PERMISSIONS.RECEIVABLES_VIEW, PERMISSIONS.RECEIVABLES_MANAGE] },
-      { labelKey: "auditTrailKalimat", href: "/backoffice/audit-trail", permission: PERMISSIONS.AUDIT_TRAIL_VIEW },
     ],
   },
   {

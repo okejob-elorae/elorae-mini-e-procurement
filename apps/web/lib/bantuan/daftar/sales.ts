@@ -3,7 +3,7 @@ import type { EntriBantuan } from "../jenis";
 export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/sales-orders",
-    bagian: "sales",
+    bagian: "marketplaceSales",
     judul: { kunci: "salesOrders.pageTitle" },
     isi: [
       { kunci: "salesOrders.pageSubtitle" },
@@ -12,7 +12,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/sales-orders/[id]",
-    bagian: "sales",
+    bagian: "marketplaceSales",
     judul: "Rincian pesanan marketplace",
     isi: "Data pembeli, barang, total, status asli dari Jubelio, dan rincian potongan marketplace untuk satu pesanan. Jurnal pendapatan dan HPP-nya dibuat otomatis setelah pesanan dikirim; bagian Jurnal menunjukkan apakah sudah diposting.",
     kartu: [
@@ -24,7 +24,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/fulfillment",
-    bagian: "sales",
+    bagian: "marketplaceSales",
     judul: { kunci: "fulfillmentQueue.pageTitle" },
     isi: [
       { kunci: "fulfillmentQueue.pageSubtitle" },
@@ -34,7 +34,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/returns",
-    bagian: "sales",
+    bagian: "marketplaceSales",
     judul: { kunci: "salesReturns.list.pageTitle" },
     isi: [
       { kunci: "salesReturns.list.pageSubtitle" },
@@ -43,13 +43,13 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/returns/[id]",
-    bagian: "sales",
+    bagian: "marketplaceSales",
     judul: "Keputusan retur",
     isi: "Putuskan setiap barang yang dikembalikan: terima atau tolak. Setelah semua diputuskan, tekan Ajukan keputusan; sejak itu retur terkunci dan tidak bisa diubah. Jurnal pembalikan penjualan dan HPP untuk barang yang diterima dibuat saat keputusan diajukan. Keputusan hanya tercatat di Elorae; pengirimannya ke Jubelio belum tersambung.",
   },
   {
     rute: "/backoffice/field-sales-orders",
-    bagian: "sales",
+    bagian: "canvassingSales",
     judul: { kunci: "fieldSalesOrders.pageTitle" },
     isi: [
       "Pesanan putus dan transfer konsinyasi yang dicatat tim sales lapangan dari HP. Daftar ini terbuka pada pesanan yang menunggu persetujuan; ganti saringan status untuk melihat yang sudah disetujui, ditolak kantor, atau dibatalkan sendiri oleh salesman.",
@@ -59,7 +59,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/field-sales-orders/[id]",
-    bagian: "sales",
+    bagian: "canvassingSales",
     judul: "Rincian pesanan lapangan",
     isi: [
       "Barang, harga, promo, dan total satu pesanan lapangan, beserta tombol Setujui dan Tolak selama pesanan menunggu persetujuan. Menolak butuh alasan.",
@@ -96,13 +96,13 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/inden",
-    bagian: "sales",
+    bagian: "canvassingSales",
     judul: { kunci: "inden.judul" },
     isi: { kunci: "inden.deskripsi" },
   },
   {
     rute: "/backoffice/inden/baru",
-    bagian: "sales",
+    bagian: "canvassingSales",
     judul: { kunci: "inden.baruJudul" },
     isi: { kunci: "inden.baruDeskripsi" },
     kartu: [
@@ -118,7 +118,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/inden/[id]",
-    bagian: "sales",
+    bagian: "canvassingSales",
     judul: "Rincian pre-order",
     isi: "Satu jendela pre-order: masa pesanannya, berapa yang sudah dipesan toko dibanding rencana produksi, dan daftar pesanannya. Jendela bisa diubah dari sini. Pesanan pre-order tidak mencadangkan stok sampai jendelanya dirilis, dan belum bisa dikirim sebelum itu.",
     kartu: [
@@ -142,7 +142,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/canvassing",
-    bagian: "sales",
+    bagian: "canvassingSales",
     judul: { kunci: "canvassing.pageTitle" },
     isi: [
       "Daftar sales kanvas, yaitu salesman yang menjual langsung dari stok mobil. Buka salah satu untuk melihat stok mobilnya, memuat barang, dan merekonsiliasi akhir hari.",
@@ -151,7 +151,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/canvassing/[canvasserId]",
-    bagian: "sales",
+    bagian: "canvassingSales",
     judul: "Mobil sales kanvas",
     isi: "Stok mobil satu sales kanvas, riwayat muat, dan riwayat rekonsiliasinya.",
     kartu: [
@@ -167,13 +167,13 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/canvassing/reconcile/[id]",
-    bagian: "sales",
+    bagian: "canvassingSales",
     judul: "Rincian rekonsiliasi mobil",
     isi: "Hasil satu rekonsiliasi akhir hari: siapa sales kanvasnya, siapa yang merekonsiliasi, jumlah seharusnya dan terhitung per barang, serta selisihnya. Bisa dicetak, dan jurnalnya bisa dilihat atau diposting ulang dari sini.",
   },
   {
     rute: "/backoffice/van-sales",
-    bagian: "sales",
+    bagian: "canvassingSales",
     judul: { kunci: "vanSale.backoffice.list.pageTitle" },
     isi: [
       { kunci: "vanSale.backoffice.list.subtitle" },
@@ -182,13 +182,13 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/van-sales/[id]",
-    bagian: "sales",
+    bagian: "canvassingSales",
     judul: "Rincian penjualan van",
     isi: "Satu nota penjualan van: pembeli, barang, total, uang diterima, kembalian, dan lokasi GPS saat menjual. Nota bisa dicetak ulang, dan jurnalnya bisa dilihat atau diposting ulang dari sini.",
   },
   {
     rute: "/backoffice/promos",
-    bagian: "sales",
+    bagian: "canvassingSales",
     judul: { kunci: "promos.pageTitle" },
     isi: [
       { kunci: "promos.subtitle" },
@@ -197,7 +197,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/promos/new",
-    bagian: "sales",
+    bagian: "canvassingSales",
     judul: { kunci: "promos.new" },
     isi: "Membuat promo: jenis (persen, nominal, bertingkat, atau bonus barang), berlaku per produk atau per pesanan, syarat minimum, toko dan barang yang ikut, masa berlaku, prioritas, dan status aktif.",
     kartu: [
@@ -209,7 +209,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/promos/[id]",
-    bagian: "sales",
+    bagian: "canvassingSales",
     judul: { kunci: "promos.edit" },
     isi: "Mengubah promo yang sudah ada. Tanpa izin kelola promo, formulirnya hanya bisa dibaca.",
     kartu: [
@@ -217,6 +217,28 @@ export const ENTRI: EntriBantuan[] = [
         judul: { kunci: "promoBonus.jenis" },
         isi: { kunci: "promoBonus.catatanStok" },
       },
+    ],
+  },
+  {
+    rute: "/backoffice/finance/settlements",
+    bagian: "marketplaceSales",
+    judul: { kunci: "financeSettlements.judulHalaman" },
+    isi: [
+      { kunci: "financeSettlements.subtitle" },
+      "Pilih marketplace (Shopee atau TikTok) lalu unggah berkas laporan penghasilannya. Berkas yang formatnya tidak cocok ditolak dengan daftar baris yang bermasalah. Mengunggah dan mencocokkan butuh izin mengelola settlement.",
+    ],
+  },
+  {
+    rute: "/backoffice/finance/settlements/[id]",
+    bagian: "marketplaceSales",
+    judul: "Rincian settlement",
+    isi: [
+      "Satu settlement marketplace: baris yang sudah cocok dengan pesanan penjualan beserta perbandingannya dengan data Jubelio, dan baris yang belum cocok.",
+      "Baris yang belum cocok bisa disinkron ulang dari Jubelio, lalu settlement dicocokkan ulang. Jurnal settlement baru bisa diposting bila checksum-nya cocok dengan ringkasan berkas.",
+    ],
+    kartu: [
+      { judul: { kunci: "financeSettlements.unmatchedLinesTitle" }, isi: { kunci: "financeSettlements.coverageNote" } },
+      { judul: { kunci: "financeSettlements.compare.jubelioTitle" }, isi: { kunci: "financeSettlements.compare.jubelioFeesNote" } },
     ],
   },
 ];

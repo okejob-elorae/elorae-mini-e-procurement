@@ -48,7 +48,7 @@ describe("grupUntukRute — lencana setiap baris Beranda", () => {
     });
   }
 
-  it("jurnal gagal dan faktur pajak di Buku Besar; BKM dan janji bayar di Piutang", () => {
+  it("jurnal gagal dan faktur pajak di Pembukuan; BKM dan janji bayar di Keuangan", () => {
     const grupDari = (k: string) => grupUntukRute(jalurTautan(semuaSatu.find((i) => i.key === k)!.href));
     expect(grupDari("journalPending")).toBe("/backoffice/finance/journals");
     expect(grupDari("taxInvoicePending")).toBe("/backoffice/finance/journals");

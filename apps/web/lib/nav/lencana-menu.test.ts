@@ -77,7 +77,7 @@ beforeEach(() => {
 });
 
 describe("hitungLencanaMenu", () => {
-  it("admin: Buku Besar dan Piutang berlencana, tidak ada grup '#'", async () => {
+  it("admin: Pembukuan dan Keuangan berlencana, tidak ada grup '#'", async () => {
     const { grup, halaman } = await hitungLencanaMenu(["*"], "u-admin");
     expect(grup["#"]).toBeUndefined();
     // Jurnal gagal 2 + faktur pajak 1.
@@ -112,7 +112,9 @@ describe("hitungLencanaMenu", () => {
 
   it("total grup = jumlah halaman yang berlencana di dalamnya", async () => {
     const { grup, halaman } = await hitungLencanaMenu(["*"], "u-admin");
-    expect(grup["/backoffice/sales-orders"]).toBe(halaman["/backoffice/field-sales-orders"] + halaman["/backoffice/fulfillment"]);
+    // Penjualan Marketplace dan Penjualan Canvassing grup terpisah sejak menu gabungan 2026-11-04.
+    expect(grup["/backoffice/sales-orders"]).toBe(halaman["/backoffice/fulfillment"] + (halaman["/backoffice/returns"] ?? 0));
+    expect(grup["/backoffice/field-sales-orders"]).toBe(halaman["/backoffice/field-sales-orders"]);
     // PO terlambat 1 + PO draf 2 + penerimaan belum ada invoice 5.
     expect(grup["/backoffice/purchase-orders"]).toBe(8);
   });

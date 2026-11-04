@@ -3,7 +3,7 @@ import type { EntriBantuan } from "../jenis";
 export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/konsinyasi",
-    bagian: "konsinyasi",
+    bagian: "consignmentSales",
     judul: { kunci: "konsinyasi.pageTitle" },
     isi: [
       { kunci: "konsinyasi.pageDescription" },
@@ -18,7 +18,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/konsinyasi/isi-ulang",
-    bagian: "konsinyasi",
+    bagian: "consignmentSales",
     judul: { kunci: "konsiIsiUlang.title" },
     isi: [{ kunci: "konsiIsiUlang.subtitle" }, "Layar ini hanya untuk dibaca."],
     kartu: [
@@ -28,7 +28,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/konsinyasi/[id]",
-    bagian: "konsinyasi",
+    bagian: "consignmentSales",
     judul: "Rincian siklus konsinyasi",
     isi: [
       "Satu siklus konsinyasi (satu toko × satu bulan): tiga nomornya, laporan SPG dan laporan toko yang disandingkan, angka resmi setelah dikunci, gaji dan komisi SPG, stok titipan, pencocokan buku stok toko, dan tagihan ke toko.",
@@ -68,7 +68,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/store-stocktakes",
-    bagian: "konsinyasi",
+    bagian: "consignmentSales",
     judul: { kunci: "storeStocktakes.pageTitle" },
     isi: [
       { kunci: "storeStocktakes.subtitle" },
@@ -79,7 +79,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/store-stocktakes/[id]",
-    bagian: "konsinyasi",
+    bagian: "consignmentSales",
     judul: "Rincian perhitungan stok toko",
     isi: [
       "Setiap baris menyandingkan stok seharusnya menurut buku stok toko dengan hasil hitung, beserta selisihnya (Lebih atau Kurang). Selama perhitungan masih berjalan, kantor bisa mengubah hitungan dan menambah barang yang ditemukan di rak tetapi belum tercatat.",

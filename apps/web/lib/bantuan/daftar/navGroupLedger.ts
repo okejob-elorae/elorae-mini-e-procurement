@@ -3,7 +3,7 @@ import type { EntriBantuan } from "../jenis";
 export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/finance/journals",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeJournals.pageTitle" },
     isi: [
       { kunci: "financeJournals.subtitle" },
@@ -19,13 +19,13 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/journals/new",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeJournals.newJournal" },
     isi: "Mencatat jurnal manual, misalnya penyesuaian atau saldo awal. Jurnal minimal dua baris, setiap baris diisi debit atau kredit (tidak keduanya), total debit harus sama dengan total kredit, dan hanya akun aktif tanpa turunan yang bisa dipilih. Selama tombol Ajukan untuk disetujui belum bisa ditekan, kekurangan pertamanya ditulis di bawah tombol. Jurnal manual TIDAK langsung masuk buku besar: tersimpan sebagai draf yang menunggu persetujuan orang lain selain pembuatnya (admin pun tidak bisa menyetujui jurnalnya sendiri), dan baru dihitung di laporan sesudah disetujui. Kanal per baris opsional, untuk laporan laba per kanal. Keterangan paling banyak 191 karakter. Tanggal di bulan yang sudah ditutup (Keuangan → Tutup buku) ditolak — pilih tanggal di bulan yang masih terbuka, atau minta bulan itu dibuka kembali.",
   },
   {
     rute: "/backoffice/finance/journals/[id]",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: "Rincian jurnal",
     isi: "Satu jurnal: tanggal, sumbernya (manual atau transaksi yang membuatnya), dan baris debit-kreditnya per akun. Tombol di samping label sumber membuka dokumen yang membuat jurnal ini (penerimaan barang dan pembayaran pemasok terbuka di PO-nya, hasil produksi di SPK-nya, muatan van di halaman van kanvasernya). Nama akun di setiap baris membuka buku besar akun itu pada bulan jurnal ini. Jurnal otomatis yang dokumennya tercatat sesudah bulannya ditutup bertanggal 1 bulan terbuka berikutnya; tanggal aslinya tertulis di samping tanggal jurnal.",
     kartu: [
@@ -40,7 +40,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/journals/ledger/[accountId]",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeJournals.ledger.title" },
     isi: [
       "Semua baris jurnal satu akun dalam rentang tanggal yang dipilih, dengan saldo awal, saldo berjalan, dan saldo akhir. Dibuka dari Buku besar, Bagan Akun, rincian jurnal, atau baris laporan keuangan.",
@@ -49,13 +49,13 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/journals/ledger",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeJournals.ledgerIndeks.judul" },
     isi: "Pintu buku besar: semua akun yang bisa diposting (akun tanpa turunan), bisa dicari menurut kode atau nama. Nama akun membuka buku besarnya. Akun nonaktif tetap terdaftar karena riwayatnya masih bisa dibuka.",
   },
   {
     rute: "/backoffice/finance/anggaran",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "navigation.navFinanceAnggaran" },
     isi: [
       "Anggaran per akun pendapatan, harga pokok penjualan, dan beban, per bulan, untuk satu tahun. Hanya akun yang bisa diposting yang bisa dianggarkan; akun induk tampil sebagai judul kelompok.",
@@ -66,7 +66,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/coa",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "finance.coa.title" },
     isi: [
       "Daftar akun buku besar dalam bentuk pohon. Kode akun turunan harus diawali kode induknya.",
@@ -87,7 +87,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/account-mapping",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeAccountMapping.judulHalaman" },
     isi: [
       { kunci: "financeAccountMapping.subtitle" },
@@ -100,7 +100,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/cash-flow-sections",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeCashFlowSections.judulHalaman" },
     isi: [
       { kunci: "financeCashFlowSections.subtitle" },
@@ -109,30 +109,8 @@ export const ENTRI: EntriBantuan[] = [
     ],
   },
   {
-    rute: "/backoffice/finance/settlements",
-    bagian: "navGroupLedger",
-    judul: { kunci: "financeSettlements.judulHalaman" },
-    isi: [
-      { kunci: "financeSettlements.subtitle" },
-      "Pilih marketplace (Shopee atau TikTok) lalu unggah berkas laporan penghasilannya. Berkas yang formatnya tidak cocok ditolak dengan daftar baris yang bermasalah. Mengunggah dan mencocokkan butuh izin mengelola settlement.",
-    ],
-  },
-  {
-    rute: "/backoffice/finance/settlements/[id]",
-    bagian: "navGroupLedger",
-    judul: "Rincian settlement",
-    isi: [
-      "Satu settlement marketplace: baris yang sudah cocok dengan pesanan penjualan beserta perbandingannya dengan data Jubelio, dan baris yang belum cocok.",
-      "Baris yang belum cocok bisa disinkron ulang dari Jubelio, lalu settlement dicocokkan ulang. Jurnal settlement baru bisa diposting bila checksum-nya cocok dengan ringkasan berkas.",
-    ],
-    kartu: [
-      { judul: { kunci: "financeSettlements.unmatchedLinesTitle" }, isi: { kunci: "financeSettlements.coverageNote" } },
-      { judul: { kunci: "financeSettlements.compare.jubelioTitle" }, isi: { kunci: "financeSettlements.compare.jubelioFeesNote" } },
-    ],
-  },
-  {
     rute: "/backoffice/finance/faktur-pajak",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "fakturPajak.judulHalaman" },
     isi: [
       { kunci: "fakturPajak.subtitle" },
@@ -143,7 +121,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/saldo-awal",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "saldoAwal.judul" },
     isi: [
       "Posisi keuangan pada tanggal mulai buku besar: apa yang sudah dimiliki dan terutang SEBELUM transaksi pertama dijurnal aplikasi. Tanpa saldo awal, neraca hanya berisi mutasi sejak tanggal mulai.",
@@ -163,7 +141,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/pajak",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeTax.kalender.judul" },
     isi: [
       "Jatuh tempo setor dan lapor pajak per masa (bulan kalender WIB), dengan status setorannya. Kewajiban yang tampil mengikuti profil pajak di Pengaturan → Pajak: PPN (setor dan lapor akhir bulan berikutnya, unggah faktur paling lambat tanggal 20) hanya bila status PKP; PPh final UMKM (setor tanggal 15) hanya bila rezimnya PPh final; PPh 25 (setor tanggal 15) bila rezimnya PPh badan; PPh 21, 23, dan 4(2) (setor tanggal 15, lapor tanggal 20) hanya untuk masa yang ada potongannya di buku besar — dari pembayaran KOL, pemasok, atau jurnal lain ke akun utang PPh itu.",
@@ -175,7 +153,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/pajak/ppn",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeTax.ppn.judul" },
     isi: [
       "PPN keluaran dan PPN masukan per masa, dibaca dari buku besar: semua baris jurnal berlaku di akun peran PPN keluaran dan PPN masukan yang bertanggal di masa itu — penjualan marketplace, kanvas, retur, sampel KOL (pemberian cuma-cuma), penerimaan barang, biaya marketplace, dan jurnal manual. DPP dibaca dari keterangan baris PPN yang ditulis jurnal otomatis; baris tanpa DPP (mis. jurnal manual) dihitung PPN-nya tetapi tidak DPP-nya.",
@@ -187,7 +165,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/pajak/setoran",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeTax.setoran.judul" },
     isi: [
       "Setoran pajak yang sudah dibayar lewat kode billing: jenis pajak, masa, jumlah, tanggal bayar, dan NTPN (wajib, 16 huruf/angka, tidak boleh dipakai dua setoran). Setiap setoran langsung dijurnal: debit utang pajak jenis itu (PPh 25: pajak dibayar dimuka), kredit rekening yang membayar — rekening yang dipilih, atau akun peran Bank.",
@@ -199,7 +177,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/pajak/pph-final",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeTax.pphFinal.judul" },
     isi: [
       "PPh final UMKM 0,5% (PP 20/2026) per masa, hanya bila profil pajak memilih rezim PPh final UMKM. Omzet = pendapatan penjualan buku besar masa itu (bersih retur dan potongan, tanpa PPN). Orang pribadi: Rp500 juta pertama omzet setahun tidak dikenai pajak. Pajak dibulatkan ke bawah.",
@@ -211,7 +189,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/pajak/faktur-keluaran",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeTax.faktur.judul" },
     isi: [
       "Nota tagihan pengiriman putus dalam rentang tanggal nota, dihitung untuk faktur pajak keluaran: DPP, DPP nilai lain 11/12, dan PPN 12% per baris barang (kode transaksi 04). Coretax tidak menghitung DPP nilai lain sendiri, jadi berkas ini membawanya. Unduh XML menghasilkan berkas impor Coretax (TaxInvoiceBulk) untuk diunggah lewat menu impor faktur keluaran di Coretax.",
@@ -223,7 +201,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/pph-dipotong",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "pphDipotong.judul" },
     isi: [
       "PPh yang dipotong dari fee KOL, per masa pajak (bulan WIB tanggal bayar): setiap termin pembayaran KOL yang sudah dibayar dan ber-PPh. Bahan untuk membuat bukti potong dan menyetor di Coretax — Elorae TIDAK melapor ke Coretax sendiri.",
@@ -244,7 +222,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/kas",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeKas.judul" },
     isi: [
       "Semua voucher kas dan bank: kas/bank keluar (BKK) untuk biaya kantor, sewa, listrik, ongkir, dan lainnya; kas/bank masuk (BKMK — bukan BKM pelunasan toko) untuk penerimaan di luar penjualan; dan transfer antar rekening, termasuk isi ulang kas kecil.",
@@ -255,7 +233,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/kas/baru",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: "Voucher kas & bank baru",
     isi: [
       "Pilih jenis (keluar, masuk, transfer), tanggal (tidak boleh sesudah hari ini), dan rekening kas/bank. Rekening = akun daun aktif yang dipetakan ke peran Bank/Kas atau diklasifikasikan Kas di Klasifikasi Arus Kas.",
@@ -266,13 +244,13 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/kas/[id]",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: "Rincian voucher kas & bank",
     isi: "Rekening, pihak, baris akun, potongan PPh, jurnalnya, bukti, dan siapa yang mencatat. Batalkan voucher (alasan wajib) memposting jurnal pembalik bertanggal sama dengan jurnal aslinya; bila voucher itu sudah dicocokkan dengan mutasi bank, mutasinya kembali belum cocok.",
   },
   {
     rute: "/backoffice/finance/kas/kas-kecil",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeKas.kasKecil.judul" },
     isi: [
       "Kas kecil memakai sistem dana tetap: setiap dana adalah satu akun kas dengan jumlah tetap. Pengeluaran dicatat sebagai voucher keluar dari akun itu; saat menipis, Isi ulang mencatat SATU transfer dari rekening sumber sebesar dana tetap dikurangi saldo buku sekarang, sehingga saldonya kembali penuh.",
@@ -281,7 +259,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/kas/kategori",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeKas.kategori.judul" },
     isi: [
       "Kategori dipilih di baris voucher supaya orang tidak perlu menghafal akun: setiap kategori menunjuk satu akun (biasanya beban untuk keluar, pendapatan untuk masuk) dan boleh membawa potongan PPh bawaan (mis. Sewa → PPh 4(2)).",
@@ -290,7 +268,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/rekonsiliasi-bank",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeBank.judul" },
     isi: [
       "Impor mutasi rekening dari CSV atau Excel: BCA (KlikBCA/myBCA, tahun diambil dari baris Periode), Mandiri (Livin/MCM), atau berkas apa pun berkolom tanggal, keterangan, dan debit/kredit atau jumlah (+ saldo opsional). Baris yang sudah pernah diimpor dilewati, jadi berkas dengan periode bertumpuk aman diimpor lagi.",
@@ -301,7 +279,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/rekonsiliasi-piutang",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "rekonsiliasiPiutang.judul" },
     isi: [
       "Membandingkan saldo akun Piutang usaha toko di buku besar, per toko, dengan sisa piutang di modul piutang (dihitung ulang dari nol, tanpa toko konsinyasi). Keduanya seharusnya sama setelah dikurangi kredit retur yang belum dipotong toko.",
@@ -321,7 +299,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/rekonsiliasi-persediaan",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "rekonsiliasiPersediaan.judul" },
     isi: [
       "Membandingkan saldo akun persediaan di buku besar dengan nilai stok sistem hari ini: Persediaan bahan (kartu stok kain dan aksesori ditambah bahan yang sedang di produksi), Persediaan barang jadi (kartu stok barang jadi gudang utama), Persediaan di toko konsinyasi (stok di toko — buku toko bila SPG-nya mencatat, kalau tidak titipan — dikali biaya saat dikirim), Persediaan rusak (nilai gudang barang rusak), dan Persediaan kanvas (stok van). Bila beberapa peran dipetakan ke akun yang sama, akun itu dibandingkan dengan jumlah nilai semua perannya.",
@@ -342,7 +320,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/tutup-buku",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "tutupBuku.judul" },
     isi: [
       "Menutup bulan mengunci buku besar bulan itu: jurnal manual bertanggal di bulan yang sudah ditutup ditolak, dan jurnal otomatis dari dokumen yang terlambat dicatat (misalnya penerimaan barang yang baru diketik minggu berikutnya) digeser ke tanggal 1 bulan terbuka berikutnya. Tanggal aslinya disimpan dan disebut di keterangan jurnal, jadi laporan bulan yang sudah ditutup tidak pernah berubah.",
@@ -367,7 +345,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/integritas",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "integritasBukuBesar.judul" },
     isi: [
       "Pemeriksaan buku besar yang seharusnya selalu nol. Angka yang bukan nol berarti ada dokumen yang terlewat, data yang rusak, atau pemetaan akun yang salah — bukan sekadar keadaan bisnis.",
@@ -394,7 +372,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/mulai-buku-besar",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "mulaiBukuBesar.judul" },
     isi: [
       "Tanggal mulai buku besar adalah hari pertama transaksi operasional dijurnal di aplikasi ini. Dokumen sebelum tanggal ini dianggap sudah dibukukan di luar sistem: sapuan jurnal penjualan marketplace dan sapuan dokumen tanpa jurnal tidak pernah menjurnalnya, dan settlement marketplace yang seluruh periodenya sebelum tanggal ini ditolak (piutangnya tidak pernah dicatat di sini). Saldo per tanggal ini dicatat lewat Saldo awal.",
@@ -405,13 +383,13 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/journals/[id]/ubah",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "financeJournals.persetujuan.ubahDraf" },
     isi: "Mengubah jurnal manual yang masih menunggu persetujuan. Hanya pembuatnya yang bisa mengubah drafnya; jurnal yang sudah disetujui tidak pernah diubah — batalkan dengan tombol Balik. Draf pembalik tidak bisa diubah karena barisnya harus cermin jurnal aslinya: tarik lalu ajukan pembalik baru. Tanggal di bulan yang sudah ditutup ditolak.",
   },
   {
     rute: "/backoffice/finance/aset-tetap",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "asetTetap.judul" },
     isi: [
       "Daftar harta yang dipakai lebih dari setahun — komputer, kendaraan, mesin jahit, mebel, bangunan, tanah — beserta harga perolehan, akumulasi penyusutan, dan nilai bukunya. Kartu di atas menjumlah SELURUH aset yang cocok dengan saringan (bukan hanya halaman yang tampil); aset yang dibatalkan tidak ikut dijumlah.",
@@ -422,7 +400,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/aset-tetap/baru",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "asetTetap.form.judulBaru" },
     isi: [
       "Cara perolehan menentukan jurnal perolehannya. Catat jurnal perolehan sekarang: debit akun aset tetap, kredit akun lawan yang dipilih (rekening kas/bank yang membayar, atau utang usaha bila belum dibayar), bertanggal tanggal perolehan — bulan yang sudah ditutup ditolak. Sudah dicatat di tempat lain: perolehannya sudah dijurnal lewat voucher kas, pembayaran pemasok, atau jurnal manual ke akun aset tetap, jadi di sini tidak dijurnal lagi. Aset lama: nilainya sudah masuk saldo awal buku besar.",
@@ -433,7 +411,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/aset-tetap/[id]",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: "Rincian aset tetap",
     isi: [
       "Nilai, data, jadwal penyusutan per bulan, jurnal, dan riwayat satu aset. Jadwal menampilkan penyusutan menurut jadwal dan yang sudah diposting setiap bulan; keadaannya: Diposting, Nol (tidak ada nilai — biasanya bulan yang sudah tertutup akumulasi awal), Belum diposting, Bulan ditutup (dilewati, disusulkan bulan berikutnya), Akan datang, Sebelum buku besar, Sesudah dilepas.",
@@ -443,13 +421,13 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/aset-tetap/[id]/ubah",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: "Ubah aset tetap",
     isi: "Nama, lokasi, pemasok, dan catatan selalu bisa diubah. Nilai penyusutan (kelompok, tanggal, harga, umur, metode, akumulasi awal, akun) hanya bisa diubah selama belum ada penyusutan yang diposting dan perolehannya tidak dijurnal dari halaman ini — sesudah itu jurnal yang sudah berdiri harus tetap cocok dengan asetnya, jadi lepaskan atau batalkan aset lalu catat ulang. Cara perolehan tidak bisa diubah.",
   },
   {
     rute: "/backoffice/finance/jurnal-berulang",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "jurnalBerulang.judul" },
     isi: [
       "Templat jurnal yang diposting sendiri setiap bulan pada tanggal yang ditentukan — sewa, gaji, langganan, atau akrual biaya. Templat baru dan templat yang diubah menunggu persetujuan orang lain selain pengubah terakhirnya (sama dengan jurnal manual) dan tidak pernah diposting sebelum disetujui.",
@@ -459,13 +437,13 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/jurnal-berulang/baru",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "jurnalBerulang.form.judulBaru" },
     isi: "Nama, tanggal posting setiap bulan (bulan yang lebih pendek memakai hari terakhirnya), tanggal mulai dan selesai, serta baris jurnalnya (minimal dua, debit sama dengan kredit, akun aktif tanpa turunan; kanal opsional untuk laporan laba per kanal). Bila tanggal mulai di masa lalu, bulan-bulan yang sudah lewat ikut diposting begitu templat disetujui — kartu pratinjau menyebut jumlahnya. Templat tersimpan sebagai menunggu persetujuan.",
   },
   {
     rute: "/backoffice/finance/jurnal-berulang/[id]",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: "Rincian jurnal berulang",
     isi: [
       "Isi templat, keadaannya, bulan-bulan jatuh tempo (diposting, tertunda, atau dilewati karena bulannya ditutup), jurnal yang sudah diposting, dan riwayatnya.",
@@ -474,7 +452,7 @@ export const ENTRI: EntriBantuan[] = [
   },
   {
     rute: "/backoffice/finance/jurnal-berulang/[id]/ubah",
-    bagian: "navGroupLedger",
+    bagian: "accounting",
     judul: { kunci: "jurnalBerulang.form.judulUbah" },
     isi: "Mengubah jadwal atau baris templat. Jurnal yang sudah diposting tidak berubah. Menyimpan menghentikan templat sampai disetujui lagi oleh orang selain Anda.",
   },

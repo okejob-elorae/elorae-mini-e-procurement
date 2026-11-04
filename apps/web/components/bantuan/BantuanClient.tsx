@@ -40,8 +40,6 @@ import { IsiEntri, useTeksBantuan } from "./teks";
 const KUNCI_JUDUL_BAGIAN: Partial<Record<BagianBantuan, string>> = {
   navGroupMasterData: "navGroupMasterDataKalimat",
   navGroupFieldTeam: "navGroupFieldTeamKalimat",
-  navGroupReceivables: "navGroupReceivablesKalimat",
-  navGroupLedger: "navGroupLedgerKalimat",
   navGroupArchive: "navGroupArchiveKalimat",
 };
 

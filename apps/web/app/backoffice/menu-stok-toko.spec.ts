@@ -25,8 +25,9 @@ function terlihat(izin: string[]): string[] {
 }
 
 describe("menu Stok di toko konsinyasi", () => {
-  it("grupnya ada dengan hitung stok toko, laporan sell-through, dan transfer antar toko", () => {
+  it("grupnya ada dengan siklus konsinyasi, hitung stok toko, laporan sell-through, dan transfer antar toko", () => {
     expect(grup?.children?.map((c) => c.href)).toEqual([
+      "/backoffice/konsinyasi",
       "/backoffice/store-stocktakes",
       "/backoffice/konsi-sell-through",
       "/backoffice/store-transfers",
