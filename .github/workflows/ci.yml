@@ -168,4 +168,24 @@ jobs:
         run: pnpm -F @elorae/db exec vitest run --no-file-parallelism
       - name: apps/web specs
         if: ${{ !cancelled() && steps.seed.outcome == 'success' }}
-        run: pnpm -F @elorae/web exec vitest run
+        run: pnpm -F @elorae/web exec vitest run --reporter=default --reporter=json --outputFile=/tmp/vitest-web.json
+      # GitHub keeps only 10 error annotations per step, so a long failure list surfaced ten at a
+      # time. Bundle every failing test (one line each) into a few notices instead.
+      - name: List every failing web spec
+        if: ${{ !cancelled() && steps.seed.outcome == 'success' }}
+        run: |
+          [ -f /tmp/vitest-web.json ] || exit 0
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("/tmp/vitest-web.json", "utf8"));
+            const gagal = [];
+            for (const f of r.testResults || []) {
+              const berkas = (f.name || "").split("/apps/web/").pop();
+              if (f.status === "failed" && !(f.assertionResults || []).some((t) => t.status === "failed"))
+                gagal.push(berkas + " :: (file) " + String(f.message || "").split("\n")[0].slice(0, 200));
+              for (const t of f.assertionResults || [])
+                if (t.status === "failed") gagal.push(berkas + " :: " + t.fullName + " :: " + String((t.failureMessages || [""])[0]).split("\n")[0].slice(0, 200));
+            }
+            console.log("failing web specs: " + gagal.length);
+            const esc = (x) => x.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+            for (let i = 0; i < gagal.length; i += 12) console.log("::notice title=failing web specs " + (i + 1) + "-" + Math.min(i + 12, gagal.length) + "::" + esc(gagal.slice(i, i + 12).join("\n")));
+          '
