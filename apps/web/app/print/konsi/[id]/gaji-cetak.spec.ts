@@ -78,7 +78,7 @@ describe("susunGajiCetak", () => {
         baris({
           dibayarPada: "2026-10-05T00:00:00.000Z",
           potonganHilang: 5_000,
-          koreksiDiterapkan: [{ bulanJual: "2026-08", toko: "Toko Lain", jumlah: -2_500 }],
+          koreksiDiterapkan: [{ bulanJual: "2026-08", toko: "Toko Lain", jumlah: -2_500, gaji: 0 }],
           dibayarkan: 1_037_500,
         }),
       ],

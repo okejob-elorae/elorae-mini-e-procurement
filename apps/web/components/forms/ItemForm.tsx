@@ -810,8 +810,10 @@ export function ItemForm({
         toast.error(tForm('saluranWajib'));
         return;
       }
+      // Read before the check: `aturanHargaSah` is a type guard, so its false branch narrows to never.
+      const dasarAturan = aturanBarang?.dasar;
       if (aturanBarang != null && !aturanHargaSah(aturanBarang)) {
-        toast.error(tForm(aturanBarang.dasar === "MARGIN" ? 'marginTidakSah' : 'markupTidakSah'));
+        toast.error(tForm(dasarAturan === "MARGIN" ? 'marginTidakSah' : 'markupTidakSah'));
         return;
       }
       const biaya = bacaAngkaOpsional(biayaTeks);

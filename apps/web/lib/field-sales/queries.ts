@@ -63,7 +63,7 @@ export type FieldSalesDeliverySummary = {
   /** Piutang yang lahir dari nota tagihan ini; null = nota 0 rupiah atau nota lama tanpa piutang. */
   receivable: { id: string; invoiceNo: string } | null;
   /** Faktur pajak nota ini (satu per nota); null hanya untuk data rusak. */
-  taxInvoice: { status: "PENDING" | "CREATED" | "NOT_REQUIRED"; invoiceNo: string | null } | null;
+  taxInvoice: { status: TaxInvoiceStatusFilter; invoiceNo: string | null } | null;
   /**
    * Nota cancelled — the shipment "tidak jadi dikirim" (P25/P41a) or every piece refused at the
    * door. Its lines are zeroed, so totals stay right; the paper itself must be withdrawn.

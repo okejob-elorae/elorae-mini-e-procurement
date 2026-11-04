@@ -37,7 +37,15 @@ function serializeItemForClient(
   item: { reorderPoint?: unknown; overReceiveThreshold?: unknown; sellingPrice?: unknown; [k: string]: unknown } | null
 ): SerializedItemForStockCard | null {
   if (!item) return null;
-  return { ...item, ...itemDecimalsToNumbers(item) } as SerializedItemForStockCard;
+  // Widened to a plain record: every Decimal column converts, but only these three are typed.
+  const angka: Record<string, number | null> = itemDecimalsToNumbers(item);
+  return {
+    ...item,
+    ...angka,
+    reorderPoint: angka.reorderPoint ?? null,
+    overReceiveThreshold: angka.overReceiveThreshold ?? null,
+    sellingPrice: angka.sellingPrice ?? null,
+  } as SerializedItemForStockCard;
 }
 
 /*

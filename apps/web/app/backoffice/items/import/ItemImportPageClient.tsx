@@ -114,7 +114,8 @@ export function ItemImportPageClient() {
 
   async function handleFile(file: File) {
     setCommitError(false);
-    setPushToJubelio(false);
+    setSaluranMarketplace(false);
+    setSaluranOffline(false);
     const fileName = file.name;
     if (!fileName.toLowerCase().endsWith(".xlsx")) {
       setPhase({ kind: "fileError", fileName, errors: [importError("NOT_XLSX")] });

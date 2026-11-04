@@ -58,6 +58,7 @@ const PESANAN: Props["pesanan"] = {
       cancelledQty: 0,
       outstanding: 6,
       unitPrice: null,
+      perkiraanHarga: null,
       lineTotal: null,
       discountAmount: null,
       appliedPromoName: null,

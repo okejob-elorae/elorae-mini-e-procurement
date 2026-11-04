@@ -127,8 +127,11 @@ d("rilis inden mengantrekan push stok Jubelio (test bed only)", () => {
   afterEach(async () => {
     const items = [itemA, itemB, itemC, itemTanpaStok].filter(Boolean);
     const windows = [windowId, ...extraWindowIds].filter(Boolean);
-    for (const no of orderNos) {
-      await prisma.adminNotification.deleteMany({ where: { metadata: { path: ["orderNo"], equals: seededId(no) } } });
+    if (orderNos.length > 0) {
+      // Matched in JS: JSON-path filters are spelled differently on MariaDB and PostgreSQL, and unreliable here.
+      const notif = await prisma.adminNotification.findMany({ select: { id: true, metadata: true } });
+      const milik = notif.filter((n) => orderNos.includes(String((n.metadata as { orderNo?: unknown } | null)?.orderNo ?? ""))).map((n) => n.id);
+      if (milik.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(milik) } } });
     }
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: seededIds(items) } } });
     await prisma.stockReservation.deleteMany({ where: { itemId: { in: seededIds(items) } } });

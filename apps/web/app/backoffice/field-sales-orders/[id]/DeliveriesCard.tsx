@@ -48,6 +48,7 @@ import {
 import { formatIDR } from "@/lib/sales-orders/format";
 import { formatDateOnlyJakarta, formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import { STATUS_BADGE_VARIANT, STATUS_LABEL_KEY } from "@/lib/tax-invoices/status-display";
+import type { TaxInvoiceStatusFilter } from "@/lib/tax-invoices/queries";
 import type {
   FieldSalesDeliveryStatus,
   FieldSalesDeliverySummary,
@@ -112,10 +113,12 @@ type Props = {
   bolehBukaFakturPajak?: boolean;
 };
 
-const KUNCI_FAKTUR: Record<"PENDING" | "CREATED" | "NOT_REQUIRED", "fakturMenunggu" | "fakturDibuat" | "fakturTidakPerlu"> = {
+const KUNCI_FAKTUR: Record<TaxInvoiceStatusFilter, "fakturMenunggu" | "fakturDibuat" | "fakturDikirim" | "fakturTidakPerlu" | "fakturBatal"> = {
   PENDING: "fakturMenunggu",
   CREATED: "fakturDibuat",
+  SENT_TO_STORE: "fakturDikirim",
   NOT_REQUIRED: "fakturTidakPerlu",
+  CANCELLED: "fakturBatal",
 };
 
 /**
@@ -847,8 +850,8 @@ function PenagihanKiriman({
   const teksPiutang = piutang ? (piutang.sisa > 0 ? t("piutangSisa", { nilai: formatIDR(piutang.sisa) }) : t("piutangLunas")) : null;
   const teksFaktur = !faktur
     ? null
-    : faktur.status === "CREATED"
-      ? t("fakturDibuat", { nomor: faktur.invoiceNo ?? "—" })
+    : faktur.status === "CREATED" || faktur.status === "SENT_TO_STORE"
+      ? t(KUNCI_FAKTUR[faktur.status], { nomor: faktur.invoiceNo ?? "—" })
       : t(KUNCI_FAKTUR[faktur.status]);
   return (
     <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-muted-foreground">

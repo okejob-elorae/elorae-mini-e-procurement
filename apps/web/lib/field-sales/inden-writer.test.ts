@@ -95,8 +95,11 @@ d("pre-order (inden): pesanan, rilis, kirim (test bed only)", () => {
     const items = [itemA, itemB, itemTanpaStok].filter(Boolean);
     const windows = [windowId, ...extraWindowIds].filter(Boolean);
     const stores = [storeId, konsiStoreId].filter(Boolean);
-    for (const no of orderNos) {
-      await prisma.adminNotification.deleteMany({ where: { metadata: { path: ["orderNo"], equals: seededId(no) } } });
+    if (orderNos.length > 0) {
+      // Matched in JS: JSON-path filters are spelled differently on MariaDB and PostgreSQL, and unreliable here.
+      const notif = await prisma.adminNotification.findMany({ select: { id: true, metadata: true } });
+      const milik = notif.filter((n) => orderNos.includes(String((n.metadata as { orderNo?: unknown } | null)?.orderNo ?? ""))).map((n) => n.id);
+      if (milik.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(milik) } } });
     }
     await prisma.salesHistory.deleteMany({ where: { itemId: { in: seededIds(items) } } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: { in: seededIds(items) } } });
@@ -261,7 +264,8 @@ d("pre-order (inden): pesanan, rilis, kirim (test bed only)", () => {
     if (!r.ok) return;
     expect(r.oversell).toEqual([{ itemId: itemA, variantSku: "", available: -6 }]);
     expect((await stokA()).reserved).toBe(10);
-    const alarm = await prisma.adminNotification.count({ where: { category: "STOCK_OVERSELL_RISK", metadata: { path: ["orderNo"], equals: orderNo } } });
+    const alarm = (await prisma.adminNotification.findMany({ where: { category: "STOCK_OVERSELL_RISK" }, select: { metadata: true } }))
+      .filter((n) => (n.metadata as { orderNo?: unknown } | null)?.orderNo === orderNo).length;
     expect(alarm).toBe(1);
   });
 

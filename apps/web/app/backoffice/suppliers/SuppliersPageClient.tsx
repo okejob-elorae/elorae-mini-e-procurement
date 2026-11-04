@@ -491,8 +491,9 @@ export function SuppliersPageClient({
     const { deleteSupplierAction } = await import('@/app/actions/suppliers');
     const deleteResult = await deleteSupplierAction(deleteTargetId, pin);
     if (!deleteResult.success) {
+      // `reason` is the discriminant: the other failure also declares `securityMessageKey`.
       const msg =
-        'securityMessageKey' in deleteResult
+        deleteResult.reason === 'PIN'
           ? tSecurity(deleteResult.securityMessageKey)
           : t(deleteResult.messageKey);
       toast.error(msg);

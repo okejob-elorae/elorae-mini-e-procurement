@@ -10059,7 +10059,9 @@
         "fakturDibuat": "Tax invoice: {nomor}",
         "fakturTidakPerlu": "Tax invoice: not required",
         "lihatPiutang": "View receivable",
-        "lihatFakturPajak": "View tax invoice"
+        "lihatFakturPajak": "View tax invoice",
+        "fakturDikirim": "Tax invoice: {nomor} · sent to store",
+        "fakturBatal": "Tax invoice: cancelled"
       }
     },
     "print": {

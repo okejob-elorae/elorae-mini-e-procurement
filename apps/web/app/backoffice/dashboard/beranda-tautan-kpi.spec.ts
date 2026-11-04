@@ -45,6 +45,7 @@ const props: Props = {
       realised: { count: 3, amount: 22_850_000 },
       realisedRincian: { pengiriman: 2, van: 1, pesanan: 1 },
       outstanding: { count: 0, amount: 0 },
+      awaitingDelivery: { count: 0, amount: 0 },
       menungguKirim: { count: 2, amount: 4_000_000 },
     },
   },

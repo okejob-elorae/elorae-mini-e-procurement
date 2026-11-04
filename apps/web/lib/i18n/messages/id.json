@@ -10059,7 +10059,9 @@
         "fakturDibuat": "Faktur pajak: {nomor}",
         "fakturTidakPerlu": "Faktur pajak: tidak perlu",
         "lihatPiutang": "Lihat piutang",
-        "lihatFakturPajak": "Lihat faktur pajak"
+        "lihatFakturPajak": "Lihat faktur pajak",
+        "fakturDikirim": "Faktur pajak: {nomor} · dikirim ke toko",
+        "fakturBatal": "Faktur pajak: dibatalkan"
       }
     },
     "print": {

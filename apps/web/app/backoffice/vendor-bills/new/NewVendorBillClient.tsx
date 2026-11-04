@@ -111,7 +111,8 @@ export function NewVendorBillClient({
           billDate,
           dueDate: dueDate || undefined,
           notes: notes || undefined,
-          lines: chosen.flatMap(([key, d]) => {
+          // Typed by the action: two element shapes would otherwise leave flatMap without one U.
+          lines: chosen.flatMap(([key, d]): Parameters<typeof createVendorBillAction>[0]["lines"] => {
             const qty = Number(d.qty);
             const price = Number(d.price);
             const g = sources?.grnItems.find((i) => grnKey(i) === key);
