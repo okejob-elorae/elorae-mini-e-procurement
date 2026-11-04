@@ -13,7 +13,6 @@ import {
   type HasilReturPembeliAksi,
 } from "./retur-spg";
 
-export type { HasilPutusanReturPembeliAksi, HasilReturPembeliAksi };
 
 /**
  * Alamat lama aksi retur pembeli SPG. Aturannya SATU, di `./retur-spg` (keputusan pemilik

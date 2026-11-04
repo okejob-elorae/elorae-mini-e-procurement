@@ -50,8 +50,6 @@ model User {
   fcmToken      String?
   themePantoneTcx  String?
   themePrimaryHex  String    @default("#334155")
-  themeFontId      String?
-  chartColors      String?   @db.Text
   themePantone     PantoneColor? @relation(fields: [themePantoneTcx], references: [tcx], onDelete: SetNull, onUpdate: Restrict)
   emailVerified DateTime?
   image         String?
@@ -82,6 +80,11 @@ model User {
   fieldSalesOrders FieldSalesOrder[] @relation("FieldSalesOrderSalesman")
   fieldSalesDeliveries FieldSalesDelivery[] @relation("FieldSalesDeliveryUser")
   fieldSalesLinesAdded FieldSalesOrderLine[] @relation("FieldSalesLineAddedBy")
+  deliveryShipmentsPacked    DeliveryShipment[] @relation("DeliveryShipmentPackedBy")
+  deliveryShipmentsShipped   DeliveryShipment[] @relation("DeliveryShipmentShippedBy")
+  deliveryShipmentsDelivered DeliveryShipment[] @relation("DeliveryShipmentDeliveredBy")
+  deliveryShipmentsCarried   DeliveryShipment[] @relation("DeliveryShipmentCarriedBy")
+  deliveryShipmentsCancelled DeliveryShipment[] @relation("DeliveryShipmentCancelledBy")
   taxInvoicesMarked TaxInvoice[] @relation("TaxInvoiceMarkedBy")
   storeChangeRequestsMade      StoreChangeRequest[] @relation("StoreChangeRequestedBy")
   storeChangeRequestsReviewed  StoreChangeRequest[] @relation("StoreChangeReviewedBy")
@@ -97,13 +100,27 @@ model User {
   spgEndedStoreId String?
   spgSales      SpgSale[] @relation("SpgSaleSalesman")
   spgSalesCreated SpgSale[] @relation("SpgSaleCreatedBy")
-  storesHandled Store[]   @relation("StoreSalesman")
+  konsiTransfers KonsiTransfer[] @relation("KonsiTransferUser")
+  storeTransfersCreated  StoreTransfer[] @relation("StoreTransferCreatedBy")
+  storeTransfersApproved StoreTransfer[] @relation("StoreTransferApprovedBy")
+  paymentsRecorded Payment[] @relation("PaymentRecordedBy")
+  paymentsVoided   Payment[] @relation("PaymentVoidedBy")
+  receivablesToCollect  Receivable[]           @relation("ReceivableCollector")
+  collectionsSubmitted  CollectionSubmission[] @relation("CollectionSubmittedBy")
+  collectionsVerified   CollectionSubmission[] @relation("CollectionVerifiedBy")
+  storeSettlementsAsSalesman StoreSettlement[] @relation("StoreSettlementSalesman")
+  storeSettlementsReviewed   StoreSettlement[] @relation("StoreSettlementReviewer")
+  konsiSellThroughsAsSalesman KonsiSellThrough[] @relation("KonsiSellThroughSalesman")
+  packingVideosRecorded PackingVideo[] @relation("PackingVideoRecordedBy")
+  packingVideosUpdated  PackingVideo[] @relation("PackingVideoUpdatedBy")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  @@index([roleId])
-  @@index([themePantoneTcx])
-  @@index([assignedStoreId])
-  @@index([spgEndedStoreId])
+  itemRequestsCreated ItemRequest[] @relation("ItemRequestCreatedBy")
+  vendorBillsCreated  VendorBill[]    @relation("VendorBillCreatedBy")
+  vendorPaymentsCreated VendorPayment[] @relation("VendorPaymentCreatedBy")
+  themeFontId      String?
+  chartColors      String?   @db.Text
+  storesHandled Store[]   @relation("StoreSalesman")
   receivablesAsSalesman  Receivable[]     @relation("ReceivableSalesman")
   collectionNotes        CollectionNote[] @relation("CollectionNoteSalesman")
   paymentClaimsAsSalesman PaymentClaim[]  @relation("PaymentClaimSalesman")
@@ -130,6 +147,10 @@ model User {
   kolContentsApproved  KolContent[]   @relation("KolContentApprover")
   kolNotesWritten      KolNote[]      @relation("KolNoteAuthor")
   kolAgendasOwned      KolAgenda[]    @relation("KolAgendaOwner")
+  @@index([roleId])
+  @@index([themePantoneTcx])
+  @@index([assignedStoreId])
+  @@index([spgEndedStoreId])
 }
 
 model VerificationToken {
@@ -181,15 +202,14 @@ model SupplierType {
   id        String     @id @default(cuid())
   code      String     @unique
   name      String
-  color     String?
-  colorTcx  String?
-  colorPantone PantoneColor? @relation(fields: [colorTcx], references: [tcx], onDelete: SetNull, onUpdate: Restrict)
   isActive  Boolean    @default(true)
   sortOrder Int?
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   suppliers Supplier[]
-
+  color     String?
+  colorTcx  String?
+  colorPantone PantoneColor? @relation(fields: [colorTcx], references: [tcx], onDelete: SetNull, onUpdate: Restrict)
   @@index([colorTcx])
 }
 
@@ -205,14 +225,7 @@ model Supplier {
   bankName         String?
   bankAccountEnc   String?
   bankAccountName  String?
-  taxWithholding   String?
-  isPkp            Boolean?
-  hasNpwp          Boolean          @default(true)
-  npwpEnc          String?          @db.Text
-  npwpLast4        String?
-  skbNumber        String?
-  skbValidUntil    DateTime?
-  skbPhotoUrl      String?
+  paymentTermsDays Int?
   isActive         Boolean          @default(true)
   status           SupplierStatus  @default(PENDING_APPROVAL)
   approvedById     String?
@@ -224,12 +237,22 @@ model Supplier {
   purchaseOrders   PurchaseOrder[]
   workOrders       WorkOrder[]
   workOrderSteps   WorkOrderStep[]
+  vendorBills      VendorBill[]
+  vendorPayments   VendorPayment[]
   grns             GRN[]
   vendorReturns    VendorReturn[]
   planCmtAllocations PlanCmtAllocation[]
   planStages       PlanStage[]      @relation("PlanStageSupplier")
-  planStageSteps   PlanStageStep[]  @relation("PlanStageStepSupplier")
   processChain     SupplierProcess[]
+  taxWithholding   String?
+  isPkp            Boolean?
+  hasNpwp          Boolean          @default(true)
+  npwpEnc          String?          @db.Text
+  npwpLast4        String?
+  skbNumber        String?
+  skbValidUntil    DateTime?
+  skbPhotoUrl      String?
+  planStageSteps   PlanStageStep[]  @relation("PlanStageStepSupplier")
   @@index([typeId])
   @@index([code])
   @@index([status])
@@ -312,6 +335,7 @@ model UOM {
   fromConversions UOMConversion[] @relation("FromConversions")
   toConversions   UOMConversion[] @relation("ToConversions")
   createdAt       DateTime        @default(now())
+  itemRequestLines ItemRequestLine[]
 }
 
 model UOMConversion {
@@ -338,6 +362,7 @@ model ItemCategory {
   items            Item[]
   jubelioCategoryMappings JubelioCategoryMapping[]
   planCategories   PlanCategory[]
+  spgCommissionRates SpgCommissionRate[]
 }
 
 model Store {
@@ -349,37 +374,45 @@ model Store {
   contactName    String?
   termsType      StoreTermsType
   paymentTempo   Int            @default(0)
-  marginPercent  Decimal?       @db.Decimal(5, 2)
+  markupPercent  Decimal?       @map("marginPercent") @db.Decimal(5, 2)
+  priceDiscountPercent Decimal? @db.Decimal(5, 2)
+  creditLimit    Decimal?       @db.Decimal(15, 2)
+  noCreditLimit  Boolean        @default(false)
+  npwp           String?        @db.VarChar(32)
   lat            Decimal?       @db.Decimal(10, 7)
   lng            Decimal?       @db.Decimal(10, 7)
   checkinRadiusMeters Int?
-  creditLimit    Decimal?       @db.Decimal(15, 2)
-  noCreditLimit  Boolean        @default(false)
-  maxOpenInvoices Int?
-  storeClass     String?
-  isPkp          Boolean        @default(false)
-  npwp           String?
-  nitku          String?
-  consignmentVat Boolean        @default(false)
+  sellThroughMethod SellThroughMethod?
   isActive       Boolean        @default(true)
-  groupId        String?
-  salesmanId     String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  group          StoreGroup?    @relation(fields: [groupId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  salesman       User?          @relation("StoreSalesman", fields: [salesmanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   visits         StoreVisit[]
   fieldSalesOrders FieldSalesOrder[]
+  fieldReturns   FieldReturn[]
   promoStores    PromoStore[]
   storeChangeRequests StoreChangeRequest[]
   vanSales       VanSale[]
   spgSales       SpgSale[]
-
-  @@index([isActive, name])
-  @@index([groupId])
-  @@index([salesmanId])
+  storeStock     StoreStock[]
+  konsiTransfers KonsiTransfer[]
+  stocktakes     StoreStocktake[]
+  assortmentLines StoreAssortmentLine[]
   receivables    Receivable[]
+  payments       Payment[]
+  settlements    StoreSettlement[]
+  storeTransfersFrom StoreTransfer[] @relation("StoreTransferFromStore")
+  storeTransfersTo   StoreTransfer[] @relation("StoreTransferToStore")
+  sellThroughs   KonsiSellThrough[]
+  maxOpenInvoices Int?
+  storeClass     String?
+  isPkp          Boolean        @default(false)
+  nitku          String?
+  consignmentVat Boolean        @default(false)
+  groupId        String?
+  salesmanId     String?
+  group          StoreGroup?    @relation(fields: [groupId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  salesman       User?          @relation("StoreSalesman", fields: [salesmanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   collectionNotes CollectionNote[]
   paymentClaims  PaymentClaim[]
   storeReturns   StoreReturn[]
@@ -388,24 +421,15 @@ model Store {
   konsiCycles    ConsignmentCycle[]
   konsiShipments ConsignmentShipment[]
   stockMovements StoreStockMovement[]
-  transfersOut   StoreTransfer[] @relation("StoreTransferFrom")
-  transfersIn    StoreTransfer[] @relation("StoreTransferTo")
   receipts       StoreReceipt[]
   opnames        StoreOpname[]
   stockRequests  StockRequest[]
   recommendations StoreRecommendation[]
   lostSales      LostSale[]
-}
 
-model StoreGroup {
-  id        String   @id @default(cuid())
-  code      String   @unique
-  name      String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  stores    Store[]
+  @@index([isActive, name])
+  @@index([groupId])
+  @@index([salesmanId])
 }
 
 model StoreVisit {
@@ -421,6 +445,13 @@ model StoreVisit {
   checkinDistanceMeters Int?
   checkinOutOfRadius     Boolean   @default(false)
   autoClosed   Boolean   @default(false)
+
+  store        Store     @relation(fields: [storeId], references: [id])
+  user         User      @relation(fields: [userId], references: [id])
+  fieldSalesOrders FieldSalesOrder[]
+  fieldReturns FieldReturn[]
+  photos       VisitPhoto[]
+  storeChangeRequests StoreChangeRequest[]
   checkinAccuracyMeters Int?
   checkinFlags Json?
   outcome      String?
@@ -428,12 +459,6 @@ model StoreVisit {
   clientId     String?   @unique
   capturedOffline Boolean @default(false)
   syncedAt     DateTime?
-
-  store        Store     @relation(fields: [storeId], references: [id])
-  user         User      @relation(fields: [userId], references: [id])
-  fieldSalesOrders FieldSalesOrder[]
-  photos       VisitPhoto[]
-  storeChangeRequests StoreChangeRequest[]
 
   @@index([userId, checkoutAt])
   @@index([storeId, checkinAt])
@@ -447,9 +472,9 @@ model VisitPhoto {
   r2Key      String
   caption    String?
   capturedAt DateTime
-  displayGuideId String?
   createdAt  DateTime @default(now())
   visit      StoreVisit @relation(fields: [visitId], references: [id])
+  displayGuideId String?
 
   @@index([visitId])
 }
@@ -502,10 +527,19 @@ model FieldSalesOrder {
   status        FieldSalesOrderStatus @default(PENDING_APPROVAL)
   deliveryStatus FieldSalesDeliveryStatus @default(PENDING)
   orderType     FieldSalesOrderType   @default(PUTUS)
+  origin        FieldSalesOrderOrigin @default(FIELD)
   subtotal      Decimal               @db.Decimal(15, 2)
   total         Decimal               @db.Decimal(15, 2)
   orderDiscountAmount Decimal         @default(0) @db.Decimal(15, 2)
   appliedOrderPromoId String?
+  creditHoldAtCreate      Boolean   @default(false)
+  creditExposureAtCreate  Decimal?  @db.Decimal(15, 2)
+  creditLimitAtCreate     Decimal?  @db.Decimal(15, 2)
+  creditExposureAtApprove Decimal?  @db.Decimal(15, 2)
+  creditLimitAtApprove    Decimal?  @db.Decimal(15, 2)
+  creditOverrideReason    String?   @db.Text
+  creditOverrideById      String?
+  creditOverrideAt        DateTime?
   note          String?               @db.Text
   approvedAt    DateTime?
   approvedById  String?
@@ -516,13 +550,6 @@ model FieldSalesOrder {
   closedById    String?
   closeReason   String?               @db.Text
   idempotencyKey String?              @unique
-  kreditDitahan Boolean               @default(false)
-  kreditCatatan String?               @db.Text
-  remoteChannel String?
-  preorderWindowId String?
-  cancelledById String?
-  cancelledAt   DateTime?
-  replacesOrderId String?
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
   store         Store                 @relation(fields: [storeId], references: [id])
@@ -530,6 +557,15 @@ model FieldSalesOrder {
   visit         StoreVisit?           @relation(fields: [visitId], references: [id])
   lines         FieldSalesOrderLine[]
   deliveries    FieldSalesDelivery[]
+  konsiTransfers KonsiTransfer[]
+  shipments      DeliveryShipment[]
+  kreditDitahan Boolean               @default(false)
+  kreditCatatan String?               @db.Text
+  remoteChannel String?
+  preorderWindowId String?
+  cancelledById String?
+  cancelledAt   DateTime?
+  replacesOrderId String?
   @@index([status, createdAt])
   @@index([storeId, createdAt])
   @@index([salesmanId, createdAt])
@@ -548,8 +584,6 @@ model FieldSalesOrderLine {
   lineTotal    Decimal         @db.Decimal(15, 2)
   discountAmount Decimal       @default(0) @db.Decimal(15, 2)
   appliedPromoId String?
-  isBonus        Boolean         @default(false)
-  bonusPromoId   String?
   requestedUnitPrice Decimal?  @db.Decimal(15, 2)
   appealReason String?  @db.Text
   deliveredQty Int @default(0)
@@ -559,6 +593,8 @@ model FieldSalesOrderLine {
   order        FieldSalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   item         Item            @relation(fields: [itemId], references: [id])
   deliveryLines FieldSalesDeliveryLine[]
+  isBonus        Boolean         @default(false)
+  bonusPromoId   String?
   @@index([orderId])
   @@index([itemId])
 }
@@ -574,8 +610,16 @@ model FieldSalesDelivery {
   subtotal       Decimal                  @db.Decimal(15, 2)
   discountAmount Decimal                  @default(0) @db.Decimal(15, 2)
   total          Decimal                  @db.Decimal(15, 2)
+  cogsAmount     Decimal?                 @db.Decimal(15, 2)
   note           String?                  @db.Text
   idempotencyKey String?                  @unique
+  createdAt      DateTime                 @default(now())
+  order          FieldSalesOrder          @relation(fields: [orderId], references: [id])
+  deliveredBy    User                     @relation("FieldSalesDeliveryUser", fields: [deliveredById], references: [id])
+  lines          FieldSalesDeliveryLine[]
+  taxInvoice     TaxInvoice?
+  receivable     Receivable?
+  shipment       DeliveryShipment?
   receivedByName String?
   receivedAt     DateTime?
   podPhotoUrl    String?
@@ -583,14 +627,8 @@ model FieldSalesDelivery {
   voidedById     String?
   voidReason     String?                  @db.Text
   correctedAt    DateTime?
-  createdAt      DateTime                 @default(now())
-  order          FieldSalesOrder          @relation(fields: [orderId], references: [id])
-  deliveredBy    User                     @relation("FieldSalesDeliveryUser", fields: [deliveredById], references: [id])
-  lines          FieldSalesDeliveryLine[]
-  taxInvoice     TaxInvoice?
   @@index([orderId])
   @@index([deliveredAt])
-  receivable     Receivable?
 }
 
 model FieldSalesDeliveryLine {
@@ -613,22 +651,239 @@ model FieldSalesDeliveryLine {
   @@index([orderLineId])
 }
 
+model DeliveryShipment {
+  id              String                  @id @default(cuid())
+  docNo           String                  @unique
+  orderId         String
+  method          DeliveryShipmentMethod
+  status          DeliveryShipmentStatus  @default(PACKED)
+  carrierName     String?
+  resiNumber      String?
+  proofPhotoUrl   String?
+  proofPhotoR2Key String?
+  packedAt        DateTime                @default(now())
+  packedById      String
+  shippedAt       DateTime?
+  shippedById     String?
+  deliveredAt     DateTime?
+  deliveredById   String?
+  deliveryId      String?                 @unique
+  carriedById     String?
+  invoiceDate     DateTime?
+  dueDate         DateTime?
+  gpsLat          Decimal?                @db.Decimal(10, 7)
+  gpsLng          Decimal?                @db.Decimal(10, 7)
+  gpsDistanceMeters Int?
+  signatureUrl    String?
+  signatureR2Key  String?
+  signedByName    String?
+  completedOfflineAt DateTime?
+  cancelledAt     DateTime?
+  cancelledById   String?
+  idempotencyKey  String?                 @unique
+  cancelReason    String?                 @db.Text
+  weightKg        Decimal?                @db.Decimal(10, 2)
+  handoverPhotoUrl String?                @db.Text
+  handoverPhotoR2Key String?
+  createdAt       DateTime                @default(now())
+  order           FieldSalesOrder         @relation(fields: [orderId], references: [id])
+  packedBy        User                    @relation("DeliveryShipmentPackedBy", fields: [packedById], references: [id])
+  shippedBy       User?                   @relation("DeliveryShipmentShippedBy", fields: [shippedById], references: [id])
+  deliveredBy     User?                   @relation("DeliveryShipmentDeliveredBy", fields: [deliveredById], references: [id])
+  carriedBy       User?                   @relation("DeliveryShipmentCarriedBy", fields: [carriedById], references: [id])
+  cancelledBy     User?                   @relation("DeliveryShipmentCancelledBy", fields: [cancelledById], references: [id])
+  delivery        FieldSalesDelivery?     @relation(fields: [deliveryId], references: [id])
+  lines           DeliveryShipmentLine[]
+  konsiTransfer   KonsiTransfer?
+  @@index([orderId])
+  @@index([status])
+  @@index([carriedById])
+}
+
+model DeliveryShipmentLine {
+  id           String            @id @default(cuid())
+  shipmentId   String
+  orderLineId  String
+  itemId       String
+  variantSku   String            @default("")
+  plannedQty   Int
+  deliveredQty Int?
+  returnedQty  Int?
+  lostQty      Int?
+  shipment     DeliveryShipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  @@index([shipmentId])
+}
+
 model TaxInvoice {
-  id              String             @id @default(cuid())
-  deliveryId      String             @unique
-  status          TaxInvoiceStatus   @default(PENDING)
+  id              String              @id @default(cuid())
+  deliveryId      String?             @unique
+  sellThroughId   String?             @unique
+  status          TaxInvoiceStatus    @default(PENDING)
   invoiceNo       String?
   markedAt        DateTime?
   markedById      String?
-  reason          String?            @db.Text
+  reason          String?             @db.Text
   notaPrintedAt   DateTime?
   notaPrintedById String?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  delivery        FieldSalesDelivery @relation(fields: [deliveryId], references: [id])
-  markedBy        User?              @relation("TaxInvoiceMarkedBy", fields: [markedById], references: [id])
+  buyerNpwp       String?             @db.VarChar(32)
+  taxableAmount   Decimal?            @db.Decimal(15, 2)
+  ppnAmount       Decimal?            @db.Decimal(15, 2)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  delivery        FieldSalesDelivery? @relation(fields: [deliveryId], references: [id])
+  sellThrough     KonsiSellThrough?   @relation(fields: [sellThroughId], references: [id])
+  markedBy        User?               @relation("TaxInvoiceMarkedBy", fields: [markedById], references: [id])
 
   @@index([status])
+  @@index([markedById])
+  @@index([notaPrintedById])
+}
+
+model Receivable {
+  id                String                    @id @default(cuid())
+  deliveryId        String?                   @unique
+  sellThroughId     String?                   @unique
+  storeId           String
+  invoiceDate       DateTime
+  dueDate           DateTime
+  originalAmount    Decimal                   @default(0) @db.Decimal(15, 2)
+  paidAmount        Decimal                   @default(0) @db.Decimal(15, 2)
+  outstandingAmount Decimal                   @default(0) @db.Decimal(15, 2)
+  status            ReceivableStatus          @default(OUTSTANDING)
+  collectorId       String?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  delivery          FieldSalesDelivery?       @relation(fields: [deliveryId], references: [id])
+  sellThrough       KonsiSellThrough?         @relation(fields: [sellThroughId], references: [id])
+  store             Store                     @relation(fields: [storeId], references: [id])
+  collector          User?                  @relation("ReceivableCollector", fields: [collectorId], references: [id])
+  submissions        CollectionSubmission[]
+  allocations       PaymentAllocation[]
+  settlementInvoices StoreSettlementInvoice[]
+  invoiceNo         String                    @unique @default(cuid())
+  amount            Decimal                   @default(0) @db.Decimal(15, 2)
+  outstanding       Decimal                   @default(0) @db.Decimal(15, 2)
+  paidBeforeImport Decimal @default(0) @db.Decimal(15, 2)
+  settledAt      DateTime?
+  source         ReceivableSource @default(DELIVERY)
+  salesmanId     String?
+  note           String?   @db.Text
+  salesman       User?     @relation("ReceivableSalesman", fields: [salesmanId], references: [id])
+  collectionLinks CollectionNoteReceivable[]
+  claimLinks     PaymentClaimReceivable[]
+  items          ReceivableItem[]
+  consignmentCycleId String?
+  isConsignment      Boolean           @default(false)
+  consignmentCycle   ConsignmentCycle? @relation(fields: [consignmentCycleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([storeId, status])
+  @@index([status, dueDate])
+  @@index([dueDate])
+  @@index([collectorId, status])
+  @@index([storeId, outstanding])
+  @@index([salesmanId])
+  @@index([consignmentCycleId])
+}
+
+enum ReceivableStatus {
+  OUTSTANDING
+  PARTIAL
+  PAID
+  WRITTEN_OFF
+  VOIDED
+}
+
+model Payment {
+  id             String              @id @default(cuid())
+  docNo          String              @unique
+  storeId        String
+  paidAt         DateTime
+  method         PaymentMethod
+  amount         Decimal             @db.Decimal(15, 2)
+  reference      String?
+  proofUrl       String?
+  proofR2Key     String?
+  note           String?             @db.Text
+  status         PaymentStatus       @default(POSTED)
+  recordedById   String
+  voidedAt       DateTime?
+  voidedById     String?
+  voidReason     String?             @db.Text
+  idempotencyKey String?             @unique
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  store          Store               @relation(fields: [storeId], references: [id])
+  recordedBy     User                @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+  voidedBy       User?               @relation("PaymentVoidedBy", fields: [voidedById], references: [id])
+  allocations    PaymentAllocation[]
+  collectionSubmission CollectionSubmission?
+  fieldReturnId  String?
+  fieldReturn    FieldReturn?        @relation(fields: [fieldReturnId], references: [id])
+
+  @@index([storeId, paidAt])
+  @@index([status, paidAt])
+  @@index([fieldReturnId])
+}
+
+enum PaymentMethod {
+  CASH
+  TRANSFER
+  RETUR_OFFSET
+  PROGRAM_DEDUCTION
+  ADMIN_FEE
+  ROUNDING_ADJUSTMENT
+}
+
+enum PaymentStatus {
+  POSTED
+  VOIDED
+}
+
+model PaymentAllocation {
+  id           String     @id @default(cuid())
+  paymentId    String
+  receivableId String
+  amount       Decimal    @db.Decimal(15, 2)
+  payment      Payment    @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  receivable   Receivable @relation(fields: [receivableId], references: [id])
+
+  @@unique([paymentId, receivableId])
+  @@index([receivableId])
+}
+
+model CollectionSubmission {
+  id             String                     @id @default(cuid())
+  receivableId   String
+  collectorId    String
+  amount         Decimal                    @db.Decimal(15, 2)
+  method         PaymentMethod
+  paidAt         DateTime
+  note           String?                    @db.Text
+  proofUrl       String?
+  proofR2Key     String?
+  status         CollectionSubmissionStatus @default(PENDING)
+  paymentId      String?                    @unique
+  verifiedById   String?
+  verifiedAt     DateTime?
+  rejectReason   String?                    @db.Text
+  idempotencyKey String?                    @unique
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  receivable     Receivable @relation(fields: [receivableId], references: [id])
+  collector      User       @relation("CollectionSubmittedBy", fields: [collectorId], references: [id])
+  verifiedBy     User?      @relation("CollectionVerifiedBy", fields: [verifiedById], references: [id])
+  payment        Payment?   @relation(fields: [paymentId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([receivableId])
+  @@index([collectorId, status])
+}
+
+enum CollectionSubmissionStatus {
+  PENDING
+  VERIFIED
+  REJECTED
 }
 
 enum FieldSalesOrderStatus {
@@ -642,6 +897,11 @@ enum FieldSalesOrderType {
   KONSI
 }
 
+enum FieldSalesOrderOrigin {
+  FIELD
+  ADMIN
+}
+
 enum FieldSalesDeliveryStatus {
   PENDING
   PARTIAL
@@ -649,10 +909,474 @@ enum FieldSalesDeliveryStatus {
   CLOSED
 }
 
+enum DeliveryShipmentMethod {
+  EXPEDITION
+  SALESMAN_CARRY
+}
+
+enum DeliveryShipmentStatus {
+  PACKED
+  IN_TRANSIT
+  DELIVERED
+  PARTIALLY_DELIVERED
+  CANCELLED
+}
+
 enum TaxInvoiceStatus {
   PENDING
   CREATED
+  SENT_TO_STORE
   NOT_REQUIRED
+  CANCELLED
+}
+
+enum FieldReturnStatus {
+  PENDING_WAREHOUSE_RECEIVING
+  MISMATCH_PENDING_RESOLUTION
+  PENDING_APPROVAL
+  APPROVED
+  CANCELLED
+}
+
+enum FieldReturnResolutionType {
+  SALESMAN_BEARS
+  INVESTIGATE
+  WRITE_OFF
+  ACCEPT_SURPLUS
+}
+
+enum FieldReturnReason {
+  DAMAGED
+  UNSOLD
+  EXPIRED
+  OTHER
+}
+
+enum FieldReturnTransport {
+  SELF_CARRY
+  EXPEDITION
+}
+
+enum FieldReturnOrigin {
+  FIELD
+  ADMIN
+}
+
+enum FieldReturnPriceSource {
+  DELIVERY
+  MANUAL
+}
+
+enum FieldReturnValuationStatus {
+  PENDING
+  VALUED
+}
+
+enum FieldReturnOffsetStatus {
+  AVAILABLE
+  APPLIED
+}
+
+model FieldReturn {
+  id              String                     @id @default(cuid())
+  docNo           String                     @unique
+  storeId         String
+  visitId         String?
+  raisedById      String
+  status          FieldReturnStatus          @default(PENDING_WAREHOUSE_RECEIVING)
+  origin          FieldReturnOrigin          @default(FIELD)
+  transport       FieldReturnTransport?
+  expeditionName  String?
+  resiNo          String?
+  notaPhotoUrl    String?
+  notaPhotoR2Key  String?
+  note            String?                    @db.Text
+  createdAt       DateTime                   @default(now())
+  receivedAt      DateTime?
+  receivedById    String?
+  approvedAt      DateTime?
+  approvedById    String?
+  totalValue      Decimal?                   @db.Decimal(15, 2)
+  valuationStatus FieldReturnValuationStatus @default(PENDING)
+  offsetStatus    FieldReturnOffsetStatus    @default(AVAILABLE)
+  appliedValue    Decimal                    @default(0) @db.Decimal(15, 2)
+  offsetPayments  Payment[]
+  store           Store                      @relation(fields: [storeId], references: [id])
+  visit           StoreVisit?                @relation(fields: [visitId], references: [id])
+  lines           FieldReturnLine[]
+  settlementDeductions StoreSettlementDeduction[]
+
+  @@index([storeId])
+  @@index([status])
+}
+
+model FieldReturnLine {
+  id                  String                  @id @default(cuid())
+  returnId            String
+  itemId              String
+  variantSku          String                  @default("")
+  qty                 Int
+  reason              FieldReturnReason
+  reasonNote          String?
+  receivedQty         Int?
+  sellableQty         Int?
+  rejectedQty         Int?
+  creditedQty         Int?
+  unitPrice           Decimal?                @db.Decimal(15, 2)
+  lineValue           Decimal?                @db.Decimal(15, 2)
+  priceSource         FieldReturnPriceSource?
+  priceDeliveryLineId String?
+  priceNote           String?                 @db.Text
+  returnDoc           FieldReturn             @relation(fields: [returnId], references: [id])
+  item                Item                    @relation(fields: [itemId], references: [id])
+  resolutions         FieldReturnResolution[]
+
+  @@index([returnId])
+  @@index([itemId])
+}
+
+model FieldReturnResolution {
+  id          String                    @id @default(cuid())
+  lineId      String
+  type        FieldReturnResolutionType
+  qty         Int
+  amount      Decimal?                  @db.Decimal(15, 2)
+  note        String?                   @db.Text
+  createdById String
+  createdAt   DateTime                  @default(now())
+  line        FieldReturnLine           @relation(fields: [lineId], references: [id])
+
+  @@index([lineId])
+}
+
+model StoreStock {
+  id         String   @id @default(cuid())
+  storeId    String
+  itemId     String
+  variantSku String   @default("")
+  qty        Decimal  @default(0) @db.Decimal(10, 2)
+  avgCost    Decimal  @default(0) @db.Decimal(15, 2)
+  updatedAt  DateTime @updatedAt
+  store      Store    @relation(fields: [storeId], references: [id])
+  item       Item     @relation(fields: [itemId], references: [id])
+
+  @@unique([storeId, itemId, variantSku])
+  @@index([storeId])
+  @@index([itemId])
+}
+
+model KonsiTransfer {
+  id              String              @id @default(cuid())
+  docNo           String              @unique
+  orderId         String
+  storeId         String
+  transferredById String
+  note            String?             @db.Text
+  shipmentId      String?             @unique
+  oldOrderArrival Boolean             @default(false)
+  status          KonsiTransferStatus @default(RECEIVED)
+  receivedAt      DateTime?
+  receivedById    String?
+  cancelledAt     DateTime?
+  cancelledById   String?
+  cancelReason    String?             @db.Text
+  adjustedAt      DateTime?
+  createdAt       DateTime            @default(now())
+  order           FieldSalesOrder     @relation(fields: [orderId], references: [id])
+  store           Store               @relation(fields: [storeId], references: [id])
+  transferredBy   User                @relation("KonsiTransferUser", fields: [transferredById], references: [id])
+  shipment        DeliveryShipment?   @relation(fields: [shipmentId], references: [id])
+  lines           KonsiTransferLine[]
+
+  @@index([storeId, createdAt])
+  @@index([orderId])
+  @@index([storeId, status])
+}
+
+enum KonsiTransferStatus {
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED
+}
+
+model KonsiTransferLine {
+  id          String        @id @default(cuid())
+  transferId  String
+  orderLineId String?
+  itemId      String
+  variantSku  String        @default("")
+  productName String
+  qty         Decimal       @db.Decimal(10, 2)
+  unitCost    Decimal       @db.Decimal(15, 2)
+  mainCountedByOpnameId String?
+  returnedQty Int           @default(0)
+  receivedQty Int?
+  unitPrice   Decimal?      @db.Decimal(15, 2)
+  transfer    KonsiTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item        Item          @relation(fields: [itemId], references: [id])
+
+  @@index([transferId])
+  @@index([itemId])
+}
+
+enum StoreTransferStatus {
+  PENDING
+  APPROVED
+  CANCELLED
+  DIAJUKAN
+  DISETUJUI
+  DIKIRIM
+  DITERIMA
+  DITOLAK
+  DIBATALKAN
+  DIKEMBALIKAN
+}
+
+model StoreTransfer {
+  id           String              @id @default(cuid())
+  docNo        String              @unique
+  fromStoreId  String
+  toStoreId    String
+  status       StoreTransferStatus @default(PENDING)
+  note         String?             @db.Text
+  movedAt      DateTime              @default(now())
+  createdById  String
+  createdAt    DateTime            @default(now())
+  approvedById String?
+  approvedAt   DateTime?
+  fromStore    Store               @relation("StoreTransferFromStore", fields: [fromStoreId], references: [id])
+  toStore      Store               @relation("StoreTransferToStore", fields: [toStoreId], references: [id])
+  createdBy    User                @relation("StoreTransferCreatedBy", fields: [createdById], references: [id])
+  approvedBy   User?               @relation("StoreTransferApprovedBy", fields: [approvedById], references: [id])
+  lines        StoreTransferLine[]
+  reason         String               @default("") @db.VarChar(1000)
+  reviewNote     String?              @db.Text
+  shippedById    String?
+  shippedAt      DateTime?
+  cancelledById  String?
+  cancelledAt    DateTime?
+  selisihStatus  StoreTransferSelisih?
+  selisihNote    String?              @db.Text
+  idempotencyKey String               @unique @default(cuid())
+  updatedAt      DateTime             @updatedAt
+
+  @@index([fromStoreId, createdAt])
+  @@index([toStoreId, createdAt])
+  @@index([status])
+  @@index([fromStoreId, status])
+  @@index([toStoreId, status])
+  @@index([status, createdAt])
+}
+
+model StoreTransferLine {
+  id          String        @id @default(cuid())
+  transferId  String
+  itemId      String
+  variantSku  String        @default("")
+  productName String
+  qty         Int
+  unitCost    Decimal       @default(0) @db.Decimal(15, 2)
+  transfer    StoreTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item        Item          @relation(fields: [itemId], references: [id])
+
+  @@index([transferId])
+  @@index([itemId])
+}
+
+enum SellThroughMethod {
+  SPG_POS
+  SHELF_COUNT
+}
+
+enum SellThroughStatus {
+  DRAFT
+  APPROVED
+  CANCELLED
+  VOIDED
+}
+
+enum SellThroughResolution {
+  BILL
+  SHRINKAGE
+  BILL_POS
+  REDUCE
+}
+
+model KonsiSellThrough {
+  id                 String                 @id @default(cuid())
+  docNo              String                 @unique
+  storeId            String
+  method             SellThroughMethod
+  status             SellThroughStatus      @default(DRAFT)
+  closingStocktakeId String
+  stocktakeKey       String?                @unique
+  previousId         String?
+  chainKey           String?                @unique
+  periodStart        DateTime?
+  periodEnd          DateTime
+  salesmanId         String?
+  invoiceDate        DateTime?
+  dueDate            DateTime?
+  total              Decimal?               @db.Decimal(15, 2)
+  baseline           Boolean                @default(false)
+  baselineReason     String?                @db.Text
+  createdById        String
+  createdAt          DateTime               @default(now())
+  approvedById       String?
+  approvedAt         DateTime?
+  cancelledById      String?
+  cancelledAt        DateTime?
+  cancelReason       String?                @db.Text
+  voidedById         String?
+  voidedAt           DateTime?
+  voidReason         String?                @db.Text
+  spgSplitSnapshotAt DateTime?
+  store              Store                  @relation(fields: [storeId], references: [id])
+  salesman           User?                  @relation("KonsiSellThroughSalesman", fields: [salesmanId], references: [id])
+  lines              KonsiSellThroughLine[]
+  spgShares          KonsiSellThroughSpgShare[]
+  receivable         Receivable?
+  taxInvoice         TaxInvoice?
+
+  @@index([storeId, createdAt])
+  @@index([status])
+  @@index([closingStocktakeId])
+  @@index([salesmanId])
+}
+
+model KonsiSellThroughLine {
+  id               String                 @id @default(cuid())
+  sellThroughId    String
+  itemId           String
+  variantSku       String                 @default("")
+  productName      String
+  openingQty       Decimal                @db.Decimal(10, 2)
+  inQty            Decimal                @db.Decimal(10, 2)
+  outQty           Decimal                @db.Decimal(10, 2)
+  posSoldQty       Decimal                @db.Decimal(10, 2)
+  gapQty           Decimal                @db.Decimal(10, 2)
+  closingQty       Decimal                @db.Decimal(10, 2)
+  countedQty       Decimal?               @db.Decimal(10, 2)
+  billedQty        Decimal                @db.Decimal(10, 2)
+  shrinkageQty     Decimal                @default(0) @db.Decimal(10, 2)
+  surplusQty       Decimal                @default(0) @db.Decimal(10, 2)
+  negativeSold     Boolean                @default(false)
+  lateInQty        Decimal                @default(0) @db.Decimal(10, 2)
+  lateOutQty       Decimal                @default(0) @db.Decimal(10, 2)
+  latePosSoldQty   Decimal                @default(0) @db.Decimal(10, 2)
+  lateGapQty       Decimal                @default(0) @db.Decimal(10, 2)
+  hasLateMovements Boolean                @default(false)
+  suggestedResolution SellThroughResolution?
+  resolution       SellThroughResolution?
+  resolutionReason String?                @db.Text
+  unitCost         Decimal                @db.Decimal(15, 2)
+  unitPrice        Decimal?               @db.Decimal(15, 2)
+  lineTotal        Decimal?               @db.Decimal(15, 2)
+  sellThrough      KonsiSellThrough       @relation(fields: [sellThroughId], references: [id], onDelete: Cascade)
+  item             Item                   @relation(fields: [itemId], references: [id])
+
+  @@unique([sellThroughId, itemId, variantSku])
+  @@index([sellThroughId])
+  @@index([itemId])
+}
+
+enum SellThroughSpgShareKind {
+  OWN
+  LATE
+}
+
+model KonsiSellThroughSpgShare {
+  id            String                  @id @default(cuid())
+  sellThroughId String
+  itemId        String
+  variantSku    String                  @default("")
+  salesmanId    String
+  share         SellThroughSpgShareKind
+  units         Int
+  createdAt     DateTime                @default(now())
+  sellThrough   KonsiSellThrough        @relation(fields: [sellThroughId], references: [id], onDelete: Cascade)
+
+  @@unique([sellThroughId, itemId, variantSku, salesmanId, share], map: "KonsiSellThroughSpgShare_split_key")
+  @@index([sellThroughId])
+}
+
+enum StoreStocktakeStatus {
+  DRAFT
+  PENDING_VERIFICATION
+  APPROVED
+  CANCELLED
+}
+
+enum StoreStocktakeCause {
+  SHRINKAGE
+  UNRECORDED_SALE
+}
+
+model StoreStocktake {
+  id            String               @id @default(cuid())
+  docNo         String               @unique
+  storeId       String
+  status        StoreStocktakeStatus @default(DRAFT)
+  openKey       String?              @unique
+  countedAt     DateTime
+  periodFrom    DateTime?
+  isFullCount   Boolean              @default(false)
+  note          String?              @db.Text
+  createdById   String
+  createdAt     DateTime             @default(now())
+  submittedById String?
+  submittedAt   DateTime?
+  countFinishedAt DateTime?
+  approvedById  String?
+  approvedAt    DateTime?
+  cancelledById String?
+  cancelledAt   DateTime?
+  cancelReason  String?              @db.Text
+  store         Store                @relation(fields: [storeId], references: [id])
+  lines         StoreStocktakeLine[]
+
+  @@index([storeId, createdAt])
+  @@index([status])
+}
+
+model StoreStocktakeLine {
+  id              String               @id @default(cuid())
+  stocktakeId     String
+  itemId          String
+  variantSku      String               @default("")
+  productName     String
+  expectedQty     Decimal              @db.Decimal(10, 2)
+  countedQty      Decimal?             @db.Decimal(10, 2)
+  varianceQty     Decimal?             @db.Decimal(10, 2)
+  soldInPeriodQty Decimal              @default(0) @db.Decimal(10, 2)
+  cause           StoreStocktakeCause?
+  reason          String?              @db.Text
+  qtyAtApproval   Decimal?             @db.Decimal(10, 2)
+  appliedQty      Decimal?             @db.Decimal(10, 2)
+  isAdded         Boolean              @default(false)
+  countFinishedAt DateTime?
+  stocktake       StoreStocktake       @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+  item            Item                 @relation(fields: [itemId], references: [id])
+
+  @@unique([stocktakeId, itemId, variantSku])
+  @@index([stocktakeId])
+  @@index([itemId])
+}
+
+model StoreAssortmentLine {
+  id          String   @id @default(cuid())
+  storeId     String
+  itemId      String
+  variantSku  String   @default("")
+  targetQty   Decimal? @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+  createdById String
+  store       Store    @relation(fields: [storeId], references: [id])
+  item        Item     @relation(fields: [itemId], references: [id])
+
+  @@unique([storeId, itemId, variantSku])
+  @@index([storeId])
+  @@index([itemId])
 }
 
 enum ReserveSource {
@@ -683,9 +1407,6 @@ model Promo {
   minQty           Int?
   minOrderSubtotal Decimal?       @db.Decimal(15, 2)
   minOrderQty      Int?
-  bonusBuyQty      Int?
-  bonusFreeQty     Int?
-  bonusItemId      String?
   allStores        Boolean        @default(true)
   startsAt         DateTime?
   endsAt           DateTime?
@@ -696,6 +1417,9 @@ model Promo {
   items            PromoItem[]
   stores           PromoStore[]
   tiers            PromoTier[]
+  bonusBuyQty      Int?
+  bonusFreeQty     Int?
+  bonusItemId      String?
   @@index([isActive, level])
 }
 
@@ -740,6 +1464,9 @@ model Item {
   categoryId       String?
   category         ItemCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: Restrict)
   variants         Json?
+  /// Optional Pantone of a colour-specific material (one fabric item per colour, #410)
+  pantoneTcx       String?
+  pantone          PantoneColor?     @relation(fields: [pantoneTcx], references: [tcx], onDelete: SetNull, onUpdate: Restrict)
   isActive         Boolean           @default(true)
   reorderPoint     Decimal?          @db.Decimal(10,2)
   overReceiveThreshold Decimal?      @db.Decimal(10,2)
@@ -783,27 +1510,34 @@ model Item {
   images           ItemImage[]
   fieldSalesLines  FieldSalesOrderLine[]
   fieldSalesDeliveryLines FieldSalesDeliveryLine[]
+  fieldReturnLines FieldReturnLine[]
   promoItems       PromoItem[]
   vanStock         VanStock[]
   vanLoadLines     VanLoadLine[]
   vanSaleLines     VanSaleLine[]
   vanReconcileLines VanReconcileLine[]
   spgSaleLines     SpgSaleLine[]
+  storeStock       StoreStock[]
+  konsiTransferLines KonsiTransferLine[]
+  stocktakeLines   StoreStocktakeLine[]
+  assortmentLines  StoreAssortmentLine[]
+  storeTransferLines StoreTransferLine[]
+  sellThroughLines KonsiSellThroughLine[]
+  itemRequestLines ItemRequestLine[]
   storeStockMovements StoreStockMovement[]
-  storeTransferLines  StoreTransferLine[]
-  @@index([type, isActive])
-  @@index([sku])
-  @@index([uomId])
-  @@index([categoryId])
   commissionPerPcs Decimal @default(0) @db.Decimal(15, 2)
   material         String?
   careInstructions String?  @db.Text
   sizeChartId      String?
   kgPerRoll        Decimal?  @db.Decimal(10, 2)
-
   kolBriefItems     KolBriefItem[]
   contentPlans      ContentPlan[]
   kolShipmentLines  KolShipmentLine[]
+  @@index([type, isActive])
+  @@index([sku])
+  @@index([uomId])
+  @@index([categoryId])
+  @@index([pantoneTcx])
 }
 
 model ItemImage {
@@ -834,10 +1568,42 @@ model ConsumptionRule {
   wastePercent    Decimal  @default(0) @db.Decimal(5,2)
   isActive        Boolean  @default(true)
   notes           String?
+  /// Variant scope (#437): null = every colour / every size. One material may carry several
+  /// rules only when their scopes cannot both match one variant (checked in saveConsumptionRules).
+  colorId         String?
+  color           VariantColor? @relation(fields: [colorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  size            String?
   createdAt       DateTime @default(now())
-  @@unique([finishedGoodId, materialId])
+  @@index([finishedGoodId, materialId])
   @@index([finishedGoodId])
   @@index([materialId])
+  @@index([colorId])
+}
+
+/// Colour master for finished-good variants (#437). A variant's `Warna` text resolves to a row
+/// by its name or one of its aliases (the spellings Jubelio sends), compared under colorMatchKey.
+model VariantColor {
+  id               String              @id @default(cuid())
+  name             String              @unique
+  pantoneTcx       String?
+  pantone          PantoneColor?       @relation(fields: [pantoneTcx], references: [tcx], onDelete: SetNull, onUpdate: Restrict)
+  isActive         Boolean             @default(true)
+  aliases          VariantColorAlias[]
+  consumptionRules ConsumptionRule[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  @@index([pantoneTcx])
+}
+
+model VariantColorAlias {
+  id        String       @id @default(cuid())
+  /// colorMatchKey(label): unique across all colours, so one spelling resolves to one colour.
+  matchKey  String       @unique
+  label     String
+  colorId   String
+  color     VariantColor @relation(fields: [colorId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  createdAt DateTime     @default(now())
+  @@index([colorId])
 }
 
 // ==========================================
@@ -852,6 +1618,7 @@ model PurchaseOrder {
   etaDate          DateTime?
   paymentDueDate   DateTime?
   paidAt           DateTime?
+  paymentTermsDays Int?
   currency         String          @default("IDR")
   totalAmount      Decimal         @default(0) @db.Decimal(15,2)
   taxAmount        Decimal         @default(0) @db.Decimal(15,2)
@@ -871,21 +1638,21 @@ model PurchaseOrder {
   chainConfirmedAt        DateTime?
   chainConfirmedSource    String?
   actualLeadDays          Int?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  itemRequestLines ItemRequestLine[]
   ppnRatePercent          Decimal?        @db.Decimal(5,2)
   closedAt                DateTime?
   closedById              String?
   closeReason             String?         @db.Text
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
   planStageId             String?
   planStage               PlanStage?      @relation("PurchaseOrderPlanStage", fields: [planStageId], references: [id], onDelete: SetNull, onUpdate: Restrict)
-
   @@index([supplierId])
-  @@index([planStageId])
   @@index([createdById])
   @@index([status])
   @@index([etaDate])
   @@index([docNumber])
+  @@index([planStageId])
 }
 
 model POItem {
@@ -903,6 +1670,8 @@ model POItem {
   uomId       String
   notes       String?
   createdAt   DateTime      @default(now())
+  requestLine ItemRequestLine?
+  vendorBillLines VendorBillLine[]
   @@index([poId])
   @@index([itemId])
   @@index([poId, itemId, variantSku])
@@ -949,9 +1718,8 @@ model GRN {
   grnDate       DateTime  @default(now())
   receivedBy    String
   totalAmount   Decimal   @db.Decimal(15,2)
-  ppnAmount     Decimal?  @db.Decimal(15,2)
   notes         String?
-  photoUrls     String?
+  photoUrls     String? @db.Text
   items         Json      
   requiresOwnerApproval Boolean @default(false)
   ownerApprovedAt DateTime?
@@ -962,13 +1730,15 @@ model GRN {
   ownerDeclinedBy User?    @relation("GRNOwnerDeclined", fields: [ownerDeclinedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   syncStatus    SyncStatus @default(SYNCED)
   localId       String?
-  idempotencyKey String?  @unique
   createdAt     DateTime  @default(now())
+  fabricRolls   FabricRoll[]
+  vendorReturns VendorReturn[]
+  ppnAmount     Decimal?  @db.Decimal(15,2)
+  idempotencyKey String?  @unique
   requiresNoPoConfirmation Boolean @default(false)
   noPoConfirmedAt DateTime?
   noPoConfirmedById String?
-  fabricRolls   FabricRoll[]
-  vendorReturns VendorReturn[]
+  vendorBillLines VendorBillLine[]
   @@index([poId])
   @@index([supplierId])
   @@index([grnDate])
@@ -1132,8 +1902,9 @@ model ReconciliationResult {
   itemName            String
   jubelioItemId       Int?
   eloraeQty           Decimal           @db.Decimal(10,2)
-  jubelioQty          Decimal           @db.Decimal(10,2)
-  variance            Decimal           @db.Decimal(10,2)
+  jubelioQty          Decimal?          @db.Decimal(10,2)
+  variance            Decimal?          @db.Decimal(10,2)
+  errorMessage        String?           @db.Text
   action              ReconAction
   resolvedAt          DateTime?
   resolvedById        String?
@@ -1154,6 +1925,7 @@ model StockReservation {
   qty                Decimal       @db.Decimal(15, 4)
   consumedQty        Decimal       @default(0) @db.Decimal(15, 4)
   state              ReserveState
+  inventoryValueId   String?
   createdAt          DateTime      @default(now())
   resolvedAt         DateTime?
   @@index([salesorderId])
@@ -1206,6 +1978,7 @@ model WorkOrder {
   steps           WorkOrderStep[]
   planStages      PlanStage[] @relation("PlanStageWorkOrder")
   planCmtAllocations PlanCmtAllocation[]
+  itemRequests    ItemRequest[]
   @@index([poId])
   @@index([vendorId])
   @@index([finishedGoodId])
@@ -1235,6 +2008,7 @@ model WorkOrderStep {
   notes              String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  vendorBillLines    VendorBillLine[]
   @@index([woId])
   @@index([supplierId])
   @@unique([woId, sequence])
@@ -1279,14 +2053,14 @@ model FGReceipt {
   qcNotes        String?
   qcPhotos       String?
   materialCost   Decimal?  @db.Decimal(15,2)
-  serviceCost    Decimal?  @db.Decimal(15,2)
-  additionalCost Decimal?  @db.Decimal(15,2)
   avgCostPerUnit Decimal?  @db.Decimal(15,2)
   totalCostValue Decimal?  @db.Decimal(15,2)
   receivedById   String
   receivedAt     DateTime  @default(now())
   syncStatus     SyncStatus @default(SYNCED)
   priceChangeLogs ItemPriceChangeLog[]
+  serviceCost    Decimal?  @db.Decimal(15,2)
+  additionalCost Decimal?  @db.Decimal(15,2)
   @@index([woId])
   @@index([receivedById])
   @@index([receivedAt])
@@ -1337,9 +2111,9 @@ model VendorReturn {
   syncStatus       SyncStatus   @default(SYNCED)
   createdById      String
   createdBy        User         @relation(fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdAt        DateTime     @default(now())
   poId             String?
   poCreditAmount   Decimal?     @db.Decimal(15,2)
-  createdAt        DateTime     @default(now())
   @@index([woId])
   @@index([vendorId])
   @@index([grnId])
@@ -1430,45 +2204,16 @@ model PlanStage {
   planCmtAllocationId   String?             @unique
   planCmtAllocation     PlanCmtAllocation?  @relation(fields: [planCmtAllocationId], references: [id], onDelete: SetNull, onUpdate: Restrict)
   sortOrder             Int                 @default(0)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
   scheduleStart         DateTime?
   deadline              DateTime?
   steps                 PlanStageStep[]
   purchaseOrders        PurchaseOrder[]     @relation("PurchaseOrderPlanStage")
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
 
   @@index([planCategoryId])
   @@index([supplierId])
   @@index([workOrderId])
-}
-
-enum PlanStepStatus {
-  BELUM
-  PROSES
-  SELESAI
-}
-
-model PlanStageStep {
-  id                String         @id @default(cuid())
-  planStageId       String
-  planStage         PlanStage      @relation(fields: [planStageId], references: [id], onDelete: Cascade, onUpdate: Restrict)
-  sequence          Int
-  name              String
-  processTemplateId String?
-  supplierId        String?
-  supplier          Supplier?      @relation("PlanStageStepSupplier", fields: [supplierId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  durationDays      Int
-  targetDate        DateTime
-  doneDate          DateTime?
-  status            PlanStepStatus @default(BELUM)
-  note              String?        @db.Text
-  createdById       String?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-
-  @@index([planStageId])
-  @@index([status, targetDate])
-  @@index([supplierId])
 }
 
 model PlanColorAllocation {
@@ -1737,7 +2482,6 @@ model SystemSetting {
 // ==========================================
 // JUBELIO INTEGRATION
 // ==========================================
-
 
 model NotificationQueue {
   id        String    @id @default(cuid())
@@ -2045,6 +2789,10 @@ model SpgSale {
   idempotencyKey String?       @unique
   createdById    String
   createdAt      DateTime      @default(now())
+  salesman       User          @relation("SpgSaleSalesman", fields: [salesmanId], references: [id])
+  createdBy      User          @relation("SpgSaleCreatedBy", fields: [createdById], references: [id])
+  store          Store         @relation(fields: [storeId], references: [id])
+  lines          SpgSaleLine[]
   discountTotal        Decimal   @default(0) @db.Decimal(15, 2)
   orderPromoId         String?
   orderPromoName       String?
@@ -2058,10 +2806,6 @@ model SpgSale {
   memberId             String?
   memberTier           String?
   memberDiscount       Decimal   @default(0) @db.Decimal(15, 2)
-  salesman       User          @relation("SpgSaleSalesman", fields: [salesmanId], references: [id])
-  createdBy      User          @relation("SpgSaleCreatedBy", fields: [createdById], references: [id])
-  store          Store         @relation(fields: [storeId], references: [id])
-  lines          SpgSaleLine[]
   returns        SpgSaleReturn[]
   @@index([salesmanId, createdAt])
   @@index([storeId])
@@ -2078,6 +2822,8 @@ model SpgSaleLine {
   qty         Int
   unitPrice   Decimal @db.Decimal(15, 2)
   lineTotal   Decimal @db.Decimal(15, 2)
+  spgSale     SpgSale @relation(fields: [spgSaleId], references: [id], onDelete: Cascade)
+  item        Item    @relation(fields: [itemId], references: [id])
   returnedQty Int     @default(0)
   discount       Decimal @default(0) @db.Decimal(15, 2)
   storeDiscount  Decimal @default(0) @db.Decimal(15, 2)
@@ -2086,120 +2832,21 @@ model SpgSaleLine {
   categoryId          String?
   categoryAt          DateTime?
   categoryFilledLater Boolean   @default(false)
-  spgSale     SpgSale @relation(fields: [spgSaleId], references: [id], onDelete: Cascade)
-  item        Item    @relation(fields: [itemId], references: [id])
   returnLines SpgSaleReturnLine[]
   @@index([spgSaleId])
   @@index([itemId])
 }
 
-model SpgSaleReturn {
-  id             String   @id @default(cuid())
-  spgSaleId      String
-  storeId        String
+model SpgCommissionRate {
+  id             String       @id @default(cuid())
+  itemCategoryId String
+  amountPerPiece Decimal      @db.Decimal(15, 2)
+  effectiveFrom  String       @db.VarChar(7)
   createdById    String
-  reason         String   @db.Text
-  idempotencyKey String   @unique
-  createdAt      DateTime @default(now())
-  status         SpgSaleReturnStatus @default(MENUNGGU)
-  decidedById    String?
-  decidedAt      DateTime?
-  rejectReason   String?  @db.Text
-  goodsPhotoR2Key  String?
-  refundedAt       DateTime?
-  refundSlipR2Key  String?
-  refundMarkedById String?
-  refundMarkReason String?  @db.Text
-
-  spgSale        SpgSale  @relation(fields: [spgSaleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  lines          SpgSaleReturnLine[]
-
-  @@index([spgSaleId])
-  @@index([storeId, createdAt])
-  @@index([status, createdAt])
-  @@index([storeId, refundedAt])
-}
-
-model SpgCharge {
-  id                 String    @id @default(cuid())
-  spgUserId          String
-  storeId            String
-  sourceKind         String    @db.VarChar(10)
-  source             String    @db.VarChar(40)
-  sourceId           String
-  sourceDocNo        String
-  spgSaleId          String
-  reportedAt         DateTime
-  computedAmount     Decimal   @db.Decimal(15, 2)
-  amount             Decimal   @db.Decimal(15, 2)
-  amountReason       String?   @db.Text
-  settledAmount      Decimal   @default(0) @db.Decimal(15, 2)
-  settledAt          DateTime?
-  status             String    @default("TERBUKA") @db.VarChar(10)
-  cancelledAt        DateTime?
-  cancelledById      String?
-  cancelReason       String?   @db.Text
-  goodsDecision      String?   @db.VarChar(12)
-  goodsDecidedAt     DateTime?
-  goodsDecidedById   String?
-  goodsDecisionNote  String?   @db.Text
-  paybackAmount      Decimal   @default(0) @db.Decimal(15, 2)
-  paybackPaidAt      DateTime?
-  paybackPaidRefType String?   @db.VarChar(40)
-  paybackPaidRefId   String?
-  paybackPayoutMonth String?   @db.VarChar(7)
-  note               String    @db.Text
-  createdById        String
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-
-  deductions         SpgChargeDeduction[]
-
-  @@unique([source, sourceId])
-  @@index([spgUserId, status])
-  @@index([spgUserId, paybackPaidAt])
-  @@index([status, goodsDecision])
-}
-
-model SpgChargeDeduction {
-  id             String    @id @default(cuid())
-  chargeId       String
-  amount         Decimal   @db.Decimal(15, 2)
-  fromCommission Decimal   @db.Decimal(15, 2)
-  fromSalary     Decimal   @db.Decimal(15, 2)
-  paidRefType    String    @db.VarChar(40)
-  paidRefId      String
-  payoutMonth    String    @db.VarChar(7)
-  createdById    String
-  createdAt      DateTime  @default(now())
-
-  charge         SpgCharge @relation(fields: [chargeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-
-  @@unique([chargeId, paidRefType, paidRefId])
-  @@index([paidRefType, paidRefId])
-}
-
-model SpgSaleReturnLine {
-  id            String              @id @default(cuid())
-  returnId      String
-  spgSaleLineId String
-  itemId        String
-  variantSku    String              @default("")
-  qty           Int
-  condition     ReturnItemCondition @default(LAYAK)
-
-  saleReturn    SpgSaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  saleLine      SpgSaleLine   @relation(fields: [spgSaleLineId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-
-  @@index([returnId])
-  @@index([spgSaleLineId])
-}
-
-enum SpgSaleReturnStatus {
-  MENUNGGU
-  DISETUJUI
-  DITOLAK
-  DIBATALKAN
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  itemCategory   ItemCategory @relation(fields: [itemCategoryId], references: [id])
+  @@unique([itemCategoryId, effectiveFrom])
 }
 
 enum DocType {
@@ -2218,6 +2865,16 @@ enum DocType {
   VANRECON
   SPGSALE
   DELIVERY
+  FIELDRET
+  KONSITRF
+  STOCKTAKE
+  PAYMENT
+  BKM
+  STORETRF
+  SELLTHRU
+  ITEMREQ
+  VENDOR_BILL
+  VENDOR_PAYMENT
   CASHOUT
   CASHIN
   CASHTRF
@@ -2283,9 +2940,11 @@ model PantoneColor {
   bookRow     Int?
   favorites   PantoneColorFavorite[]
   themeUsers  User[]
-  supplierTypes SupplierType[]
+  variantColors VariantColor[]
+  items       Item[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  supplierTypes SupplierType[]
 
   @@index([name])
   @@index([groupName])
@@ -2526,6 +3185,7 @@ model SalesOrder {
   updatedAt           DateTime         @updatedAt
   items               SalesOrderItem[]
   salesReturns        SalesReturn[]
+  packingVideo        PackingVideo?
 
   @@index([channel])
   @@index([status])
@@ -2534,6 +3194,30 @@ model SalesOrder {
   @@index([shippingCity])
   @@index([fulfillmentStatus])
   @@index([channelOrderNo])
+}
+
+/// Packing process video for a marketplace sales order (1 active video per order).
+model PackingVideo {
+  id           String     @id @default(cuid())
+  salesOrderId String     @unique
+  salesOrder   SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+
+  r2Key        String
+  videoUrl     String
+  contentType  String     @default("video/webm")
+  sizeBytes    Int?
+  durationSec  Decimal?   @db.Decimal(10, 2)
+
+  recordedById String
+  recordedBy   User       @relation("PackingVideoRecordedBy", fields: [recordedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  recordedAt   DateTime   @default(now())
+  updatedById  String?
+  updatedBy    User?      @relation("PackingVideoUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  updatedAt    DateTime   @updatedAt
+  replacedAt   DateTime?
+
+  @@index([recordedAt])
+  @@index([recordedById])
 }
 
 model SalesOrderItem {
@@ -2705,27 +3389,33 @@ enum CashFlowSection {
 // FINANCE — MARKETPLACE SETTLEMENT
 // ==========================================
 model Settlement {
-  id               String           @id @default(cuid())
-  marketplace      String
-  seller           String
-  periodFrom       DateTime
-  periodTo         DateTime
-  fileName         String
-  uploadedById     String
-  status           String           @default("PARSED")
-  totalPendapatan  Decimal          @db.Decimal(18, 2)
-  totalPengeluaran Decimal          @db.Decimal(18, 2)
-  totalDilepas     Decimal          @db.Decimal(18, 2)
-  parsedNetTotal   Decimal          @db.Decimal(18, 2)
-  checksumOk       Boolean
-  checksumVariance Decimal          @db.Decimal(18, 2)
-  summaryRaw       Json
-  sellerFeesRaw    Json
-  adjustmentsRaw   Json
-  createdAt        DateTime         @default(now())
-  lines            SettlementLine[]
+  id                String           @id @default(cuid())
+  marketplace       String
+  seller            String
+  periodFrom        DateTime
+  periodTo          DateTime
+  fileName          String
+  uploadedById      String
+  status            String           @default("PARSED")
+  totalPendapatan   Decimal          @db.Decimal(18, 2)
+  totalPengeluaran  Decimal          @db.Decimal(18, 2)
+  totalDilepas      Decimal          @db.Decimal(18, 2)
+  parsedNetTotal    Decimal          @db.Decimal(18, 2)
+  checksumOk        Boolean
+  checksumVariance  Decimal          @db.Decimal(18, 2)
+  summaryRaw        Json
+  sellerFeesRaw     Json
+  adjustmentsRaw    Json
+  createdAt         DateTime         @default(now())
+  resyncBatchId     String?
+  resyncSeededAt    DateTime?
+  resyncRematchedAt DateTime?
+  fileSha256        String?          @db.Char(64)
+  lines             SettlementLine[]
 
+  @@unique([marketplace, fileSha256])
   @@index([marketplace, periodFrom])
+  @@index([resyncRematchedAt])
 }
 
 model SettlementLine {
@@ -2754,14 +3444,16 @@ model SettlementLine {
 // FINANCE — JOURNAL ENGINE
 // ==========================================
 model Journal {
-  id           String        @id @default(cuid())
-  date         DateTime
-  description  String
-  sourceType   String?
-  sourceId     String?
-  isManual     Boolean       @default(false)
+  id          String        @id @default(cuid())
+  date        DateTime
+  description String
+  sourceType  String?
+  sourceId    String?
+  isManual    Boolean       @default(false)
+  postedById  String
+  createdAt   DateTime      @default(now())
+  lines       JournalLine[]
   status       String        @default("POSTED")
-  postedById   String
   approvedById String?
   approvedAt   DateTime?
   rejectedById String?
@@ -2769,8 +3461,6 @@ model Journal {
   rejectReason String?       @db.Text
   reversalOfId String?       @unique
   originalDate DateTime?
-  createdAt    DateTime      @default(now())
-  lines        JournalLine[]
 
   @@unique([sourceType, sourceId])
   @@index([date])
@@ -2785,10 +3475,10 @@ model JournalLine {
   debit          Decimal      @db.Decimal(18, 2) @default(0)
   credit         Decimal      @db.Decimal(18, 2) @default(0)
   memo           String?
-  channel        String?
-  storeId        String?
   journal        Journal      @relation(fields: [journalId], references: [id], onDelete: Cascade)
   account        ChartAccount @relation(fields: [chartAccountId], references: [id])
+  channel        String?
+  storeId        String?
 
   @@index([journalId])
   @@index([chartAccountId])
@@ -2804,6 +3494,527 @@ model JournalAccountMapping {
   updatedAt      DateTime     @updatedAt
 
   @@index([chartAccountId])
+}
+
+// ==========================================
+// FINANCE — STORE SETTLEMENT
+// ==========================================
+enum StoreSettlementStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum SettlementDeductionType {
+  RETUR_OFFSET
+  PROGRAM
+  ADMIN_FEE
+}
+
+model StoreSettlement {
+  id              String                @id @default(cuid())
+  docNo           String                @unique
+  storeId         String
+  salesmanId      String
+  expectedAmount  Decimal               @db.Decimal(15, 2)
+  actualAmount    Decimal               @db.Decimal(15, 2)
+  varianceAmount  Decimal               @db.Decimal(15, 2)
+  isFlagged       Boolean               @default(false)
+  status          StoreSettlementStatus @default(PENDING)
+  note            String?               @db.Text
+  rejectReason    String?               @db.Text
+  reviewedById    String?
+  reviewedAt      DateTime?
+  idempotencyKey  String?               @unique
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  store           Store                        @relation(fields: [storeId], references: [id])
+  salesman        User                         @relation("StoreSettlementSalesman", fields: [salesmanId], references: [id])
+  reviewedBy      User?                        @relation("StoreSettlementReviewer", fields: [reviewedById], references: [id])
+  invoices        StoreSettlementInvoice[]
+  deductions      StoreSettlementDeduction[]
+
+  @@index([storeId, status])
+  @@index([salesmanId, status])
+  @@index([status, createdAt])
+}
+
+model StoreSettlementInvoice {
+  id           String          @id @default(cuid())
+  settlementId String
+  receivableId String
+  amount       Decimal         @db.Decimal(15, 2)
+
+  settlement   StoreSettlement @relation(fields: [settlementId], references: [id])
+  receivable   Receivable      @relation(fields: [receivableId], references: [id])
+
+  @@unique([settlementId, receivableId])
+  @@index([receivableId])
+}
+
+model StoreSettlementDeduction {
+  id            String                  @id @default(cuid())
+  settlementId  String
+  type          SettlementDeductionType
+  amount        Decimal                 @db.Decimal(15, 2)
+  percent       Decimal?                @db.Decimal(5, 2)
+  fieldReturnId String?
+  note          String?                 @db.Text
+  proofUrl      String?
+  proofR2Key    String?
+
+  settlement    StoreSettlement @relation(fields: [settlementId], references: [id])
+  fieldReturn   FieldReturn?    @relation(fields: [fieldReturnId], references: [id])
+
+  @@index([settlementId])
+  @@index([fieldReturnId, type])
+}
+
+enum StockLocationType {
+  MAIN
+  STORE
+  VAN
+}
+
+enum StockLedgerType {
+  OPENING
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+model StockLedgerEntry {
+  id           String            @id @default(cuid())
+  locationType StockLocationType
+  locationId   String            @default("")
+  itemId       String
+  variantSku   String            @default("")
+  type         StockLedgerType
+  qty          Decimal           @db.Decimal(10, 2)
+  unitCost     Decimal?          @db.Decimal(15, 2)
+  balanceQty   Decimal           @db.Decimal(10, 2)
+  totalCost    Decimal?          @db.Decimal(15, 2)
+  balanceValue Decimal?          @db.Decimal(15, 2)
+  refType      String
+  refId        String
+  refDocNumber String            @default("")
+  createdById  String?
+  createdAt    DateTime          @default(now())
+
+  @@index([locationType, locationId, itemId, variantSku, createdAt], map: "StockLedgerEntry_location_item_idx")
+  /// A whole location's history by time: the store stocktake save's movements-since read and the store stock card.
+  @@index([locationType, locationId, createdAt], map: "StockLedgerEntry_location_time_idx")
+  @@index([itemId, createdAt])
+  @@index([refType, refId])
+}
+
+/// A material request (Request Item): what production is short of, raised from a WO's BOM shortage
+/// or by hand, and turned into purchase orders line by line. Header status is derived from lines.
+model ItemRequest {
+  id          String            @id @default(cuid())
+  docNumber   String            @unique
+  status      ItemRequestStatus @default(OPEN)
+  sourceWoId  String?
+  sourceWo    WorkOrder?        @relation(fields: [sourceWoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  neededBy    DateTime?
+  notes       String?           @db.Text
+  createdById String
+  createdBy   User              @relation("ItemRequestCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  lines       ItemRequestLine[]
+
+  @@index([status, createdAt])
+  @@index([sourceWoId])
+}
+
+model ItemRequestLine {
+  id         String                @id @default(cuid())
+  requestId  String
+  request    ItemRequest           @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  itemId     String
+  item       Item                  @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// "" = parent / any variant, same convention as StockLedgerEntry.
+  variantSku String                @default("")
+  qty        Decimal               @db.Decimal(10, 2)
+  uomId      String
+  uom        UOM                   @relation(fields: [uomId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  status     ItemRequestLineStatus @default(OPEN)
+  poId       String?
+  po         PurchaseOrder?        @relation(fields: [poId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  poItemId   String?               @unique
+  poItem     POItem?               @relation(fields: [poItemId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  createdAt  DateTime              @default(now())
+
+  @@index([requestId])
+  @@index([status])
+  @@index([itemId])
+  @@index([poId])
+}
+
+enum ItemRequestStatus {
+  OPEN
+  CONVERTED
+  CANCELLED
+}
+
+enum ItemRequestLineStatus {
+  OPEN
+  CONVERTED
+  CANCELLED
+}
+
+/// A vendor's invoice, matched line by line to received PO items and WO processing steps.
+/// PO lines post no journal (AP is booked at GRN); WO step lines post Dr PRODUCTION_SERVICE_COST / Cr AP.
+model VendorBill {
+  id              String           @id @default(cuid())
+  docNumber       String           @unique
+  supplierId      String
+  supplier        Supplier         @relation(fields: [supplierId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  vendorInvoiceNo String
+  billDate        DateTime
+  dueDate         DateTime?
+  total           Decimal          @db.Decimal(15, 2)
+  /// Maintained by the vendor payment writers.
+  paidAmount      Decimal          @default(0) @db.Decimal(15, 2)
+  status          VendorBillStatus @default(UNPAID)
+  notes           String?          @db.Text
+  createdById     String
+  createdBy       User             @relation("VendorBillCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  voidedAt        DateTime?
+  voidReason      String?          @db.Text
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  lines           VendorBillLine[]
+  allocations     VendorPaymentAllocation[]
+
+  /// Not unique: a voided bill frees its number. The bill writer enforces uniqueness among live bills.
+  @@index([supplierId, vendorInvoiceNo])
+  @@index([supplierId, status])
+  @@index([billDate])
+}
+
+model VendorBillLine {
+  id       String             @id @default(cuid())
+  billId   String
+  bill     VendorBill         @relation(fields: [billId], references: [id], onDelete: Cascade)
+  type     VendorBillLineType
+  poItemId String?
+  poItem   POItem?            @relation(fields: [poItemId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  woStepId String?
+  woStep   WorkOrderStep?     @relation(fields: [woStepId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  grnId    String?
+  grn      GRN?               @relation(fields: [grnId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  itemId   String?
+  variantSku String?
+  qty      Decimal            @db.Decimal(10, 2)
+  price    Decimal            @db.Decimal(15, 2)
+  /// qty x price, stored.
+  amount   Decimal            @db.Decimal(15, 2)
+  /// PO price / step servicePrice at billing time, for the variance flag.
+  refPrice Decimal            @db.Decimal(15, 2)
+
+  @@index([billId])
+  @@index([poItemId])
+  @@index([woStepId])
+  @@index([grnId])
+  @@index([grnId, itemId])
+}
+
+model VendorPayment {
+  id          String              @id @default(cuid())
+  docNumber   String              @unique
+  supplierId  String
+  supplier    Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  paidAt      DateTime
+  method      VendorPaymentMethod
+  reference   String?
+  /// Sum of allocations.
+  amount      Decimal             @db.Decimal(15, 2)
+  notes       String?             @db.Text
+  createdById String
+  createdBy   User                @relation("VendorPaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  voidedAt    DateTime?
+  voidReason  String?             @db.Text
+  createdAt   DateTime            @default(now())
+  allocations VendorPaymentAllocation[]
+
+  @@index([supplierId, paidAt])
+}
+
+model VendorPaymentAllocation {
+  id        String        @id @default(cuid())
+  paymentId String
+  payment   VendorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  billId    String
+  bill      VendorBill    @relation(fields: [billId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  amount    Decimal       @db.Decimal(15, 2)
+
+  @@unique([paymentId, billId])
+  @@index([billId])
+}
+
+enum VendorBillStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  VOID
+}
+
+enum VendorBillLineType {
+  PO_ITEM
+  WO_STEP
+  GRN_ITEM
+}
+
+model SupplierPayableCorrection {
+  id              String    @id @default(cuid())
+  billId          String
+  billLineId      String    @unique
+  supplierId      String
+  sourceType      String    @db.VarChar(10)
+  sourceId        String
+  itemId          String?
+  variantSku      String?
+  qty             Decimal   @db.Decimal(10, 2)
+  recordedPrice   Decimal   @db.Decimal(15, 2)
+  invoicePrice    Decimal   @db.Decimal(15, 2)
+  amount          Decimal   @db.Decimal(15, 2)
+  dppAmount       Decimal   @db.Decimal(15, 2)
+  ppnInputAmount  Decimal   @db.Decimal(15, 2)
+  inventoryAmount Decimal   @db.Decimal(15, 2)
+  stockAmount     Decimal?  @db.Decimal(15, 2)
+  soldAmount      Decimal?  @db.Decimal(15, 2)
+  breakdown       Json
+  status          String    @default("MENUNGGU") @db.VarChar(20)
+  decidedAt       DateTime?
+  decidedById     String?
+  decisionNote    String?   @db.Text
+  cancelledAt     DateTime?
+  cancelReason    String?   @db.Text
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([sourceType, sourceId, status])
+  @@index([status, createdAt])
+  @@index([billId])
+}
+
+model SupplierInvoiceRequest {
+  id                String    @id @default(cuid())
+  supplierId        String
+  channel           String    @db.VarChar(20)
+  note              String?   @db.Text
+  requestedById     String
+  requestedAt       DateTime  @default(now())
+  lastRequestedById String
+  lastRequestedAt   DateTime  @default(now())
+  askCount          Int       @default(1)
+  remindedAt        DateTime?
+  closedAt          DateTime?
+  closedByBillId    String?
+  cancelledAt       DateTime?
+  cancelledById     String?
+  cancelReason      String?   @db.Text
+  idempotencyKey    String?   @unique @db.VarChar(100)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  lines             SupplierInvoiceRequestLine[]
+
+  @@index([supplierId, cancelledAt, closedAt])
+  @@index([cancelledAt, closedAt, lastRequestedAt])
+}
+
+model SupplierInvoiceRequestLine {
+  id            String                 @id @default(cuid())
+  requestId     String
+  sourceType    String                 @db.VarChar(10)
+  sourceId      String
+  label         String
+  receivedQty   Decimal                @db.Decimal(12, 2)
+  billedQty     Decimal                @db.Decimal(12, 2)
+  qty           Decimal                @db.Decimal(12, 2)
+  amount        Decimal                @db.Decimal(15, 2)
+  amountUnknown Boolean                @default(false)
+  request       SupplierInvoiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, sourceType, sourceId])
+  @@index([sourceType, sourceId])
+}
+
+model SupplierInvoiceWaiver {
+  id            String    @id @default(cuid())
+  supplierId    String
+  sourceType    String    @db.VarChar(10)
+  sourceId      String
+  itemId        String?
+  variantSku    String?
+  qty           Decimal   @db.Decimal(12, 2)
+  reason        String    @db.Text
+  createdById   String
+  createdAt     DateTime  @default(now())
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?   @db.Text
+
+  @@index([sourceType, sourceId, cancelledAt])
+  @@index([supplierId, cancelledAt])
+}
+
+enum VendorPaymentMethod {
+  BANK
+  CASH
+}
+
+model StoreGroup {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stores    Store[]
+}
+
+enum PlanStepStatus {
+  BELUM
+  PROSES
+  SELESAI
+}
+
+model PlanStageStep {
+  id                String         @id @default(cuid())
+  planStageId       String
+  planStage         PlanStage      @relation(fields: [planStageId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  sequence          Int
+  name              String
+  processTemplateId String?
+  supplierId        String?
+  supplier          Supplier?      @relation("PlanStageStepSupplier", fields: [supplierId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  durationDays      Int
+  targetDate        DateTime
+  doneDate          DateTime?
+  status            PlanStepStatus @default(BELUM)
+  note              String?        @db.Text
+  createdById       String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([planStageId])
+  @@index([status, targetDate])
+  @@index([supplierId])
+}
+
+model SpgSaleReturn {
+  id             String   @id @default(cuid())
+  spgSaleId      String
+  storeId        String
+  createdById    String
+  reason         String   @db.Text
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+  status         SpgSaleReturnStatus @default(MENUNGGU)
+  decidedById    String?
+  decidedAt      DateTime?
+  rejectReason   String?  @db.Text
+  goodsPhotoR2Key  String?
+  refundedAt       DateTime?
+  refundSlipR2Key  String?
+  refundMarkedById String?
+  refundMarkReason String?  @db.Text
+
+  spgSale        SpgSale  @relation(fields: [spgSaleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lines          SpgSaleReturnLine[]
+
+  @@index([spgSaleId])
+  @@index([storeId, createdAt])
+  @@index([status, createdAt])
+  @@index([storeId, refundedAt])
+}
+
+model SpgCharge {
+  id                 String    @id @default(cuid())
+  spgUserId          String
+  storeId            String
+  sourceKind         String    @db.VarChar(10)
+  source             String    @db.VarChar(40)
+  sourceId           String
+  sourceDocNo        String
+  spgSaleId          String
+  reportedAt         DateTime
+  computedAmount     Decimal   @db.Decimal(15, 2)
+  amount             Decimal   @db.Decimal(15, 2)
+  amountReason       String?   @db.Text
+  settledAmount      Decimal   @default(0) @db.Decimal(15, 2)
+  settledAt          DateTime?
+  status             String    @default("TERBUKA") @db.VarChar(10)
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelReason       String?   @db.Text
+  goodsDecision      String?   @db.VarChar(12)
+  goodsDecidedAt     DateTime?
+  goodsDecidedById   String?
+  goodsDecisionNote  String?   @db.Text
+  paybackAmount      Decimal   @default(0) @db.Decimal(15, 2)
+  paybackPaidAt      DateTime?
+  paybackPaidRefType String?   @db.VarChar(40)
+  paybackPaidRefId   String?
+  paybackPayoutMonth String?   @db.VarChar(7)
+  note               String    @db.Text
+  createdById        String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  deductions         SpgChargeDeduction[]
+
+  @@unique([source, sourceId])
+  @@index([spgUserId, status])
+  @@index([spgUserId, paybackPaidAt])
+  @@index([status, goodsDecision])
+}
+
+model SpgChargeDeduction {
+  id             String    @id @default(cuid())
+  chargeId       String
+  amount         Decimal   @db.Decimal(15, 2)
+  fromCommission Decimal   @db.Decimal(15, 2)
+  fromSalary     Decimal   @db.Decimal(15, 2)
+  paidRefType    String    @db.VarChar(40)
+  paidRefId      String
+  payoutMonth    String    @db.VarChar(7)
+  createdById    String
+  createdAt      DateTime  @default(now())
+
+  charge         SpgCharge @relation(fields: [chargeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([chargeId, paidRefType, paidRefId])
+  @@index([paidRefType, paidRefId])
+}
+
+model SpgSaleReturnLine {
+  id            String              @id @default(cuid())
+  returnId      String
+  spgSaleLineId String
+  itemId        String
+  variantSku    String              @default("")
+  qty           Int
+  condition     ReturnItemCondition @default(LAYAK)
+
+  saleReturn    SpgSaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  saleLine      SpgSaleLine   @relation(fields: [spgSaleLineId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([returnId])
+  @@index([spgSaleLineId])
+}
+
+enum SpgSaleReturnStatus {
+  MENUNGGU
+  DISETUJUI
+  DITOLAK
+  DIBATALKAN
 }
 
 // ==========================================
@@ -3075,40 +4286,6 @@ model SupplierPaymentAllocation {
   @@index([targetType, targetId])
 }
 
-model SupplierPayableCorrection {
-  id              String    @id @default(cuid())
-  billId          String
-  billLineId      String    @unique
-  supplierId      String
-  sourceType      String    @db.VarChar(10)
-  sourceId        String
-  itemId          String?
-  variantSku      String?
-  qty             Decimal   @db.Decimal(10, 2)
-  recordedPrice   Decimal   @db.Decimal(15, 2)
-  invoicePrice    Decimal   @db.Decimal(15, 2)
-  amount          Decimal   @db.Decimal(15, 2)
-  dppAmount       Decimal   @db.Decimal(15, 2)
-  ppnInputAmount  Decimal   @db.Decimal(15, 2)
-  inventoryAmount Decimal   @db.Decimal(15, 2)
-  stockAmount     Decimal?  @db.Decimal(15, 2)
-  soldAmount      Decimal?  @db.Decimal(15, 2)
-  breakdown       Json
-  status          String    @default("MENUNGGU") @db.VarChar(20)
-  decidedAt       DateTime?
-  decidedById     String?
-  decisionNote    String?
-  cancelledAt     DateTime?
-  cancelReason    String?
-  createdById     String
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  @@index([sourceType, sourceId, status])
-  @@index([status, createdAt])
-  @@index([billId])
-}
-
 model Budget {
   id             String   @id @default(cuid())
   chartAccountId String
@@ -3207,39 +4384,6 @@ enum ReceivableSource {
   DELIVERY
   IMPORT
   MANUAL
-}
-
-model Receivable {
-  id             String    @id @default(cuid())
-  invoiceNo      String    @unique
-  storeId        String
-  invoiceDate    DateTime
-  dueDate        DateTime
-  amount         Decimal   @db.Decimal(15, 2)
-  outstanding    Decimal   @db.Decimal(15, 2)
-  paidBeforeImport Decimal @default(0) @db.Decimal(15, 2)
-  settledAt      DateTime?
-  source         ReceivableSource @default(DELIVERY)
-  deliveryId     String?   @unique
-  salesmanId     String?
-  note           String?   @db.Text
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  store          Store     @relation(fields: [storeId], references: [id])
-  delivery       FieldSalesDelivery? @relation(fields: [deliveryId], references: [id])
-  salesman       User?     @relation("ReceivableSalesman", fields: [salesmanId], references: [id])
-  collectionLinks CollectionNoteReceivable[]
-  claimLinks     PaymentClaimReceivable[]
-  items          ReceivableItem[]
-  consignmentCycleId String?
-  isConsignment      Boolean           @default(false)
-  consignmentCycle   ConsignmentCycle? @relation(fields: [consignmentCycleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-
-  @@index([storeId, outstanding])
-  @@index([dueDate])
-  @@index([salesmanId])
-  @@index([consignmentCycleId])
 }
 
 enum CollectionNoteStatus {
@@ -3480,7 +4624,6 @@ model ConsignmentSold {
   @@index([cycleId])
   @@index([itemId])
 }
-
 
 model ConsignmentCommission {
   id         String    @id @default(cuid())
@@ -4495,65 +5638,10 @@ model StoreRecommendationLine {
   @@index([recommendationId])
 }
 
-enum StoreTransferStatus {
-  DIAJUKAN
-  DISETUJUI
-  DIKIRIM
-  DITERIMA
-  DITOLAK
-  DIBATALKAN
-  DIKEMBALIKAN
-}
-
 enum StoreTransferSelisih {
   TERBUKA
   HILANG
   KEMBALI
-}
-
-model StoreTransfer {
-  id             String               @id @default(cuid())
-  docNo          String               @unique
-  fromStoreId    String
-  toStoreId      String
-  status         StoreTransferStatus  @default(DIAJUKAN)
-  reason         String               @db.Text
-  createdById    String
-  approvedById   String?
-  approvedAt     DateTime?
-  reviewNote     String?              @db.Text
-  shippedById    String?
-  shippedAt      DateTime?
-  cancelledById  String?
-  cancelledAt    DateTime?
-  selisihStatus  StoreTransferSelisih?
-  selisihNote    String?              @db.Text
-  idempotencyKey String               @unique
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-
-  fromStore      Store @relation("StoreTransferFrom", fields: [fromStoreId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  toStore        Store @relation("StoreTransferTo", fields: [toStoreId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  lines          StoreTransferLine[]
-
-  @@index([fromStoreId, status])
-  @@index([toStoreId, status])
-  @@index([status, createdAt])
-}
-
-model StoreTransferLine {
-  id          String @id @default(cuid())
-  transferId  String
-  itemId      String
-  variantSku  String @default("")
-  productName String
-  qty         Int
-
-  transfer    StoreTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
-  item        Item          @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-
-  @@index([transferId])
-  @@index([itemId])
 }
 
 enum StockRequestStatus {
@@ -5432,18 +6520,6 @@ model SpgExtraPayout {
   createdAt      DateTime @default(now())
 
   @@index([spgUserId])
-}
-
-model SpgCommissionRate {
-  id             String   @id @default(cuid())
-  itemCategoryId String
-  amountPerPiece Decimal  @db.Decimal(15, 2)
-  effectiveFrom  String   @db.VarChar(7)
-  createdById    String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  @@unique([itemCategoryId, effectiveFrom])
 }
 
 model DamagedStockMovement {

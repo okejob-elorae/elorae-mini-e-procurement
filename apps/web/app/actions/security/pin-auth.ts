@@ -23,8 +23,6 @@ import { SENSITIVE_ACTIONS } from "@/app/actions/security/pin-constants";
  * bukan server action): satu jendela percobaan untuk setiap gerbang PIN.
  */
 
-export type { PinAuthResult };
-
 type PenggunaSesi = { id: string; email: string | null; permissions: string[] };
 
 async function penggunaSesi(): Promise<PenggunaSesi | null> {

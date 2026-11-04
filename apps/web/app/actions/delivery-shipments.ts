@@ -24,7 +24,6 @@ import { kabarkanPengirimanBerangkat, kabarkanPengirimanDiserahkan, kabarkanPeng
 import { kabarkanPesananDikirim } from "@/lib/delivery/kabar-salesman";
 import { sebarSesudahTerima } from "@/lib/spg/stok-writer";
 
-export type { ShipmentActionReason, ShipmentActionResult };
 
 const ERROR_TAG = "delivery-shipments";
 

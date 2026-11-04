@@ -14,7 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import type { ShipmentActionReason } from "@/app/actions/delivery-shipments";
+import type { ShipmentActionReason } from "@/lib/delivery/action-errors";
 import { recordedQtyByShipmentLine, type SerializedReplay } from "@/lib/field-sales/replay-detail";
 import { pesanGagalPengiriman } from "@/lib/delivery/pesan-galat";
 
