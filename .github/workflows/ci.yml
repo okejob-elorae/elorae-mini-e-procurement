@@ -4,7 +4,9 @@ on:
   pull_request:
     branches: [master]
   push:
-    branches: [master]
+    # timotiusmax: SEMENTARA — cabang gabungan versi Max diuji di sini sebelum PR ke master.
+    # Hapus entri ini sebelum cabang itu di-merge.
+    branches: [master, timotiusmax]
     # Docs-only pushes go straight to master and change nothing these jobs check.
     # The pull_request trigger is deliberately unfiltered: a required check that never
     # reports blocks a merge forever.
