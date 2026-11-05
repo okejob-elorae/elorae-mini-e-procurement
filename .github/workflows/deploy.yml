@@ -231,9 +231,16 @@ jobs:
 
             # Permission seeds (prisma/seed-*.sql, insert-if-missing) run ONCE each, tracked in
             # _seed_runs: re-running every deploy would re-grant permissions an admin has since
-            # removed from a role. The INSERT IGNORE list marks the seeds that were run by hand on
-            # prod before this step existed. Other SQL in prisma/ (set-gl-cutover-date,
-            # fix-hutang-account-type) overwrites data and stays manual.
+            # removed from a role. The INSERT IGNORE list marks (a) seeds that were run by hand on
+            # prod before this step existed and (b) superseded seeds that must never run
+            # (seed-consignment / seed-receivables — their codes live in seed-max-features).
+            # Other SQL in prisma/ (set-gl-cutover-date, fix-hutang-account-type) overwrites data
+            # and stays manual.
+            #
+            # seed-office-roles-permissions.sql MUST run after seed-owner-2026-11-02*.sql — those
+            # create the codes its preflight counts (ERROR 1242 otherwise). Alphabetical sort puts
+            # office-roles BEFORE the owner files (caught on the #494 promote deploy), so it is
+            # deferred to the end of the loop.
             docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl elorae <<'SQL'
             CREATE TABLE IF NOT EXISTS _seed_runs (
               name varchar(255) NOT NULL PRIMARY KEY,
@@ -242,16 +249,19 @@ jobs:
             );
             INSERT IGNORE INTO _seed_runs (name) VALUES
               ('seed-amplop-permission.sql'), ('seed-ar-permissions.sql'), ('seed-collections-permissions.sql'),
-              ('seed-credit-override-permission.sql'), ('seed-deliveries-permissions.sql'),
-              ('seed-field-return-permissions.sql'), ('seed-field-sales-delivery-permissions.sql'),
-              ('seed-finance-reports-permissions.sql'), ('seed-lead-time-permissions.sql'),
-              ('seed-pack-ratio-permissions.sql'), ('seed-packer-role-permissions.sql'),
+              ('seed-consignment-permissions.sql'), ('seed-credit-override-permission.sql'),
+              ('seed-deliveries-permissions.sql'), ('seed-field-return-permissions.sql'),
+              ('seed-field-sales-delivery-permissions.sql'), ('seed-finance-reports-permissions.sql'),
+              ('seed-lead-time-permissions.sql'), ('seed-pack-ratio-permissions.sql'),
+              ('seed-packer-role-permissions.sql'), ('seed-receivables-permissions.sql'),
               ('seed-settlements-permission.sql'), ('seed-spg-commission-permission.sql'),
               ('seed-spg-role-permissions.sql'), ('seed-tax-invoice-permissions.sql');
             SQL
             SEEDED=$(docker exec elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl -N -B -e "SELECT name FROM elorae._seed_runs")
             cd "$PRISMA_DIR"
+            SEED_LAST="seed-office-roles-permissions.sql"
             for s in $(ls seed-*.sql 2>/dev/null | sort); do
+              [ "$s" = "$SEED_LAST" ] && continue
               if ! grep -qx "$s" <<< "$SEEDED"; then
                 echo ">>> Seeding $s"
                 docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl elorae < "$s"
@@ -259,6 +269,12 @@ jobs:
                 docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl elorae -e "INSERT INTO _seed_runs (name, checksum) VALUES ('$s', '$CHECKSUM');"
               fi
             done
+            if [ -f "$SEED_LAST" ] && ! grep -qx "$SEED_LAST" <<< "$SEEDED"; then
+              echo ">>> Seeding $SEED_LAST"
+              docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl elorae < "$SEED_LAST"
+              CHECKSUM=$(sha256sum "$SEED_LAST" | cut -d' ' -f1)
+              docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl elorae -e "INSERT INTO _seed_runs (name, checksum) VALUES ('$SEED_LAST', '$CHECKSUM');"
+            fi
 
   deploy-api:
     name: Deploy api

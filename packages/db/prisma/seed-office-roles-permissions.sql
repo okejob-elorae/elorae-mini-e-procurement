@@ -8,7 +8,9 @@
 -- hasil pemecahan 2026-11-01), seed-owner-2026-11-02-permissions.sql (spg_returns:approve),
 -- seed-owner-2026-11-02b-permissions.sql (deliveries:cancel_nota, receivables:overdue_reminder,
 -- spg_attendance:record, spg_attendance:verify), seed-tax-invoice-permissions.sql, dan
--- seed-finance-reports-permissions.sql. Berkas ini hanya
+-- seed-finance-reports-permissions.sql. Deploy defers this file to the END of the seed-*.sql
+-- loop (`.github/workflows/deploy.yml`) because alphabetical sort alone runs it before the
+-- owner dated seeds and the preflight then aborts with ERROR 1242. Berkas ini hanya
 -- MENAUTKAN izin yang sudah ada; kalau satu
 -- saja belum ada, pemeriksaan pertama di bawah menghentikan berkas (ERROR 1242) SEBELUM menulis apa
 -- pun — dulu tautannya terlewat diam-diam. Klien mariadb berhenti di galat pertama; jangan pakai
