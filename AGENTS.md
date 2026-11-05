@@ -361,7 +361,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Running a migration or destructive query locally? Check `DATABASE_URL` is not the 3307 prod tunnel (default is the 3308 bed); `migrate:deploy` only, never `migrate dev`. → `docs/landmines/database-ops.md`
 - Shipping a migration alongside app code? The `migrate` job's `always()` is load-bearing — a legitimately SKIPPED image build must not cascade-skip it. → `docs/landmines/database-ops.md`
 - Assuming a green deploy run means your code is live? Check the `Deploy api`/`Deploy web` jobs and the image tag — they can skip or fail under a green run. → `docs/landmines/database-ops.md`
-- Expecting the deploy to seed RBAC rows? It migrates but NEVER seeds — permission rows are hand-run SQL, post-merge. → `docs/landmines/database-ops.md`
+- Expecting the deploy to seed RBAC rows? It migrates AND runs `prisma/seed-*.sql` once each via `_seed_runs` — but `seed-office-roles` is deferred past the owner dated seeds; superseded consignment/receivables seeds are skipped. → `docs/landmines/database-ops.md`
 - Running `mariadb`/`mariadb-dump` against prod? SSL off (`--skip-ssl`, or `--ssl-mode=DISABLED` on MySQL 8); a failure is silent in `| gzip` — check the `Dump completed on` trailer. → `docs/landmines/database-ops.md`
 - Writing migration SQL with `COLLATE utf8mb4_*` on a string literal? The prod `mariadb` CLI connects as utf8mb3 — ERROR 1253 blocks every deploy; use `BINARY col` or `_utf8mb4'…'`. → `docs/landmines/database-ops.md`
 - Writing raw SQL apps/web can reach? Never interpolate a `Prisma.sql`/`join`/`empty`/`raw` fragment into a tagged `$queryRaw` — it binds as a string and silently matches nothing. → `docs/landmines/database-ops.md`
