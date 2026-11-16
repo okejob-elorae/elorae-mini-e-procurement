@@ -43,6 +43,12 @@ describe("list_marketplace_settlements", () => {
     expect(schema.parse({})).toEqual({ limit: 20, offset: 0 });
   });
 
+  it("description promises only what the tool returns — no totals or fees", () => {
+    expect(tool.description).toMatch(/id, channel, period/);
+    expect(tool.description).toMatch(/Does not return totals, fees, or net amounts/);
+    expect(tool.description).not.toMatch(/compared with Jubelio/);
+  });
+
   it("maps the fields the source has, and nothing else", async () => {
     const out = serialize(await tool.handler(schema.parse({}), ctx)) as { items: unknown[] };
     expect(m.listSettlements).toHaveBeenCalledWith({ page: 1, pageSize: 20 });

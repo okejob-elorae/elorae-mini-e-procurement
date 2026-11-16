@@ -8,7 +8,8 @@ export const tools: ViraTool[] = [
     name: "list_marketplace_settlements",
     title: "Marketplace settlements (pencairan dana)",
     description:
-      "Lists marketplace settlements (pencairan dana): period, status, totals, and fees compared with Jubelio.",
+      "Lists marketplace settlements (pencairan dana): id, channel, period start/end, status, and a link to the record. " +
+      "Does not return totals, fees, or net amounts; open the link to see those in the app.",
     gate: { kind: "code", code: "finance:settlements:view" },
     // listSettlements has no filters; paging only.
     inputShape: { ...listInputShape },
