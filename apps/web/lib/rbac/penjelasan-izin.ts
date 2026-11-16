@@ -534,6 +534,8 @@ const ISIAN: Record<KodeIzin, Isian> = {
   // ── Sistem ──
   [P.AUDIT_TRAIL_VIEW]: { grup: "sistem", halaman: ["/backoffice/audit-trail"] },
   [P.JUBELIO_ADMIN_VIEW]: { grup: "sistem", halaman: ["/backoffice/jubelio/admin"] },
+  // Asisten VIRA: tidak membuka halaman kantor; VIRA hanya membaca yang sudah boleh dibaca lewat izin lain.
+  [P.VIRA_USE]: { grup: "sistem" },
 };
 
 /** Kode izin → potongan kunci i18n (titik dua tidak dipakai di kunci). */
