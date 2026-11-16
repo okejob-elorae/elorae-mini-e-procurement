@@ -64,7 +64,7 @@ describe("list_consignment_cycles", () => {
         stage: "nota",
         notaNo: "NOTA-9",
         fakturPajakNo: null,
-        billedTotal: 750000,
+        soldValue: 750000,
         url: "https://e.test/backoffice/konsinyasi/a",
       },
     ]);

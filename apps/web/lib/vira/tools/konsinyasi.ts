@@ -31,7 +31,7 @@ export const tools: ViraTool[] = [
     name: "list_consignment_cycles",
     title: "Consignment cycles (siklus konsinyasi)",
     description:
-      "Lists consignment cycles (siklus konsinyasi) per store, with stage, nota and tax invoice numbers, and billed total. Filter by stage or search.",
+      "Lists consignment cycles (siklus konsinyasi) per store, with stage, nota and tax invoice numbers, and sold value. soldValue is the total of goods the store reported sold in the cycle; it is not the amount billed (no VAT, loss charges or other adjustments). Filter by stage or search.",
     gate: { kind: "izin", name: "bolehMembukaKonsi", check: (p) => bolehMembukaKonsi(p) },
     inputShape: listShape,
     handler: async (input, ctx) => {
@@ -45,7 +45,8 @@ export const tools: ViraTool[] = [
         stage: c.tahap,
         notaNo: c.noNota,
         fakturPajakNo: c.noFakturPajak,
-        billedTotal: c.nilaiTerjual,
+        // nilaiTerjual: sum of the sold lines, before VAT and adjustments, so not a billed amount.
+        soldValue: c.nilaiTerjual,
         url: recordUrl(ctx.baseUrl, `/backoffice/konsinyasi/${c.id}`),
       }));
       return sliceToPage(items, input.offset, input.limit);
