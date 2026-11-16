@@ -44,10 +44,11 @@ export function gateAllows(gate: ViraGate, permissions: string[]): boolean {
       return true;
     case "code":
       return hasPermission(permissions, gate.code);
+    // An anyOf/allOf with no codes denies: an empty requirement must never open a tool to everyone.
     case "anyOf":
-      return gate.codes.some((c) => hasPermission(permissions, c));
+      return gate.codes.length > 0 && gate.codes.some((c) => hasPermission(permissions, c));
     case "allOf":
-      return gate.codes.every((c) => hasPermission(permissions, c));
+      return gate.codes.length > 0 && gate.codes.every((c) => hasPermission(permissions, c));
     case "izin":
       return gate.check(permissions);
   }
