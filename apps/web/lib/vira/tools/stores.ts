@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { getStoreStockCard } from "@/lib/inventory/store-stock-card";
+import { getStore } from "@/lib/stores/queries";
+import { ViraInputError } from "../errors";
 import { listInputShape, recordUrl, sliceToPage } from "../output";
 import { resolveStore } from "./_resolve-store";
 import { defineTool, type ParityCase, type ViraTool } from "./types";
@@ -23,11 +25,19 @@ export const tools: ViraTool[] = [
     name: "get_store_stock",
     title: "Store stock",
     description:
-      "Shows the current stock at one store (toko), including consignment (konsinyasi) shipments still in transit. Give the store's id, code or name.",
+      "Shows the current stock at one consignment (konsinyasi) store, including shipments still in transit. Give the store's id, code or name. Outright-sale (putus) stores have no store stock.",
     gate: { kind: "code", code: "stores:view" },
     inputShape: getStoreStockShape,
     handler: async (input, ctx) => {
       const store = await resolveStore(input.store);
+      // As app/backoffice/stores/[id]/page.tsx: the stock card is only loaded and shown for a KONSI
+      // store; a PUTUS store keeps no stock ledger at the store.
+      const terms = (await getStore(store.id))?.termsType;
+      if (terms !== "KONSI") {
+        throw new ViraInputError(
+          `${store.code} – ${store.name} is not a consignment (konsi) store, so it has no store stock.`,
+        );
+      }
       const card = await getStoreStockCard(store.id);
       // Stock rows only: card.movements (and its limit / truncation flags) are never read.
       const rows: StockRow[] = [

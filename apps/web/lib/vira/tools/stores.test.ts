@@ -4,9 +4,10 @@ import { ViraInputError, ViraNotFoundError } from "../errors";
 import { serialize } from "../output";
 import type { ViraToolContext } from "./types";
 
-const m = vi.hoisted(() => ({ resolveStore: vi.fn(), getStoreStockCard: vi.fn() }));
+const m = vi.hoisted(() => ({ resolveStore: vi.fn(), getStoreStockCard: vi.fn(), getStore: vi.fn() }));
 vi.mock("./_resolve-store", () => ({ resolveStore: m.resolveStore }));
 vi.mock("@/lib/inventory/store-stock-card", () => ({ getStoreStockCard: m.getStoreStockCard }));
+vi.mock("@/lib/stores/queries", () => ({ getStore: m.getStore }));
 
 import { parityCases, tools } from "./stores";
 
@@ -73,6 +74,7 @@ async function run(input: Record<string, unknown>) {
 
 beforeEach(() => {
   m.resolveStore.mockReset().mockResolvedValue({ id: "s1", code: "TK-MEL", name: "Toko Melati" });
+  m.getStore.mockReset().mockResolvedValue({ id: "s1", code: "TK-MEL", name: "Toko Melati", termsType: "KONSI" });
   m.getStoreStockCard.mockReset().mockResolvedValue(
     kartu([baris(1, { dalamPerjalanan: 4 }), baris(2)], {
       dalamPerjalananTanpaStok: [{ itemId: "it9", variantSku: "TOPI-9", itemName: "Topi", dalamPerjalanan: 6 }],
@@ -137,6 +139,15 @@ describe("get_store_stock handler", () => {
     await expect(tool.handler(schema.parse({ store: "x" }), ctx)).rejects.toBeInstanceOf(ViraNotFoundError);
     m.resolveStore.mockRejectedValueOnce(new ViraInputError("Several stores match: …"));
     await expect(tool.handler(schema.parse({ store: "x" }), ctx)).rejects.toBeInstanceOf(ViraInputError);
+    expect(m.getStoreStockCard).not.toHaveBeenCalled();
+  });
+
+  it("a PUTUS store is refused without reading its stock, as the store page only shows the card for KONSI", async () => {
+    m.getStore.mockResolvedValue({ id: "s1", code: "TK-MEL", name: "Toko Melati", termsType: "PUTUS" });
+    const err = await tool.handler(schema.parse({ store: "melati" }), ctx).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ViraInputError);
+    expect((err as Error).message).toBe("TK-MEL – Toko Melati is not a consignment (konsi) store, so it has no store stock.");
+    expect(m.getStore).toHaveBeenCalledWith("s1");
     expect(m.getStoreStockCard).not.toHaveBeenCalled();
   });
 
