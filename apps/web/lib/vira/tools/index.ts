@@ -1,0 +1,47 @@
+import type { ParityCase, ViraTool } from "./types";
+import * as whoami from "./whoami";
+import * as items from "./items";
+import * as inventory from "./inventory";
+import * as stores from "./stores";
+import * as storeStocktakes from "./store-stocktakes";
+import * as salesOrders from "./sales-orders";
+import * as fieldSalesOrders from "./field-sales-orders";
+import * as purchaseOrders from "./purchase-orders";
+import * as production from "./production";
+import * as receivables from "./receivables";
+import * as konsinyasi from "./konsinyasi";
+import * as taxInvoices from "./tax-invoices";
+import * as settlements from "./settlements";
+
+const MODULES = [
+  whoami,
+  items,
+  inventory,
+  stores,
+  storeStocktakes,
+  salesOrders,
+  fieldSalesOrders,
+  purchaseOrders,
+  production,
+  receivables,
+  konsinyasi,
+  taxInvoices,
+  settlements,
+];
+
+/** Throws if two tools share a name. Run at import time on VIRA_TOOLS. */
+export function assertUniqueToolNames(tools: readonly ViraTool[]): void {
+  const seen = new Set<string>();
+  for (const tool of tools) {
+    if (seen.has(tool.name)) throw new Error(`[vira] duplicate tool name: ${tool.name}`);
+    seen.add(tool.name);
+  }
+}
+
+/** whoami first, then the modules in registry order. */
+export const VIRA_TOOLS: ViraTool[] = MODULES.flatMap((m) => m.tools);
+
+/** Concatenation of every module's parityCases. */
+export const VIRA_PARITY_CASES: ParityCase[] = MODULES.flatMap((m) => m.parityCases);
+
+assertUniqueToolNames(VIRA_TOOLS);
