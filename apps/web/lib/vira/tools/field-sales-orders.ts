@@ -61,6 +61,14 @@ function header(o: FieldSalesOrderListItem, storeId?: string) {
   };
 }
 
+/**
+ * Mirrors the UI: a KONSI order has no finalised retail price until it is approved (the writer keeps
+ * the total at 0), so the list shows "—" and the detail hides every money column. Money is null then.
+ */
+function showMoney(o: { orderType: string; status: string }): boolean {
+  return o.orderType !== "KONSI" || o.status === "APPROVED";
+}
+
 export const tools: ViraTool[] = [
   defineTool({
     name: "list_field_sales_orders",
@@ -85,7 +93,7 @@ export const tools: ViraTool[] = [
       );
       const items = orders.map((o) => ({
         ...header(o, input.storeId),
-        total: o.total,
+        total: showMoney(o) ? o.total : null,
         orderDate: o.createdAt,
         url: recordUrl(ctx.baseUrl, `/backoffice/field-sales-orders/${o.id}`),
       }));
@@ -111,6 +119,7 @@ export const tools: ViraTool[] = [
       }
       const o = await getFieldSalesOrderById(id);
       if (!o) throw new ViraNotFoundError("Order not found");
+      const money = showMoney(o);
       return {
         ...header(o),
         orderDate: o.createdAt,
@@ -119,12 +128,12 @@ export const tools: ViraTool[] = [
           sku: l.variantSku,
           name: l.productName,
           qty: l.qty,
-          price: l.unitPrice,
-          subtotal: l.lineTotal,
+          price: money ? l.unitPrice : null,
+          subtotal: money ? l.lineTotal : null,
         })),
         // Delivery notes only: no proof-of-delivery photo, receiver, GPS, signature or line detail.
         deliveries: o.deliveries.map((d) => ({ id: d.id, docNo: d.docNo, date: d.deliveredAt })),
-        total: o.total,
+        total: money ? o.total : null,
         url: recordUrl(ctx.baseUrl, `/backoffice/field-sales-orders/${o.id}`),
       };
     },

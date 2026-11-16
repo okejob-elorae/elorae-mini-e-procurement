@@ -216,6 +216,37 @@ describe("get_field_sales_order", () => {
     await expect(detail.handler({ id: "x" }, ctx)).rejects.toEqual(new ViraNotFoundError("Order not found"));
   });
 
+  it("a KONSI order not yet approved carries no money, as the UI hides it; approved KONSI and PUTUS do", async () => {
+    for (const status of ["PENDING_APPROVAL", "REJECTED", "CANCELLED"]) {
+      m.listFieldSalesOrders.mockResolvedValue({
+        orders: [listRow("k1", { orderType: "KONSI", status, total: 0 })],
+        totalCount: 1,
+      });
+      const l = serialize(await list.handler(listSchema.parse({}), ctx)) as { items: { total: unknown }[] };
+      expect(l.items[0].total).toBeNull();
+
+      m.getFieldSalesOrderById.mockResolvedValue({ ...detailRow(), orderType: "KONSI", status, total: 0 });
+      const d = serialize(await detail.handler({ id: "o1" }, ctx)) as {
+        total: unknown;
+        lines: { price: unknown; subtotal: unknown }[];
+      };
+      expect(d.total).toBeNull();
+      expect(d.lines).toEqual([expect.objectContaining({ price: null, subtotal: null, qty: 5 })]);
+    }
+
+    m.getFieldSalesOrderById.mockResolvedValue({ ...detailRow(), orderType: "KONSI", status: "APPROVED" });
+    const approved = serialize(await detail.handler({ id: "o1" }, ctx)) as {
+      total: unknown;
+      lines: { price: unknown; subtotal: unknown }[];
+    };
+    expect(approved.total).toBe(250000);
+    expect(approved.lines[0]).toMatchObject({ price: 50000, subtotal: 250000 });
+
+    m.getFieldSalesOrderById.mockResolvedValue({ ...detailRow(), status: "PENDING_APPROVAL" });
+    const putus = serialize(await detail.handler({ id: "o1" }, ctx)) as { total: unknown };
+    expect(putus.total).toBe(250000);
+  });
+
   it("both tools are gated on field_sales_orders:view with a route parity case each", () => {
     expect(list.gate).toEqual({ kind: "code", code: "field_sales_orders:view" });
     expect(detail.gate).toEqual({ kind: "code", code: "field_sales_orders:view" });
