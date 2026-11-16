@@ -177,10 +177,11 @@ describe("whoami and the registry", () => {
     expect(res.structuredContent).toEqual({ id: "u-1", name: "Uji", permissions: ["vira:use", "items:view"] });
   });
 
-  it("VIRA_TOOLS starts with whoami and has unique names; parity cases are empty for now", () => {
+  it("VIRA_TOOLS starts with whoami and has unique names; every parity case names a real tool", () => {
     expect(VIRA_TOOLS[0]?.name).toBe("whoami");
     expect(() => assertUniqueToolNames(VIRA_TOOLS)).not.toThrow();
-    expect(VIRA_PARITY_CASES).toEqual([]);
+    const nama = new Set(VIRA_TOOLS.map((t) => t.name));
+    expect(VIRA_PARITY_CASES.filter((c) => !nama.has(c.tool))).toEqual([]);
   });
 
   it("duplicate tool names throw", () => {
