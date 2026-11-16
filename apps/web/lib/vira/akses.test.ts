@@ -19,8 +19,12 @@ const ROWS: Array<[string, Row]> = [
     { gate: { kind: "anyOf", codes: ["x:view", "y:view"] }, none: false, x: true, other: false, star: true },
   ],
   [
-    "anyOf []",
+    "anyOf [] (denies, even for *)",
     { gate: { kind: "anyOf", codes: [] }, none: false, x: false, other: false, star: false },
+  ],
+  [
+    "allOf [] (denies, even for *)",
+    { gate: { kind: "allOf", codes: [] }, none: false, x: false, other: false, star: false },
   ],
   [
     "allOf [x:view]",
