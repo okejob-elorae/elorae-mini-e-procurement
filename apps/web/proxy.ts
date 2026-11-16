@@ -56,7 +56,9 @@ export async function proxy(request: NextRequest) {
     // API ekstensi Chrome pantau KOL: tanpa sesi; setiap handler memeriksa token perangkatnya sendiri.
     pathname.startsWith("/api/kreatif/ekstensi/") ||
     // Langganan Kalender Kreatif (Google/Apple Calendar): dibaca server kalender tanpa sesi; rutenya memeriksa token dan izin pemiliknya.
-    pathname.startsWith("/api/kreatif/kalender/")
+    pathname.startsWith("/api/kreatif/kalender/") ||
+    // MCP adaptor VIRA: dipanggil runtime VIRA antarserver tanpa sesi; rutenya memeriksa kunci layanan dan token VIRA. Hanya jalur persis ini — /api/vira/token tetap di balik sesi.
+    pathname === "/api/vira/mcp"
   ) {
     return NextResponse.next();
   }
