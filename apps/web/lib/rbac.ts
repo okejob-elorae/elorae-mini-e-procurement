@@ -435,6 +435,9 @@ export const PERMISSIONS = {
   // Confirming a selling price before it is sent to Jubelio (owner 2026-11-02: admin only by
   // default, grantable in Peran & izin).
   JUBELIO_PRICES_CONFIRM: "jubelio_prices:confirm",
+  // VIRA assistant (MCP adapter). Not granted to any role by default; the owner assigns it in
+  // Peran & izin, and the wildcard '*' (system/admin role) satisfies it.
+  VIRA_USE: "vira:use",
   // Chart of Accounts
   COA_VIEW: 'coa:view',
   COA_MANAGE: 'coa:manage',
