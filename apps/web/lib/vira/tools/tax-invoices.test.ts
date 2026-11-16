@@ -83,12 +83,12 @@ describe("list_tax_invoices", () => {
     expect(json.toLowerCase()).not.toContain("nik");
   });
 
-  it("a pending faktur without a number links by its id", async () => {
+  it("a pending faktur without a number links by its source document number, which the page search matches", async () => {
     m.listTaxInvoices.mockResolvedValue({ rows: [row("p 1", { status: "PENDING", invoiceNo: null })], total: 1, counts: {} });
     const out = await run({ status: "PENDING" });
     expect(out.items[0]).toMatchObject({
       fakturNo: null,
-      url: "https://e.test/backoffice/finance/faktur-pajak?q=p%201",
+      url: "https://e.test/backoffice/finance/faktur-pajak?q=NT-p%201",
     });
   });
 

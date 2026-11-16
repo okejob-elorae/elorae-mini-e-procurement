@@ -55,8 +55,9 @@ export const tools: ViraTool[] = [
         dpp: r.taxableAmount,
         ppn: r.ppnAmount,
         total: r.total,
-        // A pending faktur has no number yet: link by its id instead.
-        url: recordUrl(ctx.baseUrl, `/backoffice/finance/faktur-pajak?q=${encodeURIComponent(r.invoiceNo ?? r.id)}`),
+        // There is no faktur detail page; the list page's q matches the faktur number or the source
+        // document number (delivery or sell-through docNo), never the id. A pending faktur has no number yet.
+        url: recordUrl(ctx.baseUrl, `/backoffice/finance/faktur-pajak?q=${encodeURIComponent(r.invoiceNo ?? r.docNo)}`),
       }));
       return toPage(items, total, offset, limit);
     },
