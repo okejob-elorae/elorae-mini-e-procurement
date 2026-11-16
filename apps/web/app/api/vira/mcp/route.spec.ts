@@ -226,6 +226,30 @@ d("POST /api/vira/mcp (test bed only)", () => {
     expect(nama).toEqual(VIRA_TOOLS.map((t) => t.name));
   });
 
+  it("final tool count: a system-role user (\"*\") lists exactly the 15 phase-1 tools", async () => {
+    const list = await kirim(tokenC, rpc("tools/list"));
+    const nama = (list.result?.tools as Array<{ name: string }>).map((t) => t.name);
+    expect([...nama].sort()).toEqual(
+      [
+        "whoami",
+        "search_items",
+        "get_item_stock",
+        "get_store_stock",
+        "list_store_stocktakes",
+        "list_marketplace_orders",
+        "get_marketplace_order",
+        "list_field_sales_orders",
+        "get_field_sales_order",
+        "list_purchase_orders",
+        "list_work_orders",
+        "list_receivables",
+        "list_consignment_cycles",
+        "list_tax_invoices",
+        "list_marketplace_settlements",
+      ].sort(),
+    );
+  });
+
   it("tools/call whoami as user A → A's id", async () => {
     const res = await kirim(tokenA, rpc("tools/call", { name: "whoami", arguments: {} }));
     expect(res.result?.isError).toBeFalsy();
