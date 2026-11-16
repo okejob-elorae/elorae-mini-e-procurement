@@ -2,11 +2,13 @@ name: CI
 
 on:
   pull_request:
-    branches: [master]
+    # feat/vira-mcp: integration branch for the VIRA MCP adapter cards; its PRs get the
+    # same checks as master. Remove this entry once that branch is merged into master.
+    branches: [master, feat/vira-mcp]
   push:
     # timotiusmax: SEMENTARA — cabang gabungan versi Max diuji di sini sebelum PR ke master.
     # Hapus entri ini sebelum cabang itu di-merge.
-    branches: [master, timotiusmax]
+    branches: [master, timotiusmax, feat/vira-mcp]
     # Docs-only pushes go straight to master and change nothing these jobs check.
     # The pull_request trigger is deliberately unfiltered: a required check that never
     # reports blocks a merge forever.

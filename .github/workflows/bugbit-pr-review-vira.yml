@@ -1,0 +1,52 @@
+name: PR Review (bugbit, feat/vira-mcp)
+
+# Review-only bugbit pass for PRs into the VIRA integration branch.
+# Differences from bugbit-pr-review.yml (master):
+#   - no PR Writer: auto-describe is off, so the PR title/body/labels are never rewritten;
+#   - one review per PR: runs when the PR is opened ready for review, or when a draft is
+#     first marked ready. Later pushes (synchronize) do not trigger it. Re-run by hand from
+#     the Actions tab if a fresh review is needed.
+# Remove this file once feat/vira-mcp is merged into master.
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+    branches:
+      - feat/vira-mcp
+
+concurrency:
+  group: bugbit-review-vira-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  bugbit_review:
+    # Skip bots, drafts, and fork PRs (forks cannot access CURSOR_API_KEY secrets)
+    if: >-
+      ${{ github.event.sender.type != 'Bot'
+          && github.event.pull_request.draft == false
+          && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          ref: refs/pull/${{ github.event.pull_request.number }}/head
+          persist-credentials: false
+
+      - name: Run bugbit review
+        # JuicyBurger/bugbit f3b08d1 (retry 502 x3)
+        uses: JuicyBurger/bugbit@f3b08d1df669b4b719678d0a415996edc5cbf1c7
+        with:
+          cursor-api-key: ${{ secrets.CURSOR_API_KEY }}
+          github-token: ${{ github.token }}
+          model: auto
+          review-modes: code-review
+          auto-describe: false
+          post-clean-summary: true
+          pr-number: ${{ github.event.pull_request.number }}
