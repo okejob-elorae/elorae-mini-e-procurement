@@ -26,11 +26,11 @@ Elorae page (logged-in user)
 - **`POST /api/vira/mcp`** is the only VIRA path on the `proxy.ts` allow-list. It is stateless: a new MCP server and transport per POST, with JSON responses. It is rate-limited to 60 per minute per user. GET and DELETE return 405.
 - **Token TTL is 10 minutes** (600 s, 30 s clock skew). Claims: `sub` (user id), `iss` `elorae`, `aud` `vira-mcp`, `iat`, `exp`, `jti`, `pwf`.
 - **Permissions are loaded fresh from the DB on every MCP call**, never from the token. A permission removed from a user's role applies on the next call.
-- **A password change kills every outstanding token.** `pwf` is a SHA-256 fingerprint of the password hash; when it no longer matches, the call gets 401. Otherwise a token cannot be revoked within its 10 minutes, except by deleting the user.
+- **A password change kills every outstanding token.** `pwf` is a SHA-256 fingerprint of the password hash; when it no longer matches, the call gets 401. Otherwise a token cannot be revoked within its 10 minutes, except by deleting the user. Elorae has no user deactivation yet (`User` has no `isActive` column), so there is nothing to deactivate; removing `vira:use` from the user's role does take effect on the next call (403), because permissions are reloaded per call.
 - **`vira:use` is required on both routes.** It is added by the seed `packages/db/prisma/seed-vira-2026-11-16-permissions.sql` and granted to **no role by default**; the owner grants it in Settings → Roles & permissions. System (`"*"`) roles have it automatically.
 - The **actor always comes from the verified token**, never from tool input.
 
-MCP route responses, in check order: Origin present → 403 `bad_origin`; bad or missing service key → 401 `bad_service_key`; missing, bad or expired Bearer, unknown user or stale `pwf` → 401 `invalid_token` with `WWW-Authenticate: Bearer`; token secret unset → 503 `not_configured`; no `vira:use` → 403 `forbidden`; over the limit → 429.
+MCP route responses, in check order: Origin present → 403 `bad_origin`; bad or missing service key → 401 `bad_service_key`; no Bearer token → 401 `invalid_token` (even when the token secret is unset); token secret unset → 503 `not_configured`; bad signature or expired token → 401 `invalid_token`; unknown user or stale `pwf` → 401 `invalid_token`; no `vira:use` → 403 `forbidden`; over the limit → 429. Every `invalid_token` response carries `WWW-Authenticate: Bearer`.
 
 Tool errors come back as MCP tool errors, not HTTP errors: `FORBIDDEN`, `NOT_FOUND`, `INVALID_INPUT`, or `INTERNAL` (logged with the tool name and error only, never the input values).
 
@@ -40,7 +40,7 @@ Set in `apps/web` (see `apps/web/.env.example`):
 
 | Var | What | If unset |
 |---|---|---|
-| `VIRA_TOKEN_SECRET` | HS256 signing secret for VIRA tokens. At least 32 characters; must **not** be the same as `AUTH_SECRET`. | Token route → 503 `not_configured`; MCP route → 503 `not_configured` (after the service-key check). |
+| `VIRA_TOKEN_SECRET` | HS256 signing secret for VIRA tokens. At least 32 characters. Use a different value from `AUTH_SECRET`; this is operator guidance, the code does not check it. | Token route → 503 `not_configured`; MCP route → 503 `not_configured` (after the service-key and Bearer-present checks). |
 | `VIRA_SERVICE_KEY` | Shared secret the VIRA runtime sends as `X-Vira-Service-Key`. At least 32 characters. Compared as SHA-256 digests with `timingSafeEqual`. | MCP route → 401 `bad_service_key` on every call (fails closed). |
 | `VIRA_APP_URL` | Base URL for the record links tools return, e.g. `https://elorae.cloud`. Trailing `/` is removed. | Links fall back to the request's forwarded host headers. |
 
@@ -58,7 +58,7 @@ openssl rand -base64 48
 
 ## 4. Tool list
 
-15 tools. "Gate" is what the tool checks; it is the same check the page or action applies (proved by `parity.spec.ts`). Every list tool takes `limit` (default 20, **max 50**) and `offset`, and returns `{ items, total, offset, limit, hasMore }`. Every record carries a `url` into the back office.
+15 tools. "Gate" is what the tool checks; it is the same check the page or action applies (proved by `parity.spec.ts`). Every list tool takes `limit` (default 20, **max 50**) and `offset`, and returns `{ items, total, offset, limit, hasMore }`. Two tools add one key to that shape: `list_receivables` adds `summary`, and `get_store_stock` (paged over its stock rows) adds `store`. Every record carries a `url` into the back office.
 
 | Tool | Gate | Source (`lib/`) | Notes on what is returned |
 |---|---|---|---|
