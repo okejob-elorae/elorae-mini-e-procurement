@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { getRequiredPermission, hasPermission, requirePermission } from "@/lib/rbac";
+import { getRequiredPermission, hasPermission, PERMISSIONS, requirePermission } from "@/lib/rbac";
 import { gateAllows, type ViraGate } from "../akses";
 import { VIRA_PARITY_CASES, VIRA_TOOLS } from "./index";
 import type { ParityCase, ViraTool } from "./types";
@@ -78,6 +78,15 @@ async function himpunanIzin(tool: ViraTool, kasus: ParityCase): Promise<string[]
 
 type HasilUi = { boleh: boolean } | { gagal: string };
 
+/** A page "names" a code when it holds it as a string literal, or as the `PERMISSIONS.<KEY>`
+ *  constant from lib/rbac.ts whose value is that code (how most pages spell their gate). */
+function halamanMenyebut(teks: string, kode: string): boolean {
+  if (["\"", "'", "`"].some((q) => teks.includes(`${q}${kode}${q}`))) return true;
+  return Object.entries(PERMISSIONS).some(
+    ([kunci, nilai]) => nilai === kode && new RegExp(`\\bPERMISSIONS\\.${kunci}\\b`).test(teks),
+  );
+}
+
 async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
   switch (kasus.kind) {
     case "route": {
@@ -96,9 +105,12 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
       return { boleh: Boolean(await (fn as (a: unknown) => unknown)(arg)) };
     }
     case "pageCode": {
-      const teks = readFileSync(path.resolve(WEB_ROOT, kasus.pageFile), "utf8");
-      const hilang = kasus.codes.filter((c) => !["\"", "'", "`"].some((q) => teks.includes(`${q}${c}${q}`)));
-      if (hilang.length) return { gagal: `${kasus.pageFile} has no string literal for ${hilang.join(", ")}` };
+      // Cards spell page files from the repo root ("apps/web/app/…"); both forms resolve.
+      const teks = readFileSync(path.resolve(WEB_ROOT, kasus.pageFile.replace(/^apps\/web\//, "")), "utf8");
+      const hilang = kasus.codes.filter((c) => !halamanMenyebut(teks, c));
+      if (hilang.length) {
+        return { gagal: `${kasus.pageFile} has no string literal or PERMISSIONS constant for ${hilang.join(", ")}` };
+      }
       return { boleh: kasus.codes.some((c) => hasPermission(izin, c)) };
     }
     case "action": {
@@ -254,6 +266,12 @@ const KASUS_UJI: KasusUji[] = [
     alatPalsu("fake_page_bad", { kind: "allOf", codes: KODE_HALAMAN_PALSU }),
     { tool: "fake_page_bad", kind: "pageCode", pageFile: BERKAS_INI, codes: KODE_HALAMAN_PALSU },
     false,
+  ],
+  [
+    "pageCode — code the page names through its PERMISSIONS constant",
+    alatPalsu("fake_page_const", { kind: "code", code: PERMISSIONS.VIRA_USE }),
+    { tool: "fake_page_const", kind: "pageCode", pageFile: BERKAS_INI, codes: [PERMISSIONS.VIRA_USE] },
+    true,
   ],
   [
     "pageCode — code that is not a literal in the page file",
