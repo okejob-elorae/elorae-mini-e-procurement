@@ -88,7 +88,7 @@ const cycleSelect = {
 
 /** Exact id or unique `noKonsi` — no full `daftarSiklus` scan. */
 async function resolveCycle(cycle: string): Promise<CycleRow> {
-  let row =
+  const row =
     (await prisma.consignmentCycle.findUnique({ where: { id: cycle }, select: cycleSelect })) ??
     (await prisma.consignmentCycle.findUnique({ where: { noKonsi: cycle }, select: cycleSelect }));
   if (!row) throw new ViraNotFoundError("Siklus tidak ditemukan");
