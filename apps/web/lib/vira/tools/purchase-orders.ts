@@ -68,19 +68,24 @@ function formatRp(n: number): string {
   return `Rp ${new Intl.NumberFormat("id-ID").format(n)}`;
 }
 
-/** Resolve PO id or document number via list search — exactly one match. */
+/** Resolve PO id or document number — `getPOById` first, else list search (exactly one match). */
 async function resolvePo(po: string): Promise<PoRow> {
   const byId = await getPOById(po);
   if (byId) {
+    // `getPOById` returns serializePODetail — dates are already ISO strings; supplier is the Prisma row.
+    const nama =
+      byId.supplier && typeof byId.supplier === "object" && "name" in byId.supplier
+        ? String((byId.supplier as { name?: unknown }).name ?? "—")
+        : "—";
     return {
       id: byId.id,
       docNumber: byId.docNumber,
       supplierId: byId.supplierId,
-      supplier: { name: byId.supplier?.name ?? "—" },
+      supplier: { name: nama },
       status: byId.status,
-      createdAt: byId.createdAt?.toISOString?.() ?? (byId.createdAt as unknown as string | null),
-      etaDate: byId.etaDate?.toISOString?.() ?? (byId.etaDate as unknown as string | null),
-      grandTotal: Number(byId.grandTotal ?? byId.totalAmount ?? 0),
+      createdAt: byId.createdAt ?? null,
+      etaDate: byId.etaDate ?? null,
+      grandTotal: Number(byId.grandTotal ?? 0),
     };
   }
   const hasil = await listPOs({ cari: po }, { page: 1, pageSize: 50 });
@@ -138,9 +143,22 @@ const closePurchaseOrderTool = defineWriteTool({
       throw new ViraInputError(`PO ${row.docNumber} berstatus ${row.status}, tidak bisa ditutup.`);
     }
     const detail = await getPOById(row.id);
-    const received =
-      detail?.items?.reduce((n: number, it: { receivedQty?: unknown }) => n + Number(it.receivedQty ?? 0), 0) ??
-      null;
+    const items = detail?.items ?? [];
+    const received = items.reduce(
+      (n: number, it: { receivedQty?: unknown }) => n + Number(it.receivedQty ?? 0),
+      0,
+    );
+    // Mirror writer refusals in prepare so confirm is never offered for dead ends (`tutup.ts`).
+    if (received === 0) {
+      throw new ViraInputError(PESAN_TOLAK_TUTUP_PO.BELUM_ADA_PENERIMAAN);
+    }
+    const sisa = items.filter(
+      (it: { qty?: unknown; receivedQty?: unknown }) =>
+        Number(it.qty ?? 0) - Number(it.receivedQty ?? 0) > 0,
+    );
+    if (items.length > 0 && sisa.length === 0) {
+      throw new ViraInputError(PESAN_TOLAK_TUTUP_PO.SUDAH_LENGKAP);
+    }
     const url = recordUrl(ctx.baseUrl, `/backoffice/purchase-orders/${row.id}`);
     return {
       preview: {
@@ -150,7 +168,7 @@ const closePurchaseOrderTool = defineWriteTool({
           { label: "Pemasok", value: row.supplier.name },
           { label: "Status", value: row.status },
           { label: "Total", value: formatRp(row.grandTotal) },
-          ...(received !== null ? [{ label: "Sudah diterima", value: String(received) }] : []),
+          { label: "Sudah diterima", value: String(received) },
           { label: "Alasan", value: input.reason },
         ],
         confirmLabel: "Tutup PO",

@@ -194,10 +194,10 @@ function mockPrepareDeps(toolName: string): string[] {
         supplierId: "s1",
         supplier: { name: "CV" },
         status: "PARTIAL",
-        createdAt: new Date(),
+        createdAt: "2026-11-01T00:00:00.000Z",
         etaDate: null,
         grandTotal: 1,
-        items: [{ receivedQty: 1 }],
+        items: [{ qty: 10, receivedQty: 1 }],
       })),
     }));
     mocked.push("@/lib/purchase-orders/queries");
@@ -222,21 +222,34 @@ function mockPrepareDeps(toolName: string): string[] {
     mocked.push("@/lib/konsinyasi/queries");
   }
   if (toolName === "mark_tax_invoice_sent_to_store") {
-    vi.doMock("@/lib/tax-invoices/queries", () => ({
-      listTaxInvoices: vi.fn(async () => ({
-        rows: [
-          {
-            id: "t-1",
-            status: "CREATED",
-            invoiceNo: "010.000-26.00000001",
-            docNo: "NT-1",
-            storeId: "s1",
-            storeName: "Toko",
+    vi.doMock("@elorae/db", async (asli) => {
+      const nyata = await asli<typeof import("@elorae/db")>();
+      return {
+        ...nyata,
+        prisma: {
+          ...nyata.prisma,
+          taxInvoice: {
+            findUnique: vi.fn(async () => ({
+              id: "t-1",
+              status: "CREATED",
+              invoiceNo: "010.000-26.00000001",
+              delivery: {
+                docNo: "NT-1",
+                invoiceDate: new Date(),
+                dueDate: new Date(),
+                total: 1,
+                orderId: "o1",
+                order: { store: { id: "s1", name: "Toko", npwp: null } },
+              },
+              sellThrough: null,
+            })),
           },
-        ],
-        total: 1,
-        counts: {},
-      })),
+        },
+      };
+    });
+    mocked.push("@elorae/db");
+    vi.doMock("@/lib/tax-invoices/queries", () => ({
+      listTaxInvoices: vi.fn(async () => ({ rows: [], total: 0, counts: {} })),
     }));
     mocked.push("@/lib/tax-invoices/queries");
   }

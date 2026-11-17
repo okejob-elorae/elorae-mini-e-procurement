@@ -7,11 +7,25 @@ import type { ViraToolContext } from "./types";
 const m = vi.hoisted(() => ({
   listTaxInvoices: vi.fn(),
   markTaxInvoiceSentToStore: vi.fn(),
+  taxFindUnique: vi.fn(),
 }));
 vi.mock("@/lib/tax-invoices/queries", () => ({ listTaxInvoices: m.listTaxInvoices }));
 vi.mock("@/lib/tax-invoices/writer", () => ({
   markTaxInvoiceSentToStore: m.markTaxInvoiceSentToStore,
 }));
+vi.mock("@elorae/db", async (asli) => {
+  const nyata = await asli();
+  return {
+    ...nyata,
+    prisma: {
+      ...nyata.prisma,
+      taxInvoice: {
+        ...nyata.prisma.taxInvoice,
+        findUnique: (...a: unknown[]) => m.taxFindUnique(...a),
+      },
+    },
+  };
+});
 
 import { TaxInvoiceError } from "@/lib/tax-invoices/errors";
 import { __sampleInput, parityCases, tools, writeTools } from "./tax-invoices";
@@ -55,6 +69,7 @@ function row(id: string, extra: Record<string, unknown> = {}) {
 beforeEach(() => {
   m.listTaxInvoices.mockReset().mockResolvedValue({ rows: [row("1")], total: 1, counts: {} });
   m.markTaxInvoiceSentToStore.mockReset().mockResolvedValue({ ok: true });
+  m.taxFindUnique.mockReset().mockResolvedValue(null);
 });
 
 async function run(input: Record<string, unknown>) {
@@ -136,17 +151,48 @@ describe("mark_tax_invoice_sent_to_store", () => {
     );
   });
 
-  it("prepare CREATED only; execute maps TaxInvoiceError", async () => {
+  it("prepare CREATED only; execute maps TaxInvoiceError; note max 191", async () => {
+    expect(markSchema.safeParse({ invoice: "1", note: "x".repeat(191) }).success).toBe(true);
+    expect(markSchema.safeParse({ invoice: "1", note: "x".repeat(192) }).success).toBe(false);
+
     const prepared = await mark.prepare(markSchema.parse({ invoice: "1" }), writeCtx);
     expect(prepared.preview.title).toContain("terkirim ke toko");
     expect(prepared.args).toEqual({ taxInvoiceId: "1" });
+    expect(m.listTaxInvoices).toHaveBeenCalled();
 
-    m.listTaxInvoices.mockResolvedValueOnce({
-      rows: [row("1", { status: "PENDING" })],
-      total: 1,
-      counts: {},
+    m.taxFindUnique.mockResolvedValueOnce({
+      id: "1",
+      status: "PENDING",
+      invoiceNo: "010.000-26.00000001",
+      delivery: {
+        docNo: "NT-1",
+        invoiceDate: new Date(),
+        dueDate: new Date(),
+        total: 1,
+        orderId: "o1",
+        order: { store: { id: "s1", name: "Toko", npwp: null } },
+      },
+      sellThrough: null,
     });
     await expect(mark.prepare(markSchema.parse({ invoice: "1" }), writeCtx)).rejects.toBeInstanceOf(ViraInputError);
+
+    m.taxFindUnique.mockResolvedValueOnce({
+      id: "t-1",
+      status: "CREATED",
+      invoiceNo: "010.000-26.00000001",
+      delivery: {
+        docNo: "NT-1",
+        invoiceDate: new Date(),
+        dueDate: new Date(),
+        total: 1,
+        orderId: "o1",
+        order: { store: { id: "s1", name: "Toko Melati", npwp: null } },
+      },
+      sellThrough: null,
+    });
+    const byId = await mark.prepare(markSchema.parse({ invoice: "t-1" }), writeCtx);
+    expect(byId.args.taxInvoiceId).toBe("t-1");
+    expect(m.listTaxInvoices).toHaveBeenCalledTimes(1); // only the first prepare used list
 
     const ok = await mark.execute({ taxInvoiceId: "1" }, writeCtx);
     expect(m.markTaxInvoiceSentToStore).toHaveBeenCalledWith({

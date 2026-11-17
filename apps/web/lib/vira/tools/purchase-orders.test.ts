@@ -72,9 +72,9 @@ beforeEach(() => {
     id === "a"
       ? {
           ...poRow("a"),
-          createdAt: new Date("2026-11-01T03:00:00.000Z"),
-          etaDate: new Date("2026-11-20T17:00:00.000Z"),
-          items: [{ receivedQty: 3 }],
+          createdAt: "2026-11-01T03:00:00.000Z",
+          etaDate: "2026-11-20T17:00:00.000Z",
+          items: [{ qty: 10, receivedQty: 3 }],
           supplier: { name: "CV Kain Jaya" },
         }
       : null,
@@ -225,11 +225,30 @@ describe("close_purchase_order", () => {
   });
 
   it("wrong status → prepare refuses", async () => {
-    m.getPOById.mockResolvedValueOnce({
+    m.getPOById.mockResolvedValue({
       ...poRow("a", { status: "CLOSED" }),
-      createdAt: new Date(),
+      createdAt: "2026-11-01T03:00:00.000Z",
       etaDate: null,
-      items: [],
+      items: [{ qty: 10, receivedQty: 3 }],
+      supplier: { name: "X" },
+    });
+    await expect(close.prepare(closeSchema.parse({ po: "a", reason: "x" }), writeCtx)).rejects.toBeInstanceOf(
+      ViraInputError,
+    );
+  });
+
+  it("zero received / fully received → prepare refuses", async () => {
+    m.getPOById.mockResolvedValue({
+      ...poRow("a"),
+      items: [{ qty: 10, receivedQty: 0 }],
+      supplier: { name: "X" },
+    });
+    await expect(close.prepare(closeSchema.parse({ po: "a", reason: "x" }), writeCtx)).rejects.toBeInstanceOf(
+      ViraInputError,
+    );
+    m.getPOById.mockResolvedValue({
+      ...poRow("a"),
+      items: [{ qty: 10, receivedQty: 10 }],
       supplier: { name: "X" },
     });
     await expect(close.prepare(closeSchema.parse({ po: "a", reason: "x" }), writeCtx)).rejects.toBeInstanceOf(

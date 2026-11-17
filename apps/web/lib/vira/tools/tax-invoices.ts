@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { TaxInvoiceError } from "@/lib/tax-invoices/errors";
+import { prisma } from "@elorae/db";
+import { TAX_INVOICE_SOURCE_SELECT, resolveTaxInvoiceSource } from "@/lib/finance/ar/receivable-source";
+import { MAX_TAX_INVOICE_REASON_LENGTH, TaxInvoiceError } from "@/lib/tax-invoices/errors";
 import { listTaxInvoices, type TaxInvoiceStatusFilter } from "@/lib/tax-invoices/queries";
 import { markTaxInvoiceSentToStore } from "@/lib/tax-invoices/writer";
 import { ViraInputError, ViraNotFoundError } from "../errors";
@@ -57,6 +59,22 @@ type TaxRow = {
 };
 
 async function resolveInvoice(invoice: string): Promise<TaxRow> {
+  // Primary key first — `listTaxInvoices({ q })` never matches id (invoiceNo / docNo / store only).
+  const byId = await prisma.taxInvoice.findUnique({
+    where: { id: invoice },
+    select: { id: true, status: true, invoiceNo: true, ...TAX_INVOICE_SOURCE_SELECT },
+  });
+  if (byId && (byId.delivery || byId.sellThrough)) {
+    const source = resolveTaxInvoiceSource(byId);
+    return {
+      id: byId.id,
+      status: byId.status,
+      invoiceNo: byId.invoiceNo,
+      docNo: source.docNo,
+      storeId: source.storeId,
+      storeName: source.storeName,
+    };
+  }
   const { rows } = await listTaxInvoices({ q: invoice, page: 1, perPage: 5 });
   const hit = (rows as TaxRow[]).filter(
     (r) => r.id === invoice || r.invoiceNo === invoice || r.docNo === invoice,
@@ -97,13 +115,13 @@ const markTaxInvoiceSentToStoreTool = defineWriteTool({
     note: z
       .string()
       .trim()
-      .max(500)
+      .max(MAX_TAX_INVOICE_REASON_LENGTH)
       .optional()
       .describe("Optional note (passed as reason)."),
   },
   argsSchema: z.object({
     taxInvoiceId: z.string().min(1),
-    note: z.string().trim().max(500).optional(),
+    note: z.string().trim().max(MAX_TAX_INVOICE_REASON_LENGTH).optional(),
   }),
   __sampleInput: { invoice: "t-1" },
   prepare: async (input, ctx) => {
@@ -154,9 +172,13 @@ const markTaxInvoiceSentToStoreTool = defineWriteTool({
       }
       return { ok: false, code: "ERROR", message: PESAN.ERROR, url };
     }
-    const { rows } = await listTaxInvoices({ q: args.taxInvoiceId, page: 1, perPage: 1 });
-    const row = (rows as TaxRow[]).find((r) => r.id === args.taxInvoiceId);
-    const no = row?.invoiceNo ?? row?.docNo ?? args.taxInvoiceId;
+    let no = args.taxInvoiceId;
+    try {
+      const again = await resolveInvoice(args.taxInvoiceId);
+      no = again.invoiceNo ?? again.docNo;
+    } catch {
+      /* keep id fallback */
+    }
     return {
       ok: true,
       message: `Faktur ${no} ditandai terkirim.`,
