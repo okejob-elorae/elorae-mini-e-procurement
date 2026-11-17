@@ -1,4 +1,4 @@
-import type { ParityCase, ViraTool } from "./types";
+import type { AnyViraTool, ParityCase, ViraTool, ViraWriteTool } from "./types";
 import * as whoami from "./whoami";
 import * as items from "./items";
 import * as inventory from "./inventory";
@@ -13,7 +13,13 @@ import * as konsinyasi from "./konsinyasi";
 import * as taxInvoices from "./tax-invoices";
 import * as settlements from "./settlements";
 
-const MODULES = [
+type ViraToolModule = {
+  tools: ViraTool[];
+  parityCases: ParityCase[];
+  writeTools?: ViraWriteTool[];
+};
+
+const MODULES: ViraToolModule[] = [
   whoami,
   items,
   inventory,
@@ -29,8 +35,8 @@ const MODULES = [
   settlements,
 ];
 
-/** Throws if two tools share a name. Run at import time on VIRA_TOOLS. */
-export function assertUniqueToolNames(tools: readonly ViraTool[]): void {
+/** Throws if two tools share a name. Run at import time on read ∪ write. */
+export function assertUniqueToolNames(tools: readonly { name: string }[]): void {
   const seen = new Set<string>();
   for (const tool of tools) {
     if (seen.has(tool.name)) throw new Error(`[vira] duplicate tool name: ${tool.name}`);
@@ -38,10 +44,17 @@ export function assertUniqueToolNames(tools: readonly ViraTool[]): void {
   }
 }
 
-/** whoami first, then the modules in registry order. */
+/** whoami first, then the modules in registry order. Read tools only. */
 export const VIRA_TOOLS: ViraTool[] = MODULES.flatMap((m) => m.tools);
+
+/** Write tools from modules that export `writeTools` (none in wave 1). */
+export const VIRA_WRITE_TOOLS: ViraWriteTool[] = MODULES.flatMap((m) => m.writeTools ?? []);
 
 /** Concatenation of every module's parityCases. */
 export const VIRA_PARITY_CASES: ParityCase[] = MODULES.flatMap((m) => m.parityCases);
 
-assertUniqueToolNames(VIRA_TOOLS);
+export function findWriteTool(name: string): ViraWriteTool | undefined {
+  return VIRA_WRITE_TOOLS.find((t) => t.name === name);
+}
+
+assertUniqueToolNames([...VIRA_TOOLS, ...VIRA_WRITE_TOOLS] as AnyViraTool[]);

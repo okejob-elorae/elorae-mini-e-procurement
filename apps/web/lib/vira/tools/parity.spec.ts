@@ -113,6 +113,11 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
       }
       return { boleh: kasus.codes.some((c) => hasPermission(izin, c)) };
     }
+    case "writeAction":
+      // Wave-1 (#540) only adds the ParityCase variant. The write-action parity engine is VIRA-27 (#544).
+      return {
+        gagal: `writeAction parity for ${kasus.tool} is not implemented yet (VIRA-27)`,
+      };
     case "action": {
       vi.resetModules();
       vi.doMock(kasus.libModule, async (asli) => {
