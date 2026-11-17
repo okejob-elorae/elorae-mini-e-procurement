@@ -24601,6 +24601,10 @@
         "label": "Open the Jubelio API dashboard",
         "keterangan": "Opens the token status, API call log and Jubelio sync tools; best kept for admins."
       },
+      "vira_use": {
+        "label": "Use the VIRA assistant",
+        "keterangan": "Lets this person use the VIRA AI assistant. VIRA can only read what this person's other permissions already let them see; this permission opens no new data. Not given to any role by default."
+      },
       "payments_verify": {
         "label": "Verify payments",
         "keterangan": "Matches receipts (BKM) against the bank statement and verifies or rejects them, marks a giro cleared or bounced, cancels a receipt, verifies collector submissions, approves or rejects store settlements, and checks payments of a departed SPG's debt (on the SPG commission page). Also receives the notice when a putus billing note is cancelled or corrected. A payment the person reported, recorded or handed in themselves still cannot be checked by them."
