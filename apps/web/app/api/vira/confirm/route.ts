@@ -138,7 +138,8 @@ export async function POST(request: Request): Promise<Response> {
     return jawab(500, {
       status: "failed",
       code: "INTERNAL",
-      message: "Terjadi kesalahan. Coba lagi.",
+      message:
+        "Konfirmasi ini sudah diproses dan tidak bisa diulang. Mulai permintaan baru.",
     });
   }
 

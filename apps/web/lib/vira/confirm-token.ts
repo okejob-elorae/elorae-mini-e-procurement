@@ -20,7 +20,7 @@ export type ViraConfirmClaims = {
   exp: number;
 };
 
-/** Used jtis → exp (unix seconds). In-memory, per process (decision E4). */
+/** Used jtis → retain-until unix seconds (`exp + VIRA_CLOCK_SKEW_SECONDS`). In-memory, per process (decision E4). */
 const usedJtis = new Map<string, number>();
 
 function secretKey(): Uint8Array {
@@ -108,13 +108,15 @@ export async function verifyConfirmToken(token: string, now?: Date): Promise<Vir
   return { sub, tool, args, jti, iat, exp };
 }
 
-/** Single use. Returns true the first time a jti is seen, false after. Entries are dropped after their exp.
+/** Single use. Returns true the first time a jti is seen, false after.
+ *  Entries are retained until `exp + VIRA_CLOCK_SKEW_SECONDS` so a used jti cannot be
+ *  re-accepted while verifyConfirmToken still tolerates clock skew past bare `exp`.
  *  In-memory, per process (decision E4). Export a reset helper for tests only. */
 export function consumeConfirmJti(jti: string, exp: number, now?: Date): boolean {
   const nowSeconds = Math.floor((now ?? new Date()).getTime() / 1000);
   pruneUsedJtis(nowSeconds);
   if (usedJtis.has(jti)) return false;
-  usedJtis.set(jti, exp);
+  usedJtis.set(jti, exp + VIRA_CLOCK_SKEW_SECONDS);
   return true;
 }
 
