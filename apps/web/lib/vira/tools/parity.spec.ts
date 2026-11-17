@@ -165,6 +165,8 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
             }
             return { boleh: false };
           }
+          // Writer already reached ⇒ gate allowed; later fixture/shape errors are not denials.
+          if (tulisParitas.writer.mock.calls.length > 0) return { boleh: true };
           return {
             gagal: `${kasus.actionExport} threw something other than the permission error: ${String(err)}`,
           };
