@@ -69,39 +69,39 @@ function formatRp(n: number): string {
   return `Rp ${new Intl.NumberFormat("id-ID").format(n)}`;
 }
 
-/** Resolve PO id or document number — `getPOById` first, else list search (exactly one match). */
-async function resolvePo(po: string): Promise<PoRow> {
+type PoDetail = PoRow & { items: Array<{ qty?: unknown; receivedQty?: unknown }> };
+
+/** Map `getPOById` / serializePODetail into the close-tool row (dates already ISO). */
+function mapPoDetail(byId: NonNullable<Awaited<ReturnType<typeof getPOById>>>): PoDetail {
+  const nama =
+    byId.supplier && typeof byId.supplier === "object" && "name" in byId.supplier
+      ? String((byId.supplier as { name?: unknown }).name ?? "—")
+      : "—";
+  return {
+    id: byId.id,
+    docNumber: byId.docNumber,
+    supplierId: byId.supplierId,
+    supplier: { name: nama },
+    status: byId.status,
+    createdAt: byId.createdAt ?? null,
+    etaDate: byId.etaDate ?? null,
+    grandTotal: Number(byId.grandTotal ?? 0),
+    items: byId.items ?? [],
+  };
+}
+
+/** Resolve PO id or unique docNumber — one detail fetch (FSO-style exact lookup). */
+async function resolvePoDetail(po: string): Promise<PoDetail> {
   const byId = await getPOById(po);
-  if (byId) {
-    // `getPOById` returns serializePODetail — dates are already ISO strings; supplier is the Prisma row.
-    const nama =
-      byId.supplier && typeof byId.supplier === "object" && "name" in byId.supplier
-        ? String((byId.supplier as { name?: unknown }).name ?? "—")
-        : "—";
-    return {
-      id: byId.id,
-      docNumber: byId.docNumber,
-      supplierId: byId.supplierId,
-      supplier: { name: nama },
-      status: byId.status,
-      createdAt: byId.createdAt ?? null,
-      etaDate: byId.etaDate ?? null,
-      grandTotal: Number(byId.grandTotal ?? 0),
-    };
-  }
-  const hasil = await listPOs({ cari: po }, { page: 1, pageSize: 50 });
-  const rows = (Array.isArray(hasil) ? hasil : hasil.items) as unknown as PoRow[];
-  const hit = rows.filter((r) => r.id === po || r.docNumber === po);
-  if (hit.length === 0) throw new ViraNotFoundError("PO tidak ditemukan");
-  if (hit.length > 1) {
-    throw new ViraInputError(
-      `Beberapa PO cocok: ${hit
-        .slice(0, 5)
-        .map((r) => r.docNumber)
-        .join(", ")}. Lebih spesifik.`,
-    );
-  }
-  return hit[0];
+  if (byId) return mapPoDetail(byId);
+  const byDoc = await prisma.purchaseOrder.findUnique({
+    where: { docNumber: po },
+    select: { id: true },
+  });
+  if (!byDoc) throw new ViraNotFoundError("PO tidak ditemukan");
+  const detail = await getPOById(byDoc.id);
+  if (!detail) throw new ViraNotFoundError("PO tidak ditemukan");
+  return mapPoDetail(detail);
 }
 
 type CloseArgs = { poId: string; reason: string };
@@ -138,13 +138,12 @@ const closePurchaseOrderTool = defineWriteTool({
   }),
   __sampleInput: { po: "PO-1", reason: "x" },
   prepare: async (input, ctx) => {
-    const row = await resolvePo(input.po);
+    const row = await resolvePoDetail(input.po);
     // Writer refuses DRAFT / CANCELLED / CLOSED / OVER (`tutup.ts`).
     if (["DRAFT", "CANCELLED", "CLOSED", "OVER"].includes(row.status)) {
       throw new ViraInputError(`PO ${row.docNumber} berstatus ${row.status}, tidak bisa ditutup.`);
     }
-    const detail = await getPOById(row.id);
-    const items = detail?.items ?? [];
+    const items = row.items;
     const received = items.reduce(
       (n: number, it: { receivedQty?: unknown }) => n + Number(it.receivedQty ?? 0),
       0,

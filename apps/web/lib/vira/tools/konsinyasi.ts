@@ -45,6 +45,21 @@ const PESAN_NOMOR: Record<string, string> = {
   GAGAL: "Gagal menyimpan. Coba lagi.",
 };
 
+const BULAN = [
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember",
+];
+
 type CycleRow = {
   id: string;
   noKonsi: string;
@@ -53,21 +68,42 @@ type CycleRow = {
   periode: string;
   noNota: string | null;
   noFakturPajak: string | null;
-  /** null while unlocked — same signal `daftarSiklus` uses for “belum dikunci”. */
-  sisaTagihan: number | null;
-  tahap: string;
+  lockedAt: Date | null;
+  vatApplied: boolean | null;
+  consignmentVat: boolean;
 };
 
+const cycleSelect = {
+  id: true,
+  noKonsi: true,
+  storeId: true,
+  periodYear: true,
+  periodMonth: true,
+  noNota: true,
+  noFakturPajak: true,
+  lockedAt: true,
+  vatApplied: true,
+  store: { select: { name: true, consignmentVat: true } },
+} as const;
+
+/** Exact id or unique `noKonsi` — no full `daftarSiklus` scan. */
 async function resolveCycle(cycle: string): Promise<CycleRow> {
-  const semua = await daftarSiklus();
-  const byId = semua.find((c) => c.id === cycle);
-  if (byId) return byId;
-  const hit = semua.filter((c) => c.noKonsi === cycle);
-  if (hit.length === 0) throw new ViraNotFoundError("Siklus tidak ditemukan");
-  if (hit.length > 1) {
-    throw new ViraInputError(`Beberapa siklus cocok dengan ${cycle}. Gunakan id.`);
-  }
-  return hit[0];
+  let row =
+    (await prisma.consignmentCycle.findUnique({ where: { id: cycle }, select: cycleSelect })) ??
+    (await prisma.consignmentCycle.findUnique({ where: { noKonsi: cycle }, select: cycleSelect }));
+  if (!row) throw new ViraNotFoundError("Siklus tidak ditemukan");
+  return {
+    id: row.id,
+    noKonsi: row.noKonsi,
+    storeId: row.storeId,
+    storeName: row.store.name,
+    periode: `${BULAN[row.periodMonth - 1]} ${row.periodYear}`,
+    noNota: row.noNota,
+    noFakturPajak: row.noFakturPajak,
+    lockedAt: row.lockedAt,
+    vatApplied: row.vatApplied,
+    consignmentVat: row.store.consignmentVat,
+  };
 }
 
 type NomorArgs = { cycleId: string; kind: "NOTA" | "PAJAK"; number: string };
@@ -111,18 +147,15 @@ const recordConsignmentDocumentNumberTool = defineWriteTool({
     }
     const row = await resolveCycle(input.cycle);
     // Writer refuses unlocked cycles (`catatNomorDokumen` ~L1192).
-    if (row.sisaTagihan === null) {
+    if (!row.lockedAt) {
       throw new ViraInputError(PESAN_NOMOR.BELUM_DIKUNCI);
     }
-    // Same VAT gate as the writer (`vatApplied ?? store.consignmentVat`), not tahap inference.
-    if (input.kind === "PAJAK") {
-      const vat = await prisma.consignmentCycle.findUnique({
-        where: { id: row.id },
-        select: { vatApplied: true, store: { select: { consignmentVat: true } } },
-      });
-      if (!vat || !pakaiPpnSiklus(vat)) {
-        throw new ViraInputError(PESAN_NOMOR.TANPA_PPN);
-      }
+    // Same VAT gate as the writer (`vatApplied ?? store.consignmentVat`).
+    if (
+      input.kind === "PAJAK" &&
+      !pakaiPpnSiklus({ vatApplied: row.vatApplied, store: { consignmentVat: row.consignmentVat } })
+    ) {
+      throw new ViraInputError(PESAN_NOMOR.TANPA_PPN);
     }
     const current = input.kind === "NOTA" ? row.noNota : row.noFakturPajak;
     const label = input.kind === "NOTA" ? "NOTA" : "faktur pajak";

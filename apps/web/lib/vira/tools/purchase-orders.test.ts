@@ -36,6 +36,12 @@ vi.mock("@elorae/db", async (importOriginal) => {
     prisma: {
       ...actual.prisma,
       gRN: { count: (...a: unknown[]) => m.grnCount(...a) },
+      purchaseOrder: {
+        findUnique: vi.fn(async ({ where }: { where: { id?: string; docNumber?: string } }) => {
+          if (where.docNumber === "PO-a" || where.id === "a") return { id: "a" };
+          return null;
+        }),
+      },
     },
   };
 });

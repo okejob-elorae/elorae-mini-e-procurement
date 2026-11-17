@@ -73,9 +73,22 @@ beforeEach(() => {
   ]);
   m.rincianSiklus.mockReset();
   m.catatNomorDokumen.mockReset().mockResolvedValue({ ok: true });
-  m.cycleFindUnique.mockReset().mockResolvedValue({
-    vatApplied: true,
-    store: { consignmentVat: true },
+  m.cycleFindUnique.mockReset().mockImplementation(async (args?: { where?: { id?: string; noKonsi?: string } }) => {
+    const key = args?.where?.id ?? args?.where?.noKonsi;
+    if (!key) return null;
+    const id = key.startsWith("KNS-") ? key.slice(4) : key;
+    return {
+      id,
+      noKonsi: `KNS-${id}`,
+      storeId: "s1",
+      periodYear: 2026,
+      periodMonth: 10,
+      noNota: "NOTA-9",
+      noFakturPajak: null,
+      lockedAt: new Date("2026-10-15T00:00:00.000Z"),
+      vatApplied: true,
+      store: { name: "Toko Melati", consignmentVat: true },
+    };
   });
 });
 

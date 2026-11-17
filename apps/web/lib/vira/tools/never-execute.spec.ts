@@ -208,34 +208,15 @@ function mockPrepareDeps(toolName: string): string[] {
         prisma: {
           ...nyata.prisma,
           gRN: { count: vi.fn(async () => 0) },
+          purchaseOrder: {
+            findUnique: vi.fn(async () => ({ id: "po-1" })),
+          },
         },
       };
     });
     mocked.push("@elorae/db");
   }
   if (toolName === "record_consignment_document_number") {
-    vi.doMock("@/lib/konsinyasi/queries", async (asli) => {
-      const nyata = await asli<typeof import("@/lib/konsinyasi/queries")>();
-      return {
-        ...nyata,
-        daftarSiklus: vi.fn(async () => [
-          {
-            id: "c-1",
-            noKonsi: "KNS-c-1",
-            storeId: "s1",
-            storeName: "Toko",
-            periode: "Nov 2026",
-            noNota: null,
-            noFakturPajak: null,
-            tahap: "nota",
-            nilaiTerjual: 0,
-            sisaTagihan: 0,
-          },
-        ]),
-        rincianSiklus: vi.fn(),
-      };
-    });
-    mocked.push("@/lib/konsinyasi/queries");
     vi.doMock("@elorae/db", async (asli) => {
       const nyata = await asli<typeof import("@elorae/db")>();
       return {
@@ -244,8 +225,16 @@ function mockPrepareDeps(toolName: string): string[] {
           ...nyata.prisma,
           consignmentCycle: {
             findUnique: vi.fn(async () => ({
+              id: "c-1",
+              noKonsi: "KNS-c-1",
+              storeId: "s1",
+              periodYear: 2026,
+              periodMonth: 11,
+              noNota: null,
+              noFakturPajak: null,
+              lockedAt: new Date("2026-11-01T00:00:00.000Z"),
               vatApplied: true,
-              store: { consignmentVat: true },
+              store: { name: "Toko", consignmentVat: true },
             })),
           },
         },
