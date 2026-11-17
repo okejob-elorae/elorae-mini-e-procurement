@@ -60,12 +60,16 @@ async function assertNeverExecute(
   expect(res.isError).toBeFalsy();
   expect(textOf(res)).toMatchObject({ status: "awaiting_confirmation" });
 
-  const contentJson = JSON.stringify((res as { content: unknown }).content);
   const meta = (res as { _meta?: Record<string, unknown> })._meta?.[
     "elorae/confirmation"
   ] as { token?: string } | undefined;
   expect(meta?.token).toBeTruthy();
-  expect(contentJson).not.toContain(meta!.token);
+  // Model-visible payloads only — `_meta` holds the token by design.
+  const visible = JSON.stringify({
+    content: (res as { content: unknown }).content,
+    structuredContent: (res as { structuredContent?: unknown }).structuredContent,
+  });
+  expect(visible).not.toContain(meta!.token);
 }
 
 describe("VIRA write tools — model can never execute", () => {
@@ -147,16 +151,18 @@ describe("VIRA write tools — model can never execute", () => {
       });
       tulisNever.exportName = kasus.writerExport;
       vi.doMock(kasus.writerModule, async (asli) => {
-        let nyata: Record<string, unknown> = {};
-        let loaded = false;
+        // Fail closed: a typo’d writerModule must not install a silent spy-only stub
+        // while prepare still runs the real writer from the correct path.
+        let nyata: Record<string, unknown>;
         try {
           nyata = (await asli()) as Record<string, unknown>;
-          loaded = true;
-        } catch {
-          /* unresolved — spy-only stub */
+        } catch (err) {
+          throw new Error(
+            `writer module failed to load for never-execute: ${String(err)}`,
+          );
         }
         const nama = tulisNever.exportName;
-        if (loaded && !(nama in nyata)) {
+        if (!(nama in nyata)) {
           throw new Error(`writer module has no export ${nama} to mock`);
         }
         return { ...nyata, [nama]: tulisNever.spy };
