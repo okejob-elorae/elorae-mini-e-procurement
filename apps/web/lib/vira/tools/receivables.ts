@@ -15,7 +15,7 @@ const listShape = {
     .enum(RECEIVABLE_STATES)
     .optional()
     .describe(
-      "Only invoices in this state: lewat (past promised pay date), jatuh_tempo (past due date), tertahan (held for returns), klaim (payment waiting for verification), tt (tanda terima), belum (not yet due), lunas (paid). Omit for every unpaid invoice.",
+      "Only invoices in this state. For overdue / past-due / \"lewat jatuh tempo\" invoices use jatuh_tempo. States: jatuh_tempo (invoice due date has passed and nothing is pending on it), lewat (the store missed the pay date it PROMISED on a kontrabon / tanda terima — not the invoice due date), tertahan (held for returns), klaim (payment reported, waiting for finance to verify), tt (tanda terima / kontrabon issued, promised date not yet reached), belum (not yet due), lunas (paid). Omit for every unpaid invoice.",
     ),
   search: z
     .string()
@@ -38,7 +38,7 @@ export const tools: ViraTool[] = [
     name: "list_receivables",
     title: "Receivables (piutang)",
     description:
-      "Lists store receivables (piutang) with a summary: overdue (jatuh tempo), held for returns, waiting for verification, and totals. Filter by state, search, or kind (konsi or putus).",
+      "Lists store receivables (piutang) with a summary: overdue (state jatuh_tempo), missed promised pay date (lewat), held for returns, waiting for verification, and totals. Filter by state, search, or kind (konsi or putus). For \"which invoices are overdue\", filter state=jatuh_tempo.",
     gate: { kind: "izin", name: "bolehMembacaPiutang", check: (p) => bolehMembacaPiutang(p) },
     inputShape: listShape,
     handler: async (input, ctx) => {
