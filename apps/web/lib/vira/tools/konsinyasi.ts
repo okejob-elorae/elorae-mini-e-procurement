@@ -158,6 +158,14 @@ const recordConsignmentDocumentNumberTool = defineWriteTool({
       throw new ViraInputError(PESAN_NOMOR.TANPA_PPN);
     }
     const current = input.kind === "NOTA" ? row.noNota : row.noFakturPajak;
+    // UI only offers Catat when the number is still empty (`RincianSiklusClient`).
+    if (current?.trim()) {
+      throw new ViraInputError(
+        input.kind === "NOTA"
+          ? `Nomor NOTA sudah tercatat: ${current.trim()}.`
+          : `Nomor faktur pajak sudah tercatat: ${current.trim()}.`,
+      );
+    }
     const label = input.kind === "NOTA" ? "NOTA" : "faktur pajak";
     const url = recordUrl(ctx.baseUrl, `/backoffice/konsinyasi/${row.id}`);
     return {

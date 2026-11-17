@@ -88,7 +88,7 @@ beforeEach(() => {
   m.getPOById.mockReset().mockImplementation(async (id: string) =>
     id === "a"
       ? {
-          ...poRow("a"),
+          ...poRow("a", { status: "PARTIAL" }),
           createdAt: "2026-11-01T03:00:00.000Z",
           etaDate: "2026-11-20T17:00:00.000Z",
           items: [{ qty: 10, receivedQty: 3 }],

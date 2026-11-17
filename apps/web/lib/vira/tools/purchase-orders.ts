@@ -139,8 +139,8 @@ const closePurchaseOrderTool = defineWriteTool({
   __sampleInput: { po: "PO-1", reason: "x" },
   prepare: async (input, ctx) => {
     const row = await resolvePoDetail(input.po);
-    // Writer refuses DRAFT / CANCELLED / CLOSED / OVER (`tutup.ts`).
-    if (["DRAFT", "CANCELLED", "CLOSED", "OVER"].includes(row.status)) {
+    // UI only offers Tutup PO on PARTIAL (`purchase-orders/[id]/page.tsx` ~L600–602).
+    if (row.status !== "PARTIAL") {
       throw new ViraInputError(`PO ${row.docNumber} berstatus ${row.status}, tidak bisa ditutup.`);
     }
     const items = row.items;

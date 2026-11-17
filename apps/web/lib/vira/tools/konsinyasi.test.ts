@@ -83,7 +83,7 @@ beforeEach(() => {
       storeId: "s1",
       periodYear: 2026,
       periodMonth: 10,
-      noNota: "NOTA-9",
+      noNota: null,
       noFakturPajak: null,
       lockedAt: new Date("2026-10-15T00:00:00.000Z"),
       vatApplied: true,
