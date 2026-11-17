@@ -112,7 +112,7 @@ describe("VIRA write tools — model can never execute", () => {
         args: { id: input.id },
       }),
       // Writer is only reachable from execute — proves MCP never gets there.
-      execute: async (args, ctx) => writer(args, ctx),
+      execute: async () => writer(),
       revalidate: () => ["/x"],
     });
     await assertNeverExecute(buildViraServerFrom, tool, { id: "ord-1" }, writer);
