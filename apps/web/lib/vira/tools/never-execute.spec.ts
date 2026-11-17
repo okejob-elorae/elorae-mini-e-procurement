@@ -21,6 +21,91 @@ const tulisNever = vi.hoisted(() => ({
   exportName: "" as string,
 }));
 
+/** Prepare-only deps for registered write tools (so never-execute can call MCP without a DB). */
+function mockPrepareDeps(toolName: string): string[] {
+  const mocked: string[] = [];
+  if (
+    toolName === "approve_field_sales_order" ||
+    toolName === "reject_field_sales_order"
+  ) {
+    const pending = {
+      id: "o1",
+      orderNo: "SO-1",
+      orderType: "PUTUS",
+      status: "PENDING_APPROVAL",
+      storeName: "Toko",
+      salesmanName: "Budi",
+      total: 100_000,
+      lines: [{ id: "l1" }],
+      deliveries: [],
+      deliveryStatus: "PENDING",
+      createdAt: new Date("2026-11-01T00:00:00Z"),
+      origin: "FIELD",
+      creditHoldAtCreate: false,
+      note: null,
+      cancelledAt: null,
+      cancelledByName: null,
+      subtotal: 100_000,
+      approvedAt: null,
+      rejectedAt: null,
+      rejectReason: null,
+      closedAt: null,
+      closeReason: null,
+      markupPercent: null,
+      paymentTempo: 30,
+      orderDiscountAmount: 0,
+      appliedOrderPromoName: null,
+      legacyKonsiTransfer: null,
+    };
+    vi.doMock("@/lib/field-sales/queries", () => ({
+      listFieldSalesOrders: vi.fn(async () => ({
+        orders: [{ ...pending, orderNo: "SO-1" }],
+        totalCount: 1,
+      })),
+      getFieldSalesOrderById: vi.fn(async () => pending),
+    }));
+    mocked.push("@/lib/field-sales/queries");
+    vi.doMock("@/lib/finance/ar/credit-exposure", () => ({
+      computeStoreCreditExposure: vi.fn(async () => ({
+        receivableOutstanding: 0,
+        undeliveredOrderResidual: 0,
+        openInvoiceCount: 0,
+        total: 0,
+      })),
+    }));
+    mocked.push("@/lib/finance/ar/credit-exposure");
+    vi.doMock("@/lib/salesman/tagihan-toko", () => ({
+      bacaAturanKreditDb: vi.fn(async () => ({})),
+    }));
+    mocked.push("@/lib/salesman/tagihan-toko");
+    vi.doMock("@/lib/salesman/kredit", () => ({
+      batasKreditBerlaku: vi.fn(() => ({ nilai: { nilai: 1_000_000, sumber: "TOKO" } })),
+      lewatBatasNilai: vi.fn(() => false),
+    }));
+    mocked.push("@/lib/salesman/kredit");
+    vi.doMock("@elorae/db", async (asli) => {
+      const nyata = await asli<typeof import("@elorae/db")>();
+      return {
+        ...nyata,
+        prisma: {
+          ...nyata.prisma,
+          fieldSalesOrder: {
+            findUnique: vi.fn(async () => ({ storeId: "s1" })),
+          },
+          store: {
+            findUnique: vi.fn(async () => ({
+              creditLimit: 1_000_000,
+              noCreditLimit: false,
+            })),
+          },
+        },
+      };
+    });
+    mocked.push("@elorae/db");
+  }
+  return mocked;
+}
+
 async function connect(server: McpServer): Promise<Client> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "never-execute-test", version: "1.0.0" });
@@ -141,10 +226,10 @@ describe("VIRA write tools — model can never execute", () => {
         `${tool.name} must define __sampleInput for never-execute`,
       ).toBeDefined();
 
-      // Pre-built registry tools close over their writer imports. Re-mock the writer,
-      // then re-import the registry so prepare/execute bind the spy (same idea as
-      // writeAction in parity.spec).
+      // Pre-built registry tools close over their writer imports. Re-mock the writer
+      // (and prepare deps), then re-import so prepare/execute bind the spy.
       vi.resetModules();
+      const prepareMocks = mockPrepareDeps(tool.name);
       tulisNever.spy.mockReset();
       tulisNever.spy.mockImplementation(async () => {
         throw new Error(`${kasus.writerExport} must not be called from MCP prepare`);
@@ -195,6 +280,7 @@ describe("VIRA write tools — model can never execute", () => {
         );
       } finally {
         vi.doUnmock(kasus.writerModule);
+        for (const id of prepareMocks) vi.doUnmock(id);
         // Drop modules that closed over the mocked writer so later files see the real one.
         vi.resetModules();
       }

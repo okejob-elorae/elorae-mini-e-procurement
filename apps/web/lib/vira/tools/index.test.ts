@@ -19,8 +19,11 @@ const preview = {
 };
 
 describe("VIRA write-tool registry", () => {
-  it("has no write tools registered yet", () => {
-    expect(VIRA_WRITE_TOOLS).toHaveLength(0);
+  it("registers field-sales approve/reject write tools (VIRA-28)", () => {
+    expect(VIRA_WRITE_TOOLS.map((t) => t.name).sort()).toEqual([
+      "approve_field_sales_order",
+      "reject_field_sales_order",
+    ]);
   });
 
   it("findWriteTool returns undefined for read-tool names", () => {
