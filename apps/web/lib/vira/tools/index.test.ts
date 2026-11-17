@@ -19,10 +19,12 @@ const preview = {
 };
 
 describe("VIRA write-tool registry", () => {
-  it("registers field-sales approve/reject write tools (VIRA-28)", () => {
+  it("registers wave-4 write tools (VIRA-28+)", () => {
     expect(VIRA_WRITE_TOOLS.map((t) => t.name).sort()).toEqual([
       "approve_field_sales_order",
+      "approve_leave_request",
       "reject_field_sales_order",
+      "reject_leave_request",
     ]);
   });
 

@@ -12,6 +12,7 @@ import * as receivables from "./receivables";
 import * as konsinyasi from "./konsinyasi";
 import * as taxInvoices from "./tax-invoices";
 import * as settlements from "./settlements";
+import * as izin from "./izin";
 
 type ViraToolModule = {
   tools: ViraTool[];
@@ -33,6 +34,7 @@ const MODULES: ViraToolModule[] = [
   konsinyasi,
   taxInvoices,
   settlements,
+  izin,
 ];
 
 /** Throws if two tools share a name. Run at import time on read ∪ write. */
