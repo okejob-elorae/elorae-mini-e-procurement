@@ -1,10 +1,20 @@
 import { z } from "zod";
 import { batasHariIniWib } from "@/lib/dashboard/hari-wib";
+import { getActorName } from "@/lib/notifications/actor-name";
+import { notifyPOStatusUpdated } from "@/lib/notifications/events";
 import { STATUS_PO_BISA_TERLAMBAT } from "@/lib/purchase-orders/overdue";
-import { listPOs } from "@/lib/purchase-orders/queries";
-import { ViraInputError } from "../errors";
+import { getPOById, listPOs } from "@/lib/purchase-orders/queries";
+import { PESAN_TOLAK_TUTUP_PO, tutupPurchaseOrder } from "@/lib/purchase-orders/tutup";
+import { ViraInputError, ViraNotFoundError } from "../errors";
 import { listInputShape, recordUrl, toPage } from "../output";
-import { defineTool, type ParityCase, type ViraTool } from "./types";
+import {
+  defineTool,
+  defineWriteTool,
+  type ParityCase,
+  type ViraTool,
+  type ViraToolContext,
+  type ViraWriteTool,
+} from "./types";
 
 // Copied from IZIN_BACA_PO in app/actions/purchase-orders.ts. Pinned by parity.spec.ts.
 export const PO_READ_CODES = [
@@ -54,6 +64,146 @@ function isOverdue(row: PoRow, startOfTodayWib: Date): boolean {
   );
 }
 
+function formatRp(n: number): string {
+  return `Rp ${new Intl.NumberFormat("id-ID").format(n)}`;
+}
+
+/** Resolve PO id or document number via list search — exactly one match. */
+async function resolvePo(po: string): Promise<PoRow> {
+  const byId = await getPOById(po);
+  if (byId) {
+    return {
+      id: byId.id,
+      docNumber: byId.docNumber,
+      supplierId: byId.supplierId,
+      supplier: { name: byId.supplier?.name ?? "—" },
+      status: byId.status,
+      createdAt: byId.createdAt?.toISOString?.() ?? (byId.createdAt as unknown as string | null),
+      etaDate: byId.etaDate?.toISOString?.() ?? (byId.etaDate as unknown as string | null),
+      grandTotal: Number(byId.grandTotal ?? byId.totalAmount ?? 0),
+    };
+  }
+  const hasil = await listPOs({ cari: po }, { page: 1, pageSize: 50 });
+  const rows = (Array.isArray(hasil) ? hasil : hasil.items) as unknown as PoRow[];
+  const hit = rows.filter((r) => r.id === po || r.docNumber === po);
+  if (hit.length === 0) throw new ViraNotFoundError("PO tidak ditemukan");
+  if (hit.length > 1) {
+    throw new ViraInputError(
+      `Beberapa PO cocok: ${hit
+        .slice(0, 5)
+        .map((r) => r.docNumber)
+        .join(", ")}. Lebih spesifik.`,
+    );
+  }
+  return hit[0];
+}
+
+type CloseArgs = { poId: string; reason: string };
+
+/**
+ * Mirrors `tutupPO` in `app/actions/purchase-orders.ts` (~L552–572) and
+ * `tutupPurchaseOrder` in `lib/purchase-orders/tutup.ts`.
+ */
+const closePurchaseOrderTool = defineWriteTool({
+  kind: "write",
+  name: "close_purchase_order",
+  title: "Close purchase order",
+  description:
+    "Prepares closing a purchase order (no more goods expected) with a reason. The user must press the confirm button.",
+  gate: { kind: "code", code: "purchase_orders:approve" },
+  destructive: true,
+  inputShape: {
+    po: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .describe("The purchase order id or PO number."),
+    reason: z
+      .string()
+      .trim()
+      .min(1)
+      .max(500)
+      .describe("Why the PO is closed early."),
+  },
+  argsSchema: z.object({
+    poId: z.string().min(1),
+    reason: z.string().trim().min(1).max(500),
+  }),
+  __sampleInput: { po: "PO-1", reason: "x" },
+  prepare: async (input, ctx) => {
+    const row = await resolvePo(input.po);
+    // Writer refuses DRAFT / CANCELLED / CLOSED / OVER (`tutup.ts`).
+    if (["DRAFT", "CANCELLED", "CLOSED", "OVER"].includes(row.status)) {
+      throw new ViraInputError(`PO ${row.docNumber} berstatus ${row.status}, tidak bisa ditutup.`);
+    }
+    const detail = await getPOById(row.id);
+    const received =
+      detail?.items?.reduce((n: number, it: { receivedQty?: unknown }) => n + Number(it.receivedQty ?? 0), 0) ??
+      null;
+    const url = recordUrl(ctx.baseUrl, `/backoffice/purchase-orders/${row.id}`);
+    return {
+      preview: {
+        title: `Tutup PO ${row.docNumber}`,
+        summary: `${row.supplier.name} · ${row.status} · ${formatRp(row.grandTotal)}`,
+        details: [
+          { label: "Pemasok", value: row.supplier.name },
+          { label: "Status", value: row.status },
+          { label: "Total", value: formatRp(row.grandTotal) },
+          ...(received !== null ? [{ label: "Sudah diterima", value: String(received) }] : []),
+          { label: "Alasan", value: input.reason },
+        ],
+        confirmLabel: "Tutup PO",
+        cancelLabel: "Batal",
+        destructive: true,
+        target: { type: "purchase_order", id: row.id, url },
+      },
+      args: { poId: row.id, reason: input.reason },
+    };
+  },
+  execute: async (args, ctx) => {
+    const url = recordUrl(ctx.baseUrl, `/backoffice/purchase-orders/${args.poId}`);
+    const hasil = await tutupPurchaseOrder({
+      poId: args.poId,
+      userId: ctx.actor.id,
+      alasan: args.reason,
+    });
+    if (!hasil.ok) {
+      // PESAN_TOLAK_TUTUP_PO from lib/purchase-orders/tutup.ts (~L34–43).
+      return {
+        ok: false,
+        code: hasil.code,
+        message: PESAN_TOLAK_TUTUP_PO[hasil.code] ?? hasil.code,
+        url,
+      };
+    }
+    return {
+      ok: true,
+      message: `PO ${hasil.docNumber} ditutup.`,
+      url,
+      entityType: "PurchaseOrder",
+      entityId: args.poId,
+      extra: { docNumber: hasil.docNumber, statusSebelum: hasil.statusSebelum },
+    };
+  },
+  revalidate: (args) => ["/backoffice/purchase-orders", `/backoffice/purchase-orders/${args.poId}`],
+  // Action private `kabariPoDitutup` ~L528–532.
+  afterSuccess: async (args, result, ctx) => {
+    try {
+      const name = await getActorName(ctx.actor.id);
+      await notifyPOStatusUpdated(
+        args.poId,
+        result.extra!.docNumber,
+        result.extra!.statusSebelum,
+        "CLOSED",
+        name,
+      );
+    } catch {
+      /* never throw from afterSuccess */
+    }
+  },
+});
+
 export const tools: ViraTool[] = [
   defineTool({
     name: "list_purchase_orders",
@@ -92,6 +242,12 @@ export const tools: ViraTool[] = [
   }),
 ];
 
+export const writeTools: ViraWriteTool[] = [closePurchaseOrderTool];
+
+export const __sampleInput = {
+  close_purchase_order: { po: "PO-1", reason: "x" },
+};
+
 /** Module ids are written with the "@/" alias the action itself imports with, so the mock lands. */
 export const parityCases: ParityCase[] = [
   {
@@ -102,5 +258,14 @@ export const parityCases: ParityCase[] = [
     libModule: "@/lib/purchase-orders/queries",
     libExport: "listPOs",
     args: [],
+  },
+  {
+    tool: "close_purchase_order",
+    kind: "writeAction",
+    actionModule: "@/app/actions/purchase-orders",
+    actionExport: "tutupPO",
+    writerModule: "@/lib/purchase-orders/tutup",
+    writerExport: "tutupPurchaseOrder",
+    args: ["po-1", "alasan"],
   },
 ];

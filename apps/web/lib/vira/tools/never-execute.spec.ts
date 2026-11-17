@@ -185,6 +185,61 @@ function mockPrepareDeps(toolName: string): string[] {
     }));
     mocked.push("@/lib/spg/retur-pembeli-queries");
   }
+  if (toolName === "close_purchase_order") {
+    vi.doMock("@/lib/purchase-orders/queries", () => ({
+      listPOs: vi.fn(async () => ({ items: [], totalCount: 0 })),
+      getPOById: vi.fn(async () => ({
+        id: "po-1",
+        docNumber: "PO-1",
+        supplierId: "s1",
+        supplier: { name: "CV" },
+        status: "PARTIAL",
+        createdAt: new Date(),
+        etaDate: null,
+        grandTotal: 1,
+        items: [{ receivedQty: 1 }],
+      })),
+    }));
+    mocked.push("@/lib/purchase-orders/queries");
+  }
+  if (toolName === "record_consignment_document_number") {
+    vi.doMock("@/lib/konsinyasi/queries", () => ({
+      daftarSiklus: vi.fn(async () => [
+        {
+          id: "c-1",
+          noKonsi: "KNS-c-1",
+          storeId: "s1",
+          storeName: "Toko",
+          periode: "Nov 2026",
+          noNota: null,
+          noFakturPajak: null,
+          tahap: "nota",
+          nilaiTerjual: 0,
+        },
+      ]),
+      rincianSiklus: vi.fn(),
+    }));
+    mocked.push("@/lib/konsinyasi/queries");
+  }
+  if (toolName === "mark_tax_invoice_sent_to_store") {
+    vi.doMock("@/lib/tax-invoices/queries", () => ({
+      listTaxInvoices: vi.fn(async () => ({
+        rows: [
+          {
+            id: "t-1",
+            status: "CREATED",
+            invoiceNo: "010.000-26.00000001",
+            docNo: "NT-1",
+            storeId: "s1",
+            storeName: "Toko",
+          },
+        ],
+        total: 1,
+        counts: {},
+      })),
+    }));
+    mocked.push("@/lib/tax-invoices/queries");
+  }
   return mocked;
 }
 

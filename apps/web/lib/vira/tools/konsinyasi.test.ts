@@ -4,14 +4,26 @@ import { gateAllows } from "../akses";
 import { serialize } from "../output";
 import type { ViraToolContext } from "./types";
 
-const m = vi.hoisted(() => ({ daftarSiklus: vi.fn(), rincianSiklus: vi.fn() }));
+const m = vi.hoisted(() => ({
+  daftarSiklus: vi.fn(),
+  rincianSiklus: vi.fn(),
+  catatNomorDokumen: vi.fn(),
+}));
 vi.mock("@/lib/konsinyasi/queries", () => ({ daftarSiklus: m.daftarSiklus, rincianSiklus: m.rincianSiklus }));
+vi.mock("@/lib/konsinyasi/writer", () => ({ catatNomorDokumen: m.catatNomorDokumen }));
 
-import { parityCases, tools } from "./konsinyasi";
+import { __sampleInput, parityCases, tools, writeTools } from "./konsinyasi";
+import { ViraInputError } from "../errors";
 
 const tool = tools[0];
+const record = writeTools.find((t) => t.name === "record_consignment_document_number")!;
 const schema = z.object(tool.inputShape);
+const recordSchema = z.object(record.inputShape);
 const ctx: ViraToolContext = { actor: { id: "u1", name: "Uji", permissions: ["consignment:view"] }, baseUrl: "https://e.test" };
+const notaCtx: ViraToolContext = {
+  actor: { id: "u-nota", name: "Admin", permissions: ["consignment:note_number", "vira:write"] },
+  baseUrl: "https://e.test",
+};
 
 function siklus(id: string, tahap: string, extra: Record<string, unknown> = {}) {
   return {
@@ -40,6 +52,7 @@ function siklus(id: string, tahap: string, extra: Record<string, unknown> = {}) 
 beforeEach(() => {
   m.daftarSiklus.mockReset().mockResolvedValue([siklus("a", "nota"), siklus("b", "selesai"), siklus("c", "laporan", { storeName: "Toko Mawar" })]);
   m.rincianSiklus.mockReset();
+  m.catatNomorDokumen.mockReset().mockResolvedValue({ ok: true });
 });
 
 async function run(input: Record<string, unknown>) {
@@ -91,8 +104,57 @@ describe("list_consignment_cycles", () => {
     expect(gateAllows(tool.gate, ["consignment:view"])).toBe(true);
     expect(gateAllows(tool.gate, ["receivables:manage"])).toBe(false);
     expect(gateAllows(tool.gate, [])).toBe(false);
-    expect(parityCases).toEqual([
-      { tool: "list_consignment_cycles", kind: "predicate", module: "@/lib/receivables/izin", exportName: "bolehMembukaKonsi" },
-    ]);
+    expect(parityCases).toEqual(
+      expect.arrayContaining([
+        { tool: "list_consignment_cycles", kind: "predicate", module: "@/lib/receivables/izin", exportName: "bolehMembukaKonsi" },
+      ]),
+    );
+  });
+});
+
+describe("record_consignment_document_number", () => {
+  it("__sampleInput + parity", () => {
+    expect(__sampleInput.record_consignment_document_number).toEqual({
+      cycle: "c-1",
+      kind: "NOTA",
+      number: "001",
+    });
+    expect(parityCases).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tool: "record_consignment_document_number",
+          kind: "writeAction",
+          args: ["c-1", "NOTA", "001"],
+        }),
+        expect.objectContaining({
+          tool: "record_consignment_document_number",
+          kind: "writeAction",
+          args: ["c-1", "PAJAK", "010"],
+        }),
+      ]),
+    );
+  });
+
+  it("note_number can prepare NOTA but PAJAK → ViraInputError", async () => {
+    const prepared = await record.prepare(
+      recordSchema.parse({ cycle: "a", kind: "NOTA", number: "N-99" }),
+      notaCtx,
+    );
+    expect(prepared.preview.title).toContain("NOTA");
+    expect(prepared.args).toEqual({ cycleId: "a", kind: "NOTA", number: "N-99" });
+    await expect(
+      record.prepare(recordSchema.parse({ cycle: "a", kind: "PAJAK", number: "010" }), notaCtx),
+    ).rejects.toEqual(new ViraInputError("Anda tidak punya izin mencatat nomor PAJAK."));
+  });
+
+  it("execute calls writer with actor", async () => {
+    const res = await record.execute({ cycleId: "a", kind: "NOTA", number: "N-99" }, notaCtx);
+    expect(m.catatNomorDokumen).toHaveBeenCalledWith({
+      cycleId: "a",
+      jenis: "NOTA",
+      nomor: "N-99",
+      olehUserId: "u-nota",
+    });
+    expect(res).toMatchObject({ ok: true, message: "Nomor NOTA dicatat.", entityType: "ConsignmentCycle" });
   });
 });

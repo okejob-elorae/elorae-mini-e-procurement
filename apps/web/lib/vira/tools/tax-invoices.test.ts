@@ -4,14 +4,27 @@ import { ViraInputError } from "../errors";
 import { serialize } from "../output";
 import type { ViraToolContext } from "./types";
 
-const m = vi.hoisted(() => ({ listTaxInvoices: vi.fn() }));
+const m = vi.hoisted(() => ({
+  listTaxInvoices: vi.fn(),
+  markTaxInvoiceSentToStore: vi.fn(),
+}));
 vi.mock("@/lib/tax-invoices/queries", () => ({ listTaxInvoices: m.listTaxInvoices }));
+vi.mock("@/lib/tax-invoices/writer", () => ({
+  markTaxInvoiceSentToStore: m.markTaxInvoiceSentToStore,
+}));
 
-import { parityCases, tools } from "./tax-invoices";
+import { TaxInvoiceError } from "@/lib/tax-invoices/errors";
+import { __sampleInput, parityCases, tools, writeTools } from "./tax-invoices";
 
 const tool = tools[0];
+const mark = writeTools.find((t) => t.name === "mark_tax_invoice_sent_to_store")!;
 const schema = z.object(tool.inputShape);
+const markSchema = z.object(mark.inputShape);
 const ctx: ViraToolContext = { actor: { id: "u1", name: "Uji", permissions: ["tax_invoices:view"] }, baseUrl: "https://e.test" };
+const writeCtx: ViraToolContext = {
+  actor: { id: "u-tax", name: "Pajak", permissions: ["tax_invoices:manage", "vira:write"] },
+  baseUrl: "https://e.test",
+};
 
 const NPWP = "01.234.567.8-901.000";
 const NIK = "3273012345670001";
@@ -41,6 +54,7 @@ function row(id: string, extra: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   m.listTaxInvoices.mockReset().mockResolvedValue({ rows: [row("1")], total: 1, counts: {} });
+  m.markTaxInvoiceSentToStore.mockReset().mockResolvedValue({ ok: true });
 });
 
 async function run(input: Record<string, unknown>) {
@@ -100,6 +114,52 @@ describe("list_tax_invoices", () => {
 
   it("is gated on tax_invoices:view with one pageCode parity case", () => {
     expect(tool.gate).toEqual({ kind: "code", code: "tax_invoices:view" });
-    expect(parityCases).toHaveLength(1);
+    expect(parityCases).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tool: "list_tax_invoices", kind: "pageCode" }),
+      ]),
+    );
+  });
+});
+
+describe("mark_tax_invoice_sent_to_store", () => {
+  it("__sampleInput + parity", () => {
+    expect(__sampleInput.mark_tax_invoice_sent_to_store).toEqual({ invoice: "t-1" });
+    expect(parityCases).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tool: "mark_tax_invoice_sent_to_store",
+          kind: "writeAction",
+          args: [{ taxInvoiceId: "t-1" }],
+        }),
+      ]),
+    );
+  });
+
+  it("prepare CREATED only; execute maps TaxInvoiceError", async () => {
+    const prepared = await mark.prepare(markSchema.parse({ invoice: "1" }), writeCtx);
+    expect(prepared.preview.title).toContain("terkirim ke toko");
+    expect(prepared.args).toEqual({ taxInvoiceId: "1" });
+
+    m.listTaxInvoices.mockResolvedValueOnce({
+      rows: [row("1", { status: "PENDING" })],
+      total: 1,
+      counts: {},
+    });
+    await expect(mark.prepare(markSchema.parse({ invoice: "1" }), writeCtx)).rejects.toBeInstanceOf(ViraInputError);
+
+    const ok = await mark.execute({ taxInvoiceId: "1" }, writeCtx);
+    expect(m.markTaxInvoiceSentToStore).toHaveBeenCalledWith({
+      taxInvoiceId: "1",
+      reason: undefined,
+      userId: "u-tax",
+    });
+    expect(ok).toMatchObject({ ok: true, entityType: "TaxInvoice" });
+
+    m.markTaxInvoiceSentToStore.mockRejectedValueOnce(new TaxInvoiceError("INVALID_STATE"));
+    expect(await mark.execute({ taxInvoiceId: "1" }, writeCtx)).toMatchObject({
+      ok: false,
+      code: "INVALID_STATE",
+    });
   });
 });
