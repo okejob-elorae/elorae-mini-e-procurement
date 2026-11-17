@@ -176,9 +176,8 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
           };
         }
         if (tulisParitas.writer.mock.calls.length > 0) return { boleh: true };
-        return {
-          gagal: `${kasus.actionExport} returned without calling the writer or throwing a permission error`,
-        };
+        // Soft-deny / early return without a write — same as forbidden for parity.
+        return { boleh: false };
       } finally {
         vi.doUnmock(kasus.writerModule);
         vi.resetModules();
@@ -355,6 +354,17 @@ vi.mock("virtual:vira-parity/fake-write-action", () => ({
     };
     return lib.tulisPalsu();
   },
+  aksiTulisSoftDeny: async () => {
+    const { auth } = await import("@/lib/auth");
+    const s = (await auth()) as unknown as { user: { permissions: string[] } };
+    if (!hasPermission(s.user.permissions, "parity_fixture:write")) {
+      return { ok: false, reason: "FORBIDDEN" };
+    }
+    const lib = (await import(/* @vite-ignore */ PALSU_WRITER)) as {
+      tulisPalsu: () => Promise<unknown>;
+    };
+    return lib.tulisPalsu();
+  },
 }));
 
 /** Literal codes the pageCode fake reads back from THIS file. */
@@ -500,6 +510,20 @@ const KASUS_UJI: KasusUji[] = [
       args: [],
     },
     false,
+  ],
+  [
+    "writeAction — soft-deny without calling the writer",
+    alatPalsu("fake_write_soft", { kind: "code", code: "parity_fixture:write" }),
+    {
+      tool: "fake_write_soft",
+      kind: "writeAction",
+      actionModule: PALSU_WRITE_AKSI,
+      actionExport: "aksiTulisSoftDeny",
+      writerModule: PALSU_WRITER,
+      writerExport: "tulisPalsu",
+      args: [],
+    },
+    true,
   ],
 ];
 
