@@ -112,8 +112,12 @@ jobs:
           pnpm --filter @elorae/db build
           pnpm --filter @elorae/web build
 
+  # Fresh-MariaDB specs are expensive (services + full web vitest). Run them only when the
+  # change is destined for master: PRs into integration branches (feat/vira-mcp*, timotiusmax)
+  # get type-check/lint/api unit tests only. Push events that trigger this workflow still run it.
   db-specs:
     name: DB specs on a fresh MariaDB
+    if: github.event_name != 'pull_request' || github.base_ref == 'master'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:
