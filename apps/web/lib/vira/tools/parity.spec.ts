@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { getRequiredPermission, hasPermission, PERMISSIONS, requirePermission } from "@/lib/rbac";
 import { gateAllows, type ViraGate } from "../akses";
+import { VIRA_WRITE_PERMISSION } from "../config";
 import { VIRA_PARITY_CASES, VIRA_TOOLS, VIRA_WRITE_TOOLS } from "./index";
 import type { ParityCase, ViraTool, ViraWriteTool } from "./types";
 
@@ -153,6 +154,7 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
         };
       } finally {
         vi.doUnmock(kasus.writerModule);
+        vi.resetModules();
         sesi.permissions = [];
       }
     }
@@ -249,6 +251,13 @@ describe("VIRA tool parity — real registry", () => {
 describe("VIRA write-tool parity — real registry", () => {
   it("every write tool has exactly one writeAction parity case", () => {
     expect(cakupanWrite(VIRA_WRITE_TOOLS, VIRA_PARITY_CASES)).toEqual([]);
+  });
+
+  it("write tool gates never include vira:write (MCP ANDs it outside the tool gate)", () => {
+    const pelanggar = VIRA_WRITE_TOOLS.filter((t) =>
+      kodeGerbang(t.gate).includes(VIRA_WRITE_PERMISSION),
+    ).map((t) => t.name);
+    expect(pelanggar).toEqual([]);
   });
 
   it("no writeAction parity case points at a write tool that does not exist", () => {

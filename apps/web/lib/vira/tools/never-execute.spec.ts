@@ -154,6 +154,8 @@ describe("VIRA write tools — model can never execute", () => {
         await assertNeverExecute(buildFresh, fresh!, freshSample!, writer);
       } finally {
         vi.doUnmock(kasus.writerModule);
+        // Drop modules that closed over the mocked writer so later files see the real one.
+        vi.resetModules();
       }
     },
   );
