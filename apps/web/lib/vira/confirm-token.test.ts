@@ -146,17 +146,17 @@ describe("VIRA confirm token", () => {
     ).rejects.toBeInstanceOf(ViraInputError);
   });
 
-  it("consumeConfirmJti: true once, then false; pruned after exp + skew", () => {
+  it("consumeConfirmJti: true once, then false; pruned after exp + skew inclusive", () => {
     const exp = NOW_SECONDS + 300;
     expect(consumeConfirmJti("j1", exp, NOW)).toBe(true);
     expect(consumeConfirmJti("j1", exp, NOW)).toBe(false);
-    // Within skew window after bare exp, entry is retained (verify still accepts).
-    expect(
-      consumeConfirmJti("j1", exp, at(300 + VIRA_CLOCK_SKEW_SECONDS - 1)),
-    ).toBe(false);
-    // Only after exp + skew can the map drop the entry.
+    // At exp + skew, jose can still accept; entry must remain (consume stays false).
     expect(
       consumeConfirmJti("j1", exp, at(300 + VIRA_CLOCK_SKEW_SECONDS)),
+    ).toBe(false);
+    // Only after the inclusive skew second can the map drop the entry.
+    expect(
+      consumeConfirmJti("j1", exp, at(300 + VIRA_CLOCK_SKEW_SECONDS + 1)),
     ).toBe(true);
   });
 
