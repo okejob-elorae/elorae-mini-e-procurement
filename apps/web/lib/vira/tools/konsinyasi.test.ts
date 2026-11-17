@@ -8,9 +8,25 @@ const m = vi.hoisted(() => ({
   daftarSiklus: vi.fn(),
   rincianSiklus: vi.fn(),
   catatNomorDokumen: vi.fn(),
+  cycleFindUnique: vi.fn(),
 }));
-vi.mock("@/lib/konsinyasi/queries", () => ({ daftarSiklus: m.daftarSiklus, rincianSiklus: m.rincianSiklus }));
+vi.mock("@/lib/konsinyasi/queries", async (orig) => {
+  const actual = await orig<typeof import("@/lib/konsinyasi/queries")>();
+  return { ...actual, daftarSiklus: m.daftarSiklus, rincianSiklus: m.rincianSiklus };
+});
 vi.mock("@/lib/konsinyasi/writer", () => ({ catatNomorDokumen: m.catatNomorDokumen }));
+vi.mock("@elorae/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@elorae/db")>();
+  return {
+    ...actual,
+    prisma: {
+      ...actual.prisma,
+      consignmentCycle: {
+        findUnique: (...a: unknown[]) => m.cycleFindUnique(...a),
+      },
+    },
+  };
+});
 
 import { __sampleInput, parityCases, tools, writeTools } from "./konsinyasi";
 import { ViraInputError } from "../errors";
@@ -57,6 +73,10 @@ beforeEach(() => {
   ]);
   m.rincianSiklus.mockReset();
   m.catatNomorDokumen.mockReset().mockResolvedValue({ ok: true });
+  m.cycleFindUnique.mockReset().mockResolvedValue({
+    vatApplied: true,
+    store: { consignmentVat: true },
+  });
 });
 
 async function run(input: Record<string, unknown>) {

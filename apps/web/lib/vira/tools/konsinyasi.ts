@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { prisma } from "@elorae/db";
 import { bacaSaringSiklus, saringSiklus, type SaringSiklus } from "@/app/backoffice/konsinyasi/saring";
 import { URUT_TAHAP } from "@/app/backoffice/konsinyasi/tahap";
-import { daftarSiklus } from "@/lib/konsinyasi/queries";
+import { daftarSiklus, pakaiPpnSiklus } from "@/lib/konsinyasi/queries";
 import { catatNomorDokumen } from "@/lib/konsinyasi/writer";
 import { bolehMembukaKonsi, bolehMencatatNomorKonsi } from "@/lib/receivables/izin";
 import { ViraInputError, ViraNotFoundError } from "../errors";
@@ -113,13 +114,15 @@ const recordConsignmentDocumentNumberTool = defineWriteTool({
     if (row.sisaTagihan === null) {
       throw new ViraInputError(PESAN_NOMOR.BELUM_DIKUNCI);
     }
-    // No-PPN cycles skip tahap `pajak` → bayar_toko/selesai without a faktur (`aturan.ts`).
-    if (
-      input.kind === "PAJAK" &&
-      (row.tahap === "bayar_toko" || row.tahap === "selesai") &&
-      !row.noFakturPajak
-    ) {
-      throw new ViraInputError(PESAN_NOMOR.TANPA_PPN);
+    // Same VAT gate as the writer (`vatApplied ?? store.consignmentVat`), not tahap inference.
+    if (input.kind === "PAJAK") {
+      const vat = await prisma.consignmentCycle.findUnique({
+        where: { id: row.id },
+        select: { vatApplied: true, store: { select: { consignmentVat: true } } },
+      });
+      if (!vat || !pakaiPpnSiklus(vat)) {
+        throw new ViraInputError(PESAN_NOMOR.TANPA_PPN);
+      }
     }
     const current = input.kind === "NOTA" ? row.noNota : row.noFakturPajak;
     const label = input.kind === "NOTA" ? "NOTA" : "faktur pajak";

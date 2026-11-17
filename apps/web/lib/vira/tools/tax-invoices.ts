@@ -58,37 +58,59 @@ type TaxRow = {
   storeName: string;
 };
 
+const taxSelect = {
+  id: true,
+  status: true,
+  invoiceNo: true,
+  ...TAX_INVOICE_SOURCE_SELECT,
+} as const;
+
+function toTaxRow(row: {
+  id: string;
+  status: string;
+  invoiceNo: string | null;
+  delivery: Parameters<typeof resolveTaxInvoiceSource>[0]["delivery"];
+  sellThrough: Parameters<typeof resolveTaxInvoiceSource>[0]["sellThrough"];
+}): TaxRow {
+  const source = resolveTaxInvoiceSource(row);
+  return {
+    id: row.id,
+    status: row.status,
+    invoiceNo: row.invoiceNo,
+    docNo: source.docNo,
+    storeId: source.storeId,
+    storeName: source.storeName,
+  };
+}
+
 async function resolveInvoice(invoice: string): Promise<TaxRow> {
-  // Primary key first — `listTaxInvoices({ q })` never matches id (invoiceNo / docNo / store only).
-  const byId = await prisma.taxInvoice.findUnique({
-    where: { id: invoice },
-    select: { id: true, status: true, invoiceNo: true, ...TAX_INVOICE_SOURCE_SELECT },
+  // Primary key first — list search never matches id.
+  const byId = await prisma.taxInvoice.findUnique({ where: { id: invoice }, select: taxSelect });
+  if (byId && (byId.delivery || byId.sellThrough)) return toTaxRow(byId);
+
+  // Exact doc / faktur match (not contains), same idea as FSO `lookupByExactDocNo`.
+  const exact = await prisma.taxInvoice.findMany({
+    where: {
+      OR: [
+        { invoiceNo: invoice },
+        { delivery: { docNo: invoice } },
+        { sellThrough: { docNo: invoice } },
+      ],
+    },
+    select: taxSelect,
+    take: 5,
   });
-  if (byId && (byId.delivery || byId.sellThrough)) {
-    const source = resolveTaxInvoiceSource(byId);
-    return {
-      id: byId.id,
-      status: byId.status,
-      invoiceNo: byId.invoiceNo,
-      docNo: source.docNo,
-      storeId: source.storeId,
-      storeName: source.storeName,
-    };
-  }
-  const { rows } = await listTaxInvoices({ q: invoice, page: 1, perPage: 5 });
-  const hit = (rows as TaxRow[]).filter(
-    (r) => r.id === invoice || r.invoiceNo === invoice || r.docNo === invoice,
-  );
+  const hit = exact.filter((r) => r.delivery || r.sellThrough);
   if (hit.length === 0) throw new ViraNotFoundError("Faktur pajak tidak ditemukan");
   if (hit.length > 1) {
     throw new ViraInputError(
       `Beberapa faktur cocok: ${hit
         .slice(0, 5)
-        .map((r) => r.invoiceNo ?? r.docNo)
+        .map((r) => r.invoiceNo ?? resolveTaxInvoiceSource(r).docNo)
         .join(", ")}. Lebih spesifik.`,
     );
   }
-  return hit[0];
+  return toTaxRow(hit[0]);
 }
 
 type MarkArgs = { taxInvoiceId: string; note?: string };
@@ -145,6 +167,7 @@ const markTaxInvoiceSentToStoreTool = defineWriteTool({
           { label: "Toko", value: row.storeName },
           { label: "Nota asal", value: row.docNo },
           { label: "Status sekarang", value: row.status },
+          ...(input.note ? [{ label: "Catatan", value: input.note }] : []),
         ],
         confirmLabel: "Tandai terkirim",
         cancelLabel: "Batal",
