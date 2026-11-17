@@ -31,13 +31,14 @@ function textOf(result: unknown): unknown {
 }
 
 async function assertNeverExecute(
+  buildServer: typeof buildViraServerFrom,
   tool: ViraWriteTool,
   sample: Record<string, unknown>,
   writer: ReturnType<typeof vi.fn>,
 ): Promise<void> {
   const executeSpy = vi.spyOn(tool, "execute");
   const client = await connect(
-    buildViraServerFrom(
+    buildServer(
       [],
       {
         actor: { id: "u-1", name: "Uji", permissions: ["*"] },
@@ -114,11 +115,11 @@ describe("VIRA write tools — model can never execute", () => {
       execute: async (args, ctx) => writer(args, ctx),
       revalidate: () => ["/x"],
     });
-    await assertNeverExecute(tool, { id: "ord-1" }, writer);
+    await assertNeverExecute(buildViraServerFrom, tool, { id: "ord-1" }, writer);
   });
 
   it.each(VIRA_WRITE_TOOLS.map((t) => [t.name, t] as const))(
-    "%s: MCP tools/call never reaches execute; token stays out of content",
+    "%s: MCP tools/call never reaches execute or the writer; token stays out of content",
     async (_nama, tool) => {
       const kasus = VIRA_PARITY_CASES.find(
         (c) => c.tool === tool.name && c.kind === "writeAction",
@@ -129,34 +130,31 @@ describe("VIRA write tools — model can never execute", () => {
       const sample = (tool as WriteToolWithSample).__sampleInput;
       expect(sample, `${tool.name} must define __sampleInput for never-execute`).toBeDefined();
 
-      // Registry tools are already constructed; doMock cannot rebind their closed-over
-      // writer imports. Spy execute on the live tool object; writer non-invocation for
-      // prepare-only is covered by the self-test fake above. Tool cards must keep writers
-      // out of prepare (and attach __sampleInput).
-      const executeSpy = vi.spyOn(tool, "execute");
-      const client = await connect(
-        buildViraServerFrom(
-          [],
-          {
-            actor: { id: "u-1", name: "Uji", permissions: ["*"] },
-            baseUrl: "https://x.test",
-          },
-          [tool],
-        ),
-      );
-      const res = await client.callTool({ name: tool.name, arguments: sample });
-      await client.close();
+      // Pre-built registry tools close over their writer imports. Re-mock the writer,
+      // then re-import the registry so prepare/execute bind the spy (same idea as
+      // writeAction in parity.spec).
+      vi.resetModules();
+      const writer = vi.fn(async () => {
+        throw new Error(`${kasus.writerExport} must not be called from MCP prepare`);
+      });
+      vi.doMock(kasus.writerModule, async (asli) => {
+        const nyata = (await asli().catch(() => ({}))) as Record<string, unknown>;
+        return { ...nyata, [kasus.writerExport]: writer };
+      });
 
-      expect(executeSpy).not.toHaveBeenCalled();
-      expect(res.isError).toBeFalsy();
-      expect(textOf(res)).toMatchObject({ status: "awaiting_confirmation" });
-
-      const contentJson = JSON.stringify((res as { content: unknown }).content);
-      const meta = (res as { _meta?: Record<string, unknown> })._meta?.[
-        "elorae/confirmation"
-      ] as { token?: string } | undefined;
-      expect(meta?.token).toBeTruthy();
-      expect(contentJson).not.toContain(meta!.token);
+      try {
+        const [{ buildViraServerFrom: buildFresh }, { VIRA_WRITE_TOOLS: freshWrites }] =
+          await Promise.all([
+            import("../server"),
+            import("./index"),
+          ]);
+        const fresh = freshWrites.find((t) => t.name === tool.name);
+        expect(fresh, `${tool.name} missing after re-import`).toBeDefined();
+        const freshSample = (fresh as WriteToolWithSample).__sampleInput ?? sample;
+        await assertNeverExecute(buildFresh, fresh!, freshSample!, writer);
+      } finally {
+        vi.doUnmock(kasus.writerModule);
+      }
     },
   );
 });

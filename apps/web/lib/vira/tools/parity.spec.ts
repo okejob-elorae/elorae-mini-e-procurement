@@ -147,7 +147,10 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
             gagal: `${kasus.actionExport} threw something other than the permission error: ${String(err)}`,
           };
         }
-        return { boleh: writer.mock.calls.length > 0 };
+        if (writer.mock.calls.length > 0) return { boleh: true };
+        return {
+          gagal: `${kasus.actionExport} returned without calling the writer or throwing a permission error`,
+        };
       } finally {
         vi.doUnmock(kasus.writerModule);
         sesi.permissions = [];
