@@ -239,20 +239,45 @@ function cakupan(tools: readonly ViraTool[], cases: readonly ParityCase[]): stri
     });
 }
 
-/** Every write tool must have exactly one `writeAction` parity case (empty registry → green). */
+/**
+ * Every write tool needs ≥1 `writeAction` case. Most tools have exactly one; a tool whose
+ * mirrored action gates on a call argument (e.g. consignment NOTA vs PAJAK) may list one
+ * case per argument value — write-gate parity then ORs those UI results (see below).
+ */
 function cakupanWrite(tools: readonly ViraWriteTool[], cases: readonly ParityCase[]): string[] {
   return tools.flatMap((t) => {
     const n = cases.filter((c) => c.tool === t.name && c.kind === "writeAction").length;
-    return n === 1
-      ? []
-      : [
-          `${t.name}: ${
-            n === 0
-              ? "no writeAction parity case"
-              : `${n} writeAction parity cases (expected exactly 1)`
-          }`,
-        ];
+    return n >= 1 ? [] : [`${t.name}: no writeAction parity case`];
   });
+}
+
+/** Tool gate vs UI: when several writeAction rows exist, UI allows ⇔ any of them allows. */
+async function periksaParitasWrite(
+  tool: Pick<ViraWriteTool, "name" | "gate">,
+  kasusList: ParityCase[],
+): Promise<string[]> {
+  const masalah: string[] = [];
+  const acuan = kasusList[0]!;
+  for (const izin of await himpunanIzin(tool, acuan)) {
+    const harapan = gateAllows(tool.gate, izin);
+    // Sequential: writeAction hasilUi mutates shared tulisParitas / sesi / vi mocks.
+    const hasil: Awaited<ReturnType<typeof hasilUi>>[] = [];
+    for (const k of kasusList) {
+      hasil.push(await hasilUi(k, izin));
+    }
+    const gagal = hasil.find((h): h is { gagal: string } => "gagal" in h);
+    if (gagal) {
+      masalah.push(`${tool.name} ${JSON.stringify(izin)}: ${gagal.gagal}`);
+      continue;
+    }
+    const boleh = hasil.some((h) => "boleh" in h && h.boleh);
+    if (boleh !== harapan) {
+      masalah.push(
+        `${tool.name} ${JSON.stringify(izin)}: tool gate allows=${harapan} but UI (writeAction) allows=${boleh}`,
+      );
+    }
+  }
+  return masalah;
 }
 
 describe("VIRA tool parity — real registry", () => {
@@ -275,7 +300,7 @@ describe("VIRA tool parity — real registry", () => {
 });
 
 describe("VIRA write-tool parity — real registry", () => {
-  it("every write tool has exactly one writeAction parity case", () => {
+  it("every write tool has at least one writeAction parity case", () => {
     expect(cakupanWrite(VIRA_WRITE_TOOLS, VIRA_PARITY_CASES)).toEqual([]);
   });
 
@@ -305,11 +330,11 @@ describe("VIRA write-tool parity — real registry", () => {
   it.each(VIRA_WRITE_TOOLS.map((t) => [t.name, t] as const))(
     "%s: write gate equals the UI action gate (excluding vira:write)",
     async (_nama, tool) => {
-      const kasus = VIRA_PARITY_CASES.find(
+      const kasusList = VIRA_PARITY_CASES.filter(
         (c) => c.tool === tool.name && c.kind === "writeAction",
       );
-      expect(kasus, `${tool.name} has no writeAction parity case`).toBeDefined();
-      expect(await periksaParitas(tool, kasus!)).toEqual([]);
+      expect(kasusList.length, `${tool.name} has no writeAction parity case`).toBeGreaterThan(0);
+      expect(await periksaParitasWrite(tool, kasusList)).toEqual([]);
     },
   );
 });
@@ -579,7 +604,7 @@ describe("VIRA tool parity — engine self-test (fakes in this file only)", () =
     ]);
   });
 
-  it("write coverage reports a missing and a duplicate writeAction case", () => {
+  it("write coverage reports a missing writeAction case (duplicates allowed for per-arg gates)", () => {
     const a = {
       kind: "write" as const,
       name: "fake_write_a",
@@ -605,7 +630,6 @@ describe("VIRA tool parity — engine self-test (fakes in this file only)", () =
     });
     expect(cakupanWrite([a, b], [wa("fake_write_b"), wa("fake_write_b")])).toEqual([
       "fake_write_a: no writeAction parity case",
-      "fake_write_b: 2 writeAction parity cases (expected exactly 1)",
     ]);
   });
 });

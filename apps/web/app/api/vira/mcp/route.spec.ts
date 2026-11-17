@@ -262,6 +262,9 @@ d("POST /api/vira/mcp (test bed only)", () => {
         "reject_leave_request",
         "approve_spg_buyer_return",
         "reject_spg_buyer_return",
+        "close_purchase_order",
+        "record_consignment_document_number",
+        "mark_tax_invoice_sent_to_store",
       ].sort(),
     );
   });

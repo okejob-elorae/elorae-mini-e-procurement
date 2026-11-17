@@ -185,6 +185,93 @@ function mockPrepareDeps(toolName: string): string[] {
     }));
     mocked.push("@/lib/spg/retur-pembeli-queries");
   }
+  if (toolName === "close_purchase_order") {
+    vi.doMock("@/lib/purchase-orders/queries", () => ({
+      listPOs: vi.fn(async () => ({ items: [], totalCount: 0 })),
+      getPOById: vi.fn(async () => ({
+        id: "po-1",
+        docNumber: "PO-1",
+        supplierId: "s1",
+        supplier: { name: "CV" },
+        status: "PARTIAL",
+        createdAt: "2026-11-01T00:00:00.000Z",
+        etaDate: null,
+        grandTotal: 1,
+        items: [{ qty: 10, receivedQty: 1 }],
+      })),
+    }));
+    mocked.push("@/lib/purchase-orders/queries");
+    vi.doMock("@elorae/db", async (asli) => {
+      const nyata = await asli<typeof import("@elorae/db")>();
+      return {
+        ...nyata,
+        prisma: {
+          ...nyata.prisma,
+          gRN: { count: vi.fn(async () => 0) },
+          purchaseOrder: {
+            findUnique: vi.fn(async () => ({ id: "po-1" })),
+          },
+        },
+      };
+    });
+    mocked.push("@elorae/db");
+  }
+  if (toolName === "record_consignment_document_number") {
+    vi.doMock("@elorae/db", async (asli) => {
+      const nyata = await asli<typeof import("@elorae/db")>();
+      return {
+        ...nyata,
+        prisma: {
+          ...nyata.prisma,
+          consignmentCycle: {
+            findUnique: vi.fn(async () => ({
+              id: "c-1",
+              noKonsi: "KNS-c-1",
+              storeId: "s1",
+              periodYear: 2026,
+              periodMonth: 11,
+              noNota: null,
+              noFakturPajak: null,
+              lockedAt: new Date("2026-11-01T00:00:00.000Z"),
+              vatApplied: true,
+              store: { name: "Toko", consignmentVat: true },
+            })),
+          },
+        },
+      };
+    });
+    mocked.push("@elorae/db");
+  }
+  if (toolName === "mark_tax_invoice_sent_to_store") {
+    const taxRow = {
+      id: "t-1",
+      status: "CREATED",
+      invoiceNo: "010.000-26.00000001",
+      delivery: {
+        docNo: "NT-1",
+        invoiceDate: new Date(),
+        dueDate: new Date(),
+        total: 1,
+        orderId: "o1",
+        order: { store: { id: "s1", name: "Toko", npwp: null } },
+      },
+      sellThrough: null,
+    };
+    vi.doMock("@elorae/db", async (asli) => {
+      const nyata = await asli<typeof import("@elorae/db")>();
+      return {
+        ...nyata,
+        prisma: {
+          ...nyata.prisma,
+          taxInvoice: {
+            findUnique: vi.fn(async () => taxRow),
+            findMany: vi.fn(async () => [taxRow]),
+          },
+        },
+      };
+    });
+    mocked.push("@elorae/db");
+  }
   return mocked;
 }
 

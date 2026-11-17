@@ -4,14 +4,60 @@ import { ViraInputError } from "../errors";
 import { serialize } from "../output";
 import type { ViraToolContext } from "./types";
 
-const m = vi.hoisted(() => ({ listTaxInvoices: vi.fn() }));
+const m = vi.hoisted(() => ({
+  listTaxInvoices: vi.fn(),
+  markTaxInvoiceSentToStore: vi.fn(),
+  taxFindUnique: vi.fn(),
+  taxFindMany: vi.fn(),
+}));
 vi.mock("@/lib/tax-invoices/queries", () => ({ listTaxInvoices: m.listTaxInvoices }));
+vi.mock("@/lib/tax-invoices/writer", () => ({
+  markTaxInvoiceSentToStore: m.markTaxInvoiceSentToStore,
+}));
+vi.mock("@elorae/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@elorae/db")>();
+  return {
+    ...actual,
+    prisma: {
+      ...actual.prisma,
+      taxInvoice: {
+        findUnique: (...a: unknown[]) => m.taxFindUnique(...a),
+        findMany: (...a: unknown[]) => m.taxFindMany(...a),
+      },
+    },
+  };
+});
 
-import { parityCases, tools } from "./tax-invoices";
+function prismaTax(id: string, extra: Record<string, unknown> = {}) {
+  return {
+    id,
+    status: "CREATED",
+    invoiceNo: `010.000-26.0000000${id}`,
+    delivery: {
+      docNo: `NT-${id}`,
+      invoiceDate: new Date(),
+      dueDate: new Date(),
+      total: 1,
+      orderId: "o1",
+      order: { store: { id: "s1", name: "Toko Melati", npwp: null } },
+    },
+    sellThrough: null,
+    ...extra,
+  };
+}
+
+import { TaxInvoiceError } from "@/lib/tax-invoices/errors";
+import { __sampleInput, parityCases, tools, writeTools } from "./tax-invoices";
 
 const tool = tools[0];
+const mark = writeTools.find((t) => t.name === "mark_tax_invoice_sent_to_store")!;
 const schema = z.object(tool.inputShape);
+const markSchema = z.object(mark.inputShape);
 const ctx: ViraToolContext = { actor: { id: "u1", name: "Uji", permissions: ["tax_invoices:view"] }, baseUrl: "https://e.test" };
+const writeCtx: ViraToolContext = {
+  actor: { id: "u-tax", name: "Pajak", permissions: ["tax_invoices:manage", "vira:write"] },
+  baseUrl: "https://e.test",
+};
 
 const NPWP = "01.234.567.8-901.000";
 const NIK = "3273012345670001";
@@ -41,6 +87,9 @@ function row(id: string, extra: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   m.listTaxInvoices.mockReset().mockResolvedValue({ rows: [row("1")], total: 1, counts: {} });
+  m.markTaxInvoiceSentToStore.mockReset().mockResolvedValue({ ok: true });
+  m.taxFindUnique.mockReset().mockResolvedValue(null);
+  m.taxFindMany.mockReset().mockImplementation(async () => [prismaTax("1")]);
 });
 
 async function run(input: Record<string, unknown>) {
@@ -100,6 +149,61 @@ describe("list_tax_invoices", () => {
 
   it("is gated on tax_invoices:view with one pageCode parity case", () => {
     expect(tool.gate).toEqual({ kind: "code", code: "tax_invoices:view" });
-    expect(parityCases).toHaveLength(1);
+    expect(parityCases).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tool: "list_tax_invoices", kind: "pageCode" }),
+      ]),
+    );
+  });
+});
+
+describe("mark_tax_invoice_sent_to_store", () => {
+  it("__sampleInput + parity", () => {
+    expect(__sampleInput.mark_tax_invoice_sent_to_store).toEqual({ invoice: "t-1" });
+    expect(parityCases).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tool: "mark_tax_invoice_sent_to_store",
+          kind: "writeAction",
+          args: [{ taxInvoiceId: "t-1" }],
+        }),
+      ]),
+    );
+  });
+
+  it("prepare CREATED only; execute maps TaxInvoiceError; note max 191", async () => {
+    expect(markSchema.safeParse({ invoice: "1", note: "x".repeat(191) }).success).toBe(true);
+    expect(markSchema.safeParse({ invoice: "1", note: "x".repeat(192) }).success).toBe(false);
+
+    const prepared = await mark.prepare(
+      markSchema.parse({ invoice: "1", note: "serahkan ke kasir" }),
+      writeCtx,
+    );
+    expect(prepared.preview.title).toContain("terkirim ke toko");
+    expect(prepared.preview.details.find((d) => d.label === "Catatan")?.value).toBe("serahkan ke kasir");
+    expect(prepared.args).toEqual({ taxInvoiceId: "1", note: "serahkan ke kasir" });
+    expect(m.taxFindMany).toHaveBeenCalled();
+
+    m.taxFindUnique.mockResolvedValueOnce(prismaTax("1", { status: "PENDING" }));
+    await expect(mark.prepare(markSchema.parse({ invoice: "1" }), writeCtx)).rejects.toBeInstanceOf(ViraInputError);
+
+    m.taxFindUnique.mockResolvedValueOnce(prismaTax("t-1"));
+    const byId = await mark.prepare(markSchema.parse({ invoice: "t-1" }), writeCtx);
+    expect(byId.args).toEqual({ taxInvoiceId: "t-1" });
+    expect(m.taxFindMany).toHaveBeenCalledTimes(1); // id hit skips findMany
+
+    const ok = await mark.execute({ taxInvoiceId: "1" }, writeCtx);
+    expect(m.markTaxInvoiceSentToStore).toHaveBeenCalledWith({
+      taxInvoiceId: "1",
+      reason: undefined,
+      userId: "u-tax",
+    });
+    expect(ok).toMatchObject({ ok: true, entityType: "TaxInvoice" });
+
+    m.markTaxInvoiceSentToStore.mockRejectedValueOnce(new TaxInvoiceError("INVALID_STATE"));
+    expect(await mark.execute({ taxInvoiceId: "1" }, writeCtx)).toMatchObject({
+      ok: false,
+      code: "INVALID_STATE",
+    });
   });
 });

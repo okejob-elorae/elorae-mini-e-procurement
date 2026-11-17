@@ -8,15 +8,55 @@ import { ViraInputError } from "../errors";
 import { serialize } from "../output";
 import type { ViraToolContext } from "./types";
 
-const m = vi.hoisted(() => ({ listPOs: vi.fn(), awal: new Date("2026-11-15T17:00:00.000Z") }));
-vi.mock("@/lib/purchase-orders/queries", () => ({ listPOs: m.listPOs }));
+const m = vi.hoisted(() => ({
+  listPOs: vi.fn(),
+  getPOById: vi.fn(),
+  tutupPurchaseOrder: vi.fn(),
+  getActorName: vi.fn(),
+  notifyPOStatusUpdated: vi.fn(),
+  grnCount: vi.fn(),
+  awal: new Date("2026-11-15T17:00:00.000Z"),
+}));
+vi.mock("@/lib/purchase-orders/queries", () => ({ listPOs: m.listPOs, getPOById: m.getPOById }));
+vi.mock("@/lib/purchase-orders/tutup", async (orig) => {
+  const actual = await orig<typeof import("@/lib/purchase-orders/tutup")>();
+  return { ...actual, tutupPurchaseOrder: m.tutupPurchaseOrder };
+});
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: m.getActorName }));
+vi.mock("@/lib/notifications/events", () => ({
+  notifyPOStatusUpdated: m.notifyPOStatusUpdated,
+  notifyPOCreated: vi.fn(),
+  notifyPOPaymentToggled: vi.fn(),
+}));
 vi.mock("@/lib/dashboard/hari-wib", () => ({ batasHariIniWib: () => ({ awal: m.awal }) }));
+vi.mock("@elorae/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@elorae/db")>();
+  return {
+    ...actual,
+    prisma: {
+      ...actual.prisma,
+      gRN: { count: (...a: unknown[]) => m.grnCount(...a) },
+      purchaseOrder: {
+        findUnique: vi.fn(async ({ where }: { where: { id?: string; docNumber?: string } }) => {
+          if (where.docNumber === "PO-a" || where.id === "a") return { id: "a" };
+          return null;
+        }),
+      },
+    },
+  };
+});
 
-import { PO_READ_CODES, parityCases, tools } from "./purchase-orders";
+import { PO_READ_CODES, __sampleInput, parityCases, tools, writeTools } from "./purchase-orders";
 
 const tool = tools[0];
+const close = writeTools.find((t) => t.name === "close_purchase_order")!;
 const schema = z.object(tool.inputShape);
+const closeSchema = z.object(close.inputShape);
 const ctx: ViraToolContext = { actor: { id: "u1", name: "Uji", permissions: ["purchase_orders:view"] }, baseUrl: "https://e.test" };
+const writeCtx: ViraToolContext = {
+  actor: { id: "u-admin", name: "Admin", permissions: ["purchase_orders:approve", "vira:write"] },
+  baseUrl: "https://e.test",
+};
 
 function poRow(id: string, extra: Record<string, unknown> = {}) {
   return {
@@ -45,6 +85,28 @@ function poRow(id: string, extra: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   m.listPOs.mockReset().mockResolvedValue({ items: [poRow("a")], totalCount: 1 });
+  m.getPOById.mockReset().mockImplementation(async (id: string) =>
+    id === "a"
+      ? {
+          ...poRow("a", { status: "PARTIAL" }),
+          createdAt: "2026-11-01T03:00:00.000Z",
+          etaDate: "2026-11-20T17:00:00.000Z",
+          items: [{ qty: 10, receivedQty: 3 }],
+          supplier: { name: "CV Kain Jaya" },
+        }
+      : null,
+  );
+  m.tutupPurchaseOrder.mockReset().mockResolvedValue({
+    ok: true,
+    docNumber: "PO-a",
+    statusSebelum: "PARTIAL",
+    sisa: [],
+    qtySisa: 0,
+    nilaiSisa: 0,
+  });
+  m.getActorName.mockReset().mockResolvedValue("Admin");
+  m.notifyPOStatusUpdated.mockReset().mockResolvedValue(undefined);
+  m.grnCount.mockReset().mockResolvedValue(0);
 });
 
 describe("PO_READ_CODES", () => {
@@ -129,6 +191,86 @@ describe("list_purchase_orders", () => {
   });
 
   it("has one action parity case on getPOs → listPOs", () => {
-    expect(parityCases).toMatchObject([{ tool: "list_purchase_orders", kind: "action", actionExport: "getPOs", libExport: "listPOs" }]);
+    expect(parityCases).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tool: "list_purchase_orders",
+          kind: "action",
+          actionExport: "getPOs",
+          libExport: "listPOs",
+        }),
+      ]),
+    );
+  });
+});
+
+describe("close_purchase_order", () => {
+  it("__sampleInput and writeAction parity", () => {
+    expect(__sampleInput.close_purchase_order).toEqual({ po: "PO-1", reason: "x" });
+    expect(parityCases).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tool: "close_purchase_order",
+          kind: "writeAction",
+          actionExport: "tutupPO",
+          args: ["po-1", "alasan"],
+        }),
+      ]),
+    );
+  });
+
+  it("prepare + execute + afterSuccess notification; refusal skips notify", async () => {
+    const prepared = await close.prepare(closeSchema.parse({ po: "a", reason: "pemasok tidak sanggup" }), writeCtx);
+    expect(prepared.preview.title).toBe("Tutup PO PO-a");
+    expect(prepared.preview.details.find((d) => d.label === "Sudah diterima")?.value).toBe("3");
+    expect(m.tutupPurchaseOrder).not.toHaveBeenCalled();
+
+    const ok = await close.execute(prepared.args, writeCtx);
+    expect(m.tutupPurchaseOrder).toHaveBeenCalledWith({
+      poId: "a",
+      userId: "u-admin",
+      alasan: "pemasok tidak sanggup",
+    });
+    expect(ok).toMatchObject({ ok: true, message: "PO PO-a ditutup.", extra: { docNumber: "PO-a", statusSebelum: "PARTIAL" } });
+    await close.afterSuccess!(prepared.args, ok as Extract<typeof ok, { ok: true }>, writeCtx);
+    expect(m.notifyPOStatusUpdated).toHaveBeenCalledWith("a", "PO-a", "PARTIAL", "CLOSED", "Admin");
+
+    m.notifyPOStatusUpdated.mockClear();
+    m.tutupPurchaseOrder.mockResolvedValueOnce({ ok: false, code: "BELUM_ADA_PENERIMAAN" });
+    const fail = await close.execute(prepared.args, writeCtx);
+    expect(fail).toMatchObject({ ok: false, code: "BELUM_ADA_PENERIMAAN" });
+    expect(m.notifyPOStatusUpdated).not.toHaveBeenCalled();
+  });
+
+  it("wrong status → prepare refuses", async () => {
+    m.getPOById.mockResolvedValue({
+      ...poRow("a", { status: "CLOSED" }),
+      createdAt: "2026-11-01T03:00:00.000Z",
+      etaDate: null,
+      items: [{ qty: 10, receivedQty: 3 }],
+      supplier: { name: "X" },
+    });
+    await expect(close.prepare(closeSchema.parse({ po: "a", reason: "x" }), writeCtx)).rejects.toBeInstanceOf(
+      ViraInputError,
+    );
+  });
+
+  it("zero received / fully received → prepare refuses", async () => {
+    m.getPOById.mockResolvedValue({
+      ...poRow("a"),
+      items: [{ qty: 10, receivedQty: 0 }],
+      supplier: { name: "X" },
+    });
+    await expect(close.prepare(closeSchema.parse({ po: "a", reason: "x" }), writeCtx)).rejects.toBeInstanceOf(
+      ViraInputError,
+    );
+    m.getPOById.mockResolvedValue({
+      ...poRow("a"),
+      items: [{ qty: 10, receivedQty: 10 }],
+      supplier: { name: "X" },
+    });
+    await expect(close.prepare(closeSchema.parse({ po: "a", reason: "x" }), writeCtx)).rejects.toBeInstanceOf(
+      ViraInputError,
+    );
   });
 });
