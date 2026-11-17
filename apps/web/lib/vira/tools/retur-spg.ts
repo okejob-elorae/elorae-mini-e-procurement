@@ -63,6 +63,26 @@ function mapHasil(r: HasilPutusanReturPembeli, url: string): Extract<ViraExecute
   return { ok: false, code: r.alasan, message: PESAN[r.alasan] ?? r.alasan, url };
 }
 
+/** Uang + commission/konsi lock flags the detail page shows before a decision. */
+function detailKeputusan(row: RincianReturPembeliKantor): { label: string; value: string }[] {
+  const details: { label: string; value: string }[] = [
+    { label: "Uang", value: row.uang.keadaan },
+  ];
+  if (row.peringatan.komisiDitutup) {
+    details.push({
+      label: "Peringatan komisi",
+      value: `Komisi bulan nota ${row.peringatan.bulanKomisi} sudah dicek/dikunci.`,
+    });
+  }
+  if (row.peringatan.siklusKonsiTerkunci) {
+    details.push({
+      label: "Peringatan konsi",
+      value: `Siklus konsinyasi bulan laporan ${row.peringatan.bulanLaporan} sudah dikunci.`,
+    });
+  }
+  return details;
+}
+
 async function resolveMenunggu(returnId: string, actorId: string): Promise<RincianReturPembeliKantor> {
   const row = await rincianReturPembeliKantor(returnId);
   if (!row) throw new ViraNotFoundError("Retur tidak ditemukan");
@@ -130,6 +150,7 @@ const approveSpgBuyerReturnTool = defineWriteTool({
           { label: "SPG", value: row.pelapor.nama },
           { label: "Barang", value: barang.join(", ") || "—" },
           { label: "Nilai", value: formatRp(nilai) },
+          ...detailKeputusan(row),
         ],
         confirmLabel: "Setujui",
         cancelLabel: "Batal",
@@ -193,16 +214,31 @@ const rejectSpgBuyerReturnTool = defineWriteTool({
     const nilai = row.baris.reduce((n, l) => n + l.nilaiBersih, 0);
     const barang = row.baris.slice(0, 8).map((l) => `${l.variantSku} × ${l.qty}`);
     if (row.baris.length > 8) barang.push(`…+${row.baris.length - 8} lagi`);
+    // TolakDialog: MENUNGGU_SUDAH / uang already recorded → rejecting creates SPG beban.
+    const uangSudah =
+      row.uang.keadaan === "MENUNGGU_SUDAH" || row.uang.pada != null;
+    const bebanDetail = uangSudah
+      ? [
+          {
+            label: "Beban SPG jika ditolak",
+            value: formatRp(row.bebanJikaDitolak),
+          },
+        ]
+      : [];
     return {
       preview: {
         title: `Tolak retur ${row.nota.docNo}`,
-        summary: `${row.toko.nama} · ${formatRp(nilai)}`,
+        summary: uangSudah
+          ? `${row.toko.nama} · uang sudah dikembalikan · beban ${formatRp(row.bebanJikaDitolak)}`
+          : `${row.toko.nama} · ${formatRp(nilai)}`,
         details: [
           { label: "Toko", value: row.toko.nama },
           { label: "SPG", value: row.pelapor.nama },
           { label: "Barang", value: barang.join(", ") || "—" },
           { label: "Nilai", value: formatRp(nilai) },
           { label: "Alasan", value: input.reason },
+          ...detailKeputusan(row),
+          ...bebanDetail,
         ],
         confirmLabel: "Tolak",
         cancelLabel: "Batal",
@@ -272,6 +308,7 @@ export const tools: ViraTool[] = [
       });
       const items = baris.map((b) => ({
         id: b.id,
+        docNo: b.docNo,
         store: { id: b.storeId, name: b.toko },
         spg: { name: b.pelapor },
         status: b.status,

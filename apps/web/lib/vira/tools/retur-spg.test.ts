@@ -144,6 +144,7 @@ describe("list_spg_buyer_returns", () => {
     });
     expect(out.items[0]).toMatchObject({
       id: "r-1",
+      docNo: "NT-001",
       store: { id: "s1", name: "Toko Melati" },
       spg: { name: "Sari" },
       status: "MENUNGGU",
@@ -191,6 +192,7 @@ describe("approve / reject spg buyer return", () => {
     expect(prepared.args).toEqual({ returnId: "r-1", spgSaleId: "sale-1" });
     expect(prepared.preview.title).toBe("Setujui retur NT-001");
     expect(prepared.preview.details.find((d) => d.label === "Barang")?.value).toBe("KAOS-01 × 2");
+    expect(prepared.preview.details.find((d) => d.label === "Uang")?.value).toBe("MENUNGGU_BELUM");
     expect(approve.revalidate(prepared.args, { ok: true, message: "", url: "", entityType: "", entityId: "" })).toEqual(
       expect.arrayContaining([
         "/backoffice/retur-spg",
@@ -251,5 +253,22 @@ describe("approve / reject spg buyer return", () => {
 
   it("reject reason blank fails schema", () => {
     expect(rejectSchema.safeParse({ returnId: "r-1", reason: "  " }).success).toBe(false);
+  });
+
+  it("reject prepare surfaces SPG beban when uang already returned", async () => {
+    m.rincianReturPembeliKantor.mockResolvedValue(
+      detail({
+        uang: { keadaan: "MENUNGGU_SUDAH", pada: new Date("2026-11-10T03:00:00Z"), olehKantor: null },
+        bebanJikaDitolak: 50_000,
+      }),
+    );
+    const prepared = await reject.prepare(
+      rejectSchema.parse({ returnId: "r-1", reason: "tidak cocok" }),
+      writeCtx,
+    );
+    expect(prepared.preview.details.find((d) => d.label === "Beban SPG jika ditolak")?.value).toBe(
+      "Rp 50.000",
+    );
+    expect(prepared.preview.summary).toContain("beban");
   });
 });
