@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SignJWT, type JWTPayload } from "jose";
-import { VIRA_TOKEN_ISSUER } from "./config";
+import { VIRA_CLOCK_SKEW_SECONDS, VIRA_TOKEN_ISSUER } from "./config";
 import { ViraAuthError, ViraInputError, type ViraAuthReason } from "./errors";
 import {
   VIRA_CONFIRM_AUDIENCE,
@@ -146,11 +146,18 @@ describe("VIRA confirm token", () => {
     ).rejects.toBeInstanceOf(ViraInputError);
   });
 
-  it("consumeConfirmJti: true once, then false; pruned after exp", () => {
-    expect(consumeConfirmJti("j1", NOW_SECONDS + 300, NOW)).toBe(true);
-    expect(consumeConfirmJti("j1", NOW_SECONDS + 300, NOW)).toBe(false);
-    // After exp, the entry is pruned and the jti can be consumed again.
-    expect(consumeConfirmJti("j1", NOW_SECONDS + 300, at(301))).toBe(true);
+  it("consumeConfirmJti: true once, then false; pruned after exp + skew inclusive", () => {
+    const exp = NOW_SECONDS + 300;
+    expect(consumeConfirmJti("j1", exp, NOW)).toBe(true);
+    expect(consumeConfirmJti("j1", exp, NOW)).toBe(false);
+    // At exp + skew, jose can still accept; entry must remain (consume stays false).
+    expect(
+      consumeConfirmJti("j1", exp, at(300 + VIRA_CLOCK_SKEW_SECONDS)),
+    ).toBe(false);
+    // Only after the inclusive skew second can the map drop the entry.
+    expect(
+      consumeConfirmJti("j1", exp, at(300 + VIRA_CLOCK_SKEW_SECONDS + 1)),
+    ).toBe(true);
   });
 
   it("missing secret → missing_secret for both sign and verify", async () => {
