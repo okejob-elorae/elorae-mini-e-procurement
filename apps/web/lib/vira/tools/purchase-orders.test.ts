@@ -14,6 +14,7 @@ const m = vi.hoisted(() => ({
   tutupPurchaseOrder: vi.fn(),
   getActorName: vi.fn(),
   notifyPOStatusUpdated: vi.fn(),
+  grnCount: vi.fn(),
   awal: new Date("2026-11-15T17:00:00.000Z"),
 }));
 vi.mock("@/lib/purchase-orders/queries", () => ({ listPOs: m.listPOs, getPOById: m.getPOById }));
@@ -28,6 +29,16 @@ vi.mock("@/lib/notifications/events", () => ({
   notifyPOPaymentToggled: vi.fn(),
 }));
 vi.mock("@/lib/dashboard/hari-wib", () => ({ batasHariIniWib: () => ({ awal: m.awal }) }));
+vi.mock("@elorae/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@elorae/db")>();
+  return {
+    ...actual,
+    prisma: {
+      ...actual.prisma,
+      gRN: { count: (...a: unknown[]) => m.grnCount(...a) },
+    },
+  };
+});
 
 import { PO_READ_CODES, __sampleInput, parityCases, tools, writeTools } from "./purchase-orders";
 
@@ -89,6 +100,7 @@ beforeEach(() => {
   });
   m.getActorName.mockReset().mockResolvedValue("Admin");
   m.notifyPOStatusUpdated.mockReset().mockResolvedValue(undefined);
+  m.grnCount.mockReset().mockResolvedValue(0);
 });
 
 describe("PO_READ_CODES", () => {

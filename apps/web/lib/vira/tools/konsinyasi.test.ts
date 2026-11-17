@@ -50,7 +50,11 @@ function siklus(id: string, tahap: string, extra: Record<string, unknown> = {}) 
 }
 
 beforeEach(() => {
-  m.daftarSiklus.mockReset().mockResolvedValue([siklus("a", "nota"), siklus("b", "selesai"), siklus("c", "laporan", { storeName: "Toko Mawar" })]);
+  m.daftarSiklus.mockReset().mockResolvedValue([
+    siklus("a", "nota", { sisaTagihan: 0 }),
+    siklus("b", "selesai", { sisaTagihan: 0 }),
+    siklus("c", "laporan", { storeName: "Toko Mawar" }),
+  ]);
   m.rincianSiklus.mockReset();
   m.catatNomorDokumen.mockReset().mockResolvedValue({ ok: true });
 });

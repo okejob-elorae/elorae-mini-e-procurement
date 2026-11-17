@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { prisma } from "@elorae/db";
 import { batasHariIniWib } from "@/lib/dashboard/hari-wib";
 import { getActorName } from "@/lib/notifications/actor-name";
 import { notifyPOStatusUpdated } from "@/lib/notifications/events";
@@ -159,6 +160,18 @@ const closePurchaseOrderTool = defineWriteTool({
     if (items.length > 0 && sisa.length === 0) {
       throw new ViraInputError(PESAN_TOLAK_TUTUP_PO.SUDAH_LENGKAP);
     }
+    // Same gate as `tutupPurchaseOrder` (~L93–96).
+    const grnMenunggu = await prisma.gRN.count({
+      where: {
+        poId: row.id,
+        requiresOwnerApproval: true,
+        ownerApprovedAt: null,
+        ownerDeclinedAt: null,
+      },
+    });
+    if (grnMenunggu > 0) {
+      throw new ViraInputError(PESAN_TOLAK_TUTUP_PO.GRN_MENUNGGU_PEMILIK);
+    }
     const url = recordUrl(ctx.baseUrl, `/backoffice/purchase-orders/${row.id}`);
     return {
       preview: {
@@ -181,11 +194,17 @@ const closePurchaseOrderTool = defineWriteTool({
   },
   execute: async (args, ctx) => {
     const url = recordUrl(ctx.baseUrl, `/backoffice/purchase-orders/${args.poId}`);
-    const hasil = await tutupPurchaseOrder({
-      poId: args.poId,
-      userId: ctx.actor.id,
-      alasan: args.reason,
-    });
+    // Mirror `tutupPO` try/catch → GAGAL so confirm does not burn jti as INTERNAL.
+    let hasil;
+    try {
+      hasil = await tutupPurchaseOrder({
+        poId: args.poId,
+        userId: ctx.actor.id,
+        alasan: args.reason,
+      });
+    } catch {
+      return { ok: false, code: "GAGAL", message: "Gagal menyimpan. Coba lagi.", url };
+    }
     if (!hasil.ok) {
       // PESAN_TOLAK_TUTUP_PO from lib/purchase-orders/tutup.ts (~L34–43).
       return {

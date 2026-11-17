@@ -201,6 +201,17 @@ function mockPrepareDeps(toolName: string): string[] {
       })),
     }));
     mocked.push("@/lib/purchase-orders/queries");
+    vi.doMock("@elorae/db", async (asli) => {
+      const nyata = await asli<typeof import("@elorae/db")>();
+      return {
+        ...nyata,
+        prisma: {
+          ...nyata.prisma,
+          gRN: { count: vi.fn(async () => 0) },
+        },
+      };
+    });
+    mocked.push("@elorae/db");
   }
   if (toolName === "record_consignment_document_number") {
     vi.doMock("@/lib/konsinyasi/queries", () => ({
@@ -215,6 +226,7 @@ function mockPrepareDeps(toolName: string): string[] {
           noFakturPajak: null,
           tahap: "nota",
           nilaiTerjual: 0,
+          sisaTagihan: 0,
         },
       ]),
       rincianSiklus: vi.fn(),

@@ -13,14 +13,13 @@ vi.mock("@/lib/tax-invoices/queries", () => ({ listTaxInvoices: m.listTaxInvoice
 vi.mock("@/lib/tax-invoices/writer", () => ({
   markTaxInvoiceSentToStore: m.markTaxInvoiceSentToStore,
 }));
-vi.mock("@elorae/db", async (asli) => {
-  const nyata = await asli();
+vi.mock("@elorae/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@elorae/db")>();
   return {
-    ...nyata,
+    ...actual,
     prisma: {
-      ...nyata.prisma,
+      ...actual.prisma,
       taxInvoice: {
-        ...nyata.prisma.taxInvoice,
         findUnique: (...a: unknown[]) => m.taxFindUnique(...a),
       },
     },
@@ -191,7 +190,7 @@ describe("mark_tax_invoice_sent_to_store", () => {
       sellThrough: null,
     });
     const byId = await mark.prepare(markSchema.parse({ invoice: "t-1" }), writeCtx);
-    expect(byId.args.taxInvoiceId).toBe("t-1");
+    expect(byId.args).toEqual({ taxInvoiceId: "t-1" });
     expect(m.listTaxInvoices).toHaveBeenCalledTimes(1); // only the first prepare used list
 
     const ok = await mark.execute({ taxInvoiceId: "1" }, writeCtx);

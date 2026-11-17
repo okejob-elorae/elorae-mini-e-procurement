@@ -52,10 +52,13 @@ type CycleRow = {
   periode: string;
   noNota: string | null;
   noFakturPajak: string | null;
+  /** null while unlocked — same signal `daftarSiklus` uses for “belum dikunci”. */
+  sisaTagihan: number | null;
+  tahap: string;
 };
 
 async function resolveCycle(cycle: string): Promise<CycleRow> {
-  const semua = (await daftarSiklus()) as CycleRow[];
+  const semua = await daftarSiklus();
   const byId = semua.find((c) => c.id === cycle);
   if (byId) return byId;
   const hit = semua.filter((c) => c.noKonsi === cycle);
@@ -106,6 +109,18 @@ const recordConsignmentDocumentNumberTool = defineWriteTool({
       throw new ViraInputError(`Anda tidak punya izin mencatat nomor ${input.kind}.`);
     }
     const row = await resolveCycle(input.cycle);
+    // Writer refuses unlocked cycles (`catatNomorDokumen` ~L1192).
+    if (row.sisaTagihan === null) {
+      throw new ViraInputError(PESAN_NOMOR.BELUM_DIKUNCI);
+    }
+    // No-PPN cycles skip tahap `pajak` → bayar_toko/selesai without a faktur (`aturan.ts`).
+    if (
+      input.kind === "PAJAK" &&
+      (row.tahap === "bayar_toko" || row.tahap === "selesai") &&
+      !row.noFakturPajak
+    ) {
+      throw new ViraInputError(PESAN_NOMOR.TANPA_PPN);
+    }
     const current = input.kind === "NOTA" ? row.noNota : row.noFakturPajak;
     const label = input.kind === "NOTA" ? "NOTA" : "faktur pajak";
     const url = recordUrl(ctx.baseUrl, `/backoffice/konsinyasi/${row.id}`);
@@ -132,12 +147,18 @@ const recordConsignmentDocumentNumberTool = defineWriteTool({
     if (!bolehMencatatNomorKonsi(ctx.actor.permissions, args.kind)) {
       return { ok: false, code: "TANPA_AKSES", message: PESAN_NOMOR.TANPA_AKSES, url };
     }
-    const hasil = await catatNomorDokumen({
-      cycleId: args.cycleId,
-      jenis: args.kind,
-      nomor: args.number,
-      olehUserId: ctx.actor.id,
-    });
+    // Mirror action try/catch → GAGAL so confirm does not burn jti as INTERNAL.
+    let hasil;
+    try {
+      hasil = await catatNomorDokumen({
+        cycleId: args.cycleId,
+        jenis: args.kind,
+        nomor: args.number,
+        olehUserId: ctx.actor.id,
+      });
+    } catch {
+      return { ok: false, code: "GAGAL", message: PESAN_NOMOR.GAGAL, url };
+    }
     if (!hasil.ok) {
       return {
         ok: false,
