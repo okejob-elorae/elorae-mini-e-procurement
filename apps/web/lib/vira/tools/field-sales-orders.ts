@@ -207,8 +207,12 @@ const approveFieldSalesOrderTool = defineWriteTool({
         `Pesanan punya ajuan harga. Buka pesanan di Elorae untuk menetapkan harga final: ${url}`,
       );
     }
-    // Hold at create (kreditDitahan) requires an explicit UI checkbox — do not bypass via VIRA.
-    if (order.creditHoldAtCreate) {
+    // TAHAN / overdue-bill hold (`kreditDitahan`) needs the UI checkbox — not `creditHoldAtCreate`.
+    const holdRow = await prisma.fieldSalesOrder.findUnique({
+      where: { id: order.id },
+      select: { kreditDitahan: true },
+    });
+    if (holdRow?.kreditDitahan) {
       throw new ViraInputError(
         `Kredit pesanan ditahan. Buka pesanan di Elorae untuk memeriksa dan menyetujui: ${url}`,
       );

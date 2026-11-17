@@ -163,7 +163,10 @@ beforeEach(() => {
   m.getFieldSalesOrderById.mockReset().mockResolvedValue(detailRow());
   m.approveFieldSalesOrder.mockReset().mockResolvedValue({ ok: true });
   m.rejectFieldSalesOrder.mockReset().mockResolvedValue({ ok: true });
-  m.prismaOrderFind.mockReset().mockResolvedValue({ storeId: "s1" });
+  m.prismaOrderFind.mockReset().mockImplementation(async (args?: { where?: Record<string, unknown> }) => {
+    if (args?.where && "orderNo" in args.where) return { id: "o1" };
+    return { storeId: "s1", kreditDitahan: false };
+  });
   m.prismaStoreFind.mockReset().mockResolvedValue({ creditLimit: 1_000_000, noCreditLimit: false });
   m.bacaAturanKreditDb.mockReset().mockResolvedValue({});
   m.batasKreditBerlaku.mockReset().mockReturnValue({
@@ -403,7 +406,7 @@ describe("approve_field_sales_order / reject_field_sales_order", () => {
     );
   });
 
-  it("price appeal or credit hold → prepare refuses with Elorae URL", async () => {
+  it("price appeal or kreditDitahan → prepare refuses with Elorae URL", async () => {
     m.getFieldSalesOrderById.mockResolvedValue({
       ...detailRow(),
       status: "PENDING_APPROVAL",
@@ -420,8 +423,8 @@ describe("approve_field_sales_order / reject_field_sales_order", () => {
       ...detailRow(),
       status: "PENDING_APPROVAL",
       orderNo: "SO-1",
-      creditHoldAtCreate: true,
     });
+    m.prismaOrderFind.mockResolvedValue({ kreditDitahan: true });
     await expect(approve.prepare(approveSchema.parse({ order: "o1" }), writeCtx)).rejects.toEqual(
       new ViraInputError(
         "Kredit pesanan ditahan. Buka pesanan di Elorae untuk memeriksa dan menyetujui: https://e.test/backoffice/field-sales-orders/o1",
