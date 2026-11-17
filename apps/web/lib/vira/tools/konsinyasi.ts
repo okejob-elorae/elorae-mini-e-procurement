@@ -191,6 +191,23 @@ const recordConsignmentDocumentNumberTool = defineWriteTool({
     if (!bolehMencatatNomorKonsi(ctx.actor.permissions, args.kind)) {
       return { ok: false, code: "TANPA_AKSES", message: PESAN_NOMOR.TANPA_AKSES, url };
     }
+    // Re-check emptiness at confirm time (token can live minutes after prepare).
+    const sekarang = await prisma.consignmentCycle.findUnique({
+      where: { id: args.cycleId },
+      select: { noNota: true, noFakturPajak: true },
+    });
+    const existing = args.kind === "NOTA" ? sekarang?.noNota : sekarang?.noFakturPajak;
+    if (existing?.trim()) {
+      return {
+        ok: false,
+        code: "SUDAH_TERCATAT",
+        message:
+          args.kind === "NOTA"
+            ? `Nomor NOTA sudah tercatat: ${existing.trim()}.`
+            : `Nomor faktur pajak sudah tercatat: ${existing.trim()}.`,
+        url,
+      };
+    }
     // Mirror action try/catch → GAGAL so confirm does not burn jti as INTERNAL.
     let hasil;
     try {

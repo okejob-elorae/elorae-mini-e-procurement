@@ -159,6 +159,10 @@ const closePurchaseOrderTool = defineWriteTool({
     if (items.length > 0 && sisa.length === 0) {
       throw new ViraInputError(PESAN_TOLAK_TUTUP_PO.SUDAH_LENGKAP);
     }
+    const qtySisa = sisa.reduce(
+      (n, it) => n + (Number(it.qty ?? 0) - Number(it.receivedQty ?? 0)),
+      0,
+    );
     // Same gate as `tutupPurchaseOrder` (~L93–96).
     const grnMenunggu = await prisma.gRN.count({
       where: {
@@ -181,6 +185,7 @@ const closePurchaseOrderTool = defineWriteTool({
           { label: "Status", value: row.status },
           { label: "Total", value: formatRp(row.grandTotal) },
           { label: "Sudah diterima", value: String(received) },
+          { label: "Sisa tidak akan datang", value: String(qtySisa) },
           { label: "Alasan", value: input.reason },
         ],
         confirmLabel: "Tutup PO",
