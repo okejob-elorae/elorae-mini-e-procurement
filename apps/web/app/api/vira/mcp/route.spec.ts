@@ -255,10 +255,13 @@ d("POST /api/vira/mcp (test bed only)", () => {
         "list_tax_invoices",
         "list_marketplace_settlements",
         "list_leave_requests",
+        "list_spg_buyer_returns",
         "approve_field_sales_order",
         "reject_field_sales_order",
         "approve_leave_request",
         "reject_leave_request",
+        "approve_spg_buyer_return",
+        "reject_spg_buyer_return",
       ].sort(),
     );
   });
