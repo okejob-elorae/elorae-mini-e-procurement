@@ -260,7 +260,11 @@ async function periksaParitasWrite(
   const acuan = kasusList[0]!;
   for (const izin of await himpunanIzin(tool, acuan)) {
     const harapan = gateAllows(tool.gate, izin);
-    const hasil = await Promise.all(kasusList.map((k) => hasilUi(k, izin)));
+    // Sequential: writeAction hasilUi mutates shared tulisParitas / sesi / vi mocks.
+    const hasil: Awaited<ReturnType<typeof hasilUi>>[] = [];
+    for (const k of kasusList) {
+      hasil.push(await hasilUi(k, izin));
+    }
     const gagal = hasil.find((h): h is { gagal: string } => "gagal" in h);
     if (gagal) {
       masalah.push(`${tool.name} ${JSON.stringify(izin)}: ${gagal.gagal}`);
