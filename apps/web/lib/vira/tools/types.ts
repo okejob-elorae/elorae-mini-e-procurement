@@ -65,6 +65,11 @@ export type ViraWriteTool<I extends z.ZodRawShape = z.ZodRawShape, A = unknown> 
     result: Extract<ViraExecuteResult, { ok: true }>,
     ctx: ViraToolContext,
   ) => Promise<void>;
+  /**
+   * Sample MCP `tools/call` arguments for `never-execute.spec.ts` (VIRA-27).
+   * Tool cards set this so the harness can invoke prepare without inventing args.
+   */
+  __sampleInput?: z.infer<z.ZodObject<I>>;
 };
 
 /** Typed helper so modules can export arrays of write tools with different inputs. */

@@ -14,9 +14,12 @@ import { defineWriteTool, type ViraWriteTool } from "./types";
  * A file-local fake (below) proves the MCP/token/execute+writer assertions today.
  */
 
-type WriteToolWithSample = ViraWriteTool & {
-  __sampleInput?: Record<string, unknown>;
-};
+const tulisNever = vi.hoisted(() => ({
+  spy: vi.fn(async () => {
+    throw new Error("writer must not be called from MCP prepare");
+  }),
+  exportName: "" as string,
+}));
 
 async function connect(server: McpServer): Promise<Client> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -36,6 +39,7 @@ async function assertNeverExecute(
   sample: Record<string, unknown>,
   writer: ReturnType<typeof vi.fn>,
 ): Promise<void> {
+  const prepareSpy = vi.spyOn(tool, "prepare");
   const executeSpy = vi.spyOn(tool, "execute");
   const client = await connect(
     buildServer(
@@ -50,6 +54,7 @@ async function assertNeverExecute(
   const res = await client.callTool({ name: tool.name, arguments: sample });
   await client.close();
 
+  expect(prepareSpy).toHaveBeenCalledTimes(1);
   expect(executeSpy).not.toHaveBeenCalled();
   expect(writer).not.toHaveBeenCalled();
   expect(res.isError).toBeFalsy();
@@ -127,19 +132,34 @@ describe("VIRA write tools — model can never execute", () => {
       expect(kasus, `${tool.name} needs a writeAction parity case`).toBeDefined();
       if (!kasus || kasus.kind !== "writeAction") return;
 
-      const sample = (tool as WriteToolWithSample).__sampleInput;
-      expect(sample, `${tool.name} must define __sampleInput for never-execute`).toBeDefined();
+      expect(
+        tool.__sampleInput,
+        `${tool.name} must define __sampleInput for never-execute`,
+      ).toBeDefined();
 
       // Pre-built registry tools close over their writer imports. Re-mock the writer,
       // then re-import the registry so prepare/execute bind the spy (same idea as
       // writeAction in parity.spec).
       vi.resetModules();
-      const writer = vi.fn(async () => {
+      tulisNever.spy.mockReset();
+      tulisNever.spy.mockImplementation(async () => {
         throw new Error(`${kasus.writerExport} must not be called from MCP prepare`);
       });
+      tulisNever.exportName = kasus.writerExport;
       vi.doMock(kasus.writerModule, async (asli) => {
-        const nyata = (await asli().catch(() => ({}))) as Record<string, unknown>;
-        return { ...nyata, [kasus.writerExport]: writer };
+        let nyata: Record<string, unknown> = {};
+        let loaded = false;
+        try {
+          nyata = (await asli()) as Record<string, unknown>;
+          loaded = true;
+        } catch {
+          /* unresolved — spy-only stub */
+        }
+        const nama = tulisNever.exportName;
+        if (loaded && !(nama in nyata)) {
+          throw new Error(`writer module has no export ${nama} to mock`);
+        }
+        return { ...nyata, [nama]: tulisNever.spy };
       });
 
       try {
@@ -150,8 +170,14 @@ describe("VIRA write tools — model can never execute", () => {
           ]);
         const fresh = freshWrites.find((t) => t.name === tool.name);
         expect(fresh, `${tool.name} missing after re-import`).toBeDefined();
-        const freshSample = (fresh as WriteToolWithSample).__sampleInput ?? sample;
-        await assertNeverExecute(buildFresh, fresh!, freshSample!, writer);
+        const freshSample = fresh!.__sampleInput ?? tool.__sampleInput;
+        expect(freshSample).toBeDefined();
+        await assertNeverExecute(
+          buildFresh,
+          fresh!,
+          freshSample as Record<string, unknown>,
+          tulisNever.spy,
+        );
       } finally {
         vi.doUnmock(kasus.writerModule);
         // Drop modules that closed over the mocked writer so later files see the real one.

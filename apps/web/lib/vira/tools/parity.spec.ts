@@ -15,6 +15,11 @@ import type { ParityCase, ViraTool, ViraWriteTool } from "./types";
  */
 
 const sesi = vi.hoisted(() => ({ permissions: [] as string[] }));
+/** Hoisted so writeAction's vi.doMock factory can bind the spy without Vitest hoist errors. */
+const tulisParitas = vi.hoisted(() => ({
+  writer: vi.fn(async () => ({ ok: true as const })),
+  exportName: "" as string,
+}));
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: "parity-user", permissions: sesi.permissions } })),
 }));
@@ -121,10 +126,26 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
       // Allowed ⇔ the mirrored action reached the writer; denied ⇔ forbidden without calling it.
       // `vira:write` is VIRA's own extra gate and is not part of this comparison.
       vi.resetModules();
-      const writer = vi.fn(async () => ({ ok: true }));
+      tulisParitas.writer.mockReset();
+      tulisParitas.writer.mockImplementation(async () => ({ ok: true as const }));
+      tulisParitas.exportName = kasus.writerExport;
       vi.doMock(kasus.writerModule, async (asli) => {
-        const nyata = (await asli().catch(() => ({}))) as Record<string, unknown>;
-        return { ...nyata, [kasus.writerExport]: writer };
+        // Fail closed when the module loads but lacks writerExport. If asli() rejects
+        // (unresolvable path / virtual fixture), still install the spy under exportName —
+        // an allowed action that never hits it fails via "returned without calling the writer".
+        const nama = tulisParitas.exportName;
+        let nyata: Record<string, unknown> = {};
+        let loaded = false;
+        try {
+          nyata = (await asli()) as Record<string, unknown>;
+          loaded = true;
+        } catch {
+          /* unresolved module id — spy-only stub below */
+        }
+        if (loaded && !(nama in nyata)) {
+          throw new Error(`writer module has no export ${nama} to mock`);
+        }
+        return { ...nyata, [nama]: tulisParitas.writer };
       });
       try {
         sesi.permissions = izin;
@@ -137,7 +158,7 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
           await (fn as (...a: unknown[]) => unknown)(...kasus.args);
         } catch (err) {
           if (izinDitolak(err)) {
-            if (writer.mock.calls.length > 0) {
+            if (tulisParitas.writer.mock.calls.length > 0) {
               return {
                 gagal: `${kasus.actionExport} called the writer despite a permission denial`,
               };
@@ -148,7 +169,7 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
             gagal: `${kasus.actionExport} threw something other than the permission error: ${String(err)}`,
           };
         }
-        if (writer.mock.calls.length > 0) return { boleh: true };
+        if (tulisParitas.writer.mock.calls.length > 0) return { boleh: true };
         return {
           gagal: `${kasus.actionExport} returned without calling the writer or throwing a permission error`,
         };
