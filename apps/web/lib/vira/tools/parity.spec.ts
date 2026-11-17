@@ -3,8 +3,8 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { getRequiredPermission, hasPermission, PERMISSIONS, requirePermission } from "@/lib/rbac";
 import { gateAllows, type ViraGate } from "../akses";
-import { VIRA_PARITY_CASES, VIRA_TOOLS } from "./index";
-import type { ParityCase, ViraTool } from "./types";
+import { VIRA_PARITY_CASES, VIRA_TOOLS, VIRA_WRITE_TOOLS } from "./index";
+import type { ParityCase, ViraTool, ViraWriteTool } from "./types";
 
 /**
  * Parity: every VIRA tool's gate must equal the gate of the UI screen or action it mirrors.
@@ -113,11 +113,43 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
       }
       return { boleh: kasus.codes.some((c) => hasPermission(izin, c)) };
     }
-    case "writeAction":
-      // Wave-1 (#540) only adds the ParityCase variant. The write-action parity engine is VIRA-27 (#544).
-      return {
-        gagal: `writeAction parity for ${kasus.tool} is not implemented yet (VIRA-27)`,
-      };
+    case "writeAction": {
+      // Allowed ⇔ the mirrored action reached the writer; denied ⇔ forbidden without calling it.
+      // `vira:write` is VIRA's own extra gate and is not part of this comparison.
+      vi.resetModules();
+      const writer = vi.fn(async () => ({ ok: true }));
+      vi.doMock(kasus.writerModule, async (asli) => {
+        const nyata = (await asli().catch(() => ({}))) as Record<string, unknown>;
+        return { ...nyata, [kasus.writerExport]: writer };
+      });
+      try {
+        sesi.permissions = izin;
+        const mod = (await import(/* @vite-ignore */ kasus.actionModule)) as Record<string, unknown>;
+        const fn = mod[kasus.actionExport];
+        if (typeof fn !== "function") {
+          return { gagal: `${kasus.actionModule} has no function ${kasus.actionExport}` };
+        }
+        try {
+          await (fn as (...a: unknown[]) => unknown)(...kasus.args);
+        } catch (err) {
+          if (izinDitolak(err)) {
+            if (writer.mock.calls.length > 0) {
+              return {
+                gagal: `${kasus.actionExport} called the writer despite a permission denial`,
+              };
+            }
+            return { boleh: false };
+          }
+          return {
+            gagal: `${kasus.actionExport} threw something other than the permission error: ${String(err)}`,
+          };
+        }
+        return { boleh: writer.mock.calls.length > 0 };
+      } finally {
+        vi.doUnmock(kasus.writerModule);
+        sesi.permissions = [];
+      }
+    }
     case "action": {
       vi.resetModules();
       vi.doMock(kasus.libModule, async (asli) => {
@@ -145,7 +177,10 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
 }
 
 /** Every mismatch between the tool's gate and the UI, as readable lines. Empty = parity holds. */
-async function periksaParitas(tool: ViraTool, kasus: ParityCase): Promise<string[]> {
+async function periksaParitas(
+  tool: Pick<ViraTool, "name" | "gate">,
+  kasus: ParityCase,
+): Promise<string[]> {
   const masalah: string[] = [];
   for (const izin of await himpunanIzin(tool, kasus)) {
     const harapan = gateAllows(tool.gate, izin);
@@ -170,6 +205,22 @@ function cakupan(tools: readonly ViraTool[], cases: readonly ParityCase[]): stri
     });
 }
 
+/** Every write tool must have exactly one `writeAction` parity case (empty registry → green). */
+function cakupanWrite(tools: readonly ViraWriteTool[], cases: readonly ParityCase[]): string[] {
+  return tools.flatMap((t) => {
+    const n = cases.filter((c) => c.tool === t.name && c.kind === "writeAction").length;
+    return n === 1
+      ? []
+      : [
+          `${t.name}: ${
+            n === 0
+              ? "no writeAction parity case"
+              : `${n} writeAction parity cases (expected exactly 1)`
+          }`,
+        ];
+  });
+}
+
 describe("VIRA tool parity — real registry", () => {
   const nyata = VIRA_TOOLS.filter((t) => t.name !== "whoami");
 
@@ -178,7 +229,7 @@ describe("VIRA tool parity — real registry", () => {
   });
 
   it("no parity case points at a tool that does not exist", () => {
-    const nama = new Set(VIRA_TOOLS.map((t) => t.name));
+    const nama = new Set([...VIRA_TOOLS, ...VIRA_WRITE_TOOLS].map((t) => t.name));
     expect(VIRA_PARITY_CASES.filter((c) => !nama.has(c.tool)).map((c) => c.tool)).toEqual([]);
   });
 
@@ -189,6 +240,32 @@ describe("VIRA tool parity — real registry", () => {
   });
 });
 
+describe("VIRA write-tool parity — real registry", () => {
+  it("every write tool has exactly one writeAction parity case", () => {
+    expect(cakupanWrite(VIRA_WRITE_TOOLS, VIRA_PARITY_CASES)).toEqual([]);
+  });
+
+  it("no writeAction parity case points at a write tool that does not exist", () => {
+    const nama = new Set(VIRA_WRITE_TOOLS.map((t) => t.name));
+    expect(
+      VIRA_PARITY_CASES.filter((c) => c.kind === "writeAction" && !nama.has(c.tool)).map(
+        (c) => c.tool,
+      ),
+    ).toEqual([]);
+  });
+
+  it.each(VIRA_WRITE_TOOLS.map((t) => [t.name, t] as const))(
+    "%s: write gate equals the UI action gate (excluding vira:write)",
+    async (_nama, tool) => {
+      const kasus = VIRA_PARITY_CASES.find(
+        (c) => c.tool === tool.name && c.kind === "writeAction",
+      );
+      expect(kasus, `${tool.name} has no writeAction parity case`).toBeDefined();
+      expect(await periksaParitas(tool, kasus!)).toEqual([]);
+    },
+  );
+});
+
 /* ── Self-test: fakes live only in this file, never in VIRA_TOOLS ───────────────────────── */
 
 // vi.mock is hoisted above these constants, so the mock calls spell the ids out literally.
@@ -196,6 +273,8 @@ describe("VIRA tool parity — real registry", () => {
 const PALSU_AKSI = "virtual:vira-parity/fake-action";
 const PALSU_LIB = "virtual:vira-parity/fake-lib";
 const PALSU_PREDIKAT = "virtual:vira-parity/fake-predicate";
+const PALSU_WRITE_AKSI = "virtual:vira-parity/fake-write-action";
+const PALSU_WRITER = "virtual:vira-parity/fake-writer";
 
 vi.mock("virtual:vira-parity/fake-lib", () => ({ bacaPalsu: async () => ["real-row"] }));
 vi.mock("virtual:vira-parity/fake-predicate", () => ({
@@ -212,6 +291,20 @@ vi.mock("virtual:vira-parity/fake-action", () => ({
   },
   aksiRusak: async () => {
     throw new Error("database exploded");
+  },
+}));
+vi.mock("virtual:vira-parity/fake-writer", () => ({
+  tulisPalsu: async () => ({ ok: true }),
+}));
+vi.mock("virtual:vira-parity/fake-write-action", () => ({
+  aksiTulisPalsu: async () => {
+    const { auth } = await import("@/lib/auth");
+    const s = (await auth()) as unknown as { user: { permissions: string[] } };
+    requirePermission(s.user.permissions, "parity_fixture:write");
+    const lib = (await import(/* @vite-ignore */ PALSU_WRITER)) as {
+      tulisPalsu: () => Promise<unknown>;
+    };
+    return lib.tulisPalsu();
   },
 }));
 
@@ -331,6 +424,34 @@ const KASUS_UJI: KasusUji[] = [
     },
     false,
   ],
+  [
+    "writeAction — matching gate (writer reached iff allowed)",
+    alatPalsu("fake_write_ok", { kind: "code", code: "parity_fixture:write" }),
+    {
+      tool: "fake_write_ok",
+      kind: "writeAction",
+      actionModule: PALSU_WRITE_AKSI,
+      actionExport: "aksiTulisPalsu",
+      writerModule: PALSU_WRITER,
+      writerExport: "tulisPalsu",
+      args: [],
+    },
+    true,
+  ],
+  [
+    "writeAction — mismatched gate",
+    alatPalsu("fake_write_bad", { kind: "anyValidToken" }),
+    {
+      tool: "fake_write_bad",
+      kind: "writeAction",
+      actionModule: PALSU_WRITE_AKSI,
+      actionExport: "aksiTulisPalsu",
+      writerModule: PALSU_WRITER,
+      writerExport: "tulisPalsu",
+      args: [],
+    },
+    false,
+  ],
 ];
 
 describe("VIRA tool parity — engine self-test (fakes in this file only)", () => {
@@ -382,6 +503,36 @@ describe("VIRA tool parity — engine self-test (fakes in this file only)", () =
     expect(cakupan([who, a, b], [r("fake_b"), r("fake_b")])).toEqual([
       "fake_a: no parity case",
       "fake_b: 2 parity cases (expected exactly 1)",
+    ]);
+  });
+
+  it("write coverage reports a missing and a duplicate writeAction case", () => {
+    const a = {
+      kind: "write" as const,
+      name: "fake_write_a",
+      title: "a",
+      description: "a",
+      gate: { kind: "anyValidToken" as const },
+      destructive: false,
+      inputShape: {},
+      argsSchema: { parse: (x: unknown) => x },
+      prepare: async () => ({ preview: {} as never, args: {} }),
+      execute: async () => ({ ok: true as const, message: "", url: "", entityType: "", entityId: "" }),
+      revalidate: () => [],
+    } as unknown as ViraWriteTool;
+    const b = { ...a, name: "fake_write_b" } as ViraWriteTool;
+    const wa = (tool: string): ParityCase => ({
+      tool,
+      kind: "writeAction",
+      actionModule: PALSU_WRITE_AKSI,
+      actionExport: "aksiTulisPalsu",
+      writerModule: PALSU_WRITER,
+      writerExport: "tulisPalsu",
+      args: [],
+    });
+    expect(cakupanWrite([a, b], [wa("fake_write_b"), wa("fake_write_b")])).toEqual([
+      "fake_write_a: no writeAction parity case",
+      "fake_write_b: 2 writeAction parity cases (expected exactly 1)",
     ]);
   });
 });
