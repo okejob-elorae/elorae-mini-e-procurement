@@ -97,6 +97,11 @@ describe("VIRA token", () => {
     expect(await reasonOf(verifyViraToken(token, NOW))).toBe("invalid");
   });
 
+  it("a confirm token (aud vira-confirm) → invalid", async () => {
+    const token = await handSigned(validClaims({ aud: "vira-confirm" }));
+    expect(await reasonOf(verifyViraToken(token, NOW))).toBe("invalid");
+  });
+
   it("wrong iss → invalid", async () => {
     const token = await handSigned(validClaims({ iss: "not-elorae" }));
     expect(await reasonOf(verifyViraToken(token, NOW))).toBe("invalid");
