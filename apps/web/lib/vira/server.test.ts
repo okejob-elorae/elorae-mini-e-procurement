@@ -1,14 +1,21 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Prisma } from "@elorae/db";
 import type { ViraActor } from "./akses";
+import { verifyConfirmToken } from "./confirm-token";
 import { ViraInputError, ViraNotFoundError } from "./errors";
 import { buildViraServer, buildViraServerFrom } from "./server";
 import { assertUniqueToolNames, VIRA_PARITY_CASES, VIRA_TOOLS } from "./tools";
-import { defineTool, type ViraTool } from "./tools/types";
+import {
+  defineTool,
+  defineWriteTool,
+  type ViraPrepared,
+  type ViraTool,
+  type ViraWriteTool,
+} from "./tools/types";
 
 const actor = (permissions: string[]): ViraActor => ({ id: "u-1", name: "Uji", permissions });
 const ctxFor = (permissions: string[]) => ({ actor: actor(permissions), baseUrl: "https://x.test" });
@@ -188,5 +195,152 @@ describe("whoami and the registry", () => {
     expect(() => assertUniqueToolNames([FAKE_TOOLS[0], { ...FAKE_TOOLS[1], name: "open_tool" }])).toThrow(
       /duplicate tool name: open_tool/,
     );
+  });
+});
+
+const WRITE_PREVIEW = {
+  title: "Setujui pesanan SO-1",
+  summary: "Menyetujui pesanan ini.",
+  details: [{ label: "Nomor", value: "SO-1" }],
+  confirmLabel: "Setujui",
+  cancelLabel: "Batal",
+  destructive: false,
+  target: { type: "FieldSalesOrder", id: "ord-1", url: "https://x.test/o/ord-1" },
+};
+
+const WRITE_ARGS = { orderId: "ord-1" };
+
+function makeFakeWrite(options?: {
+  destructive?: boolean;
+  prepare?: ViraWriteTool["prepare"];
+  execute?: ViraWriteTool["execute"];
+}): { tool: ViraWriteTool; prepare: ReturnType<typeof vi.fn>; execute: ReturnType<typeof vi.fn> } {
+  const prepare =
+    options?.prepare ??
+    vi.fn(async (): Promise<ViraPrepared<typeof WRITE_ARGS>> => ({
+      preview: { ...WRITE_PREVIEW, details: [...WRITE_PREVIEW.details] },
+      args: WRITE_ARGS,
+    }));
+  const execute =
+    options?.execute ??
+    vi.fn(async () => ({
+      ok: true as const,
+      message: "Done",
+      url: WRITE_PREVIEW.target.url,
+      entityType: "FieldSalesOrder",
+      entityId: "ord-1",
+    }));
+  const tool = defineWriteTool({
+    kind: "write",
+    name: "approve_fake_order",
+    title: "Approve fake",
+    description: "Prepare an approval.",
+    gate: { kind: "code", code: "field_sales_orders:approve" },
+    destructive: options?.destructive ?? false,
+    inputShape: { orderId: z.string() },
+    argsSchema: z.object({ orderId: z.string() }),
+    prepare,
+    execute,
+    revalidate: () => ["/backoffice/field-sales"],
+  });
+  return { tool, prepare: prepare as ReturnType<typeof vi.fn>, execute: execute as ReturnType<typeof vi.fn> };
+}
+
+describe("prepare-only write tools", () => {
+  const SECRET = "test-vira-token-secret-0123456789abcdefg";
+
+  beforeEach(() => {
+    vi.stubEnv("VIRA_TOKEN_SECRET", SECRET);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("a user with the gate but without vira:write does not see the write tool", async () => {
+    const { tool } = makeFakeWrite();
+    const names = await listNames(
+      buildViraServerFrom(FAKE_TOOLS, ctxFor(["field_sales_orders:approve"]), [tool]),
+    );
+    expect(names).not.toContain("approve_fake_order");
+  });
+
+  it("with vira:write, tools/list shows it with readOnlyHint false and the right destructiveHint", async () => {
+    const { tool } = makeFakeWrite({ destructive: true });
+    const client = await connect(
+      buildViraServerFrom(
+        FAKE_TOOLS,
+        ctxFor(["vira:write", "field_sales_orders:approve"]),
+        [tool],
+      ),
+    );
+    const { tools } = await client.listTools();
+    await client.close();
+    const listed = tools.find((t) => t.name === "approve_fake_order");
+    expect(listed).toBeDefined();
+    expect(listed?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: false,
+    });
+  });
+
+  it("tools/call runs prepare, never execute, and returns awaiting_confirmation with a verifiable token", async () => {
+    const { tool, prepare, execute } = makeFakeWrite();
+    const client = await connect(
+      buildViraServerFrom(
+        FAKE_TOOLS,
+        ctxFor(["vira:write", "field_sales_orders:approve"]),
+        [tool],
+      ),
+    );
+    const res = await client.callTool({ name: "approve_fake_order", arguments: { orderId: "ord-1" } });
+    await client.close();
+
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(execute).not.toHaveBeenCalled();
+    expect(res.isError).toBeFalsy();
+    expect(textOf(res)).toMatchObject({
+      status: "awaiting_confirmation",
+      title: WRITE_PREVIEW.title,
+      summary: WRITE_PREVIEW.summary,
+      note: expect.stringContaining("Nothing has been changed yet"),
+    });
+
+    const meta = (res as { _meta?: Record<string, unknown> })._meta?.["elorae/confirmation"] as
+      | { token: string; expiresAt: string; destructive: boolean }
+      | undefined;
+    expect(meta?.token).toBeTruthy();
+    expect(meta?.destructive).toBe(false);
+    expect(JSON.stringify(res.content)).not.toContain(meta!.token);
+
+    const claims = await verifyConfirmToken(meta!.token);
+    expect(claims.sub).toBe("u-1");
+    expect(claims.tool).toBe("approve_fake_order");
+    expect(claims.args).toEqual(WRITE_ARGS);
+  });
+
+  it("prepare throwing ViraInputError → INVALID_INPUT, no token issued", async () => {
+    const { tool, execute } = makeFakeWrite({
+      prepare: async () => {
+        throw new ViraInputError("Order is not pending.");
+      },
+    });
+    const client = await connect(
+      buildViraServerFrom(
+        FAKE_TOOLS,
+        ctxFor(["vira:write", "field_sales_orders:approve"]),
+        [tool],
+      ),
+    );
+    const res = await client.callTool({ name: "approve_fake_order", arguments: { orderId: "ord-1" } });
+    await client.close();
+    expect(execute).not.toHaveBeenCalled();
+    expect(res.isError).toBe(true);
+    expect(textOf(res)).toEqual({
+      error: { code: "INVALID_INPUT", message: "Order is not pending." },
+    });
+    expect((res as { _meta?: unknown })._meta).toBeUndefined();
   });
 });
