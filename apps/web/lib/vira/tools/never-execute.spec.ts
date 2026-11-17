@@ -138,6 +138,53 @@ function mockPrepareDeps(toolName: string): string[] {
     }));
     mocked.push("@/lib/salesman/izin-queries");
   }
+  if (toolName === "approve_spg_buyer_return" || toolName === "reject_spg_buyer_return") {
+    vi.doMock("@/lib/spg/retur-pembeli-queries", () => ({
+      daftarReturPembeliKantor: vi.fn(async () => ({
+        baris: [],
+        total: 0,
+        perStatus: { MENUNGGU: 0, DISETUJUI: 0, DITOLAK: 0, DIBATALKAN: 0 },
+        keputusanBarang: 0,
+      })),
+      rincianReturPembeliKantor: vi.fn(async () => ({
+        id: "r-1",
+        status: "MENUNGGU",
+        dilaporkanPada: new Date("2026-11-10T02:00:00Z"),
+        pelapor: { id: "u-spg", nama: "Sari" },
+        toko: { id: "s1", nama: "Toko", termsType: "KONSI" },
+        nota: { id: "sale-1", docNo: "NT-001", waktu: new Date(), total: 1 },
+        alasan: "x",
+        diputuskan: { olehId: null, oleh: null, pada: null, alasanTolak: null },
+        uang: { keadaan: "MENUNGGU_BELUM", pada: null, olehKantor: null },
+        foto: { barang: null, struk: null },
+        strukTidakTercatat: [],
+        bebanJikaDitolak: 0,
+        beban: null,
+        baris: [
+          {
+            id: "l1",
+            saleLineId: "sl1",
+            productName: "Kaos",
+            variantSku: "KAOS-01",
+            kondisi: "LAYAK",
+            qty: 1,
+            terjual: 1,
+            sudahKembali: 0,
+            menungguLain: 0,
+            nilaiBersih: 10_000,
+          },
+        ],
+        peringatan: {
+          bulanKomisi: "2026-11",
+          komisiDitutup: false,
+          bulanLaporan: "2026-11",
+          siklusKonsiTerkunci: false,
+        },
+        jejak: [],
+      })),
+    }));
+    mocked.push("@/lib/spg/retur-pembeli-queries");
+  }
   return mocked;
 }
 

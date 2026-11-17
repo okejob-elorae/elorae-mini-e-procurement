@@ -23,8 +23,10 @@ describe("VIRA write-tool registry", () => {
     expect(VIRA_WRITE_TOOLS.map((t) => t.name).sort()).toEqual([
       "approve_field_sales_order",
       "approve_leave_request",
+      "approve_spg_buyer_return",
       "reject_field_sales_order",
       "reject_leave_request",
+      "reject_spg_buyer_return",
     ]);
   });
 
