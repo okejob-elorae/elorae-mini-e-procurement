@@ -3,6 +3,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { Prisma } from "@elorae/db";
 import { asalPermintaan } from "@/lib/creative/kalender-langganan";
 import { getViraEnv, VIRA_LIST_DEFAULT_LIMIT, VIRA_LIST_MAX_LIMIT } from "./config";
+import type { ViraConfirmationPreview } from "./tools/types";
 
 /** Spread into every list tool's input shape. */
 export const listInputShape = {
@@ -87,5 +88,35 @@ export function toolError(code: ViraToolErrorCode, message: string): CallToolRes
   return {
     isError: true,
     content: [{ type: "text", text: JSON.stringify({ error: { code, message } }) }],
+  };
+}
+
+const AWAITING_NOTE =
+  "Nothing has been changed yet. The user must press the confirm button in the chat. Do not say the change is done.";
+
+/** Prepare-only write result: confirmation for the VIRA runtime in `_meta`, never the token in content. */
+export function toolConfirmation(
+  preview: ViraConfirmationPreview,
+  token: string,
+  expiresAt: Date,
+): CallToolResult {
+  const contentPayload = {
+    status: "awaiting_confirmation" as const,
+    title: preview.title,
+    summary: preview.summary,
+    details: preview.details,
+    target: preview.target,
+    note: AWAITING_NOTE,
+  };
+  return {
+    content: [{ type: "text", text: JSON.stringify(contentPayload) }],
+    structuredContent: contentPayload,
+    _meta: {
+      "elorae/confirmation": {
+        token,
+        expiresAt: expiresAt.toISOString(),
+        ...preview,
+      },
+    },
   };
 }
