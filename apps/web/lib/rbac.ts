@@ -438,6 +438,7 @@ export const PERMISSIONS = {
   // VIRA assistant (MCP adapter). Not granted to any role by default; the owner assigns it in
   // Peran & izin, and the wildcard '*' (system/admin role) satisfies it.
   VIRA_USE: "vira:use",
+  VIRA_WRITE: "vira:write",
   // Chart of Accounts
   COA_VIEW: 'coa:view',
   COA_MANAGE: 'coa:manage',

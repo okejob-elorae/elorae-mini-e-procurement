@@ -8,6 +8,7 @@ export const VIRA_RATE_LIMIT_TOKEN_PER_MIN = 10;
 export const VIRA_RATE_LIMIT_MCP_PER_MIN = 60;
 export const VIRA_SERVICE_KEY_HEADER = "x-vira-service-key";
 export const VIRA_USE_PERMISSION = "vira:use";
+export const VIRA_WRITE_PERMISSION = "vira:write";
 export const VIRA_MIN_SECRET_LENGTH = 32;
 
 export type ViraEnv = { tokenSecret?: string; serviceKey?: string; appUrl?: string };
