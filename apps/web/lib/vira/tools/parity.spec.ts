@@ -19,6 +19,8 @@ const sesi = vi.hoisted(() => ({ permissions: [] as string[] }));
 const tulisParitas = vi.hoisted(() => ({
   writer: vi.fn(async () => ({ ok: true as const })),
   exportName: "" as string,
+  /** Virtual self-test fixtures may reject `asli()`; real writer modules must not. */
+  allowUnresolvedAsli: false,
 }));
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: "parity-user", permissions: sesi.permissions } })),
@@ -129,20 +131,22 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
       tulisParitas.writer.mockReset();
       tulisParitas.writer.mockImplementation(async () => ({ ok: true as const }));
       tulisParitas.exportName = kasus.writerExport;
+      tulisParitas.allowUnresolvedAsli = kasus.writerModule.startsWith("virtual:");
       vi.doMock(kasus.writerModule, async (asli) => {
-        // Fail closed when the module loads but lacks writerExport. If asli() rejects
-        // (unresolvable path / virtual fixture), still install the spy under exportName —
-        // an allowed action that never hits it fails via "returned without calling the writer".
+        // Fail closed for real modules: mistyped writerModule must not leave the real
+        // writer callable. Virtual self-test ids may reject asli(); spy-only is OK there.
         const nama = tulisParitas.exportName;
         let nyata: Record<string, unknown> = {};
-        let loaded = false;
         try {
           nyata = (await asli()) as Record<string, unknown>;
-          loaded = true;
-        } catch {
-          /* unresolved module id — spy-only stub below */
+        } catch (err) {
+          if (!tulisParitas.allowUnresolvedAsli) {
+            throw new Error(
+              `writer module failed to load for writeAction: ${String(err)}`,
+            );
+          }
         }
-        if (loaded && !(nama in nyata)) {
+        if (!tulisParitas.allowUnresolvedAsli && !(nama in nyata)) {
           throw new Error(`writer module has no export ${nama} to mock`);
         }
         return { ...nyata, [nama]: tulisParitas.writer };
@@ -280,6 +284,13 @@ describe("VIRA write-tool parity — real registry", () => {
     const pelanggar = VIRA_WRITE_TOOLS.filter((t) =>
       kodeGerbang(t.gate).includes(VIRA_WRITE_PERMISSION),
     ).map((t) => t.name);
+    expect(pelanggar).toEqual([]);
+  });
+
+  it("write tool gates are never izin (himpunanIzin cannot discover their codes)", () => {
+    const pelanggar = VIRA_WRITE_TOOLS.filter((t) => t.gate.kind === "izin").map(
+      (t) => t.name,
+    );
     expect(pelanggar).toEqual([]);
   });
 

@@ -15,7 +15,7 @@ import { defineWriteTool, type ViraWriteTool } from "./types";
  */
 
 const tulisNever = vi.hoisted(() => ({
-  spy: vi.fn(async () => {
+  spy: vi.fn(async (..._args: unknown[]): Promise<unknown> => {
     throw new Error("writer must not be called from MCP prepare");
   }),
   exportName: "" as string,
@@ -179,28 +179,13 @@ describe("VIRA write tools — model can never execute", () => {
         const freshSample = fresh!.__sampleInput ?? tool.__sampleInput;
         expect(freshSample).toBeDefined();
 
-        // Prove the re-imported tool closed over our mocked writer (not a typo’d module id).
-        const ctx = {
-          actor: { id: "u-1", name: "Uji", permissions: ["*"] as string[] },
-          baseUrl: "https://x.test",
-        };
-        const prepared = await fresh!.prepare(
-          freshSample as never,
-          ctx,
-        );
-        tulisNever.spy.mockImplementation(async () => ({
-          ok: true as const,
-          message: "bound",
-          url: "/x",
-          entityType: "Bind",
-          entityId: "1",
-        }));
-        await fresh!.execute(prepared.args, ctx);
-        expect(tulisNever.spy).toHaveBeenCalled();
-        tulisNever.spy.mockClear();
-        tulisNever.spy.mockImplementation(async () => {
-          throw new Error(`${kasus.writerExport} must not be called from MCP prepare`);
-        });
+        // Prove the mock is bound to the parity writerModule before any execute/prepare
+        // that could hit a real writer on a mistyped path.
+        const writerMod = (await import(/* @vite-ignore */ kasus.writerModule)) as Record<
+          string,
+          unknown
+        >;
+        expect(writerMod[kasus.writerExport]).toBe(tulisNever.spy);
 
         await assertNeverExecute(
           buildFresh,
