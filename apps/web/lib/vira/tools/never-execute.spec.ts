@@ -109,6 +109,35 @@ function mockPrepareDeps(toolName: string): string[] {
     });
     mocked.push("@elorae/db");
   }
+  if (toolName === "approve_leave_request" || toolName === "reject_leave_request") {
+    vi.doMock("@/lib/salesman/izin-queries", () => ({
+      daftarIzinKantor: vi.fn(async () => ({
+        baris: [],
+        perStatus: { DIAJUKAN: 0, DISETUJUI: 0, DITOLAK: 0, DIBATALKAN: 0 },
+        terpotong: false,
+      })),
+      izinById: vi.fn(async () => ({
+        id: "leave-1",
+        userId: "u-sales",
+        nama: "Budi",
+        jenis: "IZIN",
+        status: "DIAJUKAN",
+        mulai: "2026-11-10",
+        selesai: "2026-11-11",
+        rentang: "10–11 Nov 2026",
+        hariKerja: 2,
+        alasan: "urusan",
+        fotoUrl: null,
+        catatanKantor: null,
+        diajukan: "10 Nov 2026",
+        diputuskan: null,
+        diputuskanOleh: null,
+        ditarikSendiri: false,
+        cuti: null,
+      })),
+    }));
+    mocked.push("@/lib/salesman/izin-queries");
+  }
   return mocked;
 }
 

@@ -234,7 +234,7 @@ d("POST /api/vira/mcp (test bed only)", () => {
     ]);
   });
 
-  it("final tool count: a system-role user (\"*\") lists the 15 phase-1 reads plus registered write tools", async () => {
+  it("final tool count: a system-role user (\"*\") lists phase-1 reads plus registered write tools", async () => {
     const list = await kirim(tokenC, rpc("tools/list"));
     const nama = (list.result?.tools as Array<{ name: string }>).map((t) => t.name);
     expect([...nama].sort()).toEqual(
@@ -254,8 +254,11 @@ d("POST /api/vira/mcp (test bed only)", () => {
         "list_consignment_cycles",
         "list_tax_invoices",
         "list_marketplace_settlements",
+        "list_leave_requests",
         "approve_field_sales_order",
         "reject_field_sales_order",
+        "approve_leave_request",
+        "reject_leave_request",
       ].sort(),
     );
   });
