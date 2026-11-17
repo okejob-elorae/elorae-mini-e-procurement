@@ -11,6 +11,7 @@ import {
 import {
   CreditLimitExceededError,
   InsufficientStockError,
+  InvalidFinalPriceError,
   InvalidOrderTransitionError,
 } from "@/lib/field-sales/errors";
 import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";
@@ -68,7 +69,7 @@ export const getFieldSalesOrderInput = z
   .object(detailShape)
   .refine((v) => (v.id === undefined) !== (v.docNo === undefined), { message: EXACTLY_ONE });
 
-/** Shared by get_field_sales_order (docNo path) and write-tool `order` resolution. */
+/** Shared by get_field_sales_order (docNo path) — list search + exact filter. */
 async function lookupByExactDocNo(docNo: string): Promise<FieldSalesOrderDetail | null> {
   const { orders } = await listFieldSalesOrders({ search: docNo }, { page: 1, pageSize: 50 });
   const hit = orders.filter((o) => o.orderNo === docNo);
@@ -77,15 +78,20 @@ async function lookupByExactDocNo(docNo: string): Promise<FieldSalesOrderDetail 
 }
 
 /**
- * Resolve a write-tool `order` input: try id, then exact document number
- * (same lookups as get_field_sales_order).
+ * Resolve a write-tool `order` input: try id, then exact `orderNo` via unique lookup
+ * (avoids contains-search crowding that can miss a real doc no).
  */
 async function resolveOrderForWrite(order: string): Promise<FieldSalesOrderDetail> {
   const byId = await getFieldSalesOrderById(order);
   if (byId) return byId;
-  const byDoc = await lookupByExactDocNo(order);
-  if (!byDoc) throw new ViraNotFoundError("Pesanan tidak ditemukan");
-  return byDoc;
+  const row = await prisma.fieldSalesOrder.findUnique({
+    where: { orderNo: order },
+    select: { id: true },
+  });
+  if (!row) throw new ViraNotFoundError("Pesanan tidak ditemukan");
+  const detail = await getFieldSalesOrderById(row.id);
+  if (!detail) throw new ViraNotFoundError("Pesanan tidak ditemukan");
+  return detail;
 }
 
 /** Store and salesman: the source carries their names only, so ids are added only when known. */
@@ -195,6 +201,18 @@ const approveFieldSalesOrderTool = defineWriteTool({
     const order = await resolveOrderForWrite(input.order);
     mustBePending(order, "disetujui");
     const url = recordUrl(ctx.baseUrl, `/backoffice/field-sales-orders/${order.id}`);
+    // E12: this tool never supplies finalPrices; appealed lines must be priced in Elorae.
+    if (order.lines.some((l) => l.requestedUnitPrice != null)) {
+      throw new ViraInputError(
+        `Pesanan punya ajuan harga. Buka pesanan di Elorae untuk menetapkan harga final: ${url}`,
+      );
+    }
+    // Hold at create (kreditDitahan) requires an explicit UI checkbox — do not bypass via VIRA.
+    if (order.creditHoldAtCreate) {
+      throw new ViraInputError(
+        `Kredit pesanan ditahan. Buka pesanan di Elorae untuk memeriksa dan menyetujui: ${url}`,
+      );
+    }
     const credit = await creditCheckForApprove(order);
     if (credit?.overLimit) {
       throw new ViraInputError(
@@ -325,6 +343,14 @@ async function mapApproveExecute(
         ok: false,
         code: "INSUFFICIENT_STOCK",
         message: `Stok kurang: ${skus}`,
+        url,
+      };
+    }
+    if (e instanceof InvalidFinalPriceError) {
+      return {
+        ok: false,
+        code: "INVALID_FINAL_PRICE",
+        message: "Harga final tidak sah.",
         url,
       };
     }

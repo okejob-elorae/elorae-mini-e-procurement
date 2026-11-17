@@ -90,7 +90,12 @@ function mockPrepareDeps(toolName: string): string[] {
         prisma: {
           ...nyata.prisma,
           fieldSalesOrder: {
-            findUnique: vi.fn(async () => ({ storeId: "s1" })),
+            findUnique: vi.fn(async ({ where }: { where: { id?: string; orderNo?: string } }) => {
+              if (where.orderNo === "SO-1" || where.id === "o1") {
+                return where.orderNo ? { id: "o1" } : { storeId: "s1" };
+              }
+              return where.id ? { storeId: "s1" } : null;
+            }),
           },
           store: {
             findUnique: vi.fn(async () => ({

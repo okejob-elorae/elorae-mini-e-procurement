@@ -397,9 +397,35 @@ describe("approve_field_sales_order / reject_field_sales_order", () => {
       new ViraInputError("Pesanan SO-9 berstatus APPROVED, tidak bisa disetujui."),
     );
     m.getFieldSalesOrderById.mockResolvedValue(null);
-    m.listFieldSalesOrders.mockResolvedValue({ orders: [], totalCount: 0 });
+    m.prismaOrderFind.mockResolvedValue(null);
     await expect(approve.prepare(approveSchema.parse({ order: "missing" }), writeCtx)).rejects.toEqual(
       new ViraNotFoundError("Pesanan tidak ditemukan"),
+    );
+  });
+
+  it("price appeal or credit hold → prepare refuses with Elorae URL", async () => {
+    m.getFieldSalesOrderById.mockResolvedValue({
+      ...detailRow(),
+      status: "PENDING_APPROVAL",
+      orderNo: "SO-1",
+      lines: [{ ...detailRow().lines[0], requestedUnitPrice: 55_000 }],
+    });
+    await expect(approve.prepare(approveSchema.parse({ order: "o1" }), writeCtx)).rejects.toEqual(
+      new ViraInputError(
+        "Pesanan punya ajuan harga. Buka pesanan di Elorae untuk menetapkan harga final: https://e.test/backoffice/field-sales-orders/o1",
+      ),
+    );
+
+    m.getFieldSalesOrderById.mockResolvedValue({
+      ...detailRow(),
+      status: "PENDING_APPROVAL",
+      orderNo: "SO-1",
+      creditHoldAtCreate: true,
+    });
+    await expect(approve.prepare(approveSchema.parse({ order: "o1" }), writeCtx)).rejects.toEqual(
+      new ViraInputError(
+        "Kredit pesanan ditahan. Buka pesanan di Elorae untuk memeriksa dan menyetujui: https://e.test/backoffice/field-sales-orders/o1",
+      ),
     );
   });
 
