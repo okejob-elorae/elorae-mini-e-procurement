@@ -69,27 +69,24 @@ export const getFieldSalesOrderInput = z
   .object(detailShape)
   .refine((v) => (v.id === undefined) !== (v.docNo === undefined), { message: EXACTLY_ONE });
 
-/** Shared by get_field_sales_order (docNo path) — list search + exact filter. */
+/**
+ * Exact `orderNo` via unique column (not list contains-search — short doc nos can be
+ * crowded out of pageSize 50 by newer substring hits). Shared by get + write resolve.
+ */
 async function lookupByExactDocNo(docNo: string): Promise<FieldSalesOrderDetail | null> {
-  const { orders } = await listFieldSalesOrders({ search: docNo }, { page: 1, pageSize: 50 });
-  const hit = orders.filter((o) => o.orderNo === docNo);
-  if (hit.length !== 1) return null;
-  return getFieldSalesOrderById(hit[0].id);
+  const row = await prisma.fieldSalesOrder.findUnique({
+    where: { orderNo: docNo },
+    select: { id: true },
+  });
+  if (!row) return null;
+  return getFieldSalesOrderById(row.id);
 }
 
-/**
- * Resolve a write-tool `order` input: try id, then exact `orderNo` via unique lookup
- * (avoids contains-search crowding that can miss a real doc no).
- */
+/** Resolve a write-tool `order` input: try id, then exact `orderNo`. */
 async function resolveOrderForWrite(order: string): Promise<FieldSalesOrderDetail> {
   const byId = await getFieldSalesOrderById(order);
   if (byId) return byId;
-  const row = await prisma.fieldSalesOrder.findUnique({
-    where: { orderNo: order },
-    select: { id: true },
-  });
-  if (!row) throw new ViraNotFoundError("Pesanan tidak ditemukan");
-  const detail = await getFieldSalesOrderById(row.id);
+  const detail = await lookupByExactDocNo(order);
   if (!detail) throw new ViraNotFoundError("Pesanan tidak ditemukan");
   return detail;
 }

@@ -274,13 +274,16 @@ describe("get_field_sales_order", () => {
     }
   });
 
-  it("finds by exact docNo; a partial match → Order not found", async () => {
-    m.listFieldSalesOrders.mockResolvedValue({ orders: [listRow("o2", { orderNo: "FSO-o1-X" }), listRow("o1")], totalCount: 2 });
+  it("finds by exact docNo via unique orderNo; missing → Order not found", async () => {
+    m.prismaOrderFind.mockResolvedValueOnce({ id: "o1" });
     await detail.handler({ docNo: "FSO-o1" }, ctx);
-    expect(m.listFieldSalesOrders).toHaveBeenCalledWith({ search: "FSO-o1" }, { page: 1, pageSize: 50 });
+    expect(m.prismaOrderFind).toHaveBeenCalledWith({
+      where: { orderNo: "FSO-o1" },
+      select: { id: true },
+    });
     expect(m.getFieldSalesOrderById).toHaveBeenCalledWith("o1");
 
-    m.listFieldSalesOrders.mockResolvedValue({ orders: [listRow("o2", { orderNo: "FSO-o1-X" })], totalCount: 1 });
+    m.prismaOrderFind.mockResolvedValueOnce(null);
     await expect(detail.handler({ docNo: "FSO-o1" }, ctx)).rejects.toEqual(new ViraNotFoundError("Order not found"));
   });
 
