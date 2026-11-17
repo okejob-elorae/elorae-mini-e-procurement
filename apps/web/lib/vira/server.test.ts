@@ -8,7 +8,7 @@ import type { ViraActor } from "./akses";
 import { verifyConfirmToken } from "./confirm-token";
 import { ViraInputError, ViraNotFoundError } from "./errors";
 import { buildViraServer, buildViraServerFrom } from "./server";
-import { assertUniqueToolNames, VIRA_PARITY_CASES, VIRA_TOOLS } from "./tools";
+import { assertUniqueToolNames, VIRA_PARITY_CASES, VIRA_TOOLS, VIRA_WRITE_TOOLS } from "./tools";
 import {
   defineTool,
   defineWriteTool,
@@ -186,8 +186,8 @@ describe("whoami and the registry", () => {
 
   it("VIRA_TOOLS starts with whoami and has unique names; every parity case names a real tool", () => {
     expect(VIRA_TOOLS[0]?.name).toBe("whoami");
-    expect(() => assertUniqueToolNames(VIRA_TOOLS)).not.toThrow();
-    const nama = new Set(VIRA_TOOLS.map((t) => t.name));
+    expect(() => assertUniqueToolNames([...VIRA_TOOLS, ...VIRA_WRITE_TOOLS])).not.toThrow();
+    const nama = new Set([...VIRA_TOOLS, ...VIRA_WRITE_TOOLS].map((t) => t.name));
     expect(VIRA_PARITY_CASES.filter((c) => !nama.has(c.tool))).toEqual([]);
   });
 

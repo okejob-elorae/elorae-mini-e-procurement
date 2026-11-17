@@ -3,7 +3,9 @@ import { SignJWT } from "jose";
 import { prisma, seededId } from "@elorae/db";
 import { gateAllows } from "@/lib/vira/akses";
 import { VIRA_SERVICE_KEY_HEADER, VIRA_TOKEN_AUDIENCE, VIRA_TOKEN_ISSUER } from "@/lib/vira/config";
-import { VIRA_TOOLS } from "@/lib/vira/tools";
+import { hasPermission } from "@/lib/rbac";
+import { VIRA_WRITE_PERMISSION } from "@/lib/vira/config";
+import { VIRA_TOOLS, VIRA_WRITE_TOOLS } from "@/lib/vira/tools";
 import { passwordFingerprint, signViraToken } from "@/lib/vira/token";
 import { DELETE, GET, POST } from "./route";
 
@@ -220,13 +222,19 @@ d("POST /api/vira/mcp (test bed only)", () => {
     expect(nama).toEqual(VIRA_TOOLS.filter((t) => gateAllows(t.gate, izinA)).map((t) => t.name));
   });
 
-  it("a system-role user (\"*\") sees every tool", async () => {
+  it("a system-role user (\"*\") sees every read and write tool", async () => {
     const list = await kirim(tokenC, rpc("tools/list"));
     const nama = (list.result?.tools as Array<{ name: string }>).map((t) => t.name);
-    expect(nama).toEqual(VIRA_TOOLS.map((t) => t.name));
+    const perms = ["*"];
+    expect(nama).toEqual([
+      ...VIRA_TOOLS.filter((t) => gateAllows(t.gate, perms)).map((t) => t.name),
+      ...VIRA_WRITE_TOOLS.filter(
+        (t) => gateAllows(t.gate, perms) && hasPermission(perms, VIRA_WRITE_PERMISSION),
+      ).map((t) => t.name),
+    ]);
   });
 
-  it("final tool count: a system-role user (\"*\") lists exactly the 15 phase-1 tools", async () => {
+  it("final tool count: a system-role user (\"*\") lists the 15 phase-1 reads plus registered write tools", async () => {
     const list = await kirim(tokenC, rpc("tools/list"));
     const nama = (list.result?.tools as Array<{ name: string }>).map((t) => t.name);
     expect([...nama].sort()).toEqual(
@@ -246,6 +254,8 @@ d("POST /api/vira/mcp (test bed only)", () => {
         "list_consignment_cycles",
         "list_tax_invoices",
         "list_marketplace_settlements",
+        "approve_field_sales_order",
+        "reject_field_sales_order",
       ].sort(),
     );
   });
