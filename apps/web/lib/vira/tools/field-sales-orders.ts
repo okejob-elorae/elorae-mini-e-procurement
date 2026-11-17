@@ -217,7 +217,16 @@ const approveFieldSalesOrderTool = defineWriteTool({
         `Kredit pesanan ditahan. Buka pesanan di Elorae untuk memeriksa dan menyetujui: ${url}`,
       );
     }
-    const credit = await creditCheckForApprove(order);
+    // Page try/catch (~L115–142): transient exposure/settings failure → null, not INTERNAL.
+    let credit: Awaited<ReturnType<typeof creditCheckForApprove>> = null;
+    try {
+      credit = await creditCheckForApprove(order);
+    } catch (error) {
+      console.error("[vira] field-sales-order credit preview failed", {
+        orderId: order.id,
+        error,
+      });
+    }
     if (credit?.overLimit) {
       throw new ViraInputError(
         `Toko melewati batas kredit. Buka pesanan di Elorae untuk persetujuan dengan alasan: ${url}`,
@@ -324,10 +333,11 @@ async function mapApproveExecute(
 ): Promise<ViraExecuteResult> {
   const url = recordUrl(ctx.baseUrl, `/backoffice/field-sales-orders/${args.orderId}`);
   try {
+    // Omit `kreditDiperiksa`: prepare already refuses `kreditDitahan`; leaving the flag
+    // unset keeps the writer's KreditBelumDiperiksaError as last line of defense.
     await approveFieldSalesOrder({
       orderId: args.orderId,
       approvedById: ctx.actor.id,
-      kreditDiperiksa: true,
     });
   } catch (e) {
     if (e instanceof CreditLimitExceededError) {

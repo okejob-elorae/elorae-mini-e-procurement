@@ -432,15 +432,15 @@ describe("approve_field_sales_order / reject_field_sales_order", () => {
     );
   });
 
-  it("approve execute passes kreditDiperiksa: true and never finalPrices/addedLines/creditOverrideReason", async () => {
+  it("approve execute omits kreditDiperiksa and never finalPrices/addedLines/creditOverrideReason", async () => {
     m.getFieldSalesOrderById.mockResolvedValue({ ...detailRow(), orderNo: "SO-1", status: "APPROVED" });
     const res = await approve.execute({ orderId: "o1" }, writeCtx);
     expect(m.approveFieldSalesOrder).toHaveBeenCalledWith({
       orderId: "o1",
       approvedById: "u-admin",
-      kreditDiperiksa: true,
     });
     const call = m.approveFieldSalesOrder.mock.calls[0][0] as Record<string, unknown>;
+    expect(call).not.toHaveProperty("kreditDiperiksa");
     expect(call).not.toHaveProperty("finalPrices");
     expect(call).not.toHaveProperty("addedLines");
     expect(call).not.toHaveProperty("creditOverrideReason");
@@ -451,6 +451,13 @@ describe("approve_field_sales_order / reject_field_sales_order", () => {
       entityType: "FieldSalesOrder",
       entityId: "o1",
     });
+  });
+
+  it("credit preview failure degrades to — and still prepares", async () => {
+    m.computeStoreCreditExposure.mockRejectedValueOnce(new Error("db blip"));
+    const prepared = await approve.prepare(approveSchema.parse({ order: "o1" }), writeCtx);
+    expect(prepared.args).toEqual({ orderId: "o1" });
+    expect(prepared.preview.details.find((d) => d.label === "Status kredit")?.value).toBe("—");
   });
 
   it("approve execute maps writer errors like the action", async () => {
