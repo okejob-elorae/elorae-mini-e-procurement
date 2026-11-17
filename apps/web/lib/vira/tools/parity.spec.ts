@@ -56,7 +56,10 @@ function kodeDariModul(mod: Record<string, unknown>): string[] {
   return kode;
 }
 
-async function himpunanIzin(tool: ViraTool, kasus: ParityCase): Promise<string[][]> {
+async function himpunanIzin(
+  tool: { gate: ViraGate },
+  kasus: ParityCase,
+): Promise<string[][]> {
   const kode = new Set(kodeGerbang(tool.gate));
   if (tool.gate.kind === "izin") {
     if (kasus.kind === "pageCode") for (const c of kasus.codes) kode.add(c);
