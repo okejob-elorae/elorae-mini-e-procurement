@@ -139,7 +139,9 @@ const approveSpgBuyerReturnTool = defineWriteTool({
     const row = await resolveMenunggu(input.returnId, ctx.actor.id);
     const url = recordUrl(ctx.baseUrl, `/backoffice/retur-spg/${row.id}`);
     const nilai = row.baris.reduce((n, l) => n + l.nilaiBersih, 0);
-    const barang = row.baris.slice(0, 8).map((l) => `${l.variantSku} × ${l.qty}`);
+    const barang = row.baris
+      .slice(0, 8)
+      .map((l) => `${l.variantSku} × ${l.qty} (${l.kondisi})`);
     if (row.baris.length > 8) barang.push(`…+${row.baris.length - 8} lagi`);
     return {
       preview: {
@@ -150,6 +152,7 @@ const approveSpgBuyerReturnTool = defineWriteTool({
           { label: "SPG", value: row.pelapor.nama },
           { label: "Barang", value: barang.join(", ") || "—" },
           { label: "Nilai", value: formatRp(nilai) },
+          { label: "Alasan SPG", value: row.alasan },
           ...detailKeputusan(row),
         ],
         confirmLabel: "Setujui",
@@ -212,7 +215,9 @@ const rejectSpgBuyerReturnTool = defineWriteTool({
     const row = await resolveMenunggu(input.returnId, ctx.actor.id);
     const url = recordUrl(ctx.baseUrl, `/backoffice/retur-spg/${row.id}`);
     const nilai = row.baris.reduce((n, l) => n + l.nilaiBersih, 0);
-    const barang = row.baris.slice(0, 8).map((l) => `${l.variantSku} × ${l.qty}`);
+    const barang = row.baris
+      .slice(0, 8)
+      .map((l) => `${l.variantSku} × ${l.qty} (${l.kondisi})`);
     if (row.baris.length > 8) barang.push(`…+${row.baris.length - 8} lagi`);
     // TolakDialog: MENUNGGU_SUDAH / uang already recorded → rejecting creates SPG beban.
     const uangSudah =
@@ -236,7 +241,8 @@ const rejectSpgBuyerReturnTool = defineWriteTool({
           { label: "SPG", value: row.pelapor.nama },
           { label: "Barang", value: barang.join(", ") || "—" },
           { label: "Nilai", value: formatRp(nilai) },
-          { label: "Alasan", value: input.reason },
+          { label: "Alasan SPG", value: row.alasan },
+          { label: "Alasan tolak", value: input.reason },
           ...detailKeputusan(row),
           ...bebanDetail,
         ],
@@ -263,9 +269,11 @@ const rejectSpgBuyerReturnTool = defineWriteTool({
     const mapped = mapHasil(r, url);
     if (mapped) return mapped;
     const row = await rincianReturPembeliKantor(args.returnId);
+    const beban =
+      row?.beban != null ? ` Beban SPG ${formatRp(row.beban.jumlah)}.` : "";
     return {
       ok: true,
-      message: `Retur ${row?.nota.docNo ?? args.returnId} ditolak.`,
+      message: `Retur ${row?.nota.docNo ?? args.returnId} ditolak.${beban}`,
       url,
       entityType: "SpgBuyerReturn",
       entityId: args.returnId,
@@ -313,6 +321,8 @@ export const tools: ViraTool[] = [
         spg: { name: b.pelapor },
         status: b.status,
         items: b.pcs,
+        itemsSummary: b.ringkasBarang,
+        reason: b.alasan,
         // List query has no money total (detail does); keep the field for the card shape.
         amount: null as number | null,
         refundMethod: b.uang,

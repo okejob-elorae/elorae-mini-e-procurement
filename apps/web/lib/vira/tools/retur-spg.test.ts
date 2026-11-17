@@ -149,6 +149,8 @@ describe("list_spg_buyer_returns", () => {
       spg: { name: "Sari" },
       status: "MENUNGGU",
       items: 2,
+      itemsSummary: "KAOS-01 × 2",
+      reason: "ukuran salah",
       refundMethod: "MENUNGGU_BELUM",
       url: "https://e.test/backoffice/retur-spg/r-1",
     });
@@ -191,7 +193,8 @@ describe("approve / reject spg buyer return", () => {
     expect(m.setujuiReturPembeli).not.toHaveBeenCalled();
     expect(prepared.args).toEqual({ returnId: "r-1", spgSaleId: "sale-1" });
     expect(prepared.preview.title).toBe("Setujui retur NT-001");
-    expect(prepared.preview.details.find((d) => d.label === "Barang")?.value).toBe("KAOS-01 × 2");
+    expect(prepared.preview.details.find((d) => d.label === "Barang")?.value).toBe("KAOS-01 × 2 (LAYAK)");
+    expect(prepared.preview.details.find((d) => d.label === "Alasan SPG")?.value).toBe("ukuran salah");
     expect(prepared.preview.details.find((d) => d.label === "Uang")?.value).toBe("MENUNGGU_BELUM");
     expect(approve.revalidate(prepared.args, { ok: true, message: "", url: "", entityType: "", entityId: "" })).toEqual(
       expect.arrayContaining([
