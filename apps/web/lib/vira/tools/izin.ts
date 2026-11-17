@@ -65,13 +65,34 @@ const listShape = {
 type ApproveArgs = { leaveRequestId: string; note?: string };
 type RejectArgs = { leaveRequestId: string; note: string };
 
-async function resolvePending(leaveRequestId: string): Promise<BarisIzinKantor> {
+async function resolvePending(leaveRequestId: string, actorId: string): Promise<BarisIzinKantor> {
   const row = await izinById(leaveRequestId);
   if (!row) throw new ViraNotFoundError("Ajuan izin tidak ditemukan");
   if (row.status !== "DIAJUKAN") {
     throw new ViraInputError(`Ajuan ini sudah ${row.status}.`);
   }
+  // Backoffice hides buttons when milikSendiri (`TombolKeputusanIzin`).
+  if (row.userId === actorId) {
+    throw new ViraInputError("Anda tidak bisa memutuskan ajuan Anda sendiri.");
+  }
   return row;
+}
+
+function detailCuti(row: BarisIzinKantor): { label: string; value: string } | null {
+  if (!row.cuti) return null;
+  const c = row.cuti;
+  return {
+    label: "Kuota cuti",
+    value: `Sisa ${c.sisa} dari ${c.kuota} (${c.tahun}; disetujui ${c.disetujui}, menunggu ${c.menunggu})`,
+  };
+}
+
+function pesanSukses(row: BarisIzinKantor | null, leaveRequestId: string, verb: "disetujui" | "ditolak"): string {
+  const jenis =
+    row?.jenis && row.jenis in NAMA_JENIS_IZIN
+      ? NAMA_JENIS_IZIN[row.jenis as JenisIzin]
+      : "Izin";
+  return `${jenis} ${row?.nama ?? leaveRequestId} ${verb}.`;
 }
 
 function mapKeputusan(
@@ -126,10 +147,11 @@ const approveLeaveRequestTool = defineWriteTool({
   }),
   __sampleInput: { leaveRequestId: "leave-1" },
   prepare: async (input, ctx) => {
-    const row = await resolvePending(input.leaveRequestId);
+    const row = await resolvePending(input.leaveRequestId, ctx.actor.id);
     const url = recordUrl(ctx.baseUrl, `/backoffice/izin?id=${row.id}`);
     const jenisLabel = NAMA_JENIS_IZIN[row.jenis as JenisIzin] ?? row.jenis;
     const tanggal = labelRentangIzin(row.mulai, row.selesai);
+    const cuti = detailCuti(row);
     return {
       preview: {
         title: `Setujui ${jenisLabel} ${row.nama}`,
@@ -141,6 +163,7 @@ const approveLeaveRequestTool = defineWriteTool({
           { label: "Hari kerja", value: String(row.hariKerja) },
           { label: "Alasan", value: row.alasan },
           { label: "Catatan", value: input.note?.trim() || "—" },
+          ...(cuti ? [cuti] : []),
         ],
         confirmLabel: "Setujui",
         cancelLabel: "Batal",
@@ -165,7 +188,7 @@ const approveLeaveRequestTool = defineWriteTool({
     const row = await izinById(args.leaveRequestId);
     return {
       ok: true,
-      message: `Izin ${row?.nama ?? args.leaveRequestId} disetujui.`,
+      message: pesanSukses(row, args.leaveRequestId, "disetujui"),
       url,
       entityType: "LeaveRequest",
       entityId: args.leaveRequestId,
@@ -202,10 +225,11 @@ const rejectLeaveRequestTool = defineWriteTool({
   }),
   __sampleInput: { leaveRequestId: "leave-1", note: "x" },
   prepare: async (input, ctx) => {
-    const row = await resolvePending(input.leaveRequestId);
+    const row = await resolvePending(input.leaveRequestId, ctx.actor.id);
     const url = recordUrl(ctx.baseUrl, `/backoffice/izin?id=${row.id}`);
     const jenisLabel = NAMA_JENIS_IZIN[row.jenis as JenisIzin] ?? row.jenis;
     const tanggal = labelRentangIzin(row.mulai, row.selesai);
+    const cuti = detailCuti(row);
     return {
       preview: {
         title: `Tolak ${jenisLabel} ${row.nama}`,
@@ -217,6 +241,7 @@ const rejectLeaveRequestTool = defineWriteTool({
           { label: "Hari kerja", value: String(row.hariKerja) },
           { label: "Alasan", value: row.alasan },
           { label: "Catatan", value: input.note },
+          ...(cuti ? [cuti] : []),
         ],
         confirmLabel: "Tolak",
         cancelLabel: "Batal",
@@ -238,7 +263,7 @@ const rejectLeaveRequestTool = defineWriteTool({
     const row = await izinById(args.leaveRequestId);
     return {
       ok: true,
-      message: `Izin ${row?.nama ?? args.leaveRequestId} ditolak.`,
+      message: pesanSukses(row, args.leaveRequestId, "ditolak"),
       url,
       entityType: "LeaveRequest",
       entityId: args.leaveRequestId,

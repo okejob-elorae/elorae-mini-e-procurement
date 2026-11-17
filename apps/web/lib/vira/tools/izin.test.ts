@@ -187,7 +187,7 @@ describe("approve_leave_request / reject_leave_request", () => {
     ).toEqual(["/pwa", "/pwa/absen", "/backoffice/izin", "/backoffice/absensi"]);
   });
 
-  it("wrong status / missing → prepare refuses", async () => {
+  it("wrong status / missing / own request → prepare refuses", async () => {
     m.izinById.mockResolvedValue(row({ status: "DISETUJUI" }));
     await expect(
       approve.prepare(approveSchema.parse({ leaveRequestId: "leave-1" }), writeCtx),
@@ -196,6 +196,26 @@ describe("approve_leave_request / reject_leave_request", () => {
     await expect(
       approve.prepare(approveSchema.parse({ leaveRequestId: "missing" }), writeCtx),
     ).rejects.toEqual(new ViraNotFoundError("Ajuan izin tidak ditemukan"));
+    m.izinById.mockResolvedValue(row({ userId: "u-admin" }));
+    await expect(
+      approve.prepare(approveSchema.parse({ leaveRequestId: "leave-1" }), writeCtx),
+    ).rejects.toEqual(new ViraInputError("Anda tidak bisa memutuskan ajuan Anda sendiri."));
+  });
+
+  it("CUTI preview includes kuota detail", async () => {
+    m.izinById.mockResolvedValue(
+      row({
+        jenis: "CUTI",
+        cuti: { tahun: "2026", kuota: 12, disetujui: 4, menunggu: 2, sisa: 6 },
+      }),
+    );
+    const prepared = await approve.prepare(
+      approveSchema.parse({ leaveRequestId: "leave-1" }),
+      writeCtx,
+    );
+    expect(prepared.preview.details.find((d) => d.label === "Kuota cuti")?.value).toBe(
+      "Sisa 6 dari 12 (2026; disetujui 4, menunggu 2)",
+    );
   });
 
   it("approve execute calls setujuiIzin with actor and maps KUOTA_CUTI_HABIS", async () => {
@@ -213,6 +233,11 @@ describe("approve_leave_request / reject_leave_request", () => {
       entityType: "LeaveRequest",
       entityId: "leave-1",
     });
+
+    m.setujuiIzin.mockResolvedValueOnce({ ok: true });
+    m.izinById.mockResolvedValueOnce(row({ status: "DISETUJUI", jenis: "SAKIT", nama: "Sari" }));
+    const sakit = await approve.execute({ leaveRequestId: "leave-1" }, writeCtx);
+    expect(sakit).toMatchObject({ ok: true, message: "Sakit Sari disetujui." });
 
     m.setujuiIzin.mockResolvedValueOnce({
       ok: false,
