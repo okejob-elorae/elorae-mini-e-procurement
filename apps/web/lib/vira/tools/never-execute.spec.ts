@@ -178,6 +178,30 @@ describe("VIRA write tools — model can never execute", () => {
         expect(fresh, `${tool.name} missing after re-import`).toBeDefined();
         const freshSample = fresh!.__sampleInput ?? tool.__sampleInput;
         expect(freshSample).toBeDefined();
+
+        // Prove the re-imported tool closed over our mocked writer (not a typo’d module id).
+        const ctx = {
+          actor: { id: "u-1", name: "Uji", permissions: ["*"] as string[] },
+          baseUrl: "https://x.test",
+        };
+        const prepared = await fresh!.prepare(
+          freshSample as never,
+          ctx,
+        );
+        tulisNever.spy.mockImplementation(async () => ({
+          ok: true as const,
+          message: "bound",
+          url: "/x",
+          entityType: "Bind",
+          entityId: "1",
+        }));
+        await fresh!.execute(prepared.args, ctx);
+        expect(tulisNever.spy).toHaveBeenCalled();
+        tulisNever.spy.mockClear();
+        tulisNever.spy.mockImplementation(async () => {
+          throw new Error(`${kasus.writerExport} must not be called from MCP prepare`);
+        });
+
         await assertNeverExecute(
           buildFresh,
           fresh!,
