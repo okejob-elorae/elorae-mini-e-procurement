@@ -234,39 +234,39 @@ d("POST /api/vira/mcp (test bed only)", () => {
     ]);
   });
 
-  it("final tool count: a system-role user (\"*\") lists phase-1 reads plus registered write tools", async () => {
+  it("final tool count: a system-role user (\"*\") lists 17 reads then 9 writes in registry order", async () => {
     const list = await kirim(tokenC, rpc("tools/list"));
     const nama = (list.result?.tools as Array<{ name: string }>).map((t) => t.name);
-    expect([...nama].sort()).toEqual(
-      [
-        "whoami",
-        "search_items",
-        "get_item_stock",
-        "get_store_stock",
-        "list_store_stocktakes",
-        "list_marketplace_orders",
-        "get_marketplace_order",
-        "list_field_sales_orders",
-        "get_field_sales_order",
-        "list_purchase_orders",
-        "list_work_orders",
-        "list_receivables",
-        "list_consignment_cycles",
-        "list_tax_invoices",
-        "list_marketplace_settlements",
-        "list_leave_requests",
-        "list_spg_buyer_returns",
-        "approve_field_sales_order",
-        "reject_field_sales_order",
-        "approve_leave_request",
-        "reject_leave_request",
-        "approve_spg_buyer_return",
-        "reject_spg_buyer_return",
-        "close_purchase_order",
-        "record_consignment_document_number",
-        "mark_tax_invoice_sent_to_store",
-      ].sort(),
-    );
+    expect(nama).toEqual([
+      // VIRA_TOOLS (MODULES order)
+      "whoami",
+      "search_items",
+      "get_item_stock",
+      "get_store_stock",
+      "list_store_stocktakes",
+      "list_marketplace_orders",
+      "get_marketplace_order",
+      "list_field_sales_orders",
+      "get_field_sales_order",
+      "list_purchase_orders",
+      "list_work_orders",
+      "list_receivables",
+      "list_consignment_cycles",
+      "list_tax_invoices",
+      "list_marketplace_settlements",
+      "list_leave_requests",
+      "list_spg_buyer_returns",
+      // VIRA_WRITE_TOOLS (MODULES order)
+      "approve_field_sales_order",
+      "reject_field_sales_order",
+      "close_purchase_order",
+      "record_consignment_document_number",
+      "mark_tax_invoice_sent_to_store",
+      "approve_leave_request",
+      "reject_leave_request",
+      "approve_spg_buyer_return",
+      "reject_spg_buyer_return",
+    ]);
   });
 
   it("tools/call whoami as user A → A's id", async () => {

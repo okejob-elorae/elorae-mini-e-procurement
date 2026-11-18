@@ -356,6 +356,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Using a permission, bell category or phone notice kind added on 2026-11-02 (round 4)? Take the spelling from the registry (`lib/rbac.ts`, `seed-owner-2026-11-02b-permissions.sql` + its postgres copy) — `deliveries:cancel_nota`, `spg_attendance:record`/`:verify`, `store_returns:decide_shortfall`, `receivables:overdue_reminder`, `vendor_bills:decide_price`, `goods_receipts:confirm_no_po`, `spg_schedules:approve`, `spg_commission:manage`; never a second spelling and never a per-feature seed file. → `docs/landmines/data-ownership-auth.md`
 - Linking a bell, a Beranda row or a button? It must lead only to a page its permission's DEFAULT holders can open: KEUANGAN opens only Komisi SPG among the SPG pages (P28), so the nota bells go to `/backoffice/finance/faktur-pajak?q=<docNo>` and the carrier-claim check row needs the barang-hilang page guard (`peran-kantor.test.ts`). → `docs/landmines/data-ownership-auth.md`
 - Changing a permission check in an action or page that a VIRA tool mirrors? Update `lib/vira/tools/*` too — `lib/vira/tools/parity.spec.ts` will fail otherwise. → `docs/VIRA_MCP.md`
+- Adding a VIRA write tool? Prepare must never write; execute runs only from `/api/vira/confirm`; mirror the action's gate, writer, revalidate list and notifications. → `docs/VIRA_MCP.md`
 
 **Database, migrations, prod ops**
 

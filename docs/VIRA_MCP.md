@@ -1,10 +1,10 @@
-# VIRA MCP adapter (phase 1, read-only)
+# VIRA MCP adapter (phase 1 reads + phase 2 write confirms)
 
-Epic #496. Code: `apps/web/lib/vira/**`, `apps/web/app/api/vira/token/route.ts`, `apps/web/app/api/vira/mcp/route.ts`.
+Epics #496 (reads) and #538 (writes). Code: `apps/web/lib/vira/**`, `apps/web/app/api/vira/token/route.ts`, `apps/web/app/api/vira/mcp/route.ts`, `apps/web/app/api/vira/confirm/route.ts`.
 
 ## 1. What it is
 
-An MCP (Model Context Protocol) endpoint inside `apps/web` that lets VIRA, OKEJOB's own AI agent runtime (a separate repo), answer back-office questions for an Elorae user. Phase 1 is **read-only**: one `whoami` tool and 14 read tools, all marked `readOnlyHint`. Every call runs **as the logged-in Elorae user** who asked: the tool sees only what that user's permission codes already let them see in the back office, through the same `lib/` query functions the pages and actions use. Tools never call server actions and never write.
+An MCP (Model Context Protocol) endpoint inside `apps/web` that lets VIRA, OKEJOB's own AI agent runtime (a separate repo), answer back-office questions and prepare back-office changes for an Elorae user. Phase 1 shipped **read** tools (one `whoami` and 16 other reads, marked `readOnlyHint`). Phase 2 adds **write** tools that only prepare a confirmation; nothing is applied until the user presses a button and the VIRA runtime calls `POST /api/vira/confirm`. Every call runs **as the logged-in Elorae user** who asked: the tool sees and changes only what that user's permission codes already allow in the back office, through the same `lib/` query and writer functions the pages and actions use. Tools never call server actions.
 
 ## 2. Auth flow
 
@@ -23,7 +23,7 @@ Elorae page (logged-in user)
 ```
 
 - **`POST /api/vira/token`** stays behind the NextAuth session in `proxy.ts`. It needs a session (401), a same-origin `Origin` header (403 `bad_origin`) and `vira:use` (403 `forbidden`). It is rate-limited to 10 per minute per user (429 with `Retry-After`). It returns `{ token, expiresAt }`; the token is never logged.
-- **`POST /api/vira/mcp`** is the only VIRA path on the `proxy.ts` allow-list. It is stateless: a new MCP server and transport per POST, with JSON responses. It is rate-limited to 60 per minute per user. GET and DELETE return 405.
+- **`POST /api/vira/mcp`** and **`POST /api/vira/confirm`** are the VIRA paths on the `proxy.ts` allow-list. MCP is stateless: a new MCP server and transport per POST, with JSON responses. It is rate-limited to 60 per minute per user. GET and DELETE return 405. Confirm is rate-limited to 20 per minute per user.
 - **Token TTL is 10 minutes** (600 s, 30 s clock skew). Claims: `sub` (user id), `iss` `elorae`, `aud` `vira-mcp`, `iat`, `exp`, `jti`, `pwf`.
 - **Permissions are loaded fresh from the DB on every MCP call**, never from the token. A permission removed from a user's role applies on the next call.
 - **A password change kills every outstanding token.** `pwf` is a SHA-256 fingerprint of the password hash; when it no longer matches, the call gets 401. Otherwise a token cannot be revoked within its 10 minutes, except by deleting the user. Elorae has no user deactivation yet (`User` has no `isActive` column), so there is nothing to deactivate; removing `vira:use` from the user's role does take effect on the next call (403), because permissions are reloaded per call.
@@ -56,9 +56,9 @@ openssl rand -base64 48
 
 **Deploy:** the `vira:use` permission row comes from `seed-vira-2026-11-16-permissions.sql`. The deploy's `migrate` job runs each `packages/db/prisma/seed-*.sql` **once**, recorded in `_seed_runs`, so nothing needs to be run by hand on prod. The file is idempotent and links no role. For a database outside the deploy flow, run it with the `mariadb` client as its header says.
 
-## 4. Tool list
+## 4. Read tool list (phase 1 + two phase-2 reads)
 
-15 tools. "Gate" is what the tool checks; it is the same check the page or action applies (proved by `parity.spec.ts`). Every list tool takes `limit` (default 20, **max 50**) and `offset`, and returns `{ items, total, offset, limit, hasMore }`. Two tools add one key to that shape: `list_receivables` adds `summary`, and `get_store_stock` (paged over its stock rows) adds `store`. Every record carries a `url` into the back office.
+17 read tools (15 from phase 1 plus `list_leave_requests` and `list_spg_buyer_returns`). "Gate" is what the tool checks; it is the same check the page or action applies (proved by `parity.spec.ts`). Every list tool takes `limit` (default 20, **max 50**) and `offset`, and returns `{ items, total, offset, limit, hasMore }`. Two tools add one key to that shape: `list_receivables` adds `summary`, and `get_store_stock` (paged over its stock rows) adds `store`. Every record carries a `url` into the back office. Write tools are in section 8.
 
 | Tool | Gate | Source (`lib/`) | Notes on what is returned |
 |---|---|---|---|
@@ -77,8 +77,10 @@ openssl rand -base64 48
 | `list_consignment_cycles` | `bolehMembukaKonsi` | `konsinyasi/queries` `daftarSiklus`, `saringSiklus` | **`soldValue`** is the total of goods the store reported sold in the cycle, not the billed amount (no VAT, loss charges or other adjustments). Never calls `rincianSiklus` (SPG salary). |
 | `list_tax_invoices` | `tax_invoices:view` | `tax-invoices/queries` `listTaxInvoices` | No NPWP or NIK. Link is the faktur page searched by faktur number, or by the source document number while the faktur has none. |
 | `list_marketplace_settlements` | `finance:settlements:view` | `finance/settlement/queries` `listSettlements` | **id, channel, period start/end, status and link only — no totals, fees or net amounts** (the list query has none). The description says so. |
+| `list_leave_requests` | `bolehMelihatIzin` | `salesman/izin` / `izin-queries` | Office leave (izin) list; no salary fields. |
+| `list_spg_buyer_returns` | `spg_sales:view` | `spg/retur-pembeli-queries` | SPG buyer-return list for approve/reject. |
 
-The registry is `lib/vira/tools/index.ts`; `app/api/vira/mcp/route.spec.ts` pins exactly these 15 names for a `"*"` user.
+The registry is `lib/vira/tools/index.ts`; `app/api/vira/mcp/route.spec.ts` and `lib/vira/tools/index.test.ts` pin the 17 read names and the 9 write names in registry order for a `"*"` user.
 
 ## 5. How to add a tool
 
@@ -91,7 +93,7 @@ The registry is `lib/vira/tools/index.ts`; `app/api/vira/mcp/route.spec.ts` pins
 7. Errors: not found → `ViraNotFoundError("<Thing> not found")`; bad or ambiguous input → `ViraInputError(...)`.
 8. **Add a parity case** to the module's `parityCases` (`route`, `pageCode`, `predicate` or `action`), so `lib/vira/tools/parity.spec.ts` proves the tool's gate equals the UI's.
 9. Tests in `lib/vira/tools/<module>.test.ts` with the `lib/` function mocked: input accepted and rejected, exact output fields, a deep check that forbidden fields never appear, paging, `url`, not-found and ambiguous errors.
-10. Update the 15-name list in `app/api/vira/mcp/route.spec.ts` and the table above, then **run the specs** (section 7).
+10. Update the pinned tool-name lists in `app/api/vira/mcp/route.spec.ts` / `lib/vira/tools/index.test.ts` and the tables in this doc, then **run the specs** (section 7).
 
 ## 6. Rules
 
@@ -100,9 +102,10 @@ The registry is `lib/vira/tools/index.ts`; `app/api/vira/mcp/route.spec.ts` pins
 - **Never call server actions** (`app/actions/**`). Call the `lib/` function the action or page calls.
 - **Never take the actor from input.** It comes from the verified token, loaded fresh per call.
 - **Max 50 rows** per call (`VIRA_LIST_MAX_LIMIT`). A tool whose source is not paged caps its rows the same way (`get_item_stock` says `truncated`).
-- Never import `@/lib/auth` (NextAuth) from `lib/vira/**` or `app/api/vira/mcp/**`; only the token route may.
-- Never log tokens, service keys or customer personal data.
+- Never import `@/lib/auth` (NextAuth) from `lib/vira/**`, `app/api/vira/mcp/**` or `app/api/vira/confirm/**`; only the token route may.
+- Never log tokens, confirm tokens, service keys or customer personal data.
 - No Prisma schema changes or migrations for VIRA; permission rows come from dated seed SQL.
+- **Write-tool safety:** a write tool's MCP handler must never change data. Only `execute`, called from `/api/vira/confirm`, may change data. The confirm token goes only into `_meta["elorae/confirmation"]`, never into `content`.
 
 ## 7. Testing
 
@@ -112,3 +115,128 @@ Run through `scripts/verify.sh` (see `AGENTS.md` § Workflow conventions). The D
 scripts/verify.sh -F @elorae/web exec vitest run lib/vira app/api/vira
 scripts/verify.sh -F @elorae/web type-check
 ```
+
+## 8. Write tools (phase 2)
+
+Epic #538. Nine write tools prepare a change; the VIRA runtime shows confirm/cancel buttons; only a successful confirm applies the writer.
+
+### 8.1 Prepare → button → confirm
+
+```
+User asks VIRA to change something in Elorae
+  └─ VIRA runtime → MCP tools/call <write_tool>
+        Elorae prepare (read-only): resolve record, check state, build preview + args
+        Result content (to the model): awaiting_confirmation JSON (preview fields + note; see §8.4)
+        Result _meta["elorae/confirmation"] (for the VIRA runtime only, never shown to the model):
+          { token, expiresAt, title, summary, details[], confirmLabel, cancelLabel, destructive, target{ type, id, url } }
+  └─ VIRA runtime renders Confirm / Cancel from _meta (not the model)
+        User presses Confirm
+        VIRA runtime → POST /api/vira/confirm
+           headers: X-Vira-Service-Key, Authorization: Bearer <access JWT>
+           body:    { confirmToken, decision: "confirm" | "cancel" }
+           Elorae: verify tokens, consume jti once, re-check gate, tool.execute(args) → writer
+```
+
+An MCP call of a write tool **only prepares**. Execution happens **only** in `POST /api/vira/confirm`, which is not an MCP tool, so the model cannot call it.
+
+### 8.2 `vira:write`
+
+- Permission code **`vira:write`** (seed `packages/db/prisma/seed-vira-2026-11-17-permissions.sql`).
+- Required in addition to each write tool's own gate (MCP ANDs it outside the tool gate; parity compares the tool gate without it).
+- **Not granted to any role by default**; the owner grants it in Settings → Roles & permissions.
+- System (`"*"`) roles have it automatically.
+- Confirm also requires `vira:use` (from the access token) and `vira:write`.
+
+### 8.3 `POST /api/vira/confirm`
+
+Headers: `X-Vira-Service-Key`, `Authorization: Bearer <access JWT>` (same mint as MCP). Body: `{ confirmToken: string, decision: "confirm" | "cancel" }`. No `Origin` header (server-to-server). Checks run in this order (`confirm/route.ts`):
+
+| HTTP | Body | When |
+|---|---|---|
+| 403 | `{ error: "bad_origin" }` | `Origin` header present |
+| 401 | `{ error: "bad_service_key" }` | Missing/wrong service key |
+| 401 | `{ error: "invalid_token" }` | Missing/bad/expired access token, unknown user, or stale `pwf` (also sets `WWW-Authenticate: Bearer`) |
+| 503 | `{ error: "not_configured" }` | `VIRA_TOKEN_SECRET` unset (after Bearer-present check) |
+| 403 | `{ error: "forbidden" }` | No `vira:use` or no `vira:write` |
+| 429 | `{ error: "rate_limited" }` (with `Retry-After`) | Over 20 confirms/min for that user |
+| 400 | `{ error: "invalid_request" }` | Body fails zod |
+| 410 | `{ error: "confirmation_expired" }` | Confirm JWT expired |
+| 400 | `{ error: "invalid_confirmation" }` | Bad confirm JWT (before `sub` / `jti`) |
+| 403 | `{ error: "forbidden" }` | Confirm `sub` ≠ bearer `sub` |
+| 409 | `{ error: "already_used" }` | `jti` already consumed |
+| 200 | `{ status: "cancelled" }` | `decision === "cancel"` (returns here; no tool lookup) |
+| 400 | `{ error: "invalid_confirmation" }` | Unknown tool name in confirm claims |
+| 403 | `{ error: "forbidden" }` | Tool gate no longer allows |
+| 400 | `{ error: "invalid_confirmation" }` | Args fail `argsSchema` |
+| 200 | `{ status: "refused", code, message, url? }` | `execute` returned `{ ok: false }` (no revalidate) |
+| 200 | `{ status: "done", message, url }` | `execute` succeeded; then revalidate paths + optional `afterSuccess` |
+| 500 | `{ status: "failed", code: "INTERNAL", message }` | Unexpected throw from `execute` |
+
+Confirm token: HS256 with `VIRA_TOKEN_SECRET`, `iss: "elorae"`, `aud: "vira-confirm"`, TTL **300 s**. Claims: `sub`, `tool`, `args`, `jti`. Single-use `jti`s are kept in memory until they expire.
+
+### 8.4 `_meta["elorae/confirmation"]`
+
+Built by `toolConfirmation` in `lib/vira/output.ts`. The token never appears in `content`.
+
+```json
+{
+  "content": [{
+    "type": "text",
+    "text": "{\"status\":\"awaiting_confirmation\",\"title\":\"Setujui pesanan SO/2026/0123\",\"summary\":\"Toko Melati · 3 baris\",\"details\":[{\"label\":\"Toko\",\"value\":\"Toko Melati\"}],\"target\":{\"type\":\"field_sales_order\",\"id\":\"o1\",\"url\":\"https://elorae.example/backoffice/field-sales-orders/o1\"},\"note\":\"Nothing has been changed yet. The user must press the confirm button in the chat. Do not say the change is done.\"}"
+  }],
+  "structuredContent": { "...same object as text..." },
+  "_meta": {
+    "elorae/confirmation": {
+      "token": "<confirm JWT>",
+      "expiresAt": "2026-11-17T09:05:00.000Z",
+      "title": "Setujui pesanan SO/2026/0123",
+      "summary": "Toko Melati · 3 baris",
+      "details": [{ "label": "Toko", "value": "Toko Melati" }],
+      "confirmLabel": "Setujui",
+      "cancelLabel": "Batal",
+      "destructive": false,
+      "target": {
+        "type": "field_sales_order",
+        "id": "o1",
+        "url": "https://elorae.example/backoffice/field-sales-orders/o1"
+      }
+    }
+  }
+}
+```
+
+The VIRA runtime must never pass `_meta` to the model (decision E5; tracked in the VIRA repo).
+
+### 8.5 How to add a write tool
+
+1. Mirror an existing `"use server"` action and its `lib/` writer. Cite the action/writer line ranges above the tool.
+2. Add `defineWriteTool(...)` to that module's `writeTools` (and the module to `MODULES` only if new). English `name` / `description` verbatim from the card; Indonesian labels in the preview.
+3. `inputShape`: only the listed fields, each with `.describe()`. No actor id. Set `__sampleInput` for `never-execute.spec.ts`.
+4. `prepare`: **reads only**. Resolve the record; refuse wrong state with `ViraInputError` / `ViraNotFoundError`. Return `preview` + `args` (writer input minus the actor).
+5. `execute`: call the same writer with `args` plus the actor from `ctx`. Map refusal codes like the action. On success return `{ ok: true, message, url, entityType, entityId }` (and `extra` only if `afterSuccess` needs it).
+6. `revalidate`: copy the action's `revalidatePath` list. Copy notifications / side effects into `afterSuccess` with a source comment; it must not throw.
+7. Gate: same permission as the action (`code` / `anyOf` / `allOf` — never `izin` on a write tool). Do **not** put `vira:write` on the tool gate.
+8. Add a `writeAction` parity case (one per tool; two rows when the action gates on a call argument, e.g. consignment NOTA vs PAJAK).
+9. Update the pinned write-tool name list and the table below; run section 7.
+
+### 8.6 Limitations
+
+- **In-memory single-use `jti`:** used confirm ids live in process memory until expiry. A web restart forgets them, so a token that was already used could be accepted once more after restart (documented; one web process on the VPS).
+- **Stale previews:** the user can wait up to the confirm TTL. Every writer re-checks state inside its transaction; confirm returns `{ status: "refused", ... }` instead of success when the write is no longer valid.
+- **`_meta` trust:** the confirm token is only safe if the VIRA runtime keeps `_meta` off the model and only posts it to `/api/vira/confirm` after a real button press.
+
+### 8.7 Write tool list
+
+Nine tools, registry order (`MODULES` in `lib/vira/tools/index.ts`). Listing also requires `vira:write`.
+
+| Tool | Gate (plus `vira:write`) | Writer | Notes |
+|---|---|---|---|
+| `approve_field_sales_order` | `field_sales_orders:approve` | `field-sales` approve | Approve-as-is only (no price/line/credit override). |
+| `reject_field_sales_order` | `field_sales_orders:approve` | `field-sales` reject | Destructive; reason required. |
+| `close_purchase_order` | `purchase_orders:approve` | `purchase-orders/tutup` | Destructive; UI PARTIAL only; notifies on success. |
+| `record_consignment_document_number` | any of `consignment:note_number`, `consignment:tax_number` | `konsinyasi/writer` `catatNomorDokumen` | NOTA or PAJAK; per-jenis prepare check. |
+| `mark_tax_invoice_sent_to_store` | `tax_invoices:manage` | `tax-invoices/writer` | CREATED → SENT_TO_STORE. |
+| `approve_leave_request` | `field_sales_orders:approve` | `salesman/izin-writer` | Same code `bolehMemutuskanIzin` uses. |
+| `reject_leave_request` | `field_sales_orders:approve` | `salesman/izin-writer` | Destructive. |
+| `approve_spg_buyer_return` | `spg_returns:approve` | `spg` retur writer | `spgSaleId` only for revalidate, never the writer. |
+| `reject_spg_buyer_return` | `spg_returns:approve` | `spg` retur writer | Destructive. |
