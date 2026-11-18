@@ -910,6 +910,11 @@ Logged by the 2026-09-03 documentation sweep. That sweep also *fixed*, in the sa
 
 - [ ] `getItems` / `getItemById` / `getItemCounts` (`app/actions/items.ts`) check only the session, not `items:view`. Tracked in #515.
 - [ ] Reads that live only inside action bodies and are not available to VIRA: `getInventorySnapshot`, `getInventoryValue` (`actions/inventory.ts`), `getStockCard`, `getCurrentStockSummary` (`actions/stock-card.ts`), `getWorkOrderById` (`actions/production.ts`). Extract to `lib/` before adding VIRA tools for them.
+- [ ] VIRA phase 2 out of scope (decision E13 / epic #538): BKM / payment verify and reject (money; the self-verification guard lives in the action body).
+- [ ] VIRA phase 2 out of scope (E13): PIN-gated actions (PO cancel/edit, void) — no tool may take a PIN or other credential.
+- [ ] VIRA phase 2 out of scope (E13): stock adjustments (logic still in the action body).
+- [ ] VIRA phase 2 out of scope (E13): faktur pajak "created" (typing NPWP and amounts).
+- [ ] VIRA phase 2 out of scope (E13): credit override and price edits on field-sales approval (approve-as-is only).
 
 ### Legacy removal — proof queries (round 4, NOT run)
 

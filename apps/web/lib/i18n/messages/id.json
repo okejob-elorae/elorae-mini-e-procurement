@@ -24605,6 +24605,10 @@
         "label": "Gunakan asisten VIRA",
         "keterangan": "Mengizinkan orang ini memakai asisten AI VIRA. VIRA hanya bisa membaca apa yang sudah boleh dilihat orang ini lewat izin lainnya; izin ini tidak membuka data baru. Tidak diberikan ke peran mana pun secara bawaan."
       },
+      "vira_write": {
+        "label": "Terapkan perubahan lewat asisten VIRA",
+        "keterangan": "Mengizinkan orang ini menerapkan perubahan yang diusulkan VIRA, setelah menekan Konfirmasi. VIRA tidak bisa mengubah data sendiri. Tidak diberikan ke peran mana pun secara bawaan."
+      },
       "payments_verify": {
         "label": "Periksa pembayaran",
         "keterangan": "Mencocokkan BKM dengan mutasi rekening lalu memverifikasi atau menolaknya, menandai giro cair atau ditolak bank, membatalkan BKM, memverifikasi setoran penagih, menyetujui atau menolak dokumen pelunasan toko, dan memeriksa pembayaran utang SPG yang sudah berhenti (di halaman Komisi SPG). Juga menerima kabar saat nota tagihan putus dibatalkan atau dikoreksi. Pembayaran yang dilaporkan, dicatat, atau disetor orang itu sendiri tetap tidak bisa ia periksa."

@@ -4,19 +4,74 @@ import { ViraInputError, ViraNotFoundError } from "../errors";
 import { serialize } from "../output";
 import type { ViraToolContext } from "./types";
 
-const m = vi.hoisted(() => ({ listFieldSalesOrders: vi.fn(), getFieldSalesOrderById: vi.fn() }));
+const m = vi.hoisted(() => ({
+  listFieldSalesOrders: vi.fn(),
+  getFieldSalesOrderById: vi.fn(),
+  approveFieldSalesOrder: vi.fn(),
+  rejectFieldSalesOrder: vi.fn(),
+  computeStoreCreditExposure: vi.fn(),
+  bacaAturanKreditDb: vi.fn(),
+  batasKreditBerlaku: vi.fn(),
+  lewatBatasNilai: vi.fn(),
+  prismaOrderFind: vi.fn(),
+  prismaStoreFind: vi.fn(),
+}));
 vi.mock("@/lib/field-sales/queries", () => ({
   listFieldSalesOrders: m.listFieldSalesOrders,
   getFieldSalesOrderById: m.getFieldSalesOrderById,
 }));
+vi.mock("@/lib/field-sales/writer", () => ({
+  approveFieldSalesOrder: m.approveFieldSalesOrder,
+  rejectFieldSalesOrder: m.rejectFieldSalesOrder,
+}));
+vi.mock("@/lib/finance/ar/credit-exposure", () => ({
+  computeStoreCreditExposure: m.computeStoreCreditExposure,
+}));
+vi.mock("@/lib/salesman/tagihan-toko", () => ({
+  bacaAturanKreditDb: m.bacaAturanKreditDb,
+}));
+vi.mock("@/lib/salesman/kredit", () => ({
+  batasKreditBerlaku: m.batasKreditBerlaku,
+  lewatBatasNilai: m.lewatBatasNilai,
+}));
+vi.mock("@elorae/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@elorae/db")>();
+  return {
+    ...actual,
+    prisma: {
+      fieldSalesOrder: { findUnique: (...a: unknown[]) => m.prismaOrderFind(...a) },
+      store: { findUnique: (...a: unknown[]) => m.prismaStoreFind(...a) },
+    },
+  };
+});
 
-import { getFieldSalesOrderInput, parityCases, tools } from "./field-sales-orders";
+import {
+  __sampleInput,
+  getFieldSalesOrderInput,
+  parityCases,
+  tools,
+  writeTools,
+} from "./field-sales-orders";
+import {
+  CreditLimitExceededError,
+  InsufficientStockError,
+  InvalidOrderTransitionError,
+} from "@/lib/field-sales/errors";
+import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";
 
 const list = tools.find((t) => t.name === "list_field_sales_orders")!;
 const detail = tools.find((t) => t.name === "get_field_sales_order")!;
+const approve = writeTools.find((t) => t.name === "approve_field_sales_order")!;
+const reject = writeTools.find((t) => t.name === "reject_field_sales_order")!;
 const listSchema = z.object(list.inputShape);
+const approveSchema = z.object(approve.inputShape);
+const rejectSchema = z.object(reject.inputShape);
 const ctx: ViraToolContext = {
   actor: { id: "u1", name: "Uji", permissions: ["field_sales_orders:view"] },
+  baseUrl: "https://e.test",
+};
+const writeCtx: ViraToolContext = {
+  actor: { id: "u-admin", name: "Admin", permissions: ["field_sales_orders:approve", "vira:write"] },
   baseUrl: "https://e.test",
 };
 
@@ -106,6 +161,24 @@ function detailRow() {
 beforeEach(() => {
   m.listFieldSalesOrders.mockReset().mockResolvedValue({ orders: [listRow("o1")], totalCount: 1 });
   m.getFieldSalesOrderById.mockReset().mockResolvedValue(detailRow());
+  m.approveFieldSalesOrder.mockReset().mockResolvedValue({ ok: true });
+  m.rejectFieldSalesOrder.mockReset().mockResolvedValue({ ok: true });
+  m.prismaOrderFind.mockReset().mockImplementation(async (args?: { where?: Record<string, unknown> }) => {
+    if (args?.where && "orderNo" in args.where) return { id: "o1" };
+    return { storeId: "s1", kreditDitahan: false };
+  });
+  m.prismaStoreFind.mockReset().mockResolvedValue({ creditLimit: 1_000_000, noCreditLimit: false });
+  m.bacaAturanKreditDb.mockReset().mockResolvedValue({});
+  m.batasKreditBerlaku.mockReset().mockReturnValue({
+    nilai: { nilai: 1_000_000, sumber: "TOKO" },
+  });
+  m.computeStoreCreditExposure.mockReset().mockResolvedValue({
+    receivableOutstanding: 100_000,
+    undeliveredOrderResidual: 0,
+    openInvoiceCount: 1,
+    total: 100_000,
+  });
+  m.lewatBatasNilai.mockReset().mockReturnValue(false);
 });
 
 describe("list_field_sales_orders", () => {
@@ -201,13 +274,16 @@ describe("get_field_sales_order", () => {
     }
   });
 
-  it("finds by exact docNo; a partial match → Order not found", async () => {
-    m.listFieldSalesOrders.mockResolvedValue({ orders: [listRow("o2", { orderNo: "FSO-o1-X" }), listRow("o1")], totalCount: 2 });
+  it("finds by exact docNo via unique orderNo; missing → Order not found", async () => {
+    m.prismaOrderFind.mockResolvedValueOnce({ id: "o1" });
     await detail.handler({ docNo: "FSO-o1" }, ctx);
-    expect(m.listFieldSalesOrders).toHaveBeenCalledWith({ search: "FSO-o1" }, { page: 1, pageSize: 50 });
+    expect(m.prismaOrderFind).toHaveBeenCalledWith({
+      where: { orderNo: "FSO-o1" },
+      select: { id: true },
+    });
     expect(m.getFieldSalesOrderById).toHaveBeenCalledWith("o1");
 
-    m.listFieldSalesOrders.mockResolvedValue({ orders: [listRow("o2", { orderNo: "FSO-o1-X" })], totalCount: 1 });
+    m.prismaOrderFind.mockResolvedValueOnce(null);
     await expect(detail.handler({ docNo: "FSO-o1" }, ctx)).rejects.toEqual(new ViraNotFoundError("Order not found"));
   });
 
@@ -250,6 +326,209 @@ describe("get_field_sales_order", () => {
   it("both tools are gated on field_sales_orders:view with a route parity case each", () => {
     expect(list.gate).toEqual({ kind: "code", code: "field_sales_orders:view" });
     expect(detail.gate).toEqual({ kind: "code", code: "field_sales_orders:view" });
-    expect(parityCases.map((c) => c.tool)).toEqual(["list_field_sales_orders", "get_field_sales_order"]);
+    expect(parityCases.filter((c) => c.kind === "route").map((c) => c.tool)).toEqual([
+      "list_field_sales_orders",
+      "get_field_sales_order",
+    ]);
+  });
+});
+
+describe("approve_field_sales_order / reject_field_sales_order", () => {
+  beforeEach(() => {
+    m.getFieldSalesOrderById.mockResolvedValue({
+      ...detailRow(),
+      status: "PENDING_APPROVAL",
+      orderNo: "SO-1",
+    });
+  });
+
+  it("gates, destructive flags, sample inputs, and writeAction parity cases", () => {
+    expect(approve.gate).toEqual({ kind: "code", code: "field_sales_orders:approve" });
+    expect(reject.gate).toEqual({ kind: "code", code: "field_sales_orders:approve" });
+    expect(approve.destructive).toBe(false);
+    expect(reject.destructive).toBe(true);
+    expect(__sampleInput).toEqual({
+      approve_field_sales_order: { order: "SO-1" },
+      reject_field_sales_order: { order: "SO-1", reason: "x" },
+    });
+    expect(approve.__sampleInput).toEqual({ order: "SO-1" });
+    expect(reject.__sampleInput).toEqual({ order: "SO-1", reason: "x" });
+    const writes = parityCases.filter((c) => c.kind === "writeAction");
+    expect(writes).toEqual([
+      expect.objectContaining({
+        tool: "approve_field_sales_order",
+        actionExport: "approveFieldSalesOrderAction",
+        writerExport: "approveFieldSalesOrder",
+        args: ["order-1"],
+      }),
+      expect.objectContaining({
+        tool: "reject_field_sales_order",
+        actionExport: "rejectFieldSalesOrderAction",
+        writerExport: "rejectFieldSalesOrder",
+        args: ["order-1", "alasan"],
+      }),
+    ]);
+  });
+
+  it("reject reason blank fails the schema (REASON_REQUIRED)", () => {
+    expect(rejectSchema.safeParse({ order: "SO-1", reason: "   " }).success).toBe(false);
+    expect(rejectSchema.safeParse({ order: "SO-1", reason: "" }).success).toBe(false);
+  });
+
+  it("prepare approve: pending + credit preview; revalidate paths", async () => {
+    const prepared = await approve.prepare(approveSchema.parse({ order: "SO-1" }), writeCtx);
+    expect(prepared.args).toEqual({ orderId: "o1" });
+    expect(prepared.preview.title).toBe("Setujui pesanan SO-1");
+    expect(prepared.preview.confirmLabel).toBe("Setujui");
+    expect(prepared.preview.cancelLabel).toBe("Batal");
+    expect(prepared.preview.details.find((d) => d.label === "Status kredit")?.value).toBe("Aman");
+    expect(approve.revalidate(prepared.args, { ok: true, message: "", url: "", entityType: "", entityId: "" })).toEqual([
+      "/backoffice/field-sales-orders",
+      "/backoffice/field-sales-orders/o1",
+    ]);
+  });
+
+  it("over-limit order → prepare throws ViraInputError with the order URL", async () => {
+    m.lewatBatasNilai.mockReturnValue(true);
+    await expect(approve.prepare(approveSchema.parse({ order: "o1" }), writeCtx)).rejects.toEqual(
+      new ViraInputError(
+        "Toko melewati batas kredit. Buka pesanan di Elorae untuk persetujuan dengan alasan: https://e.test/backoffice/field-sales-orders/o1",
+      ),
+    );
+  });
+
+  it("wrong status → ViraInputError; unknown order → Pesanan tidak ditemukan", async () => {
+    m.getFieldSalesOrderById.mockResolvedValue({ ...detailRow(), status: "APPROVED", orderNo: "SO-9" });
+    await expect(approve.prepare(approveSchema.parse({ order: "o1" }), writeCtx)).rejects.toEqual(
+      new ViraInputError("Pesanan SO-9 berstatus APPROVED, tidak bisa disetujui."),
+    );
+    m.getFieldSalesOrderById.mockResolvedValue(null);
+    m.prismaOrderFind.mockResolvedValue(null);
+    await expect(approve.prepare(approveSchema.parse({ order: "missing" }), writeCtx)).rejects.toEqual(
+      new ViraNotFoundError("Pesanan tidak ditemukan"),
+    );
+  });
+
+  it("price appeal or kreditDitahan → prepare refuses with Elorae URL", async () => {
+    m.getFieldSalesOrderById.mockResolvedValue({
+      ...detailRow(),
+      status: "PENDING_APPROVAL",
+      orderNo: "SO-1",
+      lines: [{ ...detailRow().lines[0], requestedUnitPrice: 55_000 }],
+    });
+    await expect(approve.prepare(approveSchema.parse({ order: "o1" }), writeCtx)).rejects.toEqual(
+      new ViraInputError(
+        "Pesanan punya ajuan harga. Buka pesanan di Elorae untuk menetapkan harga final: https://e.test/backoffice/field-sales-orders/o1",
+      ),
+    );
+
+    m.getFieldSalesOrderById.mockResolvedValue({
+      ...detailRow(),
+      status: "PENDING_APPROVAL",
+      orderNo: "SO-1",
+    });
+    m.prismaOrderFind.mockResolvedValue({ kreditDitahan: true });
+    await expect(approve.prepare(approveSchema.parse({ order: "o1" }), writeCtx)).rejects.toEqual(
+      new ViraInputError(
+        "Kredit pesanan ditahan. Buka pesanan di Elorae untuk memeriksa dan menyetujui: https://e.test/backoffice/field-sales-orders/o1",
+      ),
+    );
+  });
+
+  it("approve execute omits kreditDiperiksa and never finalPrices/addedLines/creditOverrideReason", async () => {
+    m.getFieldSalesOrderById.mockResolvedValue({ ...detailRow(), orderNo: "SO-1", status: "APPROVED" });
+    const res = await approve.execute({ orderId: "o1" }, writeCtx);
+    expect(m.approveFieldSalesOrder).toHaveBeenCalledWith({
+      orderId: "o1",
+      approvedById: "u-admin",
+    });
+    const call = m.approveFieldSalesOrder.mock.calls[0][0] as Record<string, unknown>;
+    expect(call).not.toHaveProperty("kreditDiperiksa");
+    expect(call).not.toHaveProperty("finalPrices");
+    expect(call).not.toHaveProperty("addedLines");
+    expect(call).not.toHaveProperty("creditOverrideReason");
+    expect(res).toEqual({
+      ok: true,
+      message: "Pesanan SO-1 disetujui.",
+      url: "https://e.test/backoffice/field-sales-orders/o1",
+      entityType: "FieldSalesOrder",
+      entityId: "o1",
+    });
+  });
+
+  it("credit preview failure degrades to — and still prepares", async () => {
+    m.computeStoreCreditExposure.mockRejectedValueOnce(new Error("db blip"));
+    const prepared = await approve.prepare(approveSchema.parse({ order: "o1" }), writeCtx);
+    expect(prepared.args).toEqual({ orderId: "o1" });
+    expect(prepared.preview.details.find((d) => d.label === "Status kredit")?.value).toBe("—");
+  });
+
+  it("approve execute maps writer errors like the action", async () => {
+    m.approveFieldSalesOrder.mockRejectedValueOnce(
+      new CreditLimitExceededError(
+        { receivableOutstanding: 1, undeliveredOrderResidual: 0, total: 1 },
+        0,
+        1,
+      ),
+    );
+    expect(await approve.execute({ orderId: "o1" }, writeCtx)).toMatchObject({
+      ok: false,
+      code: "CREDIT_LIMIT_EXCEEDED",
+    });
+
+    m.approveFieldSalesOrder.mockRejectedValueOnce(new KreditBelumDiperiksaError("o1"));
+    expect(await approve.execute({ orderId: "o1" }, writeCtx)).toMatchObject({
+      ok: false,
+      code: "KREDIT_BELUM_DIPERIKSA",
+    });
+
+    m.approveFieldSalesOrder.mockRejectedValueOnce(
+      new InsufficientStockError([{ itemId: "i1", variantSku: "SKU-A", available: 0 }]),
+    );
+    expect(await approve.execute({ orderId: "o1" }, writeCtx)).toMatchObject({
+      ok: false,
+      code: "INSUFFICIENT_STOCK",
+      message: expect.stringContaining("SKU-A"),
+    });
+
+    m.approveFieldSalesOrder.mockRejectedValueOnce(new InvalidOrderTransitionError("MISSING", "APPROVED"));
+    expect(await approve.execute({ orderId: "o1" }, writeCtx)).toMatchObject({
+      ok: false,
+      code: "NOT_FOUND",
+    });
+
+    m.approveFieldSalesOrder.mockRejectedValueOnce(
+      new InvalidOrderTransitionError("APPROVED", "APPROVED"),
+    );
+    expect(await approve.execute({ orderId: "o1" }, writeCtx)).toMatchObject({
+      ok: false,
+      code: "INVALID_TRANSITION",
+    });
+  });
+
+  it("reject prepare + execute", async () => {
+    const prepared = await reject.prepare(
+      rejectSchema.parse({ order: "o1", reason: "  stok habis  " }),
+      writeCtx,
+    );
+    expect(prepared.args).toEqual({ orderId: "o1", reason: "stok habis" });
+    expect(prepared.preview.title).toBe("Tolak pesanan SO-1");
+    expect(prepared.preview.confirmLabel).toBe("Tolak");
+    expect(prepared.preview.destructive).toBe(true);
+
+    m.getFieldSalesOrderById.mockResolvedValue({ ...detailRow(), orderNo: "SO-1", status: "REJECTED" });
+    const res = await reject.execute(prepared.args, writeCtx);
+    expect(m.rejectFieldSalesOrder).toHaveBeenCalledWith({
+      orderId: "o1",
+      rejectedById: "u-admin",
+      reason: "stok habis",
+    });
+    expect(res).toEqual({
+      ok: true,
+      message: "Pesanan SO-1 ditolak.",
+      url: "https://e.test/backoffice/field-sales-orders/o1",
+      entityType: "FieldSalesOrder",
+      entityId: "o1",
+    });
   });
 });

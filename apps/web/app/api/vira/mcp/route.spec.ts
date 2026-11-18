@@ -3,7 +3,9 @@ import { SignJWT } from "jose";
 import { prisma, seededId } from "@elorae/db";
 import { gateAllows } from "@/lib/vira/akses";
 import { VIRA_SERVICE_KEY_HEADER, VIRA_TOKEN_AUDIENCE, VIRA_TOKEN_ISSUER } from "@/lib/vira/config";
-import { VIRA_TOOLS } from "@/lib/vira/tools";
+import { hasPermission } from "@/lib/rbac";
+import { VIRA_WRITE_PERMISSION } from "@/lib/vira/config";
+import { VIRA_TOOLS, VIRA_WRITE_TOOLS } from "@/lib/vira/tools";
 import { passwordFingerprint, signViraToken } from "@/lib/vira/token";
 import { DELETE, GET, POST } from "./route";
 
@@ -220,34 +222,51 @@ d("POST /api/vira/mcp (test bed only)", () => {
     expect(nama).toEqual(VIRA_TOOLS.filter((t) => gateAllows(t.gate, izinA)).map((t) => t.name));
   });
 
-  it("a system-role user (\"*\") sees every tool", async () => {
+  it("a system-role user (\"*\") sees every read and write tool", async () => {
     const list = await kirim(tokenC, rpc("tools/list"));
     const nama = (list.result?.tools as Array<{ name: string }>).map((t) => t.name);
-    expect(nama).toEqual(VIRA_TOOLS.map((t) => t.name));
+    const perms = ["*"];
+    expect(nama).toEqual([
+      ...VIRA_TOOLS.filter((t) => gateAllows(t.gate, perms)).map((t) => t.name),
+      ...VIRA_WRITE_TOOLS.filter(
+        (t) => gateAllows(t.gate, perms) && hasPermission(perms, VIRA_WRITE_PERMISSION),
+      ).map((t) => t.name),
+    ]);
   });
 
-  it("final tool count: a system-role user (\"*\") lists exactly the 15 phase-1 tools", async () => {
+  it("final tool count: a system-role user (\"*\") lists 17 reads then 9 writes in registry order", async () => {
     const list = await kirim(tokenC, rpc("tools/list"));
     const nama = (list.result?.tools as Array<{ name: string }>).map((t) => t.name);
-    expect([...nama].sort()).toEqual(
-      [
-        "whoami",
-        "search_items",
-        "get_item_stock",
-        "get_store_stock",
-        "list_store_stocktakes",
-        "list_marketplace_orders",
-        "get_marketplace_order",
-        "list_field_sales_orders",
-        "get_field_sales_order",
-        "list_purchase_orders",
-        "list_work_orders",
-        "list_receivables",
-        "list_consignment_cycles",
-        "list_tax_invoices",
-        "list_marketplace_settlements",
-      ].sort(),
-    );
+    expect(nama).toEqual([
+      // VIRA_TOOLS (MODULES order)
+      "whoami",
+      "search_items",
+      "get_item_stock",
+      "get_store_stock",
+      "list_store_stocktakes",
+      "list_marketplace_orders",
+      "get_marketplace_order",
+      "list_field_sales_orders",
+      "get_field_sales_order",
+      "list_purchase_orders",
+      "list_work_orders",
+      "list_receivables",
+      "list_consignment_cycles",
+      "list_tax_invoices",
+      "list_marketplace_settlements",
+      "list_leave_requests",
+      "list_spg_buyer_returns",
+      // VIRA_WRITE_TOOLS (MODULES order)
+      "approve_field_sales_order",
+      "reject_field_sales_order",
+      "close_purchase_order",
+      "record_consignment_document_number",
+      "mark_tax_invoice_sent_to_store",
+      "approve_leave_request",
+      "reject_leave_request",
+      "approve_spg_buyer_return",
+      "reject_spg_buyer_return",
+    ]);
   });
 
   it("tools/call whoami as user A → A's id", async () => {

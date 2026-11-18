@@ -3,8 +3,9 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { getRequiredPermission, hasPermission, PERMISSIONS, requirePermission } from "@/lib/rbac";
 import { gateAllows, type ViraGate } from "../akses";
-import { VIRA_PARITY_CASES, VIRA_TOOLS } from "./index";
-import type { ParityCase, ViraTool } from "./types";
+import { VIRA_WRITE_PERMISSION } from "../config";
+import { VIRA_PARITY_CASES, VIRA_TOOLS, VIRA_WRITE_TOOLS } from "./index";
+import type { ParityCase, ViraTool, ViraWriteTool } from "./types";
 
 /**
  * Parity: every VIRA tool's gate must equal the gate of the UI screen or action it mirrors.
@@ -14,6 +15,13 @@ import type { ParityCase, ViraTool } from "./types";
  */
 
 const sesi = vi.hoisted(() => ({ permissions: [] as string[] }));
+/** Hoisted so writeAction's vi.doMock factory can bind the spy without Vitest hoist errors. */
+const tulisParitas = vi.hoisted(() => ({
+  writer: vi.fn(async () => ({ ok: true as const })),
+  exportName: "" as string,
+  /** Virtual self-test fixtures may reject `asli()`; real writer modules must not. */
+  allowUnresolvedAsli: false,
+}));
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: "parity-user", permissions: sesi.permissions } })),
 }));
@@ -56,7 +64,10 @@ function kodeDariModul(mod: Record<string, unknown>): string[] {
   return kode;
 }
 
-async function himpunanIzin(tool: ViraTool, kasus: ParityCase): Promise<string[][]> {
+async function himpunanIzin(
+  tool: { gate: ViraGate },
+  kasus: ParityCase,
+): Promise<string[][]> {
   const kode = new Set(kodeGerbang(tool.gate));
   if (tool.gate.kind === "izin") {
     if (kasus.kind === "pageCode") for (const c of kasus.codes) kode.add(c);
@@ -113,6 +124,66 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
       }
       return { boleh: kasus.codes.some((c) => hasPermission(izin, c)) };
     }
+    case "writeAction": {
+      // Allowed ⇔ the mirrored action reached the writer; denied ⇔ forbidden without calling it.
+      // `vira:write` is VIRA's own extra gate and is not part of this comparison.
+      vi.resetModules();
+      tulisParitas.writer.mockReset();
+      tulisParitas.writer.mockImplementation(async () => ({ ok: true as const }));
+      tulisParitas.exportName = kasus.writerExport;
+      tulisParitas.allowUnresolvedAsli = kasus.writerModule.startsWith("virtual:");
+      vi.doMock(kasus.writerModule, async (asli) => {
+        // Fail closed for real modules: mistyped writerModule must not leave the real
+        // writer callable. Virtual self-test ids may reject asli(); spy-only is OK there.
+        const nama = tulisParitas.exportName;
+        let nyata: Record<string, unknown> = {};
+        try {
+          nyata = (await asli()) as Record<string, unknown>;
+        } catch (err) {
+          if (!tulisParitas.allowUnresolvedAsli) {
+            throw new Error(
+              `writer module failed to load for writeAction: ${String(err)}`,
+            );
+          }
+        }
+        if (!tulisParitas.allowUnresolvedAsli && !(nama in nyata)) {
+          throw new Error(`writer module has no export ${nama} to mock`);
+        }
+        return { ...nyata, [nama]: tulisParitas.writer };
+      });
+      try {
+        sesi.permissions = izin;
+        const mod = (await import(/* @vite-ignore */ kasus.actionModule)) as Record<string, unknown>;
+        const fn = mod[kasus.actionExport];
+        if (typeof fn !== "function") {
+          return { gagal: `${kasus.actionModule} has no function ${kasus.actionExport}` };
+        }
+        try {
+          await (fn as (...a: unknown[]) => unknown)(...kasus.args);
+        } catch (err) {
+          if (izinDitolak(err)) {
+            if (tulisParitas.writer.mock.calls.length > 0) {
+              return {
+                gagal: `${kasus.actionExport} called the writer despite a permission denial`,
+              };
+            }
+            return { boleh: false };
+          }
+          // Writer already reached ⇒ gate allowed; later fixture/shape errors are not denials.
+          if (tulisParitas.writer.mock.calls.length > 0) return { boleh: true };
+          return {
+            gagal: `${kasus.actionExport} threw something other than the permission error: ${String(err)}`,
+          };
+        }
+        if (tulisParitas.writer.mock.calls.length > 0) return { boleh: true };
+        // Soft-deny / early return without a write — same as forbidden for parity.
+        return { boleh: false };
+      } finally {
+        vi.doUnmock(kasus.writerModule);
+        vi.resetModules();
+        sesi.permissions = [];
+      }
+    }
     case "action": {
       vi.resetModules();
       vi.doMock(kasus.libModule, async (asli) => {
@@ -140,7 +211,10 @@ async function hasilUi(kasus: ParityCase, izin: string[]): Promise<HasilUi> {
 }
 
 /** Every mismatch between the tool's gate and the UI, as readable lines. Empty = parity holds. */
-async function periksaParitas(tool: ViraTool, kasus: ParityCase): Promise<string[]> {
+async function periksaParitas(
+  tool: Pick<ViraTool, "name" | "gate">,
+  kasus: ParityCase,
+): Promise<string[]> {
   const masalah: string[] = [];
   for (const izin of await himpunanIzin(tool, kasus)) {
     const harapan = gateAllows(tool.gate, izin);
@@ -165,6 +239,47 @@ function cakupan(tools: readonly ViraTool[], cases: readonly ParityCase[]): stri
     });
 }
 
+/**
+ * Every write tool needs ≥1 `writeAction` case. Most tools have exactly one; a tool whose
+ * mirrored action gates on a call argument (e.g. consignment NOTA vs PAJAK) may list one
+ * case per argument value — write-gate parity then ORs those UI results (see below).
+ */
+function cakupanWrite(tools: readonly ViraWriteTool[], cases: readonly ParityCase[]): string[] {
+  return tools.flatMap((t) => {
+    const n = cases.filter((c) => c.tool === t.name && c.kind === "writeAction").length;
+    return n >= 1 ? [] : [`${t.name}: no writeAction parity case`];
+  });
+}
+
+/** Tool gate vs UI: when several writeAction rows exist, UI allows ⇔ any of them allows. */
+async function periksaParitasWrite(
+  tool: Pick<ViraWriteTool, "name" | "gate">,
+  kasusList: ParityCase[],
+): Promise<string[]> {
+  const masalah: string[] = [];
+  const acuan = kasusList[0]!;
+  for (const izin of await himpunanIzin(tool, acuan)) {
+    const harapan = gateAllows(tool.gate, izin);
+    // Sequential: writeAction hasilUi mutates shared tulisParitas / sesi / vi mocks.
+    const hasil: Awaited<ReturnType<typeof hasilUi>>[] = [];
+    for (const k of kasusList) {
+      hasil.push(await hasilUi(k, izin));
+    }
+    const gagal = hasil.find((h): h is { gagal: string } => "gagal" in h);
+    if (gagal) {
+      masalah.push(`${tool.name} ${JSON.stringify(izin)}: ${gagal.gagal}`);
+      continue;
+    }
+    const boleh = hasil.some((h) => "boleh" in h && h.boleh);
+    if (boleh !== harapan) {
+      masalah.push(
+        `${tool.name} ${JSON.stringify(izin)}: tool gate allows=${harapan} but UI (writeAction) allows=${boleh}`,
+      );
+    }
+  }
+  return masalah;
+}
+
 describe("VIRA tool parity — real registry", () => {
   const nyata = VIRA_TOOLS.filter((t) => t.name !== "whoami");
 
@@ -173,7 +288,7 @@ describe("VIRA tool parity — real registry", () => {
   });
 
   it("no parity case points at a tool that does not exist", () => {
-    const nama = new Set(VIRA_TOOLS.map((t) => t.name));
+    const nama = new Set([...VIRA_TOOLS, ...VIRA_WRITE_TOOLS].map((t) => t.name));
     expect(VIRA_PARITY_CASES.filter((c) => !nama.has(c.tool)).map((c) => c.tool)).toEqual([]);
   });
 
@@ -184,6 +299,46 @@ describe("VIRA tool parity — real registry", () => {
   });
 });
 
+describe("VIRA write-tool parity — real registry", () => {
+  it("every write tool has at least one writeAction parity case", () => {
+    expect(cakupanWrite(VIRA_WRITE_TOOLS, VIRA_PARITY_CASES)).toEqual([]);
+  });
+
+  it("write tool gates never include vira:write (MCP ANDs it outside the tool gate)", () => {
+    const pelanggar = VIRA_WRITE_TOOLS.filter((t) =>
+      kodeGerbang(t.gate).includes(VIRA_WRITE_PERMISSION),
+    ).map((t) => t.name);
+    expect(pelanggar).toEqual([]);
+  });
+
+  it("write tool gates are never izin (himpunanIzin cannot discover their codes)", () => {
+    const pelanggar = VIRA_WRITE_TOOLS.filter((t) => t.gate.kind === "izin").map(
+      (t) => t.name,
+    );
+    expect(pelanggar).toEqual([]);
+  });
+
+  it("no writeAction parity case points at a write tool that does not exist", () => {
+    const nama = new Set(VIRA_WRITE_TOOLS.map((t) => t.name));
+    expect(
+      VIRA_PARITY_CASES.filter((c) => c.kind === "writeAction" && !nama.has(c.tool)).map(
+        (c) => c.tool,
+      ),
+    ).toEqual([]);
+  });
+
+  it.each(VIRA_WRITE_TOOLS.map((t) => [t.name, t] as const))(
+    "%s: write gate equals the UI action gate (excluding vira:write)",
+    async (_nama, tool) => {
+      const kasusList = VIRA_PARITY_CASES.filter(
+        (c) => c.tool === tool.name && c.kind === "writeAction",
+      );
+      expect(kasusList.length, `${tool.name} has no writeAction parity case`).toBeGreaterThan(0);
+      expect(await periksaParitasWrite(tool, kasusList)).toEqual([]);
+    },
+  );
+});
+
 /* ── Self-test: fakes live only in this file, never in VIRA_TOOLS ───────────────────────── */
 
 // vi.mock is hoisted above these constants, so the mock calls spell the ids out literally.
@@ -191,6 +346,8 @@ describe("VIRA tool parity — real registry", () => {
 const PALSU_AKSI = "virtual:vira-parity/fake-action";
 const PALSU_LIB = "virtual:vira-parity/fake-lib";
 const PALSU_PREDIKAT = "virtual:vira-parity/fake-predicate";
+const PALSU_WRITE_AKSI = "virtual:vira-parity/fake-write-action";
+const PALSU_WRITER = "virtual:vira-parity/fake-writer";
 
 vi.mock("virtual:vira-parity/fake-lib", () => ({ bacaPalsu: async () => ["real-row"] }));
 vi.mock("virtual:vira-parity/fake-predicate", () => ({
@@ -207,6 +364,31 @@ vi.mock("virtual:vira-parity/fake-action", () => ({
   },
   aksiRusak: async () => {
     throw new Error("database exploded");
+  },
+}));
+vi.mock("virtual:vira-parity/fake-writer", () => ({
+  tulisPalsu: async () => ({ ok: true }),
+}));
+vi.mock("virtual:vira-parity/fake-write-action", () => ({
+  aksiTulisPalsu: async () => {
+    const { auth } = await import("@/lib/auth");
+    const s = (await auth()) as unknown as { user: { permissions: string[] } };
+    requirePermission(s.user.permissions, "parity_fixture:write");
+    const lib = (await import(/* @vite-ignore */ PALSU_WRITER)) as {
+      tulisPalsu: () => Promise<unknown>;
+    };
+    return lib.tulisPalsu();
+  },
+  aksiTulisSoftDeny: async () => {
+    const { auth } = await import("@/lib/auth");
+    const s = (await auth()) as unknown as { user: { permissions: string[] } };
+    if (!hasPermission(s.user.permissions, "parity_fixture:write")) {
+      return { ok: false, reason: "FORBIDDEN" };
+    }
+    const lib = (await import(/* @vite-ignore */ PALSU_WRITER)) as {
+      tulisPalsu: () => Promise<unknown>;
+    };
+    return lib.tulisPalsu();
   },
 }));
 
@@ -326,6 +508,48 @@ const KASUS_UJI: KasusUji[] = [
     },
     false,
   ],
+  [
+    "writeAction — matching gate (writer reached iff allowed)",
+    alatPalsu("fake_write_ok", { kind: "code", code: "parity_fixture:write" }),
+    {
+      tool: "fake_write_ok",
+      kind: "writeAction",
+      actionModule: PALSU_WRITE_AKSI,
+      actionExport: "aksiTulisPalsu",
+      writerModule: PALSU_WRITER,
+      writerExport: "tulisPalsu",
+      args: [],
+    },
+    true,
+  ],
+  [
+    "writeAction — mismatched gate",
+    alatPalsu("fake_write_bad", { kind: "anyValidToken" }),
+    {
+      tool: "fake_write_bad",
+      kind: "writeAction",
+      actionModule: PALSU_WRITE_AKSI,
+      actionExport: "aksiTulisPalsu",
+      writerModule: PALSU_WRITER,
+      writerExport: "tulisPalsu",
+      args: [],
+    },
+    false,
+  ],
+  [
+    "writeAction — soft-deny without calling the writer",
+    alatPalsu("fake_write_soft", { kind: "code", code: "parity_fixture:write" }),
+    {
+      tool: "fake_write_soft",
+      kind: "writeAction",
+      actionModule: PALSU_WRITE_AKSI,
+      actionExport: "aksiTulisSoftDeny",
+      writerModule: PALSU_WRITER,
+      writerExport: "tulisPalsu",
+      args: [],
+    },
+    true,
+  ],
 ];
 
 describe("VIRA tool parity — engine self-test (fakes in this file only)", () => {
@@ -377,6 +601,35 @@ describe("VIRA tool parity — engine self-test (fakes in this file only)", () =
     expect(cakupan([who, a, b], [r("fake_b"), r("fake_b")])).toEqual([
       "fake_a: no parity case",
       "fake_b: 2 parity cases (expected exactly 1)",
+    ]);
+  });
+
+  it("write coverage reports a missing writeAction case (duplicates allowed for per-arg gates)", () => {
+    const a = {
+      kind: "write" as const,
+      name: "fake_write_a",
+      title: "a",
+      description: "a",
+      gate: { kind: "anyValidToken" as const },
+      destructive: false,
+      inputShape: {},
+      argsSchema: { parse: (x: unknown) => x },
+      prepare: async () => ({ preview: {} as never, args: {} }),
+      execute: async () => ({ ok: true as const, message: "", url: "", entityType: "", entityId: "" }),
+      revalidate: () => [],
+    } as unknown as ViraWriteTool;
+    const b = { ...a, name: "fake_write_b" } as ViraWriteTool;
+    const wa = (tool: string): ParityCase => ({
+      tool,
+      kind: "writeAction",
+      actionModule: PALSU_WRITE_AKSI,
+      actionExport: "aksiTulisPalsu",
+      writerModule: PALSU_WRITER,
+      writerExport: "tulisPalsu",
+      args: [],
+    });
+    expect(cakupanWrite([a, b], [wa("fake_write_b"), wa("fake_write_b")])).toEqual([
+      "fake_write_a: no writeAction parity case",
     ]);
   });
 });
