@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prisma } from "@elorae/db";
+import { prisma, previewKonsiShortLines } from "@elorae/db";
 import {
   getFieldSalesOrderById,
   listFieldSalesOrders,
@@ -178,6 +178,46 @@ const orderInput = z
   .max(100)
   .describe("The order id or document number.");
 
+type ShortLineLike = { itemId: string; variantSku: string; available: number };
+
+/** Lines of a konsi order that main stock cannot cover now (read-only; see previewKonsiShortLines). */
+async function konsiShortLinesForOrder(orderId: string): Promise<ShortLineLike[]> {
+  const lines = await prisma.fieldSalesOrderLine.findMany({
+    where: { orderId },
+    select: { id: true, itemId: true, variantSku: true, qty: true },
+  });
+  return previewKonsiShortLines(
+    prisma,
+    lines.map((l) => ({
+      fieldSalesLineId: l.id,
+      itemId: l.itemId,
+      variantSku: l.variantSku ?? "",
+      qty: Number(l.qty),
+    })),
+  );
+}
+
+/**
+ * "SKU-A (tersedia 2), SKU-B (tersedia 0)". The SKU is the line's variant SKU, else the item's
+ * SKU — never the database id a user cannot read.
+ */
+async function labelShortLines(lines: ShortLineLike[]): Promise<string> {
+  const needItemSku = lines.filter((l) => !l.variantSku).map((l) => l.itemId);
+  const items = needItemSku.length
+    ? await prisma.item.findMany({
+        where: { id: { in: [...new Set(needItemSku)] } },
+        select: { id: true, sku: true },
+      })
+    : [];
+  const skuOf = new Map(items.map((i) => [i.id, i.sku]));
+  return lines
+    .map((l) => {
+      const sku = l.variantSku || skuOf.get(l.itemId) || "barang tanpa SKU";
+      return `${sku} (tersedia ${Math.max(0, l.available)})`;
+    })
+    .join(", ");
+}
+
 /**
  * Mirrors `approveFieldSalesOrderAction` in `app/actions/field-sales-orders.ts`
  * (guard + writer call ~L81–151) and `approveFieldSalesOrder` in
@@ -228,6 +268,15 @@ const approveFieldSalesOrderTool = defineWriteTool({
       throw new ViraInputError(
         `Toko melewati batas kredit. Buka pesanan di Elorae untuk persetujuan dengan alasan: ${url}`,
       );
+    }
+    // Konsi approval reserves every line and refuses when main stock is short (the writer's
+    // InsufficientStockError). Check the same rule read-only now, so the card is not offered
+    // as ready and then refused at the button. Advisory: the writer still decides.
+    if (order.orderType === "KONSI") {
+      const short = await konsiShortLinesForOrder(order.id);
+      if (short.length > 0) {
+        throw new ViraInputError(`Stok di gudang utama kurang: ${await labelShortLines(short)}.`);
+      }
     }
     const totalLabel = showMoney(order) ? formatRp(order.total) : "—";
     return {
@@ -349,11 +398,10 @@ async function mapApproveExecute(
       };
     }
     if (e instanceof InsufficientStockError) {
-      const skus = e.shortLines.map((l) => l.variantSku || l.itemId).join(", ");
       return {
         ok: false,
         code: "INSUFFICIENT_STOCK",
-        message: `Stok kurang: ${skus}`,
+        message: `Stok kurang: ${await labelShortLines(e.shortLines).catch(() => `${e.shortLines.length} barang`)}`,
         url,
       };
     }
