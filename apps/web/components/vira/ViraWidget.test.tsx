@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /*
  * VIRA chat embed: nothing until enabled + both NEXT_PUBLIC URLs are set; the
  * host bridge mints a same-origin token and never persists it; the script tag
- * is injected at most once and torn down with ViraHost on unmount.
+ * is injected at most once and kept; unmount withdraws ViraHost only.
  */
 
 type FakeScript = {
@@ -149,7 +149,7 @@ describe("script mount / cleanup", () => {
     });
   });
 
-  it("cleanup removes the script and ViraHost", () => {
+  it("cleanup unmounts and removes ViraHost but keeps the one script tag", () => {
     const unmount = vi.fn();
     installViraHost("http://runtime.example");
     appendViraScriptOnce("http://widget.example/vira.js");
@@ -164,7 +164,24 @@ describe("script mount / cleanup", () => {
     teardownViraWidget();
 
     expect(unmount).toHaveBeenCalledOnce();
-    expect(dom.scripts).toHaveLength(0);
+    expect(dom.scripts).toHaveLength(1);
     expect(dom.windowObj.ViraHost).toBeUndefined();
+  });
+
+  it("re-entry after cleanup re-announces ViraHost and never adds a second script", () => {
+    const url = "http://widget.example/vira.js";
+    installViraHost("http://runtime.example");
+    appendViraScriptOnce(url);
+    teardownViraWidget();
+    dom.windowObj.dispatchEvent.mockClear();
+
+    installViraHost("http://runtime.example");
+    appendViraScriptOnce(url);
+
+    expect(dom.scripts).toHaveLength(1);
+    expect(dom.windowObj.ViraHost).toBeDefined();
+    expect(dom.windowObj.dispatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "vira:host-ready" }),
+    );
   });
 });

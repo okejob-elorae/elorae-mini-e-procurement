@@ -34,9 +34,15 @@ export function appendViraScriptOnce(widgetUrl: string): void {
   document.body.appendChild(script);
 }
 
+/**
+ * Hides the widget and withdraws the token bridge, but KEEPS the script tag. Removing a
+ * <script> does not stop one that is already downloading, so removing and re-adding it
+ * (React Strict Mode, leaving and re-entering the back office) would run the bundle twice.
+ * The bundle boots once per page and mounts again on the next `vira:host-ready`, which
+ * `installViraHost` dispatches on every re-entry.
+ */
 export function teardownViraWidget(): void {
   window.ViraWidget?.unmount?.();
-  document.getElementById(VIRA_SCRIPT_ID)?.remove();
   delete window.ViraHost;
 }
 
