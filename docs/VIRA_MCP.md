@@ -126,7 +126,7 @@ Epic #538. Nine write tools prepare a change; the VIRA runtime shows confirm/can
 User asks VIRA to change something in Elorae
   └─ VIRA runtime → MCP tools/call <write_tool>
         Elorae prepare (read-only): resolve record, check state, build preview + args
-        Result content (to the model): "Waiting for the user to confirm. Nothing has been changed yet."
+        Result content (to the model): awaiting_confirmation JSON (preview fields + note; see §8.4)
         Result _meta["elorae/confirmation"] (for the VIRA runtime only, never shown to the model):
           { token, expiresAt, title, summary, details[], confirmLabel, cancelLabel, destructive, target{ type, id, url } }
   └─ VIRA runtime renders Confirm / Cancel from _meta (not the model)
@@ -149,7 +149,7 @@ An MCP call of a write tool **only prepares**. Execution happens **only** in `PO
 
 ### 8.3 `POST /api/vira/confirm`
 
-Headers: `X-Vira-Service-Key`, `Authorization: Bearer <access JWT>` (same mint as MCP). Body: `{ confirmToken: string, decision: "confirm" | "cancel" }`. No `Origin` header (server-to-server). Checks run in this order:
+Headers: `X-Vira-Service-Key`, `Authorization: Bearer <access JWT>` (same mint as MCP). Body: `{ confirmToken: string, decision: "confirm" | "cancel" }`. No `Origin` header (server-to-server). Checks run in this order (`confirm/route.ts`):
 
 | HTTP | Body | When |
 |---|---|---|
@@ -157,13 +157,17 @@ Headers: `X-Vira-Service-Key`, `Authorization: Bearer <access JWT>` (same mint a
 | 401 | `{ error: "bad_service_key" }` | Missing/wrong service key |
 | 401 | `{ error: "invalid_token" }` | Missing/bad/expired access token, unknown user, or stale `pwf` (also sets `WWW-Authenticate: Bearer`) |
 | 503 | `{ error: "not_configured" }` | `VIRA_TOKEN_SECRET` unset (after Bearer-present check) |
-| 403 | `{ error: "forbidden" }` | No `vira:use`, no `vira:write`, confirm `sub` ≠ bearer `sub`, or tool gate no longer allows |
-| 429 | (with `Retry-After`) | Over 20 confirms/min for that user |
+| 403 | `{ error: "forbidden" }` | No `vira:use` or no `vira:write` |
+| 429 | `{ error: "rate_limited" }` (with `Retry-After`) | Over 20 confirms/min for that user |
 | 400 | `{ error: "invalid_request" }` | Body fails zod |
 | 410 | `{ error: "confirmation_expired" }` | Confirm JWT expired |
-| 400 | `{ error: "invalid_confirmation" }` | Bad confirm JWT, unknown tool, or args fail `argsSchema` |
+| 400 | `{ error: "invalid_confirmation" }` | Bad confirm JWT (before `sub` / `jti`) |
+| 403 | `{ error: "forbidden" }` | Confirm `sub` ≠ bearer `sub` |
 | 409 | `{ error: "already_used" }` | `jti` already consumed |
-| 200 | `{ status: "cancelled" }` | `decision === "cancel"` (nothing else runs) |
+| 200 | `{ status: "cancelled" }` | `decision === "cancel"` (returns here; no tool lookup) |
+| 400 | `{ error: "invalid_confirmation" }` | Unknown tool name in confirm claims |
+| 403 | `{ error: "forbidden" }` | Tool gate no longer allows |
+| 400 | `{ error: "invalid_confirmation" }` | Args fail `argsSchema` |
 | 200 | `{ status: "refused", code, message, url? }` | `execute` returned `{ ok: false }` (no revalidate) |
 | 200 | `{ status: "done", message, url }` | `execute` succeeded; then revalidate paths + optional `afterSuccess` |
 | 500 | `{ status: "failed", code: "INTERNAL", message }` | Unexpected throw from `execute` |

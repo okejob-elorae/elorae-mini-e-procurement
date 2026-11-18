@@ -589,7 +589,7 @@ plan exists.
 | api → web revalidate    | Shared `INTERNAL_API_KEY` (env, rotated quarterly)     | ⏳ |
 | api: `/docs`            | HTTP Basic (`SWAGGER_USER`/`SWAGGER_PASS`) — disabled if env missing | ✅ |
 | VIRA MCP                | `/api/vira/mcp` — service key + short-lived HS256 JWT (iss `elorae`, aud `vira-mcp`) minted by `/api/vira/token` from a NextAuth session; permissions reloaded per call; requires `vira:use` — see `docs/VIRA_MCP.md` | ✅ |
-| VIRA confirm            | `/api/vira/confirm` — same service key + access JWT as MCP; also requires `vira:write`; body carries a single-use confirm JWT (`aud: vira-confirm`); applies the mirrored writer only on `decision: "confirm"` — see `docs/VIRA_MCP.md` | ✅ |
+| VIRA confirm            | `/api/vira/confirm` — same service key + access JWT as MCP; permissions reloaded per call; also requires `vira:write` and re-checks the tool gate; body carries a single-use confirm JWT (`aud: vira-confirm`); applies the mirrored writer only on `decision: "confirm"` — see `docs/VIRA_MCP.md` | ✅ |
 
 - Permission constants live in `@elorae/types/erp/permissions` (⏳). Both services
   import them. No duplication.
