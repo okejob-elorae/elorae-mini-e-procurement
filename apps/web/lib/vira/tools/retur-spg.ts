@@ -165,13 +165,21 @@ const approveSpgBuyerReturnTool = defineWriteTool({
   },
   execute: async (args, ctx) => {
     const url = recordUrl(ctx.baseUrl, `/backoffice/retur-spg/${args.returnId}`);
-    const r = await setujuiReturPembeli({
-      returnId: args.returnId,
-      olehUserId: ctx.actor.id,
-    });
+    // Mirror the action's try/catch → GAGAL so a writer throw does not burn the jti as INTERNAL.
+    let r;
+    try {
+      r = await setujuiReturPembeli({
+        returnId: args.returnId,
+        olehUserId: ctx.actor.id,
+      });
+    } catch (err) {
+      console.error("[vira] approve_spg_buyer_return gagal", err);
+      return { ok: false, code: "GAGAL", message: PESAN.GAGAL, url };
+    }
     const mapped = mapHasil(r, url);
     if (mapped) return mapped;
-    const row = await rincianReturPembeliKantor(args.returnId);
+    // The write is committed; a failed re-read only loses detail in the message.
+    const row = await rincianReturPembeliKantor(args.returnId).catch(() => null);
     return {
       ok: true,
       message: `Retur ${row?.nota.docNo ?? args.returnId} disetujui.`,
@@ -257,18 +265,26 @@ const rejectSpgBuyerReturnTool = defineWriteTool({
   execute: async (args, ctx) => {
     const url = recordUrl(ctx.baseUrl, `/backoffice/retur-spg/${args.returnId}`);
     // Same as the action when money fields are absent (`uangTernyataDikembalikan` false).
-    const r = await tolakReturPembeli({
-      returnId: args.returnId,
-      olehUserId: ctx.actor.id,
-      alasan: args.reason,
-      uangTernyataDikembalikan: false,
-      alasanUangKembali: null,
-      besarBeban: null,
-      alasanBesarBeban: null,
-    });
+    // Mirror the action's try/catch → GAGAL so a writer throw does not burn the jti as INTERNAL.
+    let r;
+    try {
+      r = await tolakReturPembeli({
+        returnId: args.returnId,
+        olehUserId: ctx.actor.id,
+        alasan: args.reason,
+        uangTernyataDikembalikan: false,
+        alasanUangKembali: null,
+        besarBeban: null,
+        alasanBesarBeban: null,
+      });
+    } catch (err) {
+      console.error("[vira] reject_spg_buyer_return gagal", err);
+      return { ok: false, code: "GAGAL", message: PESAN.GAGAL, url };
+    }
     const mapped = mapHasil(r, url);
     if (mapped) return mapped;
-    const row = await rincianReturPembeliKantor(args.returnId);
+    // The write is committed; a failed re-read only loses detail in the message.
+    const row = await rincianReturPembeliKantor(args.returnId).catch(() => null);
     const beban =
       row?.beban != null ? ` Beban SPG ${formatRp(row.beban.jumlah)}.` : "";
     return {

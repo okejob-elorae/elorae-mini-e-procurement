@@ -274,4 +274,25 @@ describe("approve / reject spg buyer return", () => {
     );
     expect(prepared.preview.summary).toContain("beban");
   });
+
+  it("writer throw → refused GAGAL (no 500); failed re-read after success still ok", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const gagal = {
+      ok: false,
+      code: "GAGAL",
+      message: "Gagal menyimpan. Coba lagi.",
+      url: "https://e.test/backoffice/retur-spg/r-1",
+    };
+    m.setujuiReturPembeli.mockRejectedValueOnce(new Error("db down"));
+    expect(await approve.execute({ returnId: "r-1", spgSaleId: "sale-1" }, writeCtx)).toEqual(gagal);
+    m.tolakReturPembeli.mockRejectedValueOnce(new Error("db down"));
+    expect(await reject.execute({ returnId: "r-1", spgSaleId: "sale-1", reason: "x" }, writeCtx)).toEqual(gagal);
+
+    m.setujuiReturPembeli.mockResolvedValueOnce({ ok: true });
+    m.rincianReturPembeliKantor.mockRejectedValueOnce(new Error("db down"));
+    expect(await approve.execute({ returnId: "r-1", spgSaleId: "sale-1" }, writeCtx)).toMatchObject({
+      ok: true,
+      message: "Retur r-1 disetujui.",
+    });
+  });
 });

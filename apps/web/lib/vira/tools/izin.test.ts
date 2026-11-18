@@ -284,4 +284,22 @@ describe("approve_leave_request / reject_leave_request", () => {
     expect(prepared.preview.destructive).toBe(true);
     expect(prepared.args).toEqual({ leaveRequestId: "leave-1", note: "jadwal padat" });
   });
+
+  it("writer throw → refused GAGAL (no 500); failed re-read after success still ok", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const gagal = {
+      ok: false,
+      code: "GAGAL",
+      message: "Gagal menyimpan. Coba lagi.",
+      url: "https://e.test/backoffice/izin?id=leave-1",
+    };
+    m.setujuiIzin.mockRejectedValueOnce(new Error("db down"));
+    expect(await approve.execute({ leaveRequestId: "leave-1" }, writeCtx)).toEqual(gagal);
+    m.tolakIzin.mockRejectedValueOnce(new Error("db down"));
+    expect(await reject.execute({ leaveRequestId: "leave-1", note: "x" }, writeCtx)).toEqual(gagal);
+
+    m.setujuiIzin.mockResolvedValueOnce({ ok: true });
+    m.izinById.mockRejectedValueOnce(new Error("db down"));
+    expect(await approve.execute({ leaveRequestId: "leave-1" }, writeCtx)).toMatchObject({ ok: true });
+  });
 });

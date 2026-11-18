@@ -178,14 +178,22 @@ const approveLeaveRequestTool = defineWriteTool({
   },
   execute: async (args, ctx) => {
     const url = recordUrl(ctx.baseUrl, `/backoffice/izin?id=${args.leaveRequestId}`);
-    const r = await setujuiIzin({
-      leaveRequestId: args.leaveRequestId,
-      olehUserId: ctx.actor.id,
-      catatan: args.note ?? null,
-    });
+    // Mirror the action's try/catch → GAGAL so a writer throw does not burn the jti as INTERNAL.
+    let r;
+    try {
+      r = await setujuiIzin({
+        leaveRequestId: args.leaveRequestId,
+        olehUserId: ctx.actor.id,
+        catatan: args.note ?? null,
+      });
+    } catch (err) {
+      console.error("[vira] approve_leave_request gagal", err);
+      return { ok: false, code: "GAGAL", message: PESAN_TOLAK.GAGAL, url };
+    }
     const mapped = mapKeputusan(r, url);
     if (mapped) return mapped;
-    const row = await izinById(args.leaveRequestId);
+    // The write is committed; a failed re-read only loses the name in the message.
+    const row = await izinById(args.leaveRequestId).catch(() => null);
     return {
       ok: true,
       message: pesanSukses(row, args.leaveRequestId, "disetujui"),
@@ -253,14 +261,22 @@ const rejectLeaveRequestTool = defineWriteTool({
   },
   execute: async (args, ctx) => {
     const url = recordUrl(ctx.baseUrl, `/backoffice/izin?id=${args.leaveRequestId}`);
-    const r = await tolakIzin({
-      leaveRequestId: args.leaveRequestId,
-      olehUserId: ctx.actor.id,
-      catatan: args.note,
-    });
+    // Mirror the action's try/catch → GAGAL so a writer throw does not burn the jti as INTERNAL.
+    let r;
+    try {
+      r = await tolakIzin({
+        leaveRequestId: args.leaveRequestId,
+        olehUserId: ctx.actor.id,
+        catatan: args.note,
+      });
+    } catch (err) {
+      console.error("[vira] reject_leave_request gagal", err);
+      return { ok: false, code: "GAGAL", message: PESAN_TOLAK.GAGAL, url };
+    }
     const mapped = mapKeputusan(r, url);
     if (mapped) return mapped;
-    const row = await izinById(args.leaveRequestId);
+    // The write is committed; a failed re-read only loses the name in the message.
+    const row = await izinById(args.leaveRequestId).catch(() => null);
     return {
       ok: true,
       message: pesanSukses(row, args.leaveRequestId, "ditolak"),
