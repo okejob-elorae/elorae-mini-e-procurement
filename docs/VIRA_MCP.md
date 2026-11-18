@@ -43,6 +43,14 @@ Set in `apps/web` (see `apps/web/.env.example`):
 | `VIRA_TOKEN_SECRET` | HS256 signing secret for VIRA tokens. At least 32 characters. Use a different value from `AUTH_SECRET`; this is operator guidance, the code does not check it. | Token route → 503 `not_configured`; MCP route → 503 `not_configured` (after the service-key and Bearer-present checks). |
 | `VIRA_SERVICE_KEY` | Shared secret the VIRA runtime sends as `X-Vira-Service-Key`. At least 32 characters. Compared as SHA-256 digests with `timingSafeEqual`. | MCP route → 401 `bad_service_key` on every call (fails closed). |
 | `VIRA_APP_URL` | Base URL for the record links tools return, e.g. `https://elorae.cloud`. Trailing `/` is removed. | Links fall back to the request's forwarded host headers. |
+| `NEXT_PUBLIC_VIRA_WIDGET_URL` | URL of the embed script (e.g. `https://elorae.cloud/vira/widget/v1/vira.js`). Baked in at build time. | Chat widget stays off. |
+| `NEXT_PUBLIC_VIRA_RUNTIME_URL` | Base URL of the VIRA runtime the widget talks to (e.g. `https://elorae.cloud/vira`). Baked in at build time. | Chat widget stays off. |
+
+### Chat widget
+
+`apps/web/components/vira/ViraWidget.tsx` loads on every `/backoffice/*` page (see `app/backoffice/layout.tsx`) for users who hold `vira:use` (system `"*"` roles have it automatically). It is not mounted on `/pwa/*`, `/packer/*`, `/print/*` or login.
+
+Before the script runs, the page sets `window.ViraHost` with `app: "elorae"`, `runtimeUrl`, `locale: "id"`, and `getToken()` which `POST`s `/api/vira/token` with `credentials: "same-origin"` and returns `{ token, expiresAt }`. The browser never receives `VIRA_SERVICE_KEY` or a confirm token — only that short-lived user JWT. The token is not stored in `localStorage` / `sessionStorage`; the widget calls `getToken()` again when it expires.
 
 A secret shorter than 32 characters is treated as unset. Values are trimmed and read on every call (no caching).
 
