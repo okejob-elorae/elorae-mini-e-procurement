@@ -3180,7 +3180,8 @@
       "alokasiRoll": "Allocation per roll (optional)",
       "alasanBelumAdaBahan": "Add the materials to issue first.",
       "alasanRollKurang": "The roll total is still below the fabric quantity being issued.",
-      "materialsIssuedDocs": "Materials issued: {docs}"
+      "materialsIssuedDocs": "Materials issued: {docs}",
+      "materialsIssuedPartialFail": "Some materials already issued ({docs}), then failed: {detail}. Check those documents before retrying."
     },
     "kebutuhanTotalRencana": "Total requirement (planned)",
     "colBarangJadi": "Finished good",
@@ -3273,7 +3274,6 @@
       "labelTanggalTarget": "Target date",
       "labelTahap": "Services",
       "labelJasa": "Services",
-      "alasanJasa": "Add at least one service line (type + supplier).",
       "tombolBuat": "Create work order",
       "tombolSimpan": "Save changes",
       "pilihBahanUtama": "Choose main material",
@@ -3296,7 +3296,8 @@
         "MENGHITUNG": "One moment, the planned quantity is being calculated.",
         "BAHAN_KURANG_SATU_PCS": "The material amount is not enough for one piece.",
         "STOK": "Not enough material in stock for this plan.",
-        "ROLL": "The roll total is still below the material requirement."
+        "ROLL": "The roll total is still below the material requirement.",
+        "JASA": "Add at least one service line (type + supplier)."
       }
     },
     "terimaBarangJadi": "Receive finished goods",

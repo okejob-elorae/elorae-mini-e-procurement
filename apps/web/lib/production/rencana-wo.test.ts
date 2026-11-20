@@ -42,6 +42,7 @@ const LENGKAP: KeadaanFormulirWo = {
   jumlahRencana: 100,
   stokKurang: false,
   rollCukup: true,
+  jasa: true,
 };
 
 describe("alasanSimpanWo", () => {
@@ -80,8 +81,9 @@ describe("alasanSimpanWo", () => {
     expect(alasanSimpanWo({ ...LENGKAP, caraIsi: "bahan", jumlahBahan: 0.1, jumlahRencana: 0 })).toBe("BAHAN_KURANG_SATU_PCS");
   });
 
-  it("stok kurang lalu roll kurang", () => {
+  it("stok kurang lalu roll kurang, lalu jasa", () => {
     expect(alasanSimpanWo({ ...LENGKAP, stokKurang: true, rollCukup: false })).toBe("STOK");
     expect(alasanSimpanWo({ ...LENGKAP, rollCukup: false })).toBe("ROLL");
+    expect(alasanSimpanWo({ ...LENGKAP, jasa: false })).toBe("JASA");
   });
 });

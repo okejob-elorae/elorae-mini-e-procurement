@@ -345,7 +345,16 @@ export default function WorkOrderIssuePage() {
           idempotencyKey: typedIssueIdempotencyKey(kunciIsian, issueType),
         });
         if (!hasil.ok) {
-          toast.error(pesanTolak(hasil));
+          if (createdDocs.length > 0) {
+            toast.error(
+              tI("materialsIssuedPartialFail", {
+                docs: createdDocs.join(", "),
+                detail: pesanTolak(hasil),
+              }),
+            );
+          } else {
+            toast.error(pesanTolak(hasil));
+          }
           return;
         }
         createdDocs.push(hasil.docNumber);

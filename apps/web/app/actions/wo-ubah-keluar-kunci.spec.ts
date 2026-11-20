@@ -274,6 +274,7 @@ d("ubah WO, keluarkan bahan berkunci, bahan tambahan (test bed only)", () => {
         supplierId: vendorId,
         serviceTypeId: "svc-jahit",
         servicePrice: 0,
+        servicePpnIncluded: false,
       },
     ],
   });

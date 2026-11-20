@@ -54,3 +54,13 @@ SET s.`serviceTypeId` = st.`id`
 WHERE s.`serviceTypeId` IS NULL
   AND s.`stepName` IS NOT NULL
   AND TRIM(s.`stepName`) <> '';
+
+-- Nama yang tidak cocok seed: jatuh ke Jahit/CMT supaya tidak NULL selamanya.
+UPDATE `WorkOrderStep`
+SET `serviceTypeId` = 'svc-jahit'
+WHERE `serviceTypeId` IS NULL;
+
+ALTER TABLE `WorkOrderStep`
+  ADD CONSTRAINT `WorkOrderStep_serviceTypeId_fkey`
+  FOREIGN KEY IF NOT EXISTS (`serviceTypeId`) REFERENCES `ServiceType`(`id`)
+  ON DELETE RESTRICT ON UPDATE CASCADE;

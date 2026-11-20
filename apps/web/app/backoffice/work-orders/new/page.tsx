@@ -426,13 +426,13 @@ export default function NewWorkOrderPage() {
     jumlahRencana: plannedNum,
     stokKurang: false,
     rollCukup: rollValid,
+    jasa: jasaLinesValid(steps),
   });
   const canSubmit =
     !!session?.user?.id &&
     !isSubmitting &&
     alasan === null &&
-    skuVariantValid &&
-    jasaLinesValid(steps);
+    skuVariantValid;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

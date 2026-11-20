@@ -3180,7 +3180,8 @@
       "alokasiRoll": "Alokasi per roll (opsional)",
       "alasanBelumAdaBahan": "Tambahkan bahan yang akan dikeluarkan dulu.",
       "alasanRollKurang": "Total roll masih kurang dari jumlah kain yang dikeluarkan.",
-      "materialsIssuedDocs": "Bahan dikeluarkan: {docs}"
+      "materialsIssuedDocs": "Bahan dikeluarkan: {docs}",
+      "materialsIssuedPartialFail": "Sebagian sudah keluar ({docs}), lalu gagal: {detail}. Periksa dokumen yang sudah ada sebelum mencoba lagi."
     },
     "kebutuhanTotalRencana": "Kebutuhan total (rencana)",
     "colBarangJadi": "Barang jadi",
@@ -3273,7 +3274,6 @@
       "labelTanggalTarget": "Tanggal target",
       "labelTahap": "Jasa",
       "labelJasa": "Jasa",
-      "alasanJasa": "Isi minimal satu baris jasa (jenis + pemasok).",
       "tombolBuat": "Buat perintah kerja",
       "tombolSimpan": "Simpan perubahan",
       "pilihBahanUtama": "Pilih bahan utama",
@@ -3296,7 +3296,8 @@
         "MENGHITUNG": "Tunggu sebentar, jumlah rencana sedang dihitung.",
         "BAHAN_KURANG_SATU_PCS": "Jumlah bahan belum cukup untuk satu pcs.",
         "STOK": "Stok bahan tidak mencukupi untuk rencana ini.",
-        "ROLL": "Total roll masih kurang dari kebutuhan bahan."
+        "ROLL": "Total roll masih kurang dari kebutuhan bahan.",
+        "JASA": "Isi minimal satu baris jasa (jenis + pemasok)."
       }
     },
     "terimaBarangJadi": "Terima barang jadi",

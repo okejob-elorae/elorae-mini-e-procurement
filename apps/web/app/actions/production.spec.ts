@@ -512,7 +512,7 @@ describe("markup per WO dihapus (P4a): harga rekomendasi hanya dari pengaturan b
       finishedGoodId: "fg1",
       hppMarginPercent: 30,
       hppAdditionalCost: 500,
-      steps: [{ sequence: 1, supplierId: "v1", serviceTypeId: "svc1", servicePrice: 0 }],
+      steps: [{ sequence: 1, supplierId: "v1", serviceTypeId: "svc1", servicePrice: 0, servicePpnIncluded: false }],
     };
     await expect(createWorkOrder(data as never, "u1")).rejects.toThrow(STOP);
     const tulis = create.mock.calls[0][0].data as Record<string, unknown>;
