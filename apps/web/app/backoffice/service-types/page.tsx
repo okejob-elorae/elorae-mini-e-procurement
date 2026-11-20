@@ -94,7 +94,7 @@ export default function ServiceTypesPage() {
     try {
       const { listServiceTypesAction } = await import("@/app/actions/service-types");
       const json = await listServiceTypesAction({ page: 1, pageSize: 200, withUsage: true });
-      const list = Array.isArray(json.data) ? json.data : [];
+      const list = Array.isArray(json) ? json : json.data;
       setRows(
         list.map((r) => ({
           id: r.id,
