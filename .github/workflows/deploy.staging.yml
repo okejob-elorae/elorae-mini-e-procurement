@@ -1,0 +1,76 @@
+name: Deploy staging (OIDC)
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: staging-elorae
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SLUG: elorae
+      OIDC_AUD: okejob.app
+      DEPLOY_URL: https://okejob.app/api/staging/oidc-deploy
+      STATUS_URL: https://okejob.app/api/staging/oidc-deployments
+    steps:
+      - name: OIDC deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          mint() {
+            curl -sS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUD}" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          JWT="$(mint)"
+          curl -sS -f -X POST \
+            -H "Authorization: Bearer ${JWT}" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            "${DEPLOY_URL}" | tee /tmp/oidc-deploy.json
+          echo
+
+      - name: Poll status
+        shell: bash
+        run: |
+          set -euo pipefail
+          mint() {
+            curl -sS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUD}" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          for i in $(seq 1 90); do
+            JWT="$(mint)"
+            body="$(curl -sS -H "Authorization: Bearer ${JWT}" "${STATUS_URL}/${SLUG}")"
+            status="$(echo "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); dep=d.get("deployment") or d; print(dep.get("build_status") or "")')"
+            echo "poll $i build_status=${status:-pending}"
+            case "$status" in
+              ok) echo "build ok"; exit 0 ;;
+              failed|built-but-restart-failed) echo "build failed: $status"; echo "$body"; exit 1 ;;
+            esac
+            sleep 20
+          done
+          echo "timed out waiting for build"
+          exit 1
+
+      - name: Smoke-check staging URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          check() {
+            local url="$1"
+            local code
+            code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 30 "$url" || true)
+            echo "$url -> $code"
+            [[ "$code" =~ ^(200|301|302|307|308|404)$ ]] || exit 1
+          }
+          check https://elorae.okejob.app/
