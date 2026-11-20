@@ -232,7 +232,8 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "workOrders.form.newDescription" },
       "Jumlah pcs bisa diisi dengan dua cara. \"Ketik jumlah pcs\" (bawaan): isi jumlah pcs langsung, lalu kebutuhan bahan utama dihitung dari BOM. \"Hitung dari bahan utama\": isi berapa bahan utama (kain) yang tersedia, lalu jumlah pcs dihitung dari konsumsi per pcs dan susutnya; sisa bahan yang tidak cukup untuk satu pcs ditampilkan.",
       "Barang jadi yang punya varian otomatis memakai mode \"SKU (per varian)\", supaya hasil produksinya masuk stok per ukuran. Mode \"Umum (pcs)\" tetap bisa dipilih untuk barang tanpa varian.",
-      "Bila tombol Buat perintah kerja mati, kekurangan pertamanya menurut urutan isian ditulis di bawah tombol (mis. vendor belum dipilih, jumlah pcs belum diisi, atau stok bahan kurang).",
+      "Isi baris Jasa (jenis + pemasok + harga/pcs) sejak awal — ini yang nanti bisa ditagih di Tagihan vendor setelah barang jadi diterima. Baris pertama mengikuti vendor tujuan bahan bila belum diganti.",
+      "Bila tombol Buat perintah kerja mati, kekurangan pertamanya menurut urutan isian ditulis di bawah tombol (mis. vendor belum dipilih, jasa belum lengkap, atau stok bahan kurang).",
     ],
     kartu: [
       { judul: { kunci: "workOrders.form.cardTitle" }, isi: { kunci: "workOrders.form.cardDescription" } },
@@ -244,8 +245,9 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "production",
     judul: "Rincian perintah kerja",
     isi: [
-      "Satu perintah kerja: kemajuan setoran, alokasi kain per roll, bahan (rencana, keluar, kembali, masih di CMT), pengeluaran bahan, dan penerimaan barang jadi. Rekonsiliasi pemakaian dibuka dari tombol Rekonsiliasi di atas.",
+      "Satu perintah kerja: kemajuan setoran, alokasi kain per roll, bahan (rencana, keluar, kembali, masih di CMT), pengeluaran bahan, dan penerimaan barang jadi. Rekonsiliasi pemakaian dibuka dari tombol Rekonsiliasi di atas. Di tab Pengeluaran bahan, centang beberapa dokumen lalu Cetak Surat Jalan untuk menggabungkan kain dan aksesoris dalam satu surat jalan ke vendor.",
       "Angka setoran di kartu Kemajuan, di layar Terima barang jadi, di rekonsiliasi, dan di daftar perintah kerja dihitung dengan cara yang sama dari dokumen penerimaan: disetor (termasuk cacat), cacat, masuk stok (lolos QC), dan kurang = target − masuk stok. Bila catatan setoran lama tidak cocok dengan dokumennya, selisihnya disebut di bawah kartu.",
+      "Kartu Jasa menampilkan jenis jasa dan harga per pcs. Tombol Buat tagihan vendor membuka formulir tagihan dengan sisa qty jasa yang sudah bisa ditagih (setelah terima barang jadi); bila ada beberapa pemasok, pilih dulu pemasoknya.",
       "Perintah kerja draf bisa diubah, diterbitkan, atau dibatalkan dari sini. Setelah terbit, bahan dikeluarkan lewat Keluarkan bahan dan hasil jadi diterima lewat Terima barang jadi. Perintah kerja yang sudah selesai tidak bisa mengeluarkan bahan atau menerima barang jadi lagi.",
       "Pembatalan butuh alasan dan hanya bisa selama belum ada penerimaan barang jadi dan tidak ada bahan yang masih di CMT. Bila masih ada, penolakannya menyebut bahan dan jumlahnya; kembalikan dulu lewat Kembalikan bahan.",
       { kunci: "workOrders.detail.additionalDesc" },
@@ -285,6 +287,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Hanya perintah kerja draf yang bisa diubah.",
       "Kartu Rencana bahan sama dengan formulir perintah kerja baru, termasuk pilihan \"Ketik jumlah pcs\" atau \"Hitung dari bahan utama\". Saat dibuka, cara isinya mengikuti angka yang tersimpan: perintah kerja yang dibuat dari jumlah pcs dibuka dengan jumlah pcs, yang dibuat dari jumlah bahan dibuka dengan jumlah bahannya, supaya menyimpan tanpa perubahan tidak menggeser angkanya.",
+      "Baris Jasa wajib diisi (jenis + pemasok). Menyimpan menimpa seluruh baris jasa perintah kerja ini.",
       "Bila tombol simpan mati, kekurangan pertamanya ditulis di bawah tombol.",
       "Vendor yang sudah tercatat di perintah kerja tetap ada di pilihan walaupun belum (atau tidak lagi) disetujui, ditandai \"belum disetujui\". Vendor baru hanya bisa dipilih dari pemasok yang sudah disetujui.",
     ],
@@ -294,11 +297,20 @@ export const ENTRI: EntriBantuan[] = [
     ],
   },
   {
+    rute: "/backoffice/service-types",
+    bagian: "production",
+    judul: { kunci: "serviceTypes.pageTitle" },
+    isi: [
+      { kunci: "serviceTypes.pageDescription" },
+      "Jenis yang masih dipakai baris WO tidak bisa dihapus — nonaktifkan saja supaya tidak muncul di pilihan baru.",
+    ],
+  },
+  {
     rute: "/backoffice/work-orders/[id]/issue",
     bagian: "production",
     judul: { kunci: "workOrders.issueMaterials" },
     isi: [
-      "Mengeluarkan kain atau aksesoris dari gudang ke vendor untuk satu perintah kerja. Kain diterbitkan per roll utuh; total roll yang dialokasikan minimal sama dengan qty kain yang diterbitkan.",
+      "Mengeluarkan kain dan/atau aksesoris dari gudang ke vendor untuk satu perintah kerja di satu formulir. Menyimpan tetap membuat dokumen pengeluaran terpisah per jenis (kain / aksesoris) supaya HPP dan register nota tetap benar. Kain diterbitkan per roll utuh; total roll yang dialokasikan minimal sama dengan qty kain yang diterbitkan.",
       "Bila simpan gagal (mis. sambungan putus), tekan Simpan lagi tanpa mengubah isian: pengeluaran yang sudah tercatat tidak dikeluarkan dua kali.",
       "Nilai bahan yang dicatat adalah nilai yang benar-benar keluar dari stok (jumlah × biaya rata-rata gudang saat itu), sama dengan kartu stok. Harga yang diketik di baris tetap disimpan bersama pengeluaran, tetapi tidak lagi menentukan nilai bahan yang masuk HPP.",
     ],

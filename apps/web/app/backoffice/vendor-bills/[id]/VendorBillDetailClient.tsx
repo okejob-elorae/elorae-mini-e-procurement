@@ -13,6 +13,7 @@ import { BILL_STATUS_VARIANT } from "../status-variant";
 import type { KonteksKoreksi } from "@/lib/vendor-billing/koreksi-utang-konteks";
 import { VoidBillButton } from "./VoidBillButton";
 import { KoreksiUtangCard } from "./KoreksiUtangCard";
+import { namaLangkahWo } from "@/lib/vendor-billing/label-langkah-wo";
 
 type Bill = NonNullable<Awaited<ReturnType<typeof getVendorBillDetail>>>;
 
@@ -169,7 +170,11 @@ export function VendorBillDetailClient({
                     {l.itemName
                       ? `${l.itemName}${(l.variantSku ?? l.poItem?.variantSku) ? ` · ${l.variantSku ?? l.poItem?.variantSku}` : ""}`
                       : l.woStep
-                        ? `${t("step")} ${l.woStep.sequence}${l.woStep.stepName ? ` · ${l.woStep.stepName}` : ""}`
+                        ? `${t("step")} ${l.woStep.sequence} · ${namaLangkahWo({
+                            sequence: l.woStep.sequence,
+                            serviceTypeName: l.woStep.serviceType?.name,
+                            stepName: l.woStep.stepName,
+                          })}`
                         : "-"}
                   </TableCell>
                   <TableCell className="text-right">{l.qty.toLocaleString()}</TableCell>

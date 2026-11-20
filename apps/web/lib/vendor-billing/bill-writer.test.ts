@@ -3,7 +3,7 @@ import { prisma, seededId, seededIds } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { periksaAlokasiTerhadapSisa } from "@/lib/purchasing/pembayaran-aturan";
 import { bacaHutangPemasok, petaSisaDokumen } from "@/lib/purchasing/pembayaran-hutang-queries";
-import { createVendorBill, voidVendorBill, VOID_WOULD_OVERPAY } from "./bill-writer";
+import { createVendorBill, voidVendorBill, VendorBillError, VOID_WOULD_OVERPAY } from "./bill-writer";
 import { listBillableSources, oldestBookedBillDateByWo } from "./billable";
 import { createVendorPayment, VENDOR_PAYMENTS_CLOSED } from "./payment-writer";
 import { getVendorBillDetail, listVendorBills } from "./queries";
@@ -359,6 +359,19 @@ d("Vendor bill writer (test bed only)", () => {
     const bill = await createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 10, price: 12_000 }] }, ids.user);
     expect(await prisma.vendorBill.count({ where: { supplierId: ids.supplier } })).toBe(1);
     expect(await journalOf(bill.id)).toBeNull();
+  });
+
+  it("refuses a WO_STEP line priced at zero", async () => {
+    const err = await createVendorBill(
+      { ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 1, price: 0 }] },
+      ids.user,
+    ).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(VendorBillError);
+    expect((err as VendorBillError).code).toBe("HARGA_JASA_NOL");
+    expect(await prisma.vendorBill.count({ where: { supplierId: ids.supplier } })).toBe(0);
   });
 
   it("books the CMT payable for step work no finished-goods receipt booked, and only for it", async () => {

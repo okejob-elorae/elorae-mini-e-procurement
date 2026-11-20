@@ -275,6 +275,7 @@ const skuBreakdownSchema = z.union([skuBreakdownSingleSchema, skuBreakdownRatioA
 const woStepSchema = z.object({
   sequence: z.number().int().positive(),
   supplierId: idStr,
+  serviceTypeId: idStr,
   stepName: z.string().optional(),
   servicePrice: z.number().min(0).default(0),
   servicePpnIncluded: z.boolean().default(false),
@@ -294,7 +295,7 @@ const woSchema = z
     notes: z.string().optional(),
     rollBreakdown: z.array(rollBreakdownItemSchema).optional(),
     skuBreakdown: skuBreakdownSchema.optional(),
-    steps: z.array(woStepSchema).optional(),
+    steps: z.array(woStepSchema).min(1),
     // Markup per WO dihapus (P4a): harga rekomendasi hanya dari pengaturan barang. Kolom
     // `WorkOrder.hppMarginPercent` tetap ada di skema tanpa dibaca, sampai dibuang kemudian.
     hppAdditionalCost: z.number().min(0).optional(),
@@ -392,23 +393,30 @@ export async function createWorkOrder(
         data: createData as any,
       });
 
-      if (data.steps?.length) {
-        await tx.workOrderStep.createMany({
-          data: data.steps.map((step) => ({
-            woId: wo.id,
-            sequence: step.sequence,
-            supplierId: step.supplierId,
-            stepName: step.stepName ?? null,
-            servicePrice: step.servicePrice,
-            servicePpnIncluded: step.servicePpnIncluded ?? false,
-            qty: null,
-            totalCost: null,
-            notes: step.notes ?? null,
-          })),
-        });
-      }
+      const typeIds = [...new Set(data.steps.map((s) => s.serviceTypeId))];
+      const types = await tx.serviceType.findMany({
+        where: { id: { in: typeIds }, isActive: true },
+        select: { id: true, name: true },
+      });
+      if (types.length !== typeIds.length) throw new Error("Jenis jasa tidak valid");
+      const namaJenis = new Map(types.map((t) => [t.id, t.name]));
 
-      return { id: wo.id, docNumber };
+      await tx.workOrderStep.createMany({
+        data: data.steps.map((step) => ({
+          woId: wo.id,
+          sequence: step.sequence,
+          supplierId: step.supplierId,
+          serviceTypeId: step.serviceTypeId,
+          stepName: step.stepName?.trim() || namaJenis.get(step.serviceTypeId) || null,
+          servicePrice: step.servicePrice,
+          servicePpnIncluded: step.servicePpnIncluded ?? false,
+          qty: null,
+          totalCost: null,
+          notes: step.notes ?? null,
+        })),
+      });
+
+      return { id: wo.id, docNumber: wo.docNumber };
     });
   }
 
@@ -570,21 +578,29 @@ export async function updateWorkOrder(woId: string, data: WOFormData, _userId?: 
       });
 
       await tx.workOrderStep.deleteMany({ where: { woId } });
-      if (data.steps?.length) {
-        await tx.workOrderStep.createMany({
-          data: data.steps.map((step) => ({
-            woId,
-            sequence: step.sequence,
-            supplierId: step.supplierId,
-            stepName: step.stepName ?? null,
-            servicePrice: step.servicePrice,
-            servicePpnIncluded: step.servicePpnIncluded ?? false,
-            qty: null,
-            totalCost: null,
-            notes: step.notes ?? null,
-          })),
-        });
-      }
+      // Inactive types still OK on an existing draft (picker only lists active).
+      const typeIds = [...new Set(data.steps.map((s) => s.serviceTypeId))];
+      const types = await tx.serviceType.findMany({
+        where: { id: { in: typeIds } },
+        select: { id: true, name: true },
+      });
+      if (types.length !== typeIds.length) throw new Error("Jenis jasa tidak valid");
+      const namaJenis = new Map(types.map((t) => [t.id, t.name]));
+
+      await tx.workOrderStep.createMany({
+        data: data.steps.map((step) => ({
+          woId,
+          sequence: step.sequence,
+          supplierId: step.supplierId,
+          serviceTypeId: step.serviceTypeId,
+          stepName: step.stepName?.trim() || namaJenis.get(step.serviceTypeId) || null,
+          servicePrice: step.servicePrice,
+          servicePpnIncluded: step.servicePpnIncluded ?? false,
+          qty: null,
+          totalCost: null,
+          notes: step.notes ?? null,
+        })),
+      });
 
       // An OPEN Request Item was sized for the old plan; resize it so purchasing buys the new gap.
       await syncRequestForWo(tx, woId);
@@ -2052,6 +2068,7 @@ export async function getWorkOrderById(id: string) {
       steps: {
         include: {
           supplier: { select: { id: true, name: true, code: true } },
+          serviceType: { select: { id: true, name: true, code: true } },
         },
         orderBy: { sequence: 'asc' },
       },
@@ -2600,6 +2617,59 @@ export async function getMaterialIssuesForCMTRegister(
   return issues.map((i) => mapIssue(i as any));
 }
 
+type MaterialIssuePrintItemLine = { itemId: string; qty: number; uomId: string };
+
+function parseMaterialIssueItems(rawItems: unknown): MaterialIssuePrintItemLine[] {
+  let parsed: unknown = rawItems;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = null;
+    }
+  }
+  const isLine = (i: unknown): i is MaterialIssuePrintItemLine =>
+    i != null && typeof i === "object" && typeof (i as { itemId?: unknown }).itemId === "string";
+  if (Array.isArray(parsed)) return parsed.filter(isLine);
+  if (parsed && typeof parsed === "object") return (Object.values(parsed) as unknown[]).filter(isLine);
+  return [];
+}
+
+async function mapMaterialIssuesForPrint(
+  issues: Array<{
+    id: string;
+    docNumber: string;
+    issueType: string;
+    issuedAt: Date;
+    items: unknown;
+    wo: { docNumber: string; vendor: { name: string | null; code: string | null } | null };
+  }>
+) {
+  const allLines = issues.map((issue) => ({ issue, items: parseMaterialIssueItems(issue.items) }));
+  const itemIds = [...new Set(allLines.flatMap(({ items }) => items.map((i) => i.itemId).filter(Boolean)))];
+  const uomIds = [...new Set(allLines.flatMap(({ items }) => items.map((i) => i.uomId).filter(Boolean)))];
+  const [itemRows, uomRows] = await Promise.all([
+    itemIds.length ? prisma.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, nameId: true, sku: true } }) : [],
+    uomIds.length ? prisma.uOM.findMany({ where: { id: { in: uomIds } }, select: { id: true, code: true } }) : [],
+  ]);
+  const itemMap = new Map(itemRows.map((i) => [i.id, i]));
+  const uomMap = new Map(uomRows.map((u) => [u.id, u]));
+  return allLines.map(({ issue, items }) => ({
+    id: issue.id,
+    docNumber: issue.docNumber,
+    issueType: issue.issueType,
+    issuedAt: issue.issuedAt,
+    woDocNumber: issue.wo.docNumber,
+    vendorName: issue.wo.vendor?.name ?? issue.wo.vendor?.code ?? "",
+    lines: items.map((line) => ({
+      itemName: itemMap.get(line.itemId)?.nameId ?? itemMap.get(line.itemId)?.sku ?? line.itemId,
+      itemSku: itemMap.get(line.itemId)?.sku ?? "",
+      qty: Number(line.qty ?? 0),
+      uomCode: line.uomId ? uomMap.get(line.uomId)?.code ?? "" : "",
+    })),
+  }));
+}
+
 /** Get a single material issue for print (Surat Jalan CMT): quantities only, no cost. */
 export async function getMaterialIssueForPrint(issueId: string) {
   await wajibBolehBaca([...IZIN_BACA_WO, PERMISSIONS.NOTA_REGISTER_VIEW]);
@@ -2615,42 +2685,42 @@ export async function getMaterialIssueForPrint(issueId: string) {
     },
   });
   if (!issue) return null;
-  let rawItems: unknown = issue.items;
-  if (typeof rawItems === 'string') {
-    try {
-      rawItems = JSON.parse(rawItems);
-    } catch {
-      rawItems = null;
-    }
-  }
-  type ItemLine = { itemId: string; qty: number; uomId: string };
-  const items: ItemLine[] = Array.isArray(rawItems)
-    ? rawItems.filter((i): i is ItemLine => i != null && typeof i === 'object' && typeof (i as { itemId?: unknown }).itemId === 'string')
-    : rawItems && typeof rawItems === 'object'
-      ? (Object.values(rawItems) as unknown[]).filter((i): i is ItemLine => i != null && typeof i === 'object' && typeof (i as { itemId?: unknown }).itemId === 'string')
-      : [];
-  const itemIds = [...new Set(items.map((i) => i.itemId).filter(Boolean))];
-  const uomIds = [...new Set(items.map((i) => i?.uomId).filter(Boolean))];
-  const [itemRows, uomRows] = await Promise.all([
-    itemIds.length ? prisma.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, nameId: true, sku: true } }) : [],
-    uomIds.length ? prisma.uOM.findMany({ where: { id: { in: uomIds } }, select: { id: true, code: true } }) : [],
-  ]);
-  const itemMap = new Map(itemRows.map((i) => [i.id, i]));
-  const uomMap = new Map(uomRows.map((u) => [u.id, u]));
-  const lines = items.map((line) => ({
-    itemName: itemMap.get(line.itemId)?.nameId ?? itemMap.get(line.itemId)?.sku ?? line.itemId,
-    itemSku: itemMap.get(line.itemId)?.sku ?? '',
-    qty: Number(line.qty ?? 0),
-    uomCode: line.uomId ? uomMap.get(line.uomId)?.code ?? '' : '',
-  }));
-  return {
-    docNumber: issue.docNumber,
-    issueType: issue.issueType,
-    issuedAt: issue.issuedAt,
-    woDocNumber: issue.wo.docNumber,
-    vendorName: issue.wo.vendor?.name ?? issue.wo.vendor?.code ?? '',
-    lines,
-  };
+  const [mapped] = await mapMaterialIssuesForPrint([issue]);
+  const { id: _id, ...rest } = mapped;
+  return rest;
+}
+
+/**
+ * Several material issues for one combined Surat Jalan. All ids must belong to the same WO.
+ * Returns payloads in the order requested (caller merges / reorders for print).
+ */
+export async function getMaterialIssuesForPrint(issueIds: string[]) {
+  await wajibBolehBaca([...IZIN_BACA_WO, PERMISSIONS.NOTA_REGISTER_VIEW]);
+  const ids = [...new Set(issueIds.map((id) => id.trim()).filter(Boolean))];
+  if (ids.length === 0) return [];
+
+  const issues = await prisma.materialIssue.findMany({
+    where: { id: { in: ids } },
+    include: {
+      wo: {
+        select: {
+          docNumber: true,
+          vendor: { select: { name: true, code: true } },
+        },
+      },
+    },
+  });
+  if (issues.length !== ids.length) return null;
+  const woIds = new Set(issues.map((i) => i.woId));
+  if (woIds.size !== 1) return null;
+
+  const mapped = await mapMaterialIssuesForPrint(issues);
+  const byId = new Map(mapped.map((m) => [m.id, m]));
+  return ids.map((id) => {
+    const row = byId.get(id)!;
+    const { id: _id, ...rest } = row;
+    return rest;
+  });
 }
 
 // Get production statistics

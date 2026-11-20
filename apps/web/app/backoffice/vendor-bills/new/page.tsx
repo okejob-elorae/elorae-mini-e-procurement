@@ -9,10 +9,14 @@ const satu = (v: Param) => (Array.isArray(v) ? v[0] : v) ?? "";
 
 /**
  * Catat invoice pemasok. `?pemasok=<id>` memilih pemasoknya; `?permintaan=<id>` (permintaan invoice
- * terbuka milik pemasok itu) mencentang penerimaan yang disebutnya pada sisanya. Parameter yang tidak
- * sah diabaikan.
+ * terbuka milik pemasok itu) mencentang penerimaan yang disebutnya pada sisanya; `?wo=<id>` mencentang
+ * sisa langkah jasa WO itu untuk pemasok yang sama. Parameter yang tidak sah diabaikan.
  */
-export default async function NewVendorBillPage({ searchParams }: { searchParams: Promise<{ pemasok?: Param; permintaan?: Param }> }) {
+export default async function NewVendorBillPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ pemasok?: Param; permintaan?: Param; wo?: Param }>;
+}) {
   const session = await auth();
   if (!session) redirect("/login");
   if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.VENDOR_BILLS_MANAGE)) redirect("/backoffice/vendor-bills");
@@ -20,8 +24,14 @@ export default async function NewVendorBillPage({ searchParams }: { searchParams
   const sp = await searchParams;
   const pemasok = satu(sp.pemasok).slice(0, 64);
   const permintaan = satu(sp.permintaan).slice(0, 64);
+  const wo = satu(sp.wo).slice(0, 64);
   let sumberDiminta: string[] = [];
-  if (pemasok && permintaan) {
+  if (pemasok && wo) {
+    const { billableSuppliersForWo } = await import("@/lib/vendor-billing/billable");
+    const rows = await billableSuppliersForWo(wo);
+    const match = rows.find((r) => r.supplierId === pemasok);
+    sumberDiminta = (match?.stepIds ?? []).map((id) => `WO_STEP|${id}`);
+  } else if (pemasok && permintaan) {
     const r = await prisma.supplierInvoiceRequest.findFirst({
       where: { id: permintaan, supplierId: pemasok, cancelledAt: null, closedAt: null },
       select: { lines: { select: { sourceType: true, sourceId: true } } },
@@ -29,5 +39,12 @@ export default async function NewVendorBillPage({ searchParams }: { searchParams
     sumberDiminta = (r?.lines ?? []).map((l) => `${l.sourceType}|${l.sourceId}`);
   }
 
-  return <NewVendorBillClient userId={session.user.id} pemasokAwal={pemasok || null} sumberDiminta={sumberDiminta} />;
+  return (
+    <NewVendorBillClient
+      userId={session.user.id}
+      pemasokAwal={pemasok || null}
+      sumberDiminta={sumberDiminta}
+      woId={wo || null}
+    />
+  );
 }

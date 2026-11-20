@@ -268,6 +268,14 @@ d("ubah WO, keluarkan bahan berkunci, bahan tambahan (test bed only)", () => {
     finishedGoodId: fgId,
     outputMode: "GENERIC" as const,
     plannedQty,
+    steps: [
+      {
+        sequence: 1,
+        supplierId: vendorId,
+        serviceTypeId: "svc-jahit",
+        servicePrice: 0,
+      },
+    ],
   });
 
   describe("keluarkanBahan dengan kunci idempotensi", () => {

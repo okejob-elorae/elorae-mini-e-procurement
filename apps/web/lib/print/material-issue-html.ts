@@ -89,7 +89,7 @@ ${printPagePortrait}
     </div>
     <div class="doc-ref">
       <span class="lbl">${esc(labels.doc)}</span>
-      <span class="val">${esc(docNumber)}</span>
+      <span class="val" style="white-space:normal;word-break:break-word;max-width:16rem;text-align:right">${esc(docNumber)}</span>
       <span class="lbl">${esc(labels.date)}</span>
       <span class="val">${esc(fmtDocDate(issuedAt))}</span>
     </div>

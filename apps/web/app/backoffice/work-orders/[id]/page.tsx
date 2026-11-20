@@ -21,6 +21,7 @@ import { createItemRequestFromWo } from '@/app/actions/item-requests';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Card,
@@ -54,12 +55,14 @@ import {
   completeWorkOrder,
   getWorkOrderShortages,
   getMaterialIssueForPrint,
+  getMaterialIssuesForPrint,
   updateWOHppAdjustments,
   getAdditionalMaterialsPreview,
   issueAdditionalMaterials,
   postFgReceiptJournalAction,
 } from '@/app/actions/production';
 import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
+import { mergeMaterialIssuesForPrint } from '@/lib/print/merge-material-issues-for-print';
 import { buildNotaKainHtml } from "./nota-kain-html";
 import { logPrint } from '@/app/actions/audit';
 import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
@@ -125,6 +128,8 @@ export default function WorkOrderDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [printIssueId, setPrintIssueId] = useState<string | null>(null);
   const [printData, setPrintData] = useState<Awaited<ReturnType<typeof getMaterialIssueForPrint>>>(null);
+  const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
+  const [combinedPrintBusy, setCombinedPrintBusy] = useState(false);
   const [hppAdditionalCost, setHppAdditionalCost] = useState('');
   const [rollAllocationStatus, setRollAllocationStatus] = useState<Awaited<ReturnType<typeof getWorkOrderRollAllocationStatus>> | null>(null);
   const [additionalMaterialsOpen, setAdditionalMaterialsOpen] = useState(false);
@@ -177,6 +182,19 @@ export default function WorkOrderDetailPage() {
   const [completeReason, setCompleteReason] = useState('');
   const [completeLoading, setCompleteLoading] = useState(false);
   const bolehKelola = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.WORK_ORDERS_MANAGE);
+  const bolehTagihan = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.VENDOR_BILLS_MANAGE);
+  const bolehBayar = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.SUPPLIER_PAYMENTS_CREATE);
+  const [pemasokTagihan, setPemasokTagihan] = useState<
+    Array<{
+      supplierId: string;
+      name: string;
+      code: string;
+      stepIds: string[];
+      remainingQty: number;
+      remainingValue: number;
+    }>
+  >([]);
+  const [dialogTagihan, setDialogTagihan] = useState(false);
   const [postingReceiptId, setPostingReceiptId] = useState<string | null>(null);
   const [dialogBatal, setDialogBatal] = useState(false);
   const [dialogTerbit, setDialogTerbit] = useState(false);
@@ -226,6 +244,7 @@ export default function WorkOrderDetailPage() {
     getWorkOrderById(id)
       .then((data) => {
         setWO(data);
+        setSelectedIssueIds([]);
         setHppAdditionalCost(
           data?.hppAdditionalCost != null ? String(data.hppAdditionalCost) : ''
         );
@@ -250,6 +269,17 @@ export default function WorkOrderDetailPage() {
       .then(setRollAllocationStatus)
       .catch(() => setRollAllocationStatus(null));
   }, [id, wo]);
+
+  useEffect(() => {
+    if (!id || !bolehTagihan || !wo || wo.status === "CANCELLED") {
+      setPemasokTagihan([]);
+      return;
+    }
+    import("@/app/actions/vendor-billing")
+      .then(({ getWoBillableSuppliers }) => getWoBillableSuppliers(id))
+      .then(setPemasokTagihan)
+      .catch(() => setPemasokTagihan([]));
+  }, [id, bolehTagihan, wo]);
 
   const handleComplete = async () => {
     if (!session?.user?.id || !wo || !completeReason.trim()) return;
@@ -291,11 +321,56 @@ export default function WorkOrderDetailPage() {
       woDocNumber: printData.woDocNumber,
       vendorName: printData.vendorName,
       issuedAt: printData.issuedAt,
-      issueType: printData.issueType,
+      issueType: issueTypeLabel(printData.issueType),
       lines: printData.lines,
       labels: { ...LABEL_NOTA_CMT, title: 'Surat Jalan CMT' },
     });
     printHtmlInIframe(html, 'Print Surat Jalan CMT', { errorMessage: tToasts('failedToLoadIssueForPrint') });
+  };
+
+  const toggleIssueSelected = (issueId: string, checked: boolean) => {
+    setSelectedIssueIds((prev) =>
+      checked ? (prev.includes(issueId) ? prev : [...prev, issueId]) : prev.filter((id) => id !== issueId)
+    );
+  };
+
+  const handlePrintSelectedSuratJalan = async () => {
+    if (selectedIssueIds.length === 0) return;
+    setCombinedPrintBusy(true);
+    try {
+      const rows = await getMaterialIssuesForPrint(selectedIssueIds);
+      if (!rows || rows.length === 0) {
+        toast.error(tToasts('failedToLoadIssueForPrint'));
+        return;
+      }
+      const merged = mergeMaterialIssuesForPrint(rows, {
+        fabric: tNota('typeFabric'),
+        accessories: tNota('typeAccessories'),
+        mixed: tD('typeFabricAndAccessories'),
+      });
+      if (!merged) {
+        toast.error(tToasts('failedToLoadIssueForPrint'));
+        return;
+      }
+      for (const issueId of selectedIssueIds) {
+        await logPrint('MaterialIssue', issueId);
+      }
+      const html = buildMaterialIssuePrintHtml({
+        docNumber: merged.docNumber,
+        woDocNumber: merged.woDocNumber,
+        vendorName: merged.vendorName,
+        issuedAt: merged.issuedAt,
+        issueType: merged.issueType,
+        lines: merged.lines,
+        labels: { ...LABEL_NOTA_CMT, title: 'Surat Jalan CMT' },
+      });
+      printHtmlInIframe(html, 'Print Surat Jalan CMT', { errorMessage: tToasts('failedToLoadIssueForPrint') });
+      setSelectedIssueIds([]);
+    } catch {
+      toast.error(tToasts('failedToLoadIssueForPrint'));
+    } finally {
+      setCombinedPrintBusy(false);
+    }
   };
 
   const handleSaveHpp = async () => {
@@ -703,33 +778,64 @@ export default function WorkOrderDetailPage() {
           />
           {Array.isArray((wo as any).steps) && (wo as any).steps.length > 0 && (
             <Card>
-              <CardHeader>
-                <CardTitle>{tD('productionSteps')}</CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                <CardTitle>{tD("productionSteps")}</CardTitle>
+                {bolehTagihan ? (
+                  pemasokTagihan.length === 1 ? (
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        href={`/backoffice/vendor-bills/new?pemasok=${pemasokTagihan[0].supplierId}&wo=${id}`}
+                        title={tD("buatTagihanSisa", {
+                          qty: pemasokTagihan[0].remainingQty.toLocaleString("id-ID"),
+                          nilai: formatRupiah(pemasokTagihan[0].remainingValue),
+                        })}
+                      >
+                        {tD("buatTagihan")}
+                        <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                          {tD("buatTagihanSisa", {
+                            qty: pemasokTagihan[0].remainingQty.toLocaleString("id-ID"),
+                            nilai: formatRupiah(pemasokTagihan[0].remainingValue),
+                          })}
+                        </span>
+                      </Link>
+                    </Button>
+                  ) : pemasokTagihan.length > 1 ? (
+                    <Button size="sm" variant="outline" onClick={() => setDialogTagihan(true)}>
+                      {tD("buatTagihan")}
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" disabled title={tD("buatTagihanKosong")}>
+                      {tD("buatTagihan")}
+                    </Button>
+                  )
+                ) : null}
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>{tD('colStep')}</TableHead>
-                      <TableHead>{tTable('supplier')}</TableHead>
-                      <TableHead className="text-right">{tD('colServicePrice')}</TableHead>
-                      <TableHead className="text-right">{tWO('qty')}</TableHead>
-                      <TableHead className="text-right">{tD('colTotal')}</TableHead>
+                      <TableHead>{tD("colStep")}</TableHead>
+                      <TableHead>{tTable("supplier")}</TableHead>
+                      <TableHead className="text-right">{tD("colServicePrice")}</TableHead>
+                      <TableHead className="text-right">{tWO("qty")}</TableHead>
+                      <TableHead className="text-right">{tD("colTotal")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {(wo as any).steps.map((step: any) => (
                       <TableRow key={step.id}>
-                        <TableCell>{step.stepName || tD('stepN', { n: step.sequence })}</TableCell>
-                        <TableCell>{step.supplier?.name || step.supplier?.code || '-'}</TableCell>
+                        <TableCell>
+                          {step.serviceType?.name || step.stepName || tD("stepN", { n: step.sequence })}
+                        </TableCell>
+                        <TableCell>{step.supplier?.name || step.supplier?.code || "-"}</TableCell>
                         <TableCell className="text-right">
                           {formatRupiah(Number(step.servicePrice || 0))}
                         </TableCell>
                         <TableCell className="text-right">
-                          {step.qty != null ? Number(step.qty).toLocaleString('id-ID') : '-'}
+                          {step.qty != null ? Number(step.qty).toLocaleString("id-ID") : "-"}
                         </TableCell>
                         <TableCell className="text-right">
-                          {step.totalCost != null ? formatRupiah(Number(step.totalCost)) : '-'}
+                          {step.totalCost != null ? formatRupiah(Number(step.totalCost)) : "-"}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -738,18 +844,64 @@ export default function WorkOrderDetailPage() {
               </CardContent>
             </Card>
           )}
-          <LinkedBillLines woId={id} />
+          <LinkedBillLines woId={id} canPay={bolehBayar} />
+          <Dialog open={dialogTagihan} onOpenChange={setDialogTagihan}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{tD("buatTagihanPilih")}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-2">
+                {pemasokTagihan.map((p) => (
+                  <Button key={p.supplierId} asChild variant="outline" className="w-full justify-start">
+                    <Link
+                      href={`/backoffice/vendor-bills/new?pemasok=${p.supplierId}&wo=${id}`}
+                      onClick={() => setDialogTagihan(false)}
+                    >
+                      <span className="flex w-full flex-col items-start gap-0.5 text-left">
+                        <span>
+                          {p.name} ({p.code})
+                        </span>
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {tD("buatTagihanSisa", {
+                            qty: p.remainingQty.toLocaleString("id-ID"),
+                            nilai: formatRupiah(p.remainingValue),
+                          })}
+                        </span>
+                      </span>
+                    </Link>
+                  </Button>
+                ))}
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
         <TabsContent value="issues" className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Truck className="h-5 w-5" />
-                {tWO('materialIssues')}
-              </CardTitle>
-              <CardDescription>
-                {tD('issuesCount', { count: (wo as any).issues?.length ?? 0 })}
-              </CardDescription>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
+              <div className="space-y-1.5">
+                <CardTitle className="flex items-center gap-2">
+                  <Truck className="h-5 w-5" />
+                  {tWO('materialIssues')}
+                </CardTitle>
+                <CardDescription>
+                  {tD('issuesCount', { count: (wo as any).issues?.length ?? 0 })}
+                </CardDescription>
+              </div>
+              {((wo as any).issues?.length ?? 0) > 0 ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={selectedIssueIds.length === 0 || combinedPrintBusy}
+                  onClick={handlePrintSelectedSuratJalan}
+                >
+                  {combinedPrintBusy ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Printer className="mr-2 h-4 w-4" />
+                  )}
+                  {tD('printSelectedSuratJalan', { count: selectedIssueIds.length })}
+                </Button>
+              ) : null}
             </CardHeader>
             <CardContent>
               {!(wo as any).issues?.length ? (
@@ -758,18 +910,46 @@ export default function WorkOrderDetailPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={
+                            ((wo as any).issues as any[]).length > 0 &&
+                            selectedIssueIds.length === ((wo as any).issues as any[]).length
+                          }
+                          onCheckedChange={(c) => {
+                            const all = ((wo as any).issues as any[]).map((iss: any) => String(iss.id));
+                            setSelectedIssueIds(c ? all : []);
+                          }}
+                          aria-label={tD('selectAllIssues')}
+                        />
+                      </TableHead>
                       <TableHead>{tD('colDoc')}</TableHead>
                       <TableHead>{tWO('type')}</TableHead>
                       <TableHead>{tWO('date')}</TableHead>
                       <TableHead className="text-right">{tWO('totalCost')}</TableHead>
-                      <TableHead className="w-[100px]">{tD('colActions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {((wo as any).issues as any[]).map((iss: any) => (
-                      <TableRow key={iss.id}>
+                      <TableRow key={iss.id} data-state={selectedIssueIds.includes(iss.id) ? 'selected' : undefined}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedIssueIds.includes(iss.id)}
+                            onCheckedChange={(c) => toggleIssueSelected(iss.id, !!c)}
+                            aria-label={tD('selectIssue', { docNumber: iss.docNumber })}
+                          />
+                        </TableCell>
                         <TableCell className="font-medium">
-                          {iss.docNumber}
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 text-left font-medium hover:underline"
+                            onClick={() => openPrintNota(iss.id)}
+                            aria-label={tD('openIssueDetail', { docNumber: iss.docNumber })}
+                            title={tD('openIssueDetail', { docNumber: iss.docNumber })}
+                          >
+                            <span>{iss.docNumber}</span>
+                            <Printer className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                          </button>
                         </TableCell>
                         <TableCell>{issueTypeLabel(iss.issueType)}</TableCell>
                         <TableCell>
@@ -777,17 +957,6 @@ export default function WorkOrderDetailPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           {formatRupiah(Number(iss.totalCost))}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openPrintNota(iss.id)}
-                            aria-label={tNota('printNota', { docNumber: iss.docNumber })}
-                            title={tNota('printNota', { docNumber: iss.docNumber })}
-                          >
-                            <Printer className="h-4 w-4" />
-                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}

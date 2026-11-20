@@ -1,5 +1,6 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { labelLangkahWoDoc } from "./label-langkah-wo";
 
 /*
  * Daftar "Tidak perlu invoice" (P52) — yang berlaku dan yang sudah dibatalkan, terbaru dulu. KHUSUS SERVER.
@@ -36,14 +37,30 @@ export async function daftarTidakPerluInvoice(o: { supplierId?: string }, db: Db
     db.gRN.findMany({ where: { id: { in: rows.filter((r) => r.sourceType === "GRN").map((r) => r.sourceId) } }, select: { id: true, docNumber: true } }),
     db.workOrderStep.findMany({
       where: { id: { in: rows.filter((r) => r.sourceType === "WO_STEP").map((r) => r.sourceId) } },
-      select: { id: true, sequence: true, stepName: true, wo: { select: { docNumber: true } } },
+      select: {
+        id: true,
+        sequence: true,
+        stepName: true,
+        serviceType: { select: { name: true } },
+        wo: { select: { docNumber: true } },
+      },
     }),
     db.item.findMany({ where: { id: { in: [...new Set(rows.flatMap((r) => (r.itemId ? [r.itemId] : [])))] } }, select: { id: true, nameId: true } }),
     db.user.findMany({ where: { id: { in: [...new Set(rows.flatMap((r) => [r.createdById, ...(r.cancelledById ? [r.cancelledById] : [])]))] } }, select: { id: true, name: true, email: true } }),
     db.supplier.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.supplierId))] } }, select: { id: true, name: true } }),
   ]);
   const grn = new Map(grns.map((g) => [g.id, g.docNumber]));
-  const step = new Map(steps.map((s) => [s.id, `${s.wo.docNumber} · ${s.sequence}${s.stepName ? ` ${s.stepName}` : ""}`]));
+  const step = new Map(
+    steps.map((s) => [
+      s.id,
+      labelLangkahWoDoc({
+        woDocNumber: s.wo.docNumber,
+        sequence: s.sequence,
+        serviceTypeName: s.serviceType?.name,
+        stepName: s.stepName,
+      }),
+    ]),
+  );
   const item = new Map(items.map((i) => [i.id, i.nameId]));
   const user = new Map(users.map((u) => [u.id, u.name || u.email || u.id]));
   const sup = new Map(suppliers.map((s) => [s.id, s.name]));

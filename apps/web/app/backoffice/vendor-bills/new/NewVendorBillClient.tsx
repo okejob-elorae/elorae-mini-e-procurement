@@ -20,6 +20,7 @@ import { formatIDR } from "@/lib/sales-orders/format";
 import { formatDateOnly } from "@/lib/date-only";
 import { createVendorBillAction, getBillableSources } from "@/app/actions/vendor-billing";
 import type { BillableGrnItem, BillableWoStep } from "@/lib/vendor-billing/billable";
+import { namaLangkahWo } from "@/lib/vendor-billing/label-langkah-wo";
 
 type Draft = { on: boolean; qty: string; price: string };
 type Sources = { grnItems: BillableGrnItem[]; woSteps: BillableWoStep[] };
@@ -32,12 +33,15 @@ export function NewVendorBillClient({
   userId,
   pemasokAwal,
   sumberDiminta,
+  woId,
 }: {
   userId: string;
   /** `?pemasok=` — preselects the supplier. */
   pemasokAwal?: string | null;
   /** `?permintaan=` of that supplier: the receipts the request named (`kunciDokumenHutang`), ticked at their remaining qty. */
   sumberDiminta?: string[];
+  /** `?wo=` — when set with pemasok, only that WO's jasa rows are listed. */
+  woId?: string | null;
 }) {
   const t = useTranslations("vendorBills");
   const tGrn = useTranslations("vendorBills.grn");
@@ -96,9 +100,22 @@ export function NewVendorBillClient({
 
   const setDraft = (key: string, patch: Partial<Draft>) => setDrafts((d) => ({ ...d, [key]: { ...d[key], ...patch } }));
 
+  const woStepsTampil = useMemo(() => {
+    if (!sources) return [];
+    if (!woId) return sources.woSteps;
+    return sources.woSteps.filter((s) => s.woId === woId);
+  }, [sources, woId]);
+
   const chosen = useMemo(() => Object.entries(drafts).filter(([, d]) => d.on), [drafts]);
   const total = chosen.reduce((s, [, d]) => s + lineTotal(d), 0);
-  const linesValid = chosen.length > 0 && chosen.every(([, d]) => Number(d.qty) > 0 && d.price !== "" && Number(d.price) >= 0);
+  const linesValid =
+    chosen.length > 0 &&
+    chosen.every(([key, d]) => {
+      if (!(Number(d.qty) > 0) || d.price === "") return false;
+      const price = Number(d.price);
+      if (key.startsWith("WO_STEP:")) return price > 0;
+      return price >= 0;
+    });
   const canSave = !!supplierId && vendorInvoiceNo.trim() !== "" && billDate !== "" && linesValid && !busy;
 
   const save = async () => {
@@ -303,7 +320,7 @@ export function NewVendorBillClient({
               <CardDescription>{t("woSourcesSubtitle")}</CardDescription>
             </CardHeader>
             <CardContent>
-              {sources.woSteps.length === 0 ? (
+              {woStepsTampil.length === 0 ? (
                 <p className="py-6 text-center text-muted-foreground">{t("noWoSources")}</p>
               ) : (
                 <Table>
@@ -320,10 +337,16 @@ export function NewVendorBillClient({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sources.woSteps.map((s) => {
+                    {woStepsTampil.map((s) => {
                       const key = `WO_STEP:${s.woStepId}`;
                       const d = drafts[key];
-                      const label = `${t("step")} ${s.sequence}${s.stepName ? ` · ${s.stepName}` : ""}`;
+                      const nama = namaLangkahWo({
+                        sequence: s.sequence,
+                        serviceTypeName: s.serviceTypeName,
+                        stepName: s.stepName,
+                      });
+                      const label = `${t("step")} ${s.sequence} · ${nama}`;
+                      const hargaNol = d?.on && !(Number(d.price) > 0);
                       return (
                         <TableRow key={key}>
                           <TableCell>
@@ -362,12 +385,16 @@ export function NewVendorBillClient({
                           <TableCell>
                             <Input
                               type="number"
-                              min={0}
+                              min={0.01}
+                              step="any"
                               aria-label={`${t("colPrice")} ${s.woDocNumber} ${label}`}
                               disabled={!d?.on}
                               value={d?.price ?? ""}
                               onChange={(e) => setDraft(key, { price: e.target.value })}
                             />
+                            {hargaNol && (
+                              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{t("hargaJasaWajib")}</p>
+                            )}
                             {variance(key, s.servicePrice) && (
                               <>
                                 <Badge variant="secondary" className="mt-1">

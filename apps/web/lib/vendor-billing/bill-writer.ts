@@ -12,6 +12,7 @@ import { selisihUtangBarisGrn, selisihUtangLangkah, type BagianPenerimaanJasa, t
 import { batalkanKoreksiTagihan, buatKoreksiUtang, kodeTolakKoreksi, type BarisKoreksiBaru } from "./koreksi-utang-writer";
 import type { NotifikasiKantor } from "./kabar-pemasok";
 import { bukaLagiPermintaanTerdampak } from "./permintaan-invoice-writer";
+import { labelLangkahWoDoc } from "./label-langkah-wo";
 import { penerimaanLebihBayarJikaDibatalkan } from "./void-guard";
 
 /** A refusal the user can act on; its message is shown as-is. `code` names the refusal for a caller that branches on it. */
@@ -44,6 +45,7 @@ const lineSchema = z.discriminatedUnion("type", [
     type: z.literal("WO_STEP"),
     sourceId: z.string().min(1),
     qty: z.number().positive(),
+    // Zero refused after parse as HARGA_JASA_NOL (typed for the action toast).
     price: z.number().min(0),
   }),
 ]);
@@ -252,6 +254,7 @@ export async function createVendorBill(
             qty: true,
             servicePrice: true,
             servicePpnIncluded: true,
+            serviceType: { select: { name: true } },
             supplier: { select: { isPkp: true } },
             wo: { select: { id: true, docNumber: true, status: true, finishedGoodId: true } },
           },
@@ -270,7 +273,15 @@ export async function createVendorBill(
         for (const l of stepLines) {
           const st = byId.get(l.sourceId);
           if (!st) throw new VendorBillError("Step WO tidak ditemukan, muat ulang halaman");
-          const where = `${st.wo.docNumber} step ${st.sequence}${st.stepName ? ` ${st.stepName}` : ""}`;
+          if (l.price <= 0) {
+            throw new VendorBillError("Harga jasa harus lebih dari Rp 0", "HARGA_JASA_NOL");
+          }
+          const where = labelLangkahWoDoc({
+            woDocNumber: st.wo.docNumber,
+            sequence: st.sequence,
+            serviceTypeName: st.serviceType?.name,
+            stepName: st.stepName,
+          });
           if (st.supplierId !== data.supplierId) throw new VendorBillError(`${where} bukan milik supplier ini`, "BUKAN_PEMASOK_INI");
           if (st.wo.status === "CANCELLED") throw new VendorBillError(`${st.wo.docNumber} sudah dibatalkan`);
           const billedBefore = billed.get(st.id) ?? 0;

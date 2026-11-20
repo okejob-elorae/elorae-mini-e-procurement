@@ -7,7 +7,7 @@ import { assertActor } from "@/lib/auth/assert-actor";
 import { requirePermission, PERMISSIONS } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
-import { listBillableSources } from "@/lib/vendor-billing/billable";
+import { billableSuppliersForWo, listBillableSources } from "@/lib/vendor-billing/billable";
 import { createVendorBill, voidVendorBill, VendorBillError } from "@/lib/vendor-billing/bill-writer";
 import { listVendorBills, listBillLinesForPo, listBillLinesForWo } from "@/lib/vendor-billing/queries";
 import { createVendorPayment, voidVendorPayment } from "@/lib/vendor-billing/payment-writer";
@@ -55,6 +55,11 @@ export async function getBillableSources(supplierId: string) {
   return listBillableSources(idSchema.parse(supplierId));
 }
 
+export async function getWoBillableSuppliers(woId: string) {
+  await session(PERMISSIONS.VENDOR_BILLS_MANAGE);
+  return billableSuppliersForWo(idSchema.parse(woId));
+}
+
 const createSchema = z.object({
   supplierId: idSchema,
   vendorInvoiceNo: z.string(),
@@ -66,7 +71,7 @@ const createSchema = z.object({
   lines: z.array(
     z.discriminatedUnion("type", [
       z.object({ type: z.literal("GRN_ITEM"), grnId: idSchema, itemId: idSchema, variantSku: z.string().nullish(), qty: z.number(), price: z.number() }),
-      z.object({ type: z.literal("WO_STEP"), sourceId: idSchema, qty: z.number(), price: z.number() }),
+      z.object({ type: z.literal("WO_STEP"), sourceId: idSchema, qty: z.number(), price: z.number().positive() }),
     ])
   ),
 });

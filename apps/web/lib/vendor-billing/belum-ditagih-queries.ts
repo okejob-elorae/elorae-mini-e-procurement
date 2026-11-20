@@ -6,6 +6,7 @@ import { kunciDokumenHutang } from "@/lib/purchasing/pembayaran-aturan";
 import { billedQtyByGrnLine, billedQtyByWoStep, returnedQtyByGrnLine, unbookedReceiptQtyByWo } from "./billable";
 import { grnLineKey, grnLineSource, readGrnLinesDetail } from "./bill-paid-rule";
 import { belumDitagihLangkah, belumDitagihPerKunci, EPS_QTY, selisihHariKalender, type JenisSumberTagih } from "./belum-ditagih-aturan";
+import { labelLangkahWoDoc } from "./label-langkah-wo";
 import { rincianLunasPerSumber } from "./supplier-paid";
 import { permintaanTerbukaPerSumber } from "./permintaan-invoice-queries";
 
@@ -164,6 +165,7 @@ export async function bacaTagihanSumber(db: Db, sumber: ReadonlyArray<{ jenis: J
         stepName: true,
         qty: true,
         servicePrice: true,
+        serviceType: { select: { name: true } },
         wo: { select: { id: true, docNumber: true, status: true, receipts: { select: { receivedAt: true, qtyAccepted: true }, orderBy: [{ receivedAt: "asc" }, { id: "asc" }] } } },
       },
     });
@@ -186,7 +188,12 @@ export async function bacaTagihanSumber(db: Db, sumber: ReadonlyArray<{ jenis: J
         }
         tertutup -= q;
       }
-      const nomor = `${s.wo.docNumber} · ${s.sequence}${s.stepName ? ` ${s.stepName}` : ""}`;
+      const nomor = labelLangkahWoDoc({
+        woDocNumber: s.wo.docNumber,
+        sequence: s.sequence,
+        serviceTypeName: s.serviceType?.name,
+        stepName: s.stepName,
+      });
       out.set(kunciDok, {
         jenis: "WO_STEP",
         id: s.id,

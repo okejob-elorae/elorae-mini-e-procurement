@@ -43,6 +43,11 @@ import {
 } from '@/app/actions/production';
 import { MaterialRollAllocation, type MaterialRollEntry } from '@/components/work-orders/MaterialRollAllocation';
 import { rollShortfalls, withRollItemIds, type RollEntry } from '@/lib/production/roll-allocation';
+import {
+  partitionIssueLinesByType,
+  typedIssueIdempotencyKey,
+  type IssueLineType,
+} from '@/lib/production/partition-issue-lines';
 import { getItemsByType } from '@/app/actions/items';
 import { getItemAvgCosts } from '@/app/actions/inventory';
 import { ItemType } from '@/lib/constants/enums';
@@ -108,7 +113,6 @@ export default function WorkOrderIssuePage() {
   const [bahanDok, setBahanDok] = useState<Map<string, { keluar: number; kembali: number }>>(new Map());
   const [materials, setMaterials] = useState<Array<{ id: string; sku: string; nameId: string; uom: { id: string } }>>([]);
   const [lines, setLines] = useState<IssueLine[]>([]);
-  const [issueType, setIssueType] = useState<'FABRIC' | 'ACCESSORIES'>('FABRIC');
   const [isPartial, setIsPartial] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -192,15 +196,6 @@ export default function WorkOrderIssuePage() {
     availableStock: undefined
   }));
 
-  const switchIssueType = (nextType: "FABRIC" | "ACCESSORIES") => {
-    if (nextType === issueType) return;
-    if (lines.length > 0) {
-      toast.info(tI('typeChanged'));
-      setLines([]);
-    }
-    setIssueType(nextType);
-  };
-
   const addLine = (itemId?: string) => {
     const p = planWithRemaining.find((x) => x.itemId === itemId || !itemId);
     if (!p) return;
@@ -208,21 +203,17 @@ export default function WorkOrderIssuePage() {
     if (existing) return;
     const remaining = p.plannedQty - p.issuedQty;
     const defaultPrice = itemAvgCosts[p.itemId];
-    const nextLine = {
-      itemId: p.itemId,
-      itemName: p.itemName,
-      uomId: p.uomId,
-      qty: remaining > 0 ? Math.min(1, remaining) : 0,
-      maxQty: remaining,
-      unitPrice: defaultPrice != null && defaultPrice > 0 ? Math.round(defaultPrice * 100) / 100 : undefined,
-    };
-    const nextType = isFabricItem(p.itemId) ? "FABRIC" : "ACCESSORIES";
-    if (nextType !== issueType) {
-      switchIssueType(nextType);
-      setLines([nextLine]);
-      return;
-    }
-    setLines((prev) => [...prev, nextLine]);
+    setLines((prev) => [
+      ...prev,
+      {
+        itemId: p.itemId,
+        itemName: p.itemName,
+        uomId: p.uomId,
+        qty: remaining > 0 ? Math.min(1, remaining) : 0,
+        maxQty: remaining,
+        unitPrice: defaultPrice != null && defaultPrice > 0 ? Math.round(defaultPrice * 100) / 100 : undefined,
+      },
+    ]);
   };
 
   const updateLineQty = (itemId: string, qty: number) => {
@@ -252,11 +243,7 @@ export default function WorkOrderIssuePage() {
   };
 
   const autoFillRemaining = () => {
-    const withRemaining = planWithRemaining.filter((p) => {
-      const remaining = p.plannedQty - p.issuedQty;
-      if (remaining <= 0) return false;
-      return issueType === "FABRIC" ? isFabricItem(p.itemId) : !isFabricItem(p.itemId);
-    });
+    const withRemaining = planWithRemaining.filter((p) => p.plannedQty - p.issuedQty > 0);
     if (withRemaining.length === 0) {
       toast.info(tI('nothingRemaining'));
       return;
@@ -286,10 +273,13 @@ export default function WorkOrderIssuePage() {
     setScanOpen(false);
   };
 
-  // Rolls for the staged lines only, per material (#437); a material without rolls is not checked.
-  const lineRolls = rollBreakdown.filter((r) => lines.some((l) => l.itemId === r.itemId));
+  // Rolls for fabric lines only (#437); accessories without rolls are not checked.
+  const fabricLineIds = new Set(lines.filter((l) => isFabricItem(l.itemId)).map((l) => l.itemId));
+  const lineRolls = rollBreakdown.filter((r) => fabricLineIds.has(r.itemId));
   const rollGaps = rollShortfalls(
-    lines.filter((l) => l.qty > 0).map((l) => ({ itemId: l.itemId, qty: l.qty })),
+    lines
+      .filter((l) => l.qty > 0 && isFabricItem(l.itemId))
+      .map((l) => ({ itemId: l.itemId, qty: l.qty })),
     lineRolls
   );
   const rollValid = rollGaps.length === 0;
@@ -329,31 +319,47 @@ export default function WorkOrderIssuePage() {
     }
     setIsSubmitting(true);
     try {
-      // Pelaku dibaca dari sesi di server; penolakan dikembalikan sebagai kode.
-      const hasil = await keluarkanBahan({
-        woId: String(wo.id),
-        issueType,
-        isPartial,
-        items: valid.map((l) => ({
-          itemId: l.itemId,
-          qty: l.qty,
-          uomId: l.uomId,
-          ...(l.unitPrice != null && l.unitPrice > 0 ? { unitPrice: l.unitPrice } : {}),
-        })),
-        // Always explicit: the picker was prefilled from the WO plan, so an empty list means no rolls.
-        rollBreakdown: lineRolls,
-        idempotencyKey: kunciIsian,
-      });
-      if (!hasil.ok) {
-        toast.error(pesanTolak(hasil));
-        return;
+      // One typed MaterialIssue per non-empty bucket; HPP/register stay on issueType.
+      const parts = partitionIssueLinesByType(valid, isFabricItem);
+      const createdDocs: string[] = [];
+      const order: IssueLineType[] = ["FABRIC", "ACCESSORIES"];
+      for (const issueType of order) {
+        const group = parts[issueType];
+        if (group.length === 0) continue;
+        const rollsForType =
+          issueType === "FABRIC"
+            ? lineRolls.filter((r) => group.some((l) => l.itemId === r.itemId))
+            : [];
+        const hasil = await keluarkanBahan({
+          woId: String(wo.id),
+          issueType,
+          isPartial,
+          items: group.map((l) => ({
+            itemId: l.itemId,
+            qty: l.qty,
+            uomId: l.uomId,
+            ...(l.unitPrice != null && l.unitPrice > 0 ? { unitPrice: l.unitPrice } : {}),
+          })),
+          // Always explicit: empty list means no rolls for this type.
+          rollBreakdown: rollsForType,
+          idempotencyKey: typedIssueIdempotencyKey(kunciIsian, issueType),
+        });
+        if (!hasil.ok) {
+          toast.error(pesanTolak(hasil));
+          return;
+        }
+        createdDocs.push(hasil.docNumber);
       }
       setKunciIsian(newLocalId());
-      toast.success(t('materialsIssued'));
+      toast.success(
+        createdDocs.length > 1
+          ? tI("materialsIssuedDocs", { docs: createdDocs.join(", ") })
+          : t("materialsIssued")
+      );
       router.push(`/backoffice/work-orders/${id}`);
       router.refresh();
     } catch {
-      toast.error(t('failedToIssue'));
+      toast.error(t("failedToIssue"));
     } finally {
       setIsSubmitting(false);
     }
@@ -446,25 +452,6 @@ export default function WorkOrderIssuePage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label>{tI('issueType')}</Label>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant={issueType === "FABRIC" ? "default" : "outline"}
-                    onClick={() => switchIssueType("FABRIC")}
-                  >
-                    {tI('fabric')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={issueType === "ACCESSORIES" ? "default" : "outline"}
-                    onClick={() => switchIssueType("ACCESSORIES")}
-                  >
-                    {tI('accessories')}
-                  </Button>
-                </div>
-              </div>
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="partial"
@@ -576,7 +563,9 @@ export default function WorkOrderIssuePage() {
                 </Table>
               )}
               <MaterialRollAllocation
-                lines={lines.map((l) => ({ itemId: l.itemId, itemName: l.itemName, qty: l.qty }))}
+                lines={lines
+                  .filter((l) => isFabricItem(l.itemId))
+                  .map((l) => ({ itemId: l.itemId, itemName: l.itemName, qty: l.qty }))}
                 value={lineRolls}
                 onChange={setRollBreakdown}
                 description="Pilih roll utuh per bahan. Total per bahan minimal sama dengan qty yang di-issue."

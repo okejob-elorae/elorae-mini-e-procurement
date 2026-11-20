@@ -53,6 +53,7 @@ export type BillableWoStep = {
   woDocNumber: string;
   sequence: number;
   stepName: string | null;
+  serviceTypeName: string | null;
   qty: number;
   billedQty: number;
   remainingQty: number;
@@ -380,6 +381,7 @@ export async function listBillableSources(
         qty: true,
         servicePrice: true,
         servicePpnIncluded: true,
+        serviceType: { select: { name: true } },
         wo: { select: { id: true, docNumber: true, receipts: { select: { docNumber: true, receivedAt: true, qtyAccepted: true }, orderBy: [{ receivedAt: "asc" }, { id: "asc" }] } } },
       },
       orderBy: [{ wo: { docNumber: "asc" } }, { sequence: "asc" }],
@@ -458,6 +460,7 @@ export async function listBillableSources(
           woDocNumber: s.wo.docNumber,
           sequence: s.sequence,
           stepName: s.stepName,
+          serviceTypeName: s.serviceType?.name ?? null,
           qty,
           billedQty,
           remainingQty: round2(qty - billedQty),
@@ -470,4 +473,53 @@ export async function listBillableSources(
       })
       .filter((s) => s.remainingQty > 0),
   };
+}
+
+export type BillableWoSupplier = {
+  supplierId: string;
+  name: string;
+  code: string;
+  stepIds: string[];
+  remainingQty: number;
+  remainingValue: number;
+};
+
+/** Suppliers with remaining billable WO_STEP qty on one work order (for the detail CTA). */
+export async function billableSuppliersForWo(
+  woId: string,
+  db: Db = prisma,
+): Promise<BillableWoSupplier[]> {
+  const steps = await db.workOrderStep.findMany({
+    where: { woId, qty: { gt: 0 }, wo: { status: { not: "CANCELLED" } } },
+    select: {
+      id: true,
+      qty: true,
+      servicePrice: true,
+      supplierId: true,
+      supplier: { select: { id: true, name: true, code: true } },
+    },
+  });
+  if (steps.length === 0) return [];
+  const billed = await billedQtyByWoStep(
+    db,
+    steps.map((s) => s.id),
+  );
+  const bySupplier = new Map<string, BillableWoSupplier>();
+  for (const s of steps) {
+    const remaining = round2(Number(s.qty ?? 0) - (billed.get(s.id) ?? 0));
+    if (remaining <= 0) continue;
+    const cur = bySupplier.get(s.supplierId) ?? {
+      supplierId: s.supplier.id,
+      name: s.supplier.name,
+      code: s.supplier.code,
+      stepIds: [],
+      remainingQty: 0,
+      remainingValue: 0,
+    };
+    cur.stepIds.push(s.id);
+    cur.remainingQty = round2(cur.remainingQty + remaining);
+    cur.remainingValue = round2(cur.remainingValue + remaining * Number(s.servicePrice));
+    bySupplier.set(s.supplierId, cur);
+  }
+  return [...bySupplier.values()].sort((a, b) => a.name.localeCompare(b.name, "id"));
 }
