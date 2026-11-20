@@ -37,6 +37,10 @@ vi.mock("@elorae/db", async (importOriginal) => {
       },
       workOrder: { findUnique: vi.fn(async () => keadaan.wo) },
       item: { findUnique: vi.fn(async () => keadaan.barang) },
+      serviceType: {
+        findUnique: vi.fn(async () => ({ id: "svc-jahit" })),
+        findFirst: vi.fn(async () => ({ id: "svc-jahit" })),
+      },
     },
   };
 });

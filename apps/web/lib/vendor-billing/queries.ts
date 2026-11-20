@@ -3,6 +3,7 @@ import type { VendorBillStatus } from "./status";
 import { withSupplierPaid } from "./supplier-paid";
 import { penerimaanLebihBayarJikaDibatalkan } from "./void-guard";
 import { koreksiTagihan } from "./koreksi-utang-queries";
+import { labelLangkahWoDoc, namaLangkahWo } from "./label-langkah-wo";
 
 /*
  * Every bill read here carries what BOTH payment paths paid on it (`withSupplierPaid`): the old
@@ -165,7 +166,15 @@ export async function getVendorBillDetail(id: string) {
           variantSku: true,
           grn: { select: { id: true, docNumber: true, grnDate: true, poId: true, po: { select: { id: true, docNumber: true } } } },
           poItem: { select: { id: true, itemId: true, variantSku: true, item: { select: { nameId: true, sku: true } }, po: { select: { id: true, docNumber: true } } } },
-          woStep: { select: { id: true, sequence: true, stepName: true, wo: { select: { id: true, docNumber: true } } } },
+          woStep: {
+            select: {
+              id: true,
+              sequence: true,
+              stepName: true,
+              serviceType: { select: { name: true } },
+              wo: { select: { id: true, docNumber: true } },
+            },
+          },
         },
         orderBy: { id: "asc" },
       },
@@ -185,7 +194,17 @@ export async function getVendorBillDetail(id: string) {
   const steps = new Map<string, string>();
   for (const l of bill.lines) {
     if (l.grn) grns.set(l.grn.id, { docNumber: l.grn.docNumber, poId: l.grn.poId, poDocNumber: l.grn.po?.docNumber ?? null });
-    if (l.woStep) steps.set(l.woStep.id, `${l.woStep.wo.docNumber} step ${l.woStep.sequence}${l.woStep.stepName ? ` ${l.woStep.stepName}` : ""}`);
+    if (l.woStep) {
+      steps.set(
+        l.woStep.id,
+        labelLangkahWoDoc({
+          woDocNumber: l.woStep.wo.docNumber,
+          sequence: l.woStep.sequence,
+          serviceTypeName: l.woStep.serviceType?.name,
+          stepName: l.woStep.stepName,
+        }),
+      );
+    }
   }
   const itemIds = [...new Set(bill.lines.flatMap((l) => (!l.poItem && l.itemId ? [l.itemId] : [])))];
   const items = itemIds.length
@@ -231,6 +250,7 @@ export type LinkedBillLine = {
   billDocNumber: string;
   vendorInvoiceNo: string;
   status: VendorBillStatus;
+  supplierId: string;
   label: string;
   qty: number;
   price: number;
@@ -246,11 +266,21 @@ const linkedSelect = {
   qty: true,
   price: true,
   amount: true,
-  bill: { select: { id: true, docNumber: true, vendorInvoiceNo: true, status: true, total: true, paidAmount: true } },
+  bill: {
+    select: {
+      id: true,
+      docNumber: true,
+      vendorInvoiceNo: true,
+      status: true,
+      total: true,
+      paidAmount: true,
+      supplierId: true,
+    },
+  },
   itemId: true,
   grn: { select: { docNumber: true, poId: true } },
   poItem: { select: { item: { select: { nameId: true } } } },
-  woStep: { select: { sequence: true, stepName: true } },
+  woStep: { select: { sequence: true, stepName: true, serviceType: { select: { name: true } } } },
 } as const;
 
 type LinkedRecord = {
@@ -265,11 +295,16 @@ type LinkedRecord = {
     status: VendorBillStatus;
     total: { toString(): string };
     paidAmount: { toString(): string };
+    supplierId: string;
   };
   itemId: string | null;
   grn: { docNumber: string; poId: string | null } | null;
   poItem: { item: { nameId: string } } | null;
-  woStep: { sequence: number; stepName: string | null } | null;
+  woStep: {
+    sequence: number;
+    stepName: string | null;
+    serviceType: { name: string } | null;
+  } | null;
 };
 
 function toLinked(l: LinkedRecord, status: Map<string, VendorBillStatus>, itemNames: Map<string, string>): LinkedBillLine {
@@ -279,11 +314,16 @@ function toLinked(l: LinkedRecord, status: Map<string, VendorBillStatus>, itemNa
     billDocNumber: l.bill.docNumber,
     vendorInvoiceNo: l.bill.vendorInvoiceNo,
     status: status.get(l.bill.id) ?? l.bill.status,
+    supplierId: l.bill.supplierId,
     label: l.poItem
       ? l.poItem.item.nameId
       : l.itemId
         ? itemNames.get(l.itemId) ?? l.itemId
-        : `Step ${l.woStep?.sequence ?? "?"}${l.woStep?.stepName ? ` ${l.woStep.stepName}` : ""}`,
+        : namaLangkahWo({
+            sequence: l.woStep?.sequence ?? 0,
+            serviceTypeName: l.woStep?.serviceType?.name,
+            stepName: l.woStep?.stepName,
+          }),
     qty: Number(l.qty),
     price: Number(l.price),
     amount: Number(l.amount),

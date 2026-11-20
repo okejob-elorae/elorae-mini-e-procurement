@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useTranslations } from "next-intl";
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, PlusIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,9 @@ export interface SearchableComboboxProps {
   "aria-label"?: string;
   /** Trigger width class (e.g. w-full, min-w-[200px]) */
   triggerClassName?: string;
+  /** When set, typing a name with no exact match shows an add row. */
+  onCreate?: (query: string) => void | Promise<void>;
+  createLabel?: (query: string) => string;
 }
 
 const MAX_VISIBLE = 100;
@@ -58,6 +61,8 @@ export function SearchableCombobox({
   "aria-invalid": ariaInvalid,
   "aria-label": ariaLabel,
   triggerClassName,
+  onCreate,
+  createLabel,
 }: SearchableComboboxProps) {
   // Bawaan lewat i18n: formulir yang tidak mengisinya dulu tampil berbahasa Inggris (Search…).
   const t = useTranslations("common");
@@ -66,6 +71,7 @@ export function SearchableCombobox({
   const emptyMessage = emptyMessageProp ?? t("tidakAdaHasil");
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  const [creating, setCreating] = React.useState(false);
 
   const selectedOption = options.find((opt) => opt.value === value);
   const displayLabel = selectedOption ? selectedOption.label : placeholder;
@@ -78,6 +84,12 @@ export function SearchableCombobox({
 
   const visible = filtered.slice(0, MAX_VISIBLE);
   const truncated = filtered.length > MAX_VISIBLE;
+  const createQuery = query.trim();
+  const canCreate =
+    !!onCreate &&
+    createQuery.length > 0 &&
+    !creating &&
+    !options.some((opt) => opt.label.toLowerCase() === createQuery.toLowerCase());
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -112,7 +124,9 @@ export function SearchableCombobox({
             onValueChange={setQuery}
           />
           <CommandList>
-            <CommandEmpty>{emptyMessage}</CommandEmpty>
+            {visible.length === 0 && !canCreate ? (
+              <CommandEmpty>{emptyMessage}</CommandEmpty>
+            ) : null}
             <CommandGroup>
               {visible.map((opt) => (
                 <CommandItem
@@ -138,10 +152,35 @@ export function SearchableCombobox({
                   </span>
                 </CommandItem>
               ))}
+              {canCreate && (
+                <CommandItem
+                  value={`__create__${createQuery}`}
+                  onSelect={() => {
+                    if (!onCreate || creating) return;
+                    setCreating(true);
+                    void Promise.resolve(onCreate(createQuery))
+                      .then(() => {
+                        setOpen(false);
+                        setQuery("");
+                      })
+                      .finally(() => setCreating(false));
+                  }}
+                >
+                  <PlusIcon className="mr-2 h-4 w-4 shrink-0" />
+                  <span className="truncate">
+                    {createLabel?.(createQuery) ?? t("tambahKutipan", { name: createQuery })}
+                  </span>
+                </CommandItem>
+              )}
             </CommandGroup>
             {truncated && (
               <div className="border-t px-3 py-2 text-xs text-muted-foreground">
                 Showing {MAX_VISIBLE} of {filtered.length} — refine search
+              </div>
+            )}
+            {onCreate && !canCreate && !creating && (
+              <div className="border-t px-3 py-2 text-xs text-muted-foreground">
+                {t("ketikUntukTambah")}
               </div>
             )}
           </CommandList>

@@ -55,6 +55,14 @@ import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { alasanSimpanWo } from '@/lib/production/rencana-wo';
 import { KeteranganSimpanWo } from '../../KeteranganSimpanWo';
 import { WoTidakDitemukan } from '../../WoTidakDitemukan';
+import {
+  WoJasaLines,
+  emptyJasaLine,
+  syncJasaWithVendor,
+  jasaLinesValid,
+  toWriterSteps,
+  type WoJasaLineForm,
+} from '@/components/work-orders/WoJasaLines';
 
 interface TailorSupplier {
   id: string;
@@ -99,16 +107,6 @@ interface MaterialPlanRow {
   plannedQty: number;
   availableStock: number;
   shortage: number;
-}
-
-interface WorkOrderStepForm {
-  sequence: number;
-  supplierId: string;
-  stepName: string;
-  servicePrice: number;
-  servicePpnIncluded: boolean;
-  qty: number;
-  notes?: string;
 }
 
 type WO = Awaited<ReturnType<typeof getWorkOrderById>>;
@@ -167,7 +165,9 @@ export default function EditWorkOrderPage() {
   const [isLoadingVariants, setIsLoadingVariants] = useState(false);
   const [variantStock, setVariantStock] = useState<Record<string, { onHand: number; available: number }> | null>(null);
   const [variantStockState, setVariantStockState] = useState<"loading" | "ready" | "error">("loading");
-  const [steps, setSteps] = useState<WorkOrderStepForm[]>([]);
+  const [steps, setSteps] = useState<WoJasaLineForm[]>([emptyJasaLine()]);
+  const [serviceTypes, setServiceTypes] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const [isLoadingTypes, setIsLoadingTypes] = useState(true);
 
   const plannedNum = consumptionResult?.plannedQty ?? 0;
 
@@ -206,11 +206,13 @@ export default function EditWorkOrderPage() {
     const load = async () => {
       try {
         const { getSuppliersForSelect } = await import('@/app/actions/suppliers');
-        const [supplierData, fgList, openPos, closedPos] = await Promise.all([
+        const { listServiceTypesAction } = await import('@/app/actions/service-types');
+        const [supplierData, fgList, openPos, closedPos, jenis] = await Promise.all([
           getSuppliersForSelect({ approvedOnly: true }),
           getItemsByType(ItemType.FINISHED_GOOD),
           getPOs({ statusIn: ["SUBMITTED", "PARTIAL"] }, { page: 1, pageSize: 200 }),
           getPOs({ statusIn: ["CLOSED", "OVER"] }, { page: 1, pageSize: 200 }),
+          listServiceTypesAction({ activeOnly: true }),
         ]);
         const list = Array.isArray(supplierData) ? supplierData : [];
         setTailors(list as TailorSupplier[]);
@@ -219,12 +221,15 @@ export default function EditWorkOrderPage() {
         const closedItems = (closedPos as { items?: Array<{ id: string; docNumber: string }> })?.items ?? [];
         const seen = new Set(openItems.map((p) => p.id));
         setPurchaseOrders([...openItems, ...closedItems.filter((p) => !seen.has(p.id))]);
+        const jenisList = Array.isArray(jenis) ? jenis : [];
+        setServiceTypes(jenisList.map((j) => ({ id: j.id, name: j.name, code: j.code })));
       } catch {
         toast.error(t('failedToLoadData'));
       } finally {
         setIsLoadingSuppliers(false);
         setIsLoadingFG(false);
         setIsLoadingPOs(false);
+        setIsLoadingTypes(false);
       }
     };
     load();
@@ -269,15 +274,41 @@ export default function EditWorkOrderPage() {
     })), w.consumptionMaterialId ?? null));
 
     const stepList = Array.isArray(w.steps) ? w.steps : [];
-    setSteps(stepList.map((s: { sequence: number; supplierId: string; stepName?: string; servicePrice?: number; servicePpnIncluded?: boolean; qty?: number; notes?: string }) => ({
-      sequence: s.sequence,
-      supplierId: s.supplierId ?? '',
-      stepName: s.stepName ?? '',
-      servicePrice: Number(s.servicePrice) || 0,
-      servicePpnIncluded: s.servicePpnIncluded ?? false,
-      qty: Number(s.qty) || 0,
-      notes: s.notes ?? '',
-    })).sort((a: WorkOrderStepForm, b: WorkOrderStepForm) => a.sequence - b.sequence));
+    const mapped: WoJasaLineForm[] = stepList
+      .map((s: {
+        sequence: number;
+        supplierId: string;
+        serviceTypeId?: string | null;
+        serviceType?: { id: string; name: string; code: string } | null;
+        stepName?: string;
+        servicePrice?: number;
+        servicePpnIncluded?: boolean;
+        qty?: number;
+        notes?: string;
+      }) => ({
+        sequence: s.sequence,
+        supplierId: s.supplierId ?? "",
+        serviceTypeId: s.serviceTypeId ?? s.serviceType?.id ?? "",
+        stepName: s.stepName ?? s.serviceType?.name ?? "",
+        servicePrice: Number(s.servicePrice) || 0,
+        servicePpnIncluded: s.servicePpnIncluded ?? false,
+        qty: Number(s.qty) || 0,
+        notes: s.notes ?? "",
+      }))
+      .sort((a: WoJasaLineForm, b: WoJasaLineForm) => a.sequence - b.sequence);
+    setSteps(mapped.length > 0 ? mapped : [emptyJasaLine(w.vendorId ?? "")]);
+    setServiceTypes((prev) => {
+      const ada = new Set(prev.map((p) => p.id));
+      const ekstra: Array<{ id: string; name: string; code: string }> = [];
+      for (const s of stepList) {
+        const t = s.serviceType as { id: string; name: string; code: string } | null | undefined;
+        if (t?.id && !ada.has(t.id)) {
+          ada.add(t.id);
+          ekstra.push({ id: t.id, name: t.name, code: t.code });
+        }
+      }
+      return ekstra.length ? [...prev, ...ekstra] : prev;
+    });
 
     // Variant (SKU) selection is applied after variants load (see variants effect) so options exist first
   }, [wo, isLoadingSuppliers, finishedGoods.length]);
@@ -541,6 +572,7 @@ export default function EditWorkOrderPage() {
     jumlahRencana: plannedNum,
     stokKurang: false,
     rollCukup: rollValid,
+    jasa: jasaLinesValid(steps),
   });
   const canSubmit =
     !!session?.user?.id &&
@@ -575,20 +607,7 @@ export default function EditWorkOrderPage() {
                   ? { variantSku: selectedVariantSku, attributes: selectedVariantAttributes ?? undefined }
                   : undefined
               : undefined,
-          steps:
-            steps.length > 0
-              ? steps
-                  .filter((step) => step.supplierId)
-                  .map((step, idx) => ({
-                    sequence: idx + 1,
-                    supplierId: step.supplierId,
-                    stepName: step.stepName || undefined,
-                    servicePrice: Number(step.servicePrice || 0),
-                    servicePpnIncluded: step.servicePpnIncluded ?? false,
-                    qty: Number(step.qty || 0) || undefined,
-                    notes: step.notes?.trim() || undefined,
-                  }))
-              : undefined,
+          steps: toWriterSteps(steps),
         },
         session.user.id
       );
@@ -652,7 +671,10 @@ export default function EditWorkOrderPage() {
                 <SearchableCombobox
                   options={pilihanVendor.map((v) => ({ value: v.id, label: labelVendor(v) }))}
                   value={vendorId}
-                  onValueChange={setVendorId}
+                  onValueChange={(v) => {
+                    setSteps((prev) => syncJasaWithVendor(prev, vendorId, v));
+                    setVendorId(v);
+                  }}
                   placeholder={tF('selectVendor')}
                   disabled={isLoadingSuppliers}
                 />
@@ -768,96 +790,15 @@ export default function EditWorkOrderPage() {
                 rows={2}
               />
             </div>
-            <div className="space-y-3 rounded-md border p-3">
-              <div className="flex items-center justify-between">
-                <Label>{tR('labelTahap')}</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setSteps((prev) => [
-                      ...prev,
-                      {
-                        sequence: prev.length + 1,
-                        supplierId: '',
-                        stepName: '',
-                        servicePrice: 0,
-                        servicePpnIncluded: false,
-                        qty: 0,
-                        notes: '',
-                      },
-                    ])
-                  }
-                >
-                  {tF('addStep')}
-                </Button>
-              </div>
-              {steps.map((step, index) => (
-                <div key={index} className="grid gap-2 rounded border p-2 sm:grid-cols-5">
-                  <Input
-                    placeholder={tF('stepNamePlaceholder')}
-                    value={step.stepName}
-                    onChange={(e) =>
-                      setSteps((prev) =>
-                        prev.map((s, i) => (i === index ? { ...s, stepName: e.target.value } : s))
-                      )
-                    }
-                  />
-                  <SearchableCombobox
-                    options={[
-                      { value: '__none__', label: tF('selectSupplier') },
-                      ...pilihanVendor.map((supplier) => ({ value: supplier.id, label: labelVendor(supplier) })),
-                    ]}
-                    value={step.supplierId || '__none__'}
-                    onValueChange={(v) =>
-                      setSteps((prev) =>
-                        prev.map((s, i) => (i === index ? { ...s, supplierId: v === '__none__' ? '' : v } : s))
-                      )
-                    }
-                    placeholder={tF('selectSupplier')}
-                  />
-                  <Input
-                    type="number"
-                    min={0}
-                    placeholder={tF('servicePricePlaceholder')}
-                    value={step.servicePrice || ''}
-                    onChange={(e) =>
-                      setSteps((prev) =>
-                        prev.map((s, i) =>
-                          i === index ? { ...s, servicePrice: Number(e.target.value) || 0 } : s
-                        )
-                      )
-                    }
-                  />
-                  <Select
-                    value={step.servicePpnIncluded ? 'include' : 'exclude'}
-                    onValueChange={(v) =>
-                      setSteps((prev) =>
-                        prev.map((s, i) =>
-                          i === index ? { ...s, servicePpnIncluded: v === 'include' } : s
-                        )
-                      )
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="PPN" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="exclude">{tF('ppnExclude')}</SelectItem>
-                      <SelectItem value="include">{tF('ppnInclude')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setSteps((prev) => prev.filter((_, i) => i !== index))}
-                  >
-                    {tF('remove')}
-                  </Button>
-                </div>
-              ))}
-            </div>
+            <WoJasaLines
+              steps={steps}
+              onChange={setSteps}
+              suppliers={pilihanVendor}
+              serviceTypes={serviceTypes}
+              onServiceTypesChange={setServiceTypes}
+              loadingSuppliers={isLoadingSuppliers}
+              loadingTypes={isLoadingTypes}
+            />
           </CardContent>
         </Card>
 

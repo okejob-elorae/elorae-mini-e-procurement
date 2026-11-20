@@ -4,6 +4,7 @@ import { kunciDokumenHutang } from "@/lib/purchasing/pembayaran-aturan";
 import { STATUS_KOREKSI_UTANG, type RincianSelisih, type StatusKoreksiUtang } from "./koreksi-utang-aturan";
 import { grnLineKey, grnLineSource } from "./bill-paid-rule";
 import { invoicedReturnedQtyByGrnLine } from "./billable";
+import { labelLangkahWoDoc } from "./label-langkah-wo";
 
 /*
  * Pembaca koreksi utang pemasok (selisih harga invoice). KHUSUS SERVER: komponen klien hanya boleh
@@ -193,7 +194,13 @@ async function susunBaris(db: Db, rows: Prisma.SupplierPayableCorrectionGetPaylo
     }),
     db.workOrderStep.findMany({
       where: { id: { in: rows.filter((r) => r.sourceType === SUMBER_KOREKSI.WO_STEP).map((r) => r.sourceId) } },
-      select: { id: true, sequence: true, stepName: true, wo: { select: { docNumber: true, finishedGood: { select: { nameId: true } } } } },
+      select: {
+        id: true,
+        sequence: true,
+        stepName: true,
+        serviceType: { select: { name: true } },
+        wo: { select: { docNumber: true, finishedGood: { select: { nameId: true } } } },
+      },
     }),
     db.item.findMany({ where: { id: { in: [...new Set(rows.flatMap((r) => (r.itemId ? [r.itemId] : [])))] } }, select: { id: true, nameId: true } }),
     db.user.findMany({ where: { id: { in: [...new Set(rows.flatMap((r) => (r.decidedById ? [r.decidedById] : [])))] } }, select: { id: true, name: true, email: true } }),
@@ -211,7 +218,16 @@ async function susunBaris(db: Db, rows: Prisma.SupplierPayableCorrectionGetPaylo
     const b = bill.get(r.billId);
     const g = r.sourceType === SUMBER_KOREKSI.GRN ? grn.get(r.sourceId) : undefined;
     const st = r.sourceType === SUMBER_KOREKSI.WO_STEP ? step.get(r.sourceId) : undefined;
-    const penerimaan = g ? g.docNumber : st ? `${st.wo.docNumber} · ${st.sequence}${st.stepName ? ` ${st.stepName}` : ""}` : r.sourceId;
+    const penerimaan = g
+      ? g.docNumber
+      : st
+        ? labelLangkahWoDoc({
+            woDocNumber: st.wo.docNumber,
+            sequence: st.sequence,
+            serviceTypeName: st.serviceType?.name,
+            stepName: st.stepName,
+          })
+        : r.sourceId;
     return {
       id: r.id,
       billId: r.billId,

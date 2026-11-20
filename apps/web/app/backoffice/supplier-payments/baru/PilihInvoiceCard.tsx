@@ -6,6 +6,7 @@ import { FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatRupiah } from "@/lib/format/rupiah";
 import { labelTanggal } from "@/lib/tanggal-isian";
 import type { DataBayarInvoice } from "@/lib/vendor-billing/invoice-bayar-queries";
@@ -49,51 +50,81 @@ export function PilihInvoiceCard({
       <CardContent className="space-y-4 pb-6">
         <p className="text-sm text-muted-foreground">{t("isi")}</p>
         {invoiceLunasDariUrl && <p className="text-sm">{t("sudahLunas", { nomor: invoiceLunasDariUrl })}</p>}
-        <ul className="space-y-3">
-          {data.invoice.map((inv) => (
-            <li key={inv.id} className="flex gap-3">
-              <Checkbox
-                aria-label={t("pilihInvoice", { nomor: inv.vendorInvoiceNo })}
-                checked={dipilih.has(inv.id)}
-                onCheckedChange={(v) => {
-                  const next = new Set(dipilih);
-                  if (v === true) next.add(inv.id);
-                  else next.delete(inv.id);
-                  onUbah(next);
-                }}
-              />
-              <div className="min-w-0 flex-1 space-y-0.5 text-sm">
-                <p className="font-medium">
-                  {inv.vendorInvoiceNo}{" "}
-                  <span className="font-normal text-muted-foreground">
-                    ·{" "}
-                    {bolehBukaTagihan ? (
-                      <Link className="hover:underline" href={`/backoffice/vendor-bills/${inv.id}`}>
-                        {inv.docNumber}
-                      </Link>
-                    ) : (
-                      inv.docNumber
-                    )}{" "}
-                    · {labelTanggal(inv.billDate, locale)}
-                  </span>
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {t("totalDicatat")}: {formatRupiah(inv.total)} · {t("dibayar")}: {formatRupiah(inv.paidAmount)}
-                </p>
-                <p className="text-xs text-muted-foreground">{inv.penerimaan.map((k) => nomorPenerimaan.get(k) ?? k).join(", ")}</p>
-                {inv.koreksi.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {inv.koreksi.map((k) => (
-                      <Badge key={k.id} variant={k.status === "MENUNGGU" ? "secondary" : "outline"}>
-                        {t(`koreksi.${k.status}`, { nilai: formatRupiah(Math.abs(k.jumlahSen) / 100) })}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
+        {data.invoice.length > 0 && (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
+                    <span className="sr-only">{t("pilih")}</span>
+                  </TableHead>
+                  <TableHead>{t("kolomInvoice")}</TableHead>
+                  <TableHead className="hidden sm:table-cell">{t("kolomTanggal")}</TableHead>
+                  <TableHead className="text-right">{t("kolomTotal")}</TableHead>
+                  <TableHead className="hidden text-right md:table-cell">{t("kolomDibayar")}</TableHead>
+                  <TableHead className="hidden lg:table-cell">{t("kolomPenerimaan")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.invoice.map((inv) => {
+                  const penerimaanLabel = inv.penerimaan.map((k) => nomorPenerimaan.get(k) ?? k).join(", ");
+                  return (
+                    <TableRow key={inv.id}>
+                      <TableCell className="align-top">
+                        <Checkbox
+                          aria-label={t("pilihInvoice", { nomor: inv.vendorInvoiceNo })}
+                          checked={dipilih.has(inv.id)}
+                          onCheckedChange={(v) => {
+                            const next = new Set(dipilih);
+                            if (v === true) next.add(inv.id);
+                            else next.delete(inv.id);
+                            onUbah(next);
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell className="align-top whitespace-normal">
+                        <p className="font-medium leading-snug">{inv.vendorInvoiceNo}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {bolehBukaTagihan ? (
+                            <Link className="hover:underline" href={`/backoffice/vendor-bills/${inv.id}`}>
+                              {inv.docNumber}
+                            </Link>
+                          ) : (
+                            inv.docNumber
+                          )}
+                          <span className="sm:hidden"> · {labelTanggal(inv.billDate, locale)}</span>
+                        </p>
+                        {inv.koreksi.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {inv.koreksi.map((k) => (
+                              <Badge key={k.id} variant={k.status === "MENUNGGU" ? "secondary" : "outline"}>
+                                {t(`koreksi.${k.status}`, { nilai: formatRupiah(Math.abs(k.jumlahSen) / 100) })}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                        <p className="mt-1 text-xs text-muted-foreground lg:hidden">{penerimaanLabel}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground md:hidden">
+                          {t("dibayar")}: {formatRupiah(inv.paidAmount)}
+                        </p>
+                      </TableCell>
+                      <TableCell className="hidden align-top whitespace-nowrap sm:table-cell">
+                        {labelTanggal(inv.billDate, locale)}
+                      </TableCell>
+                      <TableCell className="align-top text-right tabular-nums">{formatRupiah(inv.total)}</TableCell>
+                      <TableCell className="hidden align-top text-right tabular-nums md:table-cell">
+                        {formatRupiah(inv.paidAmount)}
+                      </TableCell>
+                      <TableCell className="hidden align-top text-xs text-muted-foreground whitespace-normal lg:table-cell">
+                        {penerimaanLabel}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
         {dipilih.size > 0 && (
           <div className="space-y-1 rounded-md border p-3 text-sm">
             <Baris label={t("ringkas.totalInvoice")} nilai={formatRupiah(ringkas.totalInvoiceDicatatSen / 100)} />

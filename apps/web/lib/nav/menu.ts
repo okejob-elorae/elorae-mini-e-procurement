@@ -210,6 +210,7 @@ export const navItems: NavItem[] = [
       { labelKey: "navProductionColors", href: "/backoffice/production/colors", permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
       { labelKey: "navProductionPalette", href: "/backoffice/production/palette", permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
       { labelKey: "navWorkOrdersList", href: "/backoffice/work-orders", permission: PERMISSIONS.WORK_ORDERS_VIEW },
+      { labelKey: "navServiceTypes", href: "/backoffice/service-types", permission: PERMISSIONS.WORK_ORDERS_VIEW },
       { labelKey: "registerNotaCmt", href: "/backoffice/work-orders/nota-register", permission: PERMISSIONS.NOTA_REGISTER_VIEW },
     ],
   },

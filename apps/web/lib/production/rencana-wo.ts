@@ -52,6 +52,8 @@ export type KeadaanFormulirWo = {
   jumlahRencana: number;
   stokKurang: boolean;
   rollCukup: boolean;
+  /** Minimal satu baris jasa dengan jenis + pemasok. */
+  jasa: boolean;
 };
 
 export type AlasanSimpanWo =
@@ -67,7 +69,8 @@ export type AlasanSimpanWo =
   | "MENGHITUNG"
   | "BAHAN_KURANG_SATU_PCS"
   | "STOK"
-  | "ROLL";
+  | "ROLL"
+  | "JASA";
 
 /**
  * Kekurangan PERTAMA menurut urutan isian formulir, atau null bila perintah
@@ -93,5 +96,6 @@ export function alasanSimpanWo(k: KeadaanFormulirWo): AlasanSimpanWo | null {
   if (!(k.jumlahRencana > 0)) return "BAHAN_KURANG_SATU_PCS";
   if (k.stokKurang) return "STOK";
   if (!k.rollCukup) return "ROLL";
+  if (!k.jasa) return "JASA";
   return null;
 }

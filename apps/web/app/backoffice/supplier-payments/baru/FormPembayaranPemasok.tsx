@@ -385,6 +385,9 @@ export function FormPembayaranPemasok({
                     const penuh = bayar[k]?.trim() && bacaRupiahSen(bayar[k]) === d.sisaSen;
                     const pi = penerimaanInvoice.get(k);
                     const menunggu = pi?.koreksiMenunggu ?? [];
+                    // Prefer invoice-bayar ServiceType label when the receipt is on a bill.
+                    const nomorTampil =
+                      d.jenis === "OTHER" ? t("hutangSaldoAwal") : (pi?.nomor ?? d.nomor);
                     // Menunggu keputusan selisih harga (P50): tidak bisa diisi, tetapi isian yang sudah ada selalu bisa dikosongkan.
                     const terkunci = menunggu.length > 0 && !bayar[k]?.trim();
                     return (
@@ -393,14 +396,14 @@ export function FormPembayaranPemasok({
                           <Checkbox
                             disabled={terkunci}
                             checked={Boolean(penuh)}
-                            aria-label={t("lunasiDokumen", { nomor: d.nomor })}
+                            aria-label={t("lunasiDokumen", { nomor: nomorTampil })}
                             onCheckedChange={(v) =>
                               setBayar((b) => ({ ...b, [k]: v === true && menunggu.length === 0 ? String(d.sisaSen / 100) : "" }))
                             }
                           />
                         </TableCell>
                         <TableCell className="align-top whitespace-normal">
-                          <p className="font-medium">{d.jenis === "OTHER" ? t("hutangSaldoAwal") : d.nomor}</p>
+                          <p className="font-medium">{nomorTampil}</p>
                           <p className="text-xs text-muted-foreground">
                             {t(`jenisDokumen.${d.jenis}`)}
                             {d.poNomor ? ` · ${d.poNomor}` : ""}
@@ -430,7 +433,7 @@ export function FormPembayaranPemasok({
                             disabled={terkunci}
                             value={bayar[k] ?? ""}
                             onChange={(e) => setBayar((b) => ({ ...b, [k]: e.target.value }))}
-                            aria-label={t("bayarDokumen", { nomor: d.nomor })}
+                            aria-label={t("bayarDokumen", { nomor: nomorTampil })}
                             aria-invalid={salahBaris.has(k)}
                             className="text-right tabular-nums"
                           />

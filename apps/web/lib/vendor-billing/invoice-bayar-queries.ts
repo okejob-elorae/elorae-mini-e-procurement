@@ -5,6 +5,7 @@ import { bacaHutangPemasok, keadaanBayarPo } from "@/lib/purchasing/pembayaran-h
 import { urutkanInvoice } from "./bill-paid-rule";
 import { bacaTagihanSumber } from "./belum-ditagih-queries";
 import { penerimaanKoreksiMenunggu } from "./koreksi-utang-queries";
+import { labelLangkahWoDoc } from "./label-langkah-wo";
 import { rincianLunasPerSumber, withSupplierPaid } from "./supplier-paid";
 import type { VendorBillStatus } from "./status";
 
@@ -112,7 +113,12 @@ export async function bacaInvoiceUntukBayar(supplierId: string, db: Db = prisma)
   const poLunas = [...new Set(grnPo.filter((g) => g.poId && g.po?.paidAt).map((g) => g.poId as string))];
   const keadaanPo = poLunas.length > 0 ? await keadaanBayarPo(poLunas, db) : new Map();
   const ditandaiTombolLama = new Set(poLunas.filter((p) => !keadaanPo.get(p)?.adaAlokasiDokumen));
-  const steps = stepIds.size > 0 ? await db.workOrderStep.findMany({ where: { id: { in: [...stepIds] } }, select: { id: true, sequence: true, stepName: true, wo: { select: { docNumber: true } } } }) : [];
+  const steps = stepIds.size > 0
+    ? await db.workOrderStep.findMany({
+        where: { id: { in: [...stepIds] } },
+        select: { id: true, sequence: true, stepName: true, serviceType: { select: { name: true } }, wo: { select: { docNumber: true } } },
+      })
+    : [];
   const grnPer = new Map(grnPo.map((g) => [g.id, g]));
   const stepPer = new Map(steps.map((s) => [s.id, s]));
 
@@ -126,7 +132,15 @@ export async function bacaInvoiceUntukBayar(supplierId: string, db: Db = prisma)
       kunci,
       jenis,
       id,
-      nomor: d?.nomor ?? g?.docNumber ?? (s ? `${s.wo.docNumber} · ${s.sequence}${s.stepName ? ` ${s.stepName}` : ""}` : id),
+      // Prefer live ServiceType label over hutang-ledger nomor (still stepName-shaped).
+      nomor: s
+        ? labelLangkahWoDoc({
+            woDocNumber: s.wo.docNumber,
+            sequence: s.sequence,
+            serviceTypeName: s.serviceType?.name,
+            stepName: s.stepName,
+          })
+        : (d?.nomor ?? g?.docNumber ?? id),
       poNomor: d?.poNomor ?? g?.po?.docNumber ?? null,
       adaHutang: d != null,
       hutangSen: d?.hutangSen ?? 0,

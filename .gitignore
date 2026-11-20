@@ -7,6 +7,8 @@ packages/db/generated/
 
 reference/*
 docs/superpowers/
+docs/erd/
+scripts/erd/
 meeting-progress-*.md
 .vercel
 
@@ -41,3 +43,5 @@ test-run.local/
 
 # Local MySQL datadir (no-Docker local bed on :3308)
 .local/
+
+.claude/

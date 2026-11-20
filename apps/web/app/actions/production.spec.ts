@@ -498,8 +498,22 @@ describe("markup per WO dihapus (P4a): harga rekomendasi hanya dari pengaturan b
     vi.mocked(generateMaterialPlan).mockResolvedValue([] as never);
     vi.mocked(generateDocNumber).mockResolvedValue("WO-1" as never);
     const create = vi.fn().mockRejectedValue(new Error(STOP));
-    mockTransaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb({ workOrder: { create } }));
-    const data = { vendorId: "v1", outputMode: "GENERIC", plannedQty: 10, finishedGoodId: "fg1", hppMarginPercent: 30, hppAdditionalCost: 500 };
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
+      cb({
+        workOrder: { create },
+        serviceType: { findMany: async () => [{ id: "svc1", name: "Jahit/CMT" }] },
+        workOrderStep: { createMany: vi.fn() },
+      }),
+    );
+    const data = {
+      vendorId: "v1",
+      outputMode: "GENERIC",
+      plannedQty: 10,
+      finishedGoodId: "fg1",
+      hppMarginPercent: 30,
+      hppAdditionalCost: 500,
+      steps: [{ sequence: 1, supplierId: "v1", serviceTypeId: "svc1", servicePrice: 0, servicePpnIncluded: false }],
+    };
     await expect(createWorkOrder(data as never, "u1")).rejects.toThrow(STOP);
     const tulis = create.mock.calls[0][0].data as Record<string, unknown>;
     expect(tulis).not.toHaveProperty("hppMarginPercent");

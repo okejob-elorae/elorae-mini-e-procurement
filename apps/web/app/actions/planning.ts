@@ -2142,6 +2142,14 @@ export async function generateWorkOrderFromCmtAllocation(cmtAllocationId: string
   );
 
   const notes = `Plan Kerja ${cmt.planCategory.planYear.year} · ${cmt.planCategory.code} · M${cmt.month} · ${cmt.variantSku}`;
+  const jasa =
+    (await prisma.serviceType.findUnique({ where: { code: "JAHIT" }, select: { id: true } })) ??
+    (await prisma.serviceType.findFirst({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+      select: { id: true },
+    }));
+  if (!jasa) throw new Error("Jenis jasa belum di-seed");
   const result = await createWorkOrder(
     {
       vendorId: woPayload.vendorId,
@@ -2151,6 +2159,15 @@ export async function generateWorkOrderFromCmtAllocation(cmtAllocationId: string
       targetDate: woPayload.targetDate,
       skuBreakdown: [{ variantSku: woPayload.variantSku, ratioPercent: 100 }],
       notes,
+      steps: [
+        {
+          sequence: 1,
+          supplierId: woPayload.vendorId,
+          serviceTypeId: jasa.id,
+          servicePrice: 0,
+          servicePpnIncluded: false,
+        },
+      ],
     },
     session.user.id,
     { skipStockCheck: true }
@@ -2323,6 +2340,14 @@ export async function createWorkOrderFromStage(stageId: string): Promise<WoDariT
   if (!stageVariantSku) return { ok: false, code: "TAHAP_TANPA_VARIAN" };
 
   try {
+    const jasa =
+      (await prisma.serviceType.findUnique({ where: { code: "JAHIT" }, select: { id: true } })) ??
+      (await prisma.serviceType.findFirst({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+        select: { id: true },
+      }));
+    if (!jasa) return { ok: false, code: "GAGAL" };
     const result = await createWorkOrder(
       {
         vendorId: stage.supplierId,
@@ -2332,6 +2357,15 @@ export async function createWorkOrderFromStage(stageId: string): Promise<WoDariT
         targetDate: undefined,
         skuBreakdown: [{ variantSku: stageVariantSku, ratioPercent: 100 }],
         notes: `Dibuat dari tahap Plan Kerja: ${stage.name}`,
+        steps: [
+          {
+            sequence: 1,
+            supplierId: stage.supplierId,
+            serviceTypeId: jasa.id,
+            servicePrice: 0,
+            servicePpnIncluded: false,
+          },
+        ],
       },
       session.user.id,
       { skipStockCheck: true }

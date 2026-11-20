@@ -132,6 +132,11 @@ const AKSI: Array<{ nama: string; panggil: () => Promise<unknown>; sah: string[]
     sah: [["work_orders:view"], ["nota_register:view"]],
   },
   {
+    nama: "getMaterialIssuesForPrint",
+    panggil: () => produksi.getMaterialIssuesForPrint([TIDAK_ADA]),
+    sah: [["work_orders:view"], ["nota_register:view"]],
+  },
+  {
     nama: "getProductionStats",
     panggil: () => produksi.getProductionStats(),
     sah: [["work_orders:view"]],

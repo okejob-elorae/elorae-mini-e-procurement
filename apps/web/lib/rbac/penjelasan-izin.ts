@@ -452,7 +452,10 @@ const ISIAN: Record<KodeIzin, Isian> = {
     halaman: ["/backoffice/production/planning", "/backoffice/production/follow-up"],
   },
   [P.PRODUCTION_PLANNING_MANAGE]: { grup: "produksi", butuh: P.PRODUCTION_PLANNING_VIEW },
-  [P.WORK_ORDERS_VIEW]: { grup: "produksi", halaman: ["/backoffice/work-orders"] },
+  [P.WORK_ORDERS_VIEW]: {
+    grup: "produksi",
+    halaman: ["/backoffice/work-orders", "/backoffice/service-types"],
+  },
   [P.WORK_ORDERS_CREATE]: { grup: "produksi", halaman: ["/backoffice/work-orders/new"], butuh: P.WORK_ORDERS_VIEW },
   [P.WORK_ORDERS_MANAGE]: { grup: "produksi", butuh: P.WORK_ORDERS_VIEW },
   [P.NOTA_REGISTER_VIEW]: { grup: "produksi", halaman: ["/backoffice/work-orders/nota-register"] },
