@@ -21,6 +21,7 @@ jobs:
       OIDC_AUD: okejob.app
       DEPLOY_URL: https://okejob.app/api/staging/oidc-deploy
       STATUS_URL: https://okejob.app/api/staging/oidc-deployments
+      EXPECTED_SHA: ${{ github.sha }}
     steps:
       - name: OIDC deploy
         shell: bash
@@ -38,6 +39,16 @@ jobs:
             -d '{}' \
             "${DEPLOY_URL}" | tee /tmp/oidc-deploy.json
           echo
+          python3 - <<'PY'
+          import json, os, sys
+          d = json.load(open("/tmp/oidc-deploy.json"))
+          expected = os.environ["EXPECTED_SHA"]
+          got = d.get("ref") or d.get("token_sha") or ""
+          if got != expected:
+              print(f"deploy response ref {got!r} != EXPECTED_SHA {expected!r}", file=sys.stderr)
+              sys.exit(1)
+          print(f"deploy accepted ref={got}")
+          PY
 
       - name: Poll status
         shell: bash
@@ -48,18 +59,58 @@ jobs:
               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUD}" \
               | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
           }
+          # build_status can remain a prior "ok" until the new build flips to
+          # "building"; only treat ok as success after we have seen building
+          # for EXPECTED_SHA (ref is updated at accept time).
+          seen_building=0
           for i in $(seq 1 90); do
             JWT="$(mint)"
-            body="$(curl -sS -H "Authorization: Bearer ${JWT}" "${STATUS_URL}/${SLUG}")"
-            status="$(echo "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); dep=d.get("deployment") or d; print(dep.get("build_status") or "")')"
-            echo "poll $i build_status=${status:-pending}"
+            http_code=0
+            body="$(curl -sS -w '\n%{http_code}' \
+              -H "Authorization: Bearer ${JWT}" \
+              "${STATUS_URL}/${SLUG}")" || true
+            http_code="$(printf '%s' "$body" | tail -n1)"
+            body="$(printf '%s' "$body" | sed '$d')"
+            if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+              echo "poll $i status HTTP ${http_code:-curl-error}: ${body:0:300}"
+              exit 1
+            fi
+            eval "$(echo "$body" | python3 -c '
+          import json, os, sys
+          d = json.load(sys.stdin)
+          dep = d.get("deployment") or d
+          ref = dep.get("ref") or ""
+          status = dep.get("build_status") or ""
+          expected = os.environ["EXPECTED_SHA"]
+          print(f"ref={ref!r}")
+          print(f"status={status!r}")
+          print(f"match={1 if ref == expected else 0}")
+          ')"
+            echo "poll $i ref=${ref:-?} build_status=${status:-pending} match=${match}"
+            if [[ "$match" != "1" ]]; then
+              sleep 20
+              continue
+            fi
             case "$status" in
-              ok) echo "build ok"; exit 0 ;;
-              failed|built-but-restart-failed) echo "build failed: $status"; echo "$body"; exit 1 ;;
+              building)
+                seen_building=1
+                ;;
+              ok)
+                if [[ "$seen_building" == "1" ]]; then
+                  echo "build ok for ${EXPECTED_SHA}"
+                  exit 0
+                fi
+                echo "stale-or-pre-build ok for matching ref; waiting for building"
+                ;;
+              failed|built-but-restart-failed)
+                echo "build failed: $status"
+                echo "$body"
+                exit 1
+                ;;
             esac
             sleep 20
           done
-          echo "timed out waiting for build"
+          echo "timed out waiting for build of ${EXPECTED_SHA}"
           exit 1
 
       - name: Smoke-check staging URL
@@ -71,6 +122,14 @@ jobs:
             local code
             code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 30 "$url" || true)
             echo "$url -> $code"
-            [[ "$code" =~ ^(200|301|302|307|308|404)$ ]] || exit 1
+            [[ "$code" =~ ^(200|301|302|307|308)$ ]] || return 1
           }
-          check https://elorae.okejob.app/
+          for i in $(seq 1 12); do
+            if check https://elorae.okejob.app/; then
+              exit 0
+            fi
+            echo "smoke retry $i"
+            sleep 10
+          done
+          echo "smoke check failed"
+          exit 1
