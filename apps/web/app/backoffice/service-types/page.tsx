@@ -96,14 +96,17 @@ export default function ServiceTypesPage() {
       const json = await listServiceTypesAction({ page: 1, pageSize: 200, withUsage: true });
       const list = Array.isArray(json) ? json : json.data;
       setRows(
-        list.map((r) => ({
-          id: r.id,
-          code: r.code,
-          name: r.name,
-          isActive: r.isActive,
-          sortOrder: r.sortOrder ?? null,
-          dipakai: "_count" in r && r._count ? r._count.steps : 0,
-        })),
+        list.map((r) => {
+          const count = (r as { _count?: { steps?: number } })._count?.steps;
+          return {
+            id: r.id,
+            code: r.code,
+            name: r.name,
+            isActive: r.isActive,
+            sortOrder: r.sortOrder ?? null,
+            dipakai: typeof count === "number" ? count : 0,
+          };
+        }),
       );
     } catch (e) {
       console.error(e);

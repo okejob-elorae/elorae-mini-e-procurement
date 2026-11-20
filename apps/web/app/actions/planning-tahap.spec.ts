@@ -118,6 +118,10 @@ vi.mock("@elorae/db", async (importOriginal) => {
       },
       workOrder: { findUnique: async () => keadaan.wo },
       item: { findUnique: async () => keadaan.barang },
+      serviceType: {
+        findUnique: async () => ({ id: "svc-jahit" }),
+        findFirst: async () => ({ id: "svc-jahit" }),
+      },
     },
   };
 });
