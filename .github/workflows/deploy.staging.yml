@@ -47,17 +47,34 @@ jobs:
           if got != expected:
               print(f"deploy response ref {got!r} != EXPECTED_SHA {expected!r}", file=sys.stderr)
               sys.exit(1)
-          print(f"deploy accepted ref={got}")
+          admin = d.get("admin") or {}
+          if admin.get("build") not in (None, "started"):
+              print(f"unexpected admin.build={admin.get('build')!r}", file=sys.stderr)
+              sys.exit(1)
+          # POST accept means a new build was queued; seed poll progress so a
+          # missed building→ok flip (or idempotent same-SHA re-run) cannot
+          # false-timeout while matching-ref ok is already current.
+          open("/tmp/oidc-deploy-accepted", "w").write(got)
+          print(f"deploy accepted ref={got} build={admin.get('build') or 'started'}")
           PY
 
       - name: Poll status
         shell: bash
         run: |
           set -euo pipefail
+          [[ -s /tmp/oidc-deploy-accepted ]] || {
+            echo "missing deploy accept marker from previous step" >&2
+            exit 1
+          }
           python3 - <<'PY'
           import json, os, sys, time, urllib.error, urllib.request
 
           expected = os.environ["EXPECTED_SHA"]
+          accepted = open("/tmp/oidc-deploy-accepted").read().strip()
+          if accepted != expected:
+              print(f"accept marker {accepted!r} != EXPECTED_SHA {expected!r}", file=sys.stderr)
+              sys.exit(1)
+
           slug = os.environ["SLUG"]
           status_url = f"{os.environ['STATUS_URL'].rstrip('/')}/{slug}"
           aud = os.environ["OIDC_AUD"]
@@ -72,7 +89,7 @@ jobs:
               with urllib.request.urlopen(req, timeout=30) as resp:
                   return json.load(resp)["value"]
 
-          def fetch_status(jwt: str) -> tuple[int, dict | None, str]:
+          def fetch_status(jwt: str):
               req = urllib.request.Request(
                   status_url,
                   headers={"Authorization": f"Bearer {jwt}"},
@@ -87,11 +104,9 @@ jobs:
               except Exception as e:  # noqa: BLE001 — soft-retry network blips
                   return 0, None, str(e)
 
-          # ref updates at accept while build_status may briefly stay a prior
-          # "ok". Accept ok only after we have seen a non-ok status for the
-          # matched ref (usually "building"). Poll aggressively at first so a
-          # fast building→ok flip is not missed.
-          seen_non_ok = False
+          # Seeded by successful POST accept (build queued). Avoids requiring
+          # an observed non-ok transition that a fast building→ok can miss.
+          deploy_accepted = True
           soft_failures = 0
           deadline = time.time() + 30 * 60
           poll = 0
@@ -112,26 +127,23 @@ jobs:
               ref = str(dep.get("ref") or "")
               status = str(dep.get("build_status") or "")
               matched = ref == expected
-              print(f"poll {poll} ref={ref or '?'} build_status={status or 'pending'} match={int(matched)}")
+              print(
+                  f"poll {poll} ref={ref or '?'} build_status={status or 'pending'} "
+                  f"match={int(matched)} accepted={int(deploy_accepted)}"
+              )
 
               if not matched:
                   time.sleep(5 if poll <= 24 else 20)
                   continue
-
-              if status not in ("ok",):
-                  seen_non_ok = True
 
               if status in ("failed", "built-but-restart-failed"):
                   print(f"build failed: {status}", file=sys.stderr)
                   print(raw[:2000], file=sys.stderr)
                   sys.exit(1)
 
-              if status == "ok" and seen_non_ok:
+              if status == "ok" and deploy_accepted:
                   print(f"build ok for {expected}")
                   sys.exit(0)
-
-              if status == "ok" and not seen_non_ok:
-                  print("matching ref still on pre-build ok; waiting for non-ok progress")
 
               time.sleep(5 if poll <= 24 else 20)
 
@@ -145,10 +157,16 @@ jobs:
           set -euo pipefail
           check() {
             local url="$1"
-            local code
-            code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 30 "$url" || true)
-            echo "$url -> $code"
-            [[ "$code" =~ ^(200|301|302|307|308)$ ]] || return 1
+            local code final_url
+            # Follow redirects; require a final 2xx on the same host.
+            read -r code final_url < <(
+              curl -sS -L --max-redirs 5 --max-time 30 \
+                -o /dev/null -w '%{http_code} %{url_effective}' \
+                "$url" || echo "000 $url"
+            )
+            echo "$url -> $code ($final_url)"
+            [[ "$code" =~ ^2[0-9][0-9]$ ]] || return 1
+            [[ "$final_url" == https://elorae.okejob.app/* ]] || return 1
           }
           for i in $(seq 1 12); do
             if check https://elorae.okejob.app/; then
