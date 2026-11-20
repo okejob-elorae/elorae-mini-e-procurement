@@ -1,0 +1,179 @@
+name: Deploy staging (OIDC)
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: staging-elorae
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SLUG: elorae
+      OIDC_AUD: okejob.app
+      DEPLOY_URL: https://okejob.app/api/staging/oidc-deploy
+      STATUS_URL: https://okejob.app/api/staging/oidc-deployments
+      EXPECTED_SHA: ${{ github.sha }}
+    steps:
+      - name: OIDC deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          mint() {
+            curl -sS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUD}" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          JWT="$(mint)"
+          curl -sS -f -X POST \
+            -H "Authorization: Bearer ${JWT}" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            "${DEPLOY_URL}" | tee /tmp/oidc-deploy.json
+          echo
+          python3 - <<'PY'
+          import json, os, sys
+          d = json.load(open("/tmp/oidc-deploy.json"))
+          expected = os.environ["EXPECTED_SHA"]
+          got = d.get("ref") or d.get("token_sha") or ""
+          if got != expected:
+              print(f"deploy response ref {got!r} != EXPECTED_SHA {expected!r}", file=sys.stderr)
+              sys.exit(1)
+          admin = d.get("admin") or {}
+          if admin.get("build") not in (None, "started"):
+              print(f"unexpected admin.build={admin.get('build')!r}", file=sys.stderr)
+              sys.exit(1)
+          # POST accept means a new build was queued; seed poll progress so a
+          # missed building→ok flip (or idempotent same-SHA re-run) cannot
+          # false-timeout while matching-ref ok is already current.
+          open("/tmp/oidc-deploy-accepted", "w").write(got)
+          print(f"deploy accepted ref={got} build={admin.get('build') or 'started'}")
+          PY
+
+      - name: Poll status
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -s /tmp/oidc-deploy-accepted ]] || {
+            echo "missing deploy accept marker from previous step" >&2
+            exit 1
+          }
+          python3 - <<'PY'
+          import json, os, sys, time, urllib.error, urllib.request
+
+          expected = os.environ["EXPECTED_SHA"]
+          accepted = open("/tmp/oidc-deploy-accepted").read().strip()
+          if accepted != expected:
+              print(f"accept marker {accepted!r} != EXPECTED_SHA {expected!r}", file=sys.stderr)
+              sys.exit(1)
+
+          slug = os.environ["SLUG"]
+          status_url = f"{os.environ['STATUS_URL'].rstrip('/')}/{slug}"
+          aud = os.environ["OIDC_AUD"]
+          id_url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          id_token = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
+
+          def mint() -> str:
+              req = urllib.request.Request(
+                  f"{id_url}&audience={aud}",
+                  headers={"Authorization": f"Bearer {id_token}"},
+              )
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  return json.load(resp)["value"]
+
+          def fetch_status(jwt: str):
+              req = urllib.request.Request(
+                  status_url,
+                  headers={"Authorization": f"Bearer {jwt}"},
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      body = resp.read().decode()
+                      return resp.status, json.loads(body), body
+              except urllib.error.HTTPError as e:
+                  body = e.read().decode(errors="replace")
+                  return e.code, None, body
+              except Exception as e:  # noqa: BLE001 — soft-retry network blips
+                  return 0, None, str(e)
+
+          # Seeded by successful POST accept (build queued). Avoids requiring
+          # an observed non-ok transition that a fast building→ok can miss.
+          deploy_accepted = True
+          soft_failures = 0
+          deadline = time.time() + 30 * 60
+          poll = 0
+          while time.time() < deadline:
+              poll += 1
+              code, data, raw = fetch_status(mint())
+              if code < 200 or code >= 300 or data is None:
+                  soft_failures += 1
+                  print(f"poll {poll} soft-fail HTTP {code}: {raw[:300]}")
+                  if soft_failures >= 10:
+                      print("too many consecutive status soft-failures", file=sys.stderr)
+                      sys.exit(1)
+                  time.sleep(5 if poll <= 24 else 20)
+                  continue
+              soft_failures = 0
+
+              dep = data.get("deployment") or data
+              ref = str(dep.get("ref") or "")
+              status = str(dep.get("build_status") or "")
+              matched = ref == expected
+              print(
+                  f"poll {poll} ref={ref or '?'} build_status={status or 'pending'} "
+                  f"match={int(matched)} accepted={int(deploy_accepted)}"
+              )
+
+              if not matched:
+                  time.sleep(5 if poll <= 24 else 20)
+                  continue
+
+              if status in ("failed", "built-but-restart-failed"):
+                  print(f"build failed: {status}", file=sys.stderr)
+                  print(raw[:2000], file=sys.stderr)
+                  sys.exit(1)
+
+              if status == "ok" and deploy_accepted:
+                  print(f"build ok for {expected}")
+                  sys.exit(0)
+
+              time.sleep(5 if poll <= 24 else 20)
+
+          print(f"timed out waiting for build of {expected}", file=sys.stderr)
+          sys.exit(1)
+          PY
+
+      - name: Smoke-check staging URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          check() {
+            local url="$1"
+            local code final_url
+            # Follow redirects; require a final 2xx on the same host.
+            read -r code final_url < <(
+              curl -sS -L --max-redirs 5 --max-time 30 \
+                -o /dev/null -w '%{http_code} %{url_effective}' \
+                "$url" || echo "000 $url"
+            )
+            echo "$url -> $code ($final_url)"
+            [[ "$code" =~ ^2[0-9][0-9]$ ]] || return 1
+            [[ "$final_url" == https://elorae.okejob.app/* ]] || return 1
+          }
+          for i in $(seq 1 12); do
+            if check https://elorae.okejob.app/; then
+              exit 0
+            fi
+            echo "smoke retry $i"
+            sleep 10
+          done
+          echo "smoke check failed"
+          exit 1
