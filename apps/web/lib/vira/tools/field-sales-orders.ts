@@ -23,6 +23,7 @@ import { daftarPiutang } from "@/lib/receivables/queries";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { batasKreditBerlaku, lewatBatasNilai } from "@/lib/salesman/kredit";
 import { bacaAturanKreditDb } from "@/lib/salesman/tagihan-toko";
+import { fsoShowsMoney } from "../entities";
 import { ViraInputError, ViraNotFoundError } from "../errors";
 import { listInputShape, recordUrl, toPage } from "../output";
 import {
@@ -113,7 +114,7 @@ function header(o: FieldSalesOrderListItem, storeId?: string) {
  * the total at 0), so the list shows "—" and the detail hides every money column. Money is null then.
  */
 function showMoney(o: { orderType: string; status: string }): boolean {
-  return o.orderType !== "KONSI" || o.status === "APPROVED";
+  return fsoShowsMoney(o);
 }
 
 function formatRp(n: number): string {

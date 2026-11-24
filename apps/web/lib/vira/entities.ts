@@ -99,10 +99,11 @@ function f(
   };
 }
 
-/** Same rule as `showMoney` on the field-sales order pages. */
+/** Same rule as `showMoney` / `fsoShowsMoney` on the field-sales order tools. */
 const FSO_MONEY_VISIBLE = { OR: [{ orderType: { not: "KONSI" } }, { status: "APPROVED" }] };
-function fsoShowsMoney(o: Record<string, unknown> | undefined): boolean {
-  return o !== undefined && (o.orderType === "PUTUS" || o.status === "APPROVED");
+/** KONSI money only after approval — shared with `lib/vira/tools/field-sales-orders.ts`. */
+export function fsoShowsMoney(o: { orderType?: unknown; status?: unknown } | undefined): boolean {
+  return o !== undefined && (o.orderType !== "KONSI" || o.status === "APPROVED");
 }
 
 /** Entities deliberately not exposed — keep in sync with the report. */

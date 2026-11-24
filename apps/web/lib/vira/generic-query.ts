@@ -3,6 +3,7 @@
  * Callers: lib/vira/tools/generic.ts + tests.
  */
 import { Prisma, prisma } from "@elorae/db";
+import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { ViraInputError } from "./errors";
 import {
   allowedFieldNames,
@@ -16,6 +17,8 @@ import {
 import type { ViraActor } from "./akses";
 import { gateAllows } from "./akses";
 import { recordUrl, toPage, type Page } from "./output";
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 const MAX_WHERE_DEPTH = 3;
 const MAX_INCLUDE_DEPTH = 2;
@@ -61,16 +64,25 @@ function assertKnownField(entity: ViraEntityDef, name: string): ViraEntityField 
 
 const OPS = new Set(["equals", "in", "not", "contains", "startsWith", "gt", "gte", "lt", "lte"]);
 
-function coerceValue(type: ViraFieldType, value: unknown): unknown {
-  if (value === null) return null;
-  if (type === "date") {
-    if (value instanceof Date) return value;
-    if (typeof value === "string" || typeof value === "number") {
-      const d = new Date(value);
-      if (Number.isNaN(d.getTime())) throw new ViraInputError(`Invalid date value: ${String(value)}`);
-      return d;
-    }
+/** `bound: "end"` for lt/lte so YYYY-MM-DD is inclusive end-of-day WIB. */
+function coerceDate(value: unknown, bound: "start" | "end"): Date {
+  if (value instanceof Date) return value;
+  if (typeof value === "string" && DATE_ONLY.test(value.trim())) {
+    const d = bound === "end" ? parseDateOnlyEnd(value) : parseDateOnly(value);
+    if (!d) throw new ViraInputError(`Invalid date value: ${value}`);
+    return d;
   }
+  if (typeof value === "string" || typeof value === "number") {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) throw new ViraInputError(`Invalid date value: ${String(value)}`);
+    return d;
+  }
+  throw new ViraInputError(`Invalid date value: ${String(value)}`);
+}
+
+function coerceValue(type: ViraFieldType, value: unknown, dateBound: "start" | "end" = "start"): unknown {
+  if (value === null) return null;
+  if (type === "date") return coerceDate(value, dateBound);
   if (type === "number" && typeof value === "string" && value.trim() !== "") {
     const n = Number(value);
     if (!Number.isFinite(n)) throw new ViraInputError(`Invalid number: ${value}`);
@@ -90,16 +102,17 @@ function parseFieldFilter(entity: ViraEntityDef, field: string, raw: unknown): u
     if (!OPS.has(op)) {
       throw new ViraInputError(`Unsupported operator "${op}" on field "${field}".`);
     }
+    const dateBound: "start" | "end" = op === "lt" || op === "lte" ? "end" : "start";
     if (op === "in") {
       if (!Array.isArray(val)) throw new ViraInputError(`"${field}.in" must be an array.`);
-      out.in = val.map((v) => coerceValue(meta.type, v));
+      out.in = val.map((v) => coerceValue(meta.type, v, dateBound));
       continue;
     }
     if (op === "not") {
       if (val !== null && typeof val === "object" && !Array.isArray(val)) {
         out.not = parseFieldFilter(entity, field, val);
       } else {
-        out.not = coerceValue(meta.type, val);
+        out.not = coerceValue(meta.type, val, dateBound);
       }
       continue;
     }
@@ -109,7 +122,7 @@ function parseFieldFilter(entity: ViraEntityDef, field: string, raw: unknown): u
     if ((op === "gt" || op === "gte" || op === "lt" || op === "lte") && meta.type !== "number" && meta.type !== "date") {
       throw new ViraInputError(`"${op}" only applies to number/date fields (got ${field}).`);
     }
-    out[op] = coerceValue(meta.type, val);
+    out[op] = coerceValue(meta.type, val, dateBound);
   }
   return out;
 }
@@ -230,16 +243,18 @@ function parseSelection(
 }
 
 /**
- * Builds the Prisma `select`. Unrestricted: full allowlist (urlPath / masks may
- * read fields the caller did not ask for; `project` still returns only
- * `sel.fields`). Restricted (`parentShows`): only `sel.fields` — never widen.
+ * Builds the Prisma `select`. Unrestricted: full allowlist + docNumber + mask
+ * helpers (urlPath / isVisible; `project` still returns only `sel.fields`).
+ * Restricted (`parentShows`): `id` + `sel.fields` only — never widen.
  */
 export function toPrismaSelect(sel: Selection): Record<string, unknown> {
   const out: Record<string, unknown> = { id: true };
   const scalars = sel.restricted ? sel.fields : allowedFieldNames(sel.entity);
   for (const name of scalars) out[name] = true;
-  if (sel.entity.docNumberField) out[sel.entity.docNumberField] = true;
-  Object.assign(out, sel.entity.mask?.select);
+  if (!sel.restricted) {
+    if (sel.entity.docNumberField) out[sel.entity.docNumberField] = true;
+    Object.assign(out, sel.entity.mask?.select);
+  }
   for (const [name, child] of sel.children) out[name] = { select: toPrismaSelect(child) };
   return out;
 }
@@ -247,7 +262,10 @@ export function toPrismaSelect(sel: Selection): Record<string, unknown> {
 function project(sel: Selection, row: Record<string, unknown>): Record<string, unknown> {
   const { entity } = sel;
   const hidden = entity.mask && !entity.mask.isVisible(row) ? entity.mask.fields : [];
-  const names = new Set(["id", ...sel.fields, ...(entity.docNumberField ? [entity.docNumberField] : [])]);
+  const names = new Set(["id", ...sel.fields]);
+  if (entity.docNumberField && (!sel.restricted || sel.fields.includes(entity.docNumberField))) {
+    names.add(entity.docNumberField);
+  }
   const out: Record<string, unknown> = {};
   for (const name of names) out[name] = hidden.includes(name) ? null : scrubValue(row[name]);
   for (const [name, child] of sel.children) {

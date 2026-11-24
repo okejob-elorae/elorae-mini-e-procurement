@@ -72,6 +72,14 @@ describe("parseWhere", () => {
     });
   });
 
+  it("YYYY-MM-DD date filters use WIB start/end (lte is inclusive end-of-day)", () => {
+    const w = parseWhere(entity, {
+      etaDate: { gte: "2026-11-01", lte: "2026-11-24" },
+    }) as { etaDate: { gte: Date; lte: Date } };
+    expect(w.etaDate.gte.toISOString()).toBe("2026-10-31T17:00:00.000Z"); // 00:00 WIB
+    expect(w.etaDate.lte.toISOString()).toBe("2026-11-24T16:59:59.999Z"); // 23:59:59.999 WIB
+  });
+
   it("rejects unknown fields with a list of valid ones", () => {
     expect(() => parseWhere(entity, { passwordHash: "x" })).toThrow(ViraInputError);
     expect(() => parseWhere(entity, { notAField: 1 })).toThrow(/Unknown field "notAField"/);
