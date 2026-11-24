@@ -91,9 +91,19 @@ function coerceValue(type: ViraFieldType, value: unknown, dateBound: "start" | "
   return value;
 }
 
+function isDateOnlyString(v: unknown): v is string {
+  return typeof v === "string" && DATE_ONLY.test(v.trim());
+}
+
+/** Whole WIB calendar day — bare/equals date-only must not match a single midnight instant. */
+function dateOnlyDayRange(value: string): { gte: Date; lte: Date } {
+  return { gte: coerceDate(value, "start"), lte: coerceDate(value, "end") };
+}
+
 function parseFieldFilter(entity: ViraEntityDef, field: string, raw: unknown): unknown {
   const meta = assertKnownField(entity, field);
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    if (meta.type === "date" && isDateOnlyString(raw)) return dateOnlyDayRange(raw);
     return coerceValue(meta.type, raw);
   }
   const obj = raw as Record<string, unknown>;
@@ -103,14 +113,24 @@ function parseFieldFilter(entity: ViraEntityDef, field: string, raw: unknown): u
       throw new ViraInputError(`Unsupported operator "${op}" on field "${field}".`);
     }
     const dateBound: "start" | "end" = op === "lt" || op === "lte" ? "end" : "start";
+    if (op === "equals" && meta.type === "date" && isDateOnlyString(val)) {
+      Object.assign(out, dateOnlyDayRange(val));
+      continue;
+    }
     if (op === "in") {
       if (!Array.isArray(val)) throw new ViraInputError(`"${field}.in" must be an array.`);
+      if (meta.type === "date" && val.every(isDateOnlyString)) {
+        out.OR = val.map((d) => dateOnlyDayRange(d));
+        continue;
+      }
       out.in = val.map((v) => coerceValue(meta.type, v, dateBound));
       continue;
     }
     if (op === "not") {
       if (val !== null && typeof val === "object" && !Array.isArray(val)) {
         out.not = parseFieldFilter(entity, field, val);
+      } else if (meta.type === "date" && isDateOnlyString(val)) {
+        out.not = dateOnlyDayRange(val);
       } else {
         out.not = coerceValue(meta.type, val, dateBound);
       }

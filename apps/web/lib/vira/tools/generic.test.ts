@@ -80,6 +80,21 @@ describe("parseWhere", () => {
     expect(w.etaDate.lte.toISOString()).toBe("2026-11-24T16:59:59.999Z"); // 23:59:59.999 WIB
   });
 
+  it("date-only equals/in expand to a whole WIB day range", () => {
+    const eq = parseWhere(entity, { createdAt: "2026-11-24" }) as {
+      createdAt: { gte: Date; lte: Date };
+    };
+    expect(eq.createdAt).toEqual({
+      gte: new Date("2026-11-23T17:00:00.000Z"),
+      lte: new Date("2026-11-24T16:59:59.999Z"),
+    });
+    const inn = parseWhere(entity, { createdAt: { in: ["2026-11-01", "2026-11-02"] } }) as {
+      createdAt: { OR: { gte: Date; lte: Date }[] };
+    };
+    expect(inn.createdAt.OR).toHaveLength(2);
+    expect(inn.createdAt.OR[0].gte.toISOString()).toBe("2026-10-31T17:00:00.000Z");
+  });
+
   it("rejects unknown fields with a list of valid ones", () => {
     expect(() => parseWhere(entity, { passwordHash: "x" })).toThrow(ViraInputError);
     expect(() => parseWhere(entity, { notAField: 1 })).toThrow(/Unknown field "notAField"/);

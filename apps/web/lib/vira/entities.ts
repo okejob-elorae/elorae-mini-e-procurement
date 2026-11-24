@@ -675,7 +675,7 @@ export const VIRA_ENTITIES: readonly ViraEntityDef[] = [
       f("totalAmount", "number"),
       f("createdAt", "date"),
     ],
-    relations: [{ name: "supplier", entity: "supplier" }],
+    relations: [{ name: "supplier", entity: "supplier", parentShows: ["code", "name"] }],
     parity: { kind: "route", path: "/backoffice/inventory" },
   },
   ...VIRA_ENTITIES_EXTRA,

@@ -17,7 +17,6 @@ import {
 import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";
 import { approveFieldSalesOrder, rejectFieldSalesOrder } from "@/lib/field-sales/writer";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { bolehMembacaPiutang } from "@/lib/receivables/izin";
 import { masukLewatJatuhTempo, nilaiLewatJatuhTempo } from "@/lib/receivables/jatuh-tempo";
 import { daftarPiutang } from "@/lib/receivables/queries";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
@@ -461,12 +460,12 @@ const creditTool = defineTool({
     });
     if (!row) throw new ViraNotFoundError("Order not found");
 
-    // Same visibility as the order page: the limit preview is for approvers of a pending order;
-    // the store's bills show on a PUTUS order, or to anyone who may read receivables.
+    // Same visibility as the order page: limit preview for approvers of a pending order;
+    // bills panel is PUTUS-only (`muatPanelKredit`).
     const maySeeLimit =
       order.status === "PENDING_APPROVAL" &&
       hasPermission(ctx.actor.permissions, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE);
-    const maySeeBills = order.orderType === "PUTUS" || bolehMembacaPiutang(ctx.actor.permissions);
+    const maySeeBills = order.orderType === "PUTUS";
 
     let credit: Awaited<ReturnType<typeof creditCheckForApprove>> = null;
     let limitKnown = maySeeLimit;
@@ -499,7 +498,8 @@ const creditTool = defineTool({
     const unknown: string[] = [];
     // Limit preview only applies while pending (approve card). Otherwise N/A — not "unknown".
     if (order.status === "PENDING_APPROVAL" && overLimit === null) unknown.push("over_credit_limit");
-    if (hasOverdue === null) unknown.push("overdue_receivables");
+    // Bills are only in-scope for PUTUS (order page); otherwise N/A, not unknown.
+    if (maySeeBills && hasOverdue === null) unknown.push("overdue_receivables");
     const reasons: string[] = [];
     if (overLimit) reasons.push("over_credit_limit");
     if (kreditDitahan) reasons.push("kredit_ditahan");
