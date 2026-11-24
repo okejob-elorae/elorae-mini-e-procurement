@@ -117,6 +117,7 @@ export {
   PartialConsumeError,
   releaseFieldSalesOrder,
   reserveKonsiFieldSalesOrder,
+  previewKonsiShortLines,
   resolveReservedInventory,
   transferKonsiStock,
   transferKonsiFieldSalesOrder,

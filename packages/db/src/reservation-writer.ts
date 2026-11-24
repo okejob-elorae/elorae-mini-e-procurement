@@ -649,6 +649,35 @@ export async function reserveKonsiFieldSalesOrder(
   return hasTx(client) ? client.$transaction(run) : run(client);
 }
 
+/**
+ * Read-only twin of `reserveKonsiFieldSalesOrder`'s stock check, for previews (the VIRA approve
+ * card): the same row lookup and the same `qtyOnHand - reservedQty >= qty` rule, line by line,
+ * skipping lines that already hold a reservation. It writes nothing and takes no lock, so it is
+ * advisory only — the writer's atomic guard still decides at approval time. A line with no
+ * inventory row counts as short with `available: 0` (the writer would throw
+ * `InventoryValueMissingError` there).
+ */
+export async function previewKonsiShortLines(
+  client: AnyClient,
+  lines: FieldSalesReservationLine[],
+): Promise<OversellAlert[]> {
+  const db = client as Prisma.TransactionClient;
+  const shortLines: OversellAlert[] = [];
+  for (const line of lines) {
+    const existing = await db.stockReservation.findUnique({
+      where: { fieldSalesLineId: line.fieldSalesLineId },
+      select: { id: true },
+    });
+    if (existing) continue;
+    const inv = await findReservationInventory(db, line.itemId, line.variantSku);
+    const available = inv ? Number(inv.qtyOnHand) - Number(inv.reservedQty) : 0;
+    if (!inv || available < line.qty) {
+      shortLines.push({ itemId: line.itemId, variantSku: line.variantSku, available });
+    }
+  }
+  return shortLines;
+}
+
 /*
  * Toko konsinyasi = gudang lain milik kita (keputusan pemilik): barang keluar dari stok gudang
  * utama saat DIKIRIM ke toko itu, menjadi stok toko (buku toko / titipan), dan kembali ke gudang

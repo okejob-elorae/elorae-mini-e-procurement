@@ -15,6 +15,9 @@ const m = vi.hoisted(() => ({
   lewatBatasNilai: vi.fn(),
   prismaOrderFind: vi.fn(),
   prismaStoreFind: vi.fn(),
+  prismaLineFindMany: vi.fn(),
+  prismaItemFindMany: vi.fn(),
+  previewKonsiShortLines: vi.fn(),
 }));
 vi.mock("@/lib/field-sales/queries", () => ({
   listFieldSalesOrders: m.listFieldSalesOrders,
@@ -41,7 +44,10 @@ vi.mock("@elorae/db", async (importOriginal) => {
     prisma: {
       fieldSalesOrder: { findUnique: (...a: unknown[]) => m.prismaOrderFind(...a) },
       store: { findUnique: (...a: unknown[]) => m.prismaStoreFind(...a) },
+      fieldSalesOrderLine: { findMany: (...a: unknown[]) => m.prismaLineFindMany(...a) },
+      item: { findMany: (...a: unknown[]) => m.prismaItemFindMany(...a) },
     },
+    previewKonsiShortLines: (...a: unknown[]) => m.previewKonsiShortLines(...a),
   };
 });
 
@@ -343,6 +349,46 @@ describe("approve_field_sales_order / reject_field_sales_order", () => {
       status: "PENDING_APPROVAL",
       orderNo: "SO-1",
     });
+    m.prismaLineFindMany.mockReset().mockResolvedValue([
+      { id: "l1", itemId: "cm-item-1", variantSku: "", qty: 3 },
+    ]);
+    m.prismaItemFindMany.mockReset().mockResolvedValue([{ id: "cm-item-1", sku: "OPE-K-01" }]);
+    m.previewKonsiShortLines.mockReset().mockResolvedValue([]);
+  });
+
+  it("KONSI with short main stock → prepare refuses, naming the item SKU (not its id)", async () => {
+    m.getFieldSalesOrderById.mockResolvedValue({
+      ...detailRow(), status: "PENDING_APPROVAL", orderNo: "KONSI/2026/0401", orderType: "KONSI", total: 0,
+    });
+    m.previewKonsiShortLines.mockResolvedValueOnce([{ itemId: "cm-item-1", variantSku: "", available: 1 }]);
+    const err = await approve.prepare(approveSchema.parse({ order: "KONSI/2026/0401" }), writeCtx).catch((e) => e);
+    expect(err).toBeInstanceOf(ViraInputError);
+    expect(err.message).toBe("Stok di gudang utama kurang: OPE-K-01 (tersedia 1).");
+    expect(err.message).not.toContain("cm-item-1");
+    expect(m.previewKonsiShortLines).toHaveBeenCalledWith(expect.anything(), [
+      { fieldSalesLineId: "l1", itemId: "cm-item-1", variantSku: "", qty: 3 },
+    ]);
+  });
+
+  it("KONSI with enough stock prepares; PUTUS never runs the konsi stock check", async () => {
+    m.getFieldSalesOrderById.mockResolvedValue({
+      ...detailRow(), status: "PENDING_APPROVAL", orderNo: "KONSI/2026/0401", orderType: "KONSI", total: 0,
+    });
+    await expect(approve.prepare(approveSchema.parse({ order: "KONSI/2026/0401" }), writeCtx)).resolves.toBeTruthy();
+    expect(m.previewKonsiShortLines).toHaveBeenCalledTimes(1);
+
+    m.previewKonsiShortLines.mockClear();
+    m.getFieldSalesOrderById.mockResolvedValue({ ...detailRow(), status: "PENDING_APPROVAL", orderNo: "SO-1" });
+    await approve.prepare(approveSchema.parse({ order: "SO-1" }), writeCtx);
+    expect(m.previewKonsiShortLines).not.toHaveBeenCalled();
+  });
+
+  it("execute INSUFFICIENT_STOCK names the item SKU when the line has no variant SKU", async () => {
+    m.approveFieldSalesOrder.mockRejectedValueOnce(
+      new InsufficientStockError([{ itemId: "cm-item-1", variantSku: "", available: 0 }]),
+    );
+    const res = await approve.execute({ orderId: "o1" }, writeCtx);
+    expect(res).toMatchObject({ ok: false, code: "INSUFFICIENT_STOCK", message: "Stok kurang: OPE-K-01 (tersedia 0)" });
   });
 
   it("gates, destructive flags, sample inputs, and writeAction parity cases", () => {
