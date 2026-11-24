@@ -56,9 +56,9 @@ openssl rand -base64 48
 
 **Deploy:** the `vira:use` permission row comes from `seed-vira-2026-11-16-permissions.sql`. The deploy's `migrate` job runs each `packages/db/prisma/seed-*.sql` **once**, recorded in `_seed_runs`, so nothing needs to be run by hand on prod. The file is idempotent and links no role. For a database outside the deploy flow, run it with the `mariadb` client as its header says.
 
-## 4. Read tool list (phase 1 + two phase-2 reads)
+## 4. Read tool list (phase 1 + phase-2 reads + generic layer)
 
-17 read tools (15 from phase 1 plus `list_leave_requests` and `list_spg_buyer_returns`). "Gate" is what the tool checks; it is the same check the page or action applies (proved by `parity.spec.ts`). Every list tool takes `limit` (default 20, **max 50**) and `offset`, and returns `{ items, total, offset, limit, hasMore }`. Two tools add one key to that shape: `list_receivables` adds `summary`, and `get_store_stock` (paged over its stock rows) adds `store`. Every record carries a `url` into the back office. Write tools are in section 8.
+21 read tools (15 from phase 1, plus `list_leave_requests` and `list_spg_buyer_returns`, plus `get_field_sales_order_credit`, plus `list_entities` / `query_entity` / `aggregate_entity`). "Gate" is what the tool checks; it is the same check the page or action applies (proved by `parity.spec.ts`). Every list tool takes `limit` (default 20, **max 50**) and `offset`, and returns `{ items, total, offset, limit, hasMore }`. Two tools add one key to that shape: `list_receivables` adds `summary`, and `get_store_stock` (paged over its stock rows) adds `store`. Every record carries a `url` into the back office. Write tools are in section 8.
 
 | Tool | Gate | Source (`lib/`) | Notes on what is returned |
 |---|---|---|---|
@@ -71,6 +71,7 @@ openssl rand -base64 48
 | `get_marketplace_order` | `sales_orders:view` | `sales-orders/queries` `getSalesOrderById` | Same stripping; city and province are returned. |
 | `list_field_sales_orders` | `field_sales_orders:view` | `field-sales/queries` `listFieldSalesOrders` | **`total` is `null` for a KONSI order that is not APPROVED**, as the list page shows "—". No store or salesman ids. |
 | `get_field_sales_order` | `field_sales_orders:view` | `field-sales/queries` `getFieldSalesOrderById` | **For a KONSI order not APPROVED, `total` and each line's `price` and `subtotal` are `null`**, as the detail page's `showMoney`. Deliveries are id, doc no. and date only (no photo, GPS, signature or receiver). |
+| `get_field_sales_order_credit` | `field_sales_orders:view` | same helpers as approve credit (`creditCheckForApprove` → `computeStoreCreditExposure`, `batasKreditBerlaku`, `lewatBatasNilai`) + overdue `Receivable` rows | `bermasalah` = overLimit OR `kreditDitahan` OR overdue receivables; `reasons` lists which. Limit, exposure and `overLimit` are for approvers of a pending order, bills for a PUTUS order or a receivables reader, as on the order page. Anything hidden or unreadable is `null` and named in `unknown`; `bermasalah` is then `"unknown"` unless another reason already makes it `true`. |
 | `list_purchase_orders` | any of `purchase_orders:view`, `supplier_payments:view`, `inventory:manage`, `work_orders:create`, `work_orders:manage` (copy of the PO action's list) | `purchase-orders/queries` `listPOs` | Includes computed `isOverdue`. |
 | `list_work_orders` | any of `work_orders:view`, `work_orders:create`, `work_orders:manage`, `vendor_returns:view` (copy of the WO action's list) | `work-orders/queries` `listWorkOrders` | |
 | `list_receivables` | `bolehMembacaPiutang` | `receivables/queries` `daftarPiutang`, `saringPiutang`, `ringkasPiutang` (the `/backoffice/piutang` page) | The summary is computed on the **filtered** rows, so with filters it differs from the page header. |
@@ -80,7 +81,29 @@ openssl rand -base64 48
 | `list_leave_requests` | `bolehMelihatIzin` | `salesman/izin` / `izin-queries` | Office leave (izin) list; no salary fields. |
 | `list_spg_buyer_returns` | `spg_sales:view` | `spg/retur-pembeli-queries` | SPG buyer-return list for approve/reject. |
 
-The registry is `lib/vira/tools/index.ts`; `app/api/vira/mcp/route.spec.ts` and `lib/vira/tools/index.test.ts` pin the 17 read names and the 9 write names in registry order for a `"*"` user.
+The registry is `lib/vira/tools/index.ts`; `app/api/vira/mcp/route.spec.ts` and `lib/vira/tools/index.test.ts` pin the 21 read names and the 9 write names in registry order for a `"*"` user.
+
+## 4a. Generic read layer (policy-driven)
+
+Instead of one hand-written tool per page, three tools read through `lib/vira/entities.ts`:
+
+| Tool | Gate | Behaviour |
+|---|---|---|
+| `list_entities` | any valid token | Without input: names and descriptions of the entities this actor may read (per-entity gate). With `entity`: its fields, filterable fields and relations (max depth 2). |
+| `query_entity` | any valid token; **entity gate enforced in-handler** | Validated `where` (equals/in/not/contains/startsWith/gt/gte/lt/lte, AND/OR/NOT, max depth 3) on allowed fields only; unknown/denied field → `INVALID_INPUT` naming the field and listing valid ones. Returns `{ items, total, offset, limit, hasMore }` with `url` on each row. Decimals → number; dates → ISO with `+07:00` (WIB). |
+| `aggregate_entity` | same | `groupBy` + count/sum/avg/min/max on numeric fields only; max 50 groups, `hasMore` when there are more. Without `groupBy` it returns one total row. |
+
+**Policy file** `lib/vira/entities.ts`: one entry per browsable model (Prisma delegate, ID+EN description, same gate as the back-office page, URL builder, allowed relations ≤ depth 2, default sort, doc-number field). Global field denylist (password/hash/token/secret/key, salary/gaji/upah, NIK/NPWP/KTP, bank*, phone, email, address, GPS/lat/lng, photo/signature/r2*) wins over every select/include/where. Optional `rowScope` AND-filters rows the way the page would; entities that cannot express that safely are listed in `VIRA_ENTITIES_EXCLUDED` and omitted.
+
+Longer entries are in `entities.ts`; the rest are in `entities-extra.ts` in a compact form. To add one, check the office page first: its gate, any per-user filter, and any value it hides. Then add one `ent(...)` line. `parity.spec.ts` checks the gate, and `generic-eval.spec.ts` runs a real query per entity, so a wrong field or relation name fails. Parity for a `pageCode` entry only proves that the page names the code, so read the page. Cost fields stay out (`inventory_value` and fixed assets excepted), and blind-count figures stay out: store-return claims and warehouse-opname quantities. `person` exposes id and name only.
+
+**Included relations** need the related entity's own gate. Without it, only the relation's `parentShows` fields are readable (what the parent page shows, such as a store's code and name); with no `parentShows` the include is refused. An entity with `rowScope` cannot be included.
+
+**Masks** (`mask`) hide fields on some rows: money of a KONSI order that is not APPROVED, and of its lines (`showMoney`). Hidden values come back as `null`. Filtering, sorting or aggregating on a masked field leaves the hidden rows out and adds a `note`.
+
+Entity gates are parity-tested in `parity.spec.ts` ("VIRA entity policy parity"). The three generic tools themselves have no UI twin (like `whoami`).
+
+Prefer a specialised tool when it already answers the question; use the generic layer for ad-hoc filters, counts, and cross-entity reads the specialised set does not cover.
 
 ## 5. How to add a tool
 

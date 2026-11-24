@@ -323,12 +323,15 @@ describe("get_field_sales_order", () => {
     expect(putus.total).toBe(250000);
   });
 
-  it("both tools are gated on field_sales_orders:view with a route parity case each", () => {
+  it("list/get/credit tools are gated on field_sales_orders:view with a route parity case each", () => {
     expect(list.gate).toEqual({ kind: "code", code: "field_sales_orders:view" });
     expect(detail.gate).toEqual({ kind: "code", code: "field_sales_orders:view" });
+    const credit = tools.find((t) => t.name === "get_field_sales_order_credit")!;
+    expect(credit.gate).toEqual({ kind: "code", code: "field_sales_orders:view" });
     expect(parityCases.filter((c) => c.kind === "route").map((c) => c.tool)).toEqual([
       "list_field_sales_orders",
       "get_field_sales_order",
+      "get_field_sales_order_credit",
     ]);
   });
 });

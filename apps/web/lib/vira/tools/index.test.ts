@@ -33,7 +33,7 @@ describe("VIRA write-tool registry", () => {
     ]);
   });
 
-  it("pins VIRA_TOOLS in registry (MODULES) order — 17 reads", () => {
+  it("pins VIRA_TOOLS in registry (MODULES) order — 21 reads", () => {
     expect(VIRA_TOOLS.map((t) => t.name)).toEqual([
       "whoami",
       "search_items",
@@ -44,6 +44,7 @@ describe("VIRA write-tool registry", () => {
       "get_marketplace_order",
       "list_field_sales_orders",
       "get_field_sales_order",
+      "get_field_sales_order_credit",
       "list_purchase_orders",
       "list_work_orders",
       "list_receivables",
@@ -52,6 +53,9 @@ describe("VIRA write-tool registry", () => {
       "list_marketplace_settlements",
       "list_leave_requests",
       "list_spg_buyer_returns",
+      "list_entities",
+      "query_entity",
+      "aggregate_entity",
     ]);
   });
 

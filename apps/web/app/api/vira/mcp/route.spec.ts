@@ -234,7 +234,7 @@ d("POST /api/vira/mcp (test bed only)", () => {
     ]);
   });
 
-  it("final tool count: a system-role user (\"*\") lists 17 reads then 9 writes in registry order", async () => {
+  it("final tool count: a system-role user (\"*\") lists 21 reads then 9 writes in registry order", async () => {
     const list = await kirim(tokenC, rpc("tools/list"));
     const nama = (list.result?.tools as Array<{ name: string }>).map((t) => t.name);
     expect(nama).toEqual([
@@ -248,6 +248,7 @@ d("POST /api/vira/mcp (test bed only)", () => {
       "get_marketplace_order",
       "list_field_sales_orders",
       "get_field_sales_order",
+      "get_field_sales_order_credit",
       "list_purchase_orders",
       "list_work_orders",
       "list_receivables",
@@ -256,6 +257,9 @@ d("POST /api/vira/mcp (test bed only)", () => {
       "list_marketplace_settlements",
       "list_leave_requests",
       "list_spg_buyer_returns",
+      "list_entities",
+      "query_entity",
+      "aggregate_entity",
       // VIRA_WRITE_TOOLS (MODULES order)
       "approve_field_sales_order",
       "reject_field_sales_order",

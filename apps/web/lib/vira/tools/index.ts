@@ -14,6 +14,7 @@ import * as taxInvoices from "./tax-invoices";
 import * as settlements from "./settlements";
 import * as izin from "./izin";
 import * as returSpg from "./retur-spg";
+import * as generic from "./generic";
 
 type ViraToolModule = {
   tools: ViraTool[];
@@ -21,6 +22,7 @@ type ViraToolModule = {
   writeTools?: ViraWriteTool[];
 };
 
+/** Callers: server.ts VIRA_TOOLS. Adds generic read layer (list/query/aggregate_entity). */
 const MODULES: ViraToolModule[] = [
   whoami,
   items,
@@ -37,6 +39,7 @@ const MODULES: ViraToolModule[] = [
   settlements,
   izin,
   returSpg,
+  generic,
 ];
 
 /** Throws if two tools share a name. Run at import time on read ∪ write. */
