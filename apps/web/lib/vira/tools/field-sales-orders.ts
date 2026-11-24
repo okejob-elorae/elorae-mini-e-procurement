@@ -497,7 +497,8 @@ const creditTool = defineTool({
     const kreditDitahan = row.kreditDitahan;
     const hasOverdue = !billsKnown || overdueRows === null ? null : overdueRows.length > 0;
     const unknown: string[] = [];
-    if (overLimit === null) unknown.push("over_credit_limit");
+    // Limit preview only applies while pending (approve card). Otherwise N/A — not "unknown".
+    if (order.status === "PENDING_APPROVAL" && overLimit === null) unknown.push("over_credit_limit");
     if (hasOverdue === null) unknown.push("overdue_receivables");
     const reasons: string[] = [];
     if (overLimit) reasons.push("over_credit_limit");
