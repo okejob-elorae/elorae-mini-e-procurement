@@ -152,10 +152,16 @@ export function parseWhere(
   return out;
 }
 
-type Selection = {
+export type Selection = {
   entity: ViraEntityDef;
   /** Scalars to return (id and the document number are always added). */
   fields: string[];
+  /**
+   * True when the actor lacks this entity's gate and may only see `parentShows`.
+   * Prisma must not widen past `fields` then — otherwise hidden allowlist
+   * scalars (e.g. store creditLimit) land in the row before `project`.
+   */
+  restricted: boolean;
   children: Map<string, Selection>;
 };
 
@@ -182,7 +188,8 @@ function parseSelection(
     }
   }
   const children = new Map<string, Selection>();
-  if (include == null) return { entity, fields: [...names], children };
+  const restricted = Boolean(only);
+  if (include == null) return { entity, fields: [...names], restricted, children };
   if (typeof include !== "object" || Array.isArray(include)) {
     throw new ViraInputError("`include` must be an object of relation names.");
   }
@@ -219,13 +226,19 @@ function parseSelection(
       ),
     );
   }
-  return { entity, fields: [...names], children };
+  return { entity, fields: [...names], restricted, children };
 }
 
-/** Selects every allowed scalar: the url builder and the mask need fields the caller may not ask for. */
-function toPrismaSelect(sel: Selection): Record<string, unknown> {
+/**
+ * Builds the Prisma `select`. Unrestricted: full allowlist (urlPath / masks may
+ * read fields the caller did not ask for; `project` still returns only
+ * `sel.fields`). Restricted (`parentShows`): only `sel.fields` — never widen.
+ */
+export function toPrismaSelect(sel: Selection): Record<string, unknown> {
   const out: Record<string, unknown> = { id: true };
-  for (const name of allowedFieldNames(sel.entity)) out[name] = true;
+  const scalars = sel.restricted ? sel.fields : allowedFieldNames(sel.entity);
+  for (const name of scalars) out[name] = true;
+  if (sel.entity.docNumberField) out[sel.entity.docNumberField] = true;
   Object.assign(out, sel.entity.mask?.select);
   for (const [name, child] of sel.children) out[name] = { select: toPrismaSelect(child) };
   return out;

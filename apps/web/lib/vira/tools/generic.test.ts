@@ -12,7 +12,8 @@ import {
 } from "../entities";
 import { ViraInputError } from "../errors";
 import { tools as genericTools } from "./generic";
-import { aggregateEntity, parseWhere, queryEntity, toWibIso } from "../generic-query";
+import { getEntity } from "../entities";
+import { aggregateEntity, parseWhere, queryEntity, toPrismaSelect, toWibIso } from "../generic-query";
 
 describe("VIRA field denylist", () => {
   it("denies password/hash/token/secret/key and PII names", () => {
@@ -163,9 +164,34 @@ describe("entity access on included relations", () => {
       for (const r of e.relations) {
         const anak = VIRA_ENTITIES.find((x) => x.name === r.entity);
         expect(anak, `${e.name}.${r.name}`).toBeDefined();
-        const nama = anak!.fields.map((x) => x.name);
+        const nama = anak!.fields.map((f) => f.name);
         for (const p of r.parentShows ?? []) expect(nama, `${e.name}.${r.name}`).toContain(p);
       }
     }
+  });
+
+  it("restricted parentShows select stays on sel.fields — never the full allowlist", () => {
+    const store = getEntity("store")!;
+    const select = toPrismaSelect({
+      entity: store,
+      fields: ["code", "name"],
+      restricted: true,
+      children: new Map(),
+    });
+    expect(select).toEqual({ id: true, code: true, name: true });
+    expect(select).not.toHaveProperty("creditLimit");
+    expect(select).not.toHaveProperty("paymentTempo");
+    expect(select).not.toHaveProperty("maxOpenInvoices");
+  });
+
+  it("unrestricted select keeps the allowlist so urlPath fields stay loaded", () => {
+    const stock = getEntity("inventory_value")!;
+    const select = toPrismaSelect({
+      entity: stock,
+      fields: ["qtyOnHand"],
+      restricted: false,
+      children: new Map(),
+    });
+    expect(select).toMatchObject({ id: true, qtyOnHand: true, itemId: true });
   });
 });

@@ -436,6 +436,8 @@ export const VIRA_ENTITIES: readonly ViraEntityDef[] = [
     mask: {
       fields: ["subtotal", "total"],
       visibleWhere: FSO_MONEY_VISIBLE,
+      // isVisible reads these; toPrismaSelect no longer loads the full allowlist.
+      select: { orderType: true, status: true },
       isVisible: fsoShowsMoney,
     },
     parity: { kind: "route", path: "/backoffice/field-sales-orders" },

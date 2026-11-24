@@ -16,9 +16,10 @@ import {
 } from "@/lib/field-sales/errors";
 import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";
 import { approveFieldSalesOrder, rejectFieldSalesOrder } from "@/lib/field-sales/writer";
-import { batasHariIniWib } from "@/lib/dashboard/hari-wib";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { bolehMembacaPiutang } from "@/lib/receivables/izin";
+import { masukLewatJatuhTempo, nilaiLewatJatuhTempo } from "@/lib/receivables/jatuh-tempo";
+import { daftarPiutang } from "@/lib/receivables/queries";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { batasKreditBerlaku, lewatBatasNilai } from "@/lib/salesman/kredit";
 import { bacaAturanKreditDb } from "@/lib/salesman/tagihan-toko";
@@ -477,21 +478,23 @@ const creditTool = defineTool({
       }
     }
 
-    const awalHari = batasHariIniWib(new Date()).awal;
-    const overdueRows = !maySeeBills ? null : await prisma.receivable.findMany({
-      where: {
-        storeId: row.storeId,
-        status: { in: ["OUTSTANDING", "PARTIAL"] },
-        dueDate: { lt: awalHari },
-      },
-      select: { outstandingAmount: true, dueDate: true },
-      orderBy: { dueDate: "asc" },
-    });
+    // Same "lewat jatuh tempo" as list_receivables / piutang (P46): not a raw
+    // dueDate < today. Klaim and in-tolerance bills stay out; tertahan free share counts.
+    let overdueRows: Awaited<ReturnType<typeof daftarPiutang>> | null = null;
+    let billsKnown = maySeeBills;
+    if (maySeeBills) {
+      try {
+        overdueRows = (await daftarPiutang({ storeId: row.storeId })).filter(masukLewatJatuhTempo);
+      } catch (error) {
+        billsKnown = false;
+        console.error("[vira] field-sales-order overdue bills failed", { orderId: order.id, error });
+      }
+    }
     const orderTotal = showMoney(order) ? Number(order.total) : null;
     // No credit row means the store has no limit to exceed.
     const overLimit = limitKnown ? (credit?.overLimit ?? false) : null;
     const kreditDitahan = row.kreditDitahan;
-    const hasOverdue = overdueRows === null ? null : overdueRows.length > 0;
+    const hasOverdue = !billsKnown || overdueRows === null ? null : overdueRows.length > 0;
     const unknown: string[] = [];
     if (overLimit === null) unknown.push("over_credit_limit");
     if (hasOverdue === null) unknown.push("overdue_receivables");
@@ -518,8 +521,10 @@ const creditTool = defineTool({
       kreditDitahan,
       overdueReceivables: overdueRows && {
         count: overdueRows.length,
-        total: overdueRows.reduce((s, r) => s + Number(r.outstandingAmount), 0),
-        oldestDueDate: overdueRows[0]?.dueDate?.toISOString() ?? null,
+        total: overdueRows.reduce((s, r) => s + (nilaiLewatJatuhTempo(r) ?? 0), 0),
+        // BarisPiutang.dueDate is already an ISO string.
+        oldestDueDate:
+          [...overdueRows].sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]?.dueDate ?? null,
       },
       // A word, not null: the model read null as "no problem".
       bermasalah: reasons.length > 0 ? true : unknown.length > 0 ? "unknown" : false,
