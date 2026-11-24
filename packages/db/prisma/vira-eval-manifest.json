@@ -1,0 +1,410 @@
+{
+  "anchor": "2026-11-20T00:00:00.000+07:00",
+  "passwordEnv": "VIRA_EVAL_PASSWORD",
+  "users": {
+    "admin": "eval-admin@vira-eval.local",
+    "staff": "eval-staff@vira-eval.local",
+    "salesMgr": "eval-sales-mgr@vira-eval.local"
+  },
+  "limitations": [
+    "Schema has one warehouse location type (MAIN / Gudang Utama), plus VAN and STORE — not multiple named warehouses. Seed puts stock on MAIN + VAN + one KONSI store.",
+    "PO 'completed' is status CLOSED (no COMPLETED enum). PO 'overdue' is SUBMITTED/PARTIAL with etaDate before today WIB, not a status.",
+    "TaxInvoice requires deliveryId or sellThroughId (DB CHECK) — seeded via APPROVED putus deliveries.",
+    "Receivable source enum is DELIVERY|IMPORT|MANUAL only; cycle bills use MANUAL/DELIVERY + consignmentCycleId.",
+    "Most entities use raw Prisma inserts (no apps/web writers from packages/db). Stock uses moveMainStock/moveStoreStock/moveVanStock."
+  ],
+  "scenarios": [
+    {
+      "id": "fso-pending-clean",
+      "loginAs": "eval-sales-mgr@vira-eval.local",
+      "question": "Ada berapa pesanan field sales yang menunggu persetujuan dan tidak bermasalah kredit?",
+      "expectedTools": [
+        "list_field_sales_orders"
+      ],
+      "facts": {
+        "pendingCleanOrderNos": [
+          "EVAL-SO-KONSI-001",
+          "EVAL-SO-KONSI-002",
+          "EVAL-SO-PUTUS-001"
+        ],
+        "pendingCleanKonsiCount": 2,
+        "pendingCleanPutusCount": 1,
+        "cleanPutusTotal": 750000,
+        "bermasalah": [
+          {
+            "orderNo": "EVAL-SO-PUTUS-OVER",
+            "why": "Toko lewat batas kredit (creditHoldAtCreate + outstanding piutang besar)"
+          },
+          {
+            "orderNo": "EVAL-SO-PUTUS-HOLD",
+            "why": "kreditDitahan=true (tahan kredit / overdue bills)"
+          },
+          {
+            "orderNo": "EVAL-SO-PUTUS-ODUE",
+            "why": "toko punya piutang jatuh tempo"
+          }
+        ]
+      }
+    },
+    {
+      "id": "fso-over-credit-limit",
+      "loginAs": "eval-sales-mgr@vira-eval.local",
+      "question": "Pesanan mana yang toko melebihi batas kredit, dan berapa piutang outstanding toko itu?",
+      "expectedTools": [
+        "get_field_sales_order_credit",
+        "list_receivables"
+      ],
+      "facts": {
+        "orderNo": "EVAL-SO-PUTUS-OVER",
+        "storeCode": "EVAL-ST-OVER",
+        "storeName": "EVAL Toko Lewat Batas Kredit",
+        "creditLimit": 1000000,
+        "receivableInvoiceNo": "EVAL-INV-OVER-LIMIT",
+        "receivableOutstanding": 5000000,
+        "orderTotal": 825000,
+        "creditHoldAtCreate": true,
+        "bermasalah": true,
+        "why": "outstanding piutang + pesanan melebihi creditLimit toko"
+      }
+    },
+    {
+      "id": "fso-credit-hold",
+      "loginAs": "eval-sales-mgr@vira-eval.local",
+      "question": "Pesanan mana yang ditahan karena masalah kredit / tagihan jatuh tempo?",
+      "expectedTools": [
+        "get_field_sales_order_credit"
+      ],
+      "facts": {
+        "orderNo": "EVAL-SO-PUTUS-HOLD",
+        "storeCode": "EVAL-ST-HOLD",
+        "kreditDitahan": true,
+        "overdueInvoiceNo": "EVAL-INV-HOLD-ODUE",
+        "overdueAmount": 2500000,
+        "currentInvoiceNo": "EVAL-INV-HOLD-CUR",
+        "currentAmount": 400000,
+        "bermasalah": true,
+        "why": "kreditDitahan — VIRA approve harus menolak dan arahkan ke UI"
+      }
+    },
+    {
+      "id": "fso-overdue-within-limit",
+      "loginAs": "eval-sales-mgr@vira-eval.local",
+      "question": "Toko dengan piutang jatuh tempo tapi masih dalam batas kredit — nomor pesanannya apa? Apakah bermasalah?",
+      "expectedTools": [
+        "get_field_sales_order_credit",
+        "list_receivables"
+      ],
+      "facts": {
+        "orderNo": "EVAL-SO-PUTUS-ODUE",
+        "storeCode": "EVAL-ST-ODUE",
+        "creditLimit": 5000000,
+        "overdueInvoiceNo": "EVAL-INV-ODUE-OK",
+        "overdueAmount": 300000,
+        "currentInvoiceNo": "EVAL-INV-ODUE-CUR",
+        "currentAmount": 150000,
+        "orderTotal": 225000,
+        "bermasalah": true,
+        "reasons": [
+          "overdue_receivables"
+        ],
+        "why": "ada piutang jatuh tempo (bermasalah), meski exposure masih di bawah creditLimit"
+      }
+    },
+    {
+      "id": "receivables-overdue-and-current",
+      "loginAs": "eval-admin@vira-eval.local",
+      "question": "Tampilkan ringkasan piutang EVAL yang jatuh tempo dan yang masih berjalan.",
+      "expectedTools": [
+        "list_receivables"
+      ],
+      "facts": {
+        "overdueInvoiceNos": [
+          "EVAL-INV-OVER-LIMIT",
+          "EVAL-INV-HOLD-ODUE",
+          "EVAL-INV-ODUE-OK"
+        ],
+        "currentInvoiceNos": [
+          "EVAL-INV-HOLD-CUR",
+          "EVAL-INV-ODUE-CUR",
+          "EVAL-INV-CLEAN-P1"
+        ],
+        "overdueAmounts": {
+          "EVAL-INV-OVER-LIMIT": 5000000,
+          "EVAL-INV-HOLD-ODUE": 2500000,
+          "EVAL-INV-ODUE-OK": 300000
+        }
+      }
+    },
+    {
+      "id": "items-ambiguous-search",
+      "loginAs": "eval-staff@vira-eval.local",
+      "question": "Cari barang 'Ambiguous Twin' — ada berapa hasil mirip?",
+      "expectedTools": [
+        "search_items"
+      ],
+      "facts": {
+        "search": "Ambiguous Twin",
+        "skus": [
+          "EVAL-SKU-15",
+          "EVAL-SKU-16"
+        ],
+        "names": [
+          "EVAL Ambiguous Twin Alpha",
+          "EVAL Ambiguous Twin Alfa"
+        ],
+        "count": 2
+      }
+    },
+    {
+      "id": "items-zero-stock",
+      "loginAs": "eval-staff@vira-eval.local",
+      "question": "Item EVAL Zero Stock Item stoknya berapa di semua lokasi?",
+      "expectedTools": [
+        "search_items",
+        "get_item_stock"
+      ],
+      "facts": {
+        "sku": "EVAL-SKU-14",
+        "name": "EVAL Zero Stock Item",
+        "mainQty": 0,
+        "vanQty": 0,
+        "storeQty": 0
+      }
+    },
+    {
+      "id": "items-stock-locations",
+      "loginAs": "eval-staff@vira-eval.local",
+      "question": "Stok EVAL Blouse Mira Soft di gudang utama, van, dan toko konsi?",
+      "expectedTools": [
+        "search_items",
+        "get_item_stock",
+        "get_store_stock"
+      ],
+      "facts": {
+        "sku": "EVAL-SKU-01",
+        "mainQty": 40,
+        "vanQty": 5,
+        "storeCode": "EVAL-ST-STOCK",
+        "storeQty": 8,
+        "note": "MAIN + VAN + STORE (schema has no second named warehouse)"
+      }
+    },
+    {
+      "id": "po-partial-closable",
+      "loginAs": "eval-admin@vira-eval.local",
+      "question": "PO mana yang PARTIAL dan bisa ditutup?",
+      "expectedTools": [
+        "list_purchase_orders",
+        "close_purchase_order"
+      ],
+      "facts": {
+        "docNumber": "EVAL-PO-PARTIAL-01",
+        "status": "PARTIAL",
+        "receivedQty": 40,
+        "orderedQty": 100
+      }
+    },
+    {
+      "id": "po-overdue",
+      "loginAs": "eval-admin@vira-eval.local",
+      "question": "Ada PO terlambat pengiriman EVAL?",
+      "expectedTools": [
+        "list_purchase_orders"
+      ],
+      "facts": {
+        "docNumber": "EVAL-PO-OVERDUE-01",
+        "status": "SUBMITTED",
+        "isOverdue": true,
+        "etaDate": "2026-11-14T17:00:00.000Z"
+      }
+    },
+    {
+      "id": "po-completed",
+      "loginAs": "eval-admin@vira-eval.local",
+      "question": "PO EVAL yang sudah selesai nomor berapa?",
+      "expectedTools": [
+        "list_purchase_orders"
+      ],
+      "facts": {
+        "docNumber": "EVAL-PO-CLOSED-01",
+        "status": "CLOSED"
+      }
+    },
+    {
+      "id": "leave-pending",
+      "loginAs": "eval-sales-mgr@vira-eval.local",
+      "question": "Ada berapa pengajuan izin salesman yang menunggu?",
+      "expectedTools": [
+        "list_leave_requests",
+        "approve_leave_request"
+      ],
+      "facts": {
+        "pendingCount": 2,
+        "idempotencyKeys": [
+          "EVAL-IZIN-001",
+          "EVAL-IZIN-002"
+        ],
+        "statuses": [
+          "DIAJUKAN",
+          "DIAJUKAN"
+        ]
+      }
+    },
+    {
+      "id": "spg-returns-pending",
+      "loginAs": "eval-sales-mgr@vira-eval.local",
+      "question": "Retur pembeli SPG yang menunggu persetujuan ada berapa?",
+      "expectedTools": [
+        "list_spg_buyer_returns",
+        "approve_spg_buyer_return"
+      ],
+      "facts": {
+        "pendingCount": 2,
+        "idempotencyKeys": [
+          "EVAL-SPG-RET-001",
+          "EVAL-SPG-RET-002"
+        ],
+        "statuses": [
+          "MENUNGGU",
+          "MENUNGGU"
+        ],
+        "saleDocNos": [
+          "EVAL-SPG-SALE-001",
+          "EVAL-SPG-SALE-002"
+        ]
+      }
+    },
+    {
+      "id": "tax-invoice-mark-sent",
+      "loginAs": "eval-admin@vira-eval.local",
+      "question": "Faktur pajak mana yang sudah CREATED dan bisa ditandai dikirim ke toko?",
+      "expectedTools": [
+        "list_tax_invoices",
+        "mark_tax_invoice_sent_to_store"
+      ],
+      "facts": {
+        "createdInvoiceNo": "EVAL-FAKTUR-CREATED",
+        "createdStatus": "CREATED",
+        "sentInvoiceNo": "EVAL-FAKTUR-SENT",
+        "sentStatus": "SENT_TO_STORE",
+        "deliveryNos": [
+          "EVAL-DLV-TAX-001",
+          "EVAL-DLV-TAX-002"
+        ]
+      }
+    },
+    {
+      "id": "consignment-missing-nota",
+      "loginAs": "eval-admin@vira-eval.local",
+      "question": "Siklus konsinyasi mana yang belum punya nomor NOTA?",
+      "expectedTools": [
+        "list_consignment_cycles",
+        "record_consignment_document_number"
+      ],
+      "facts": {
+        "noKonsi": "EVAL-KONSI-2026-10",
+        "periodYear": 2026,
+        "periodMonth": 10,
+        "noNota": null,
+        "storeCode": "EVAL-ST-CYCLE"
+      }
+    },
+    {
+      "id": "generic-po-count-by-supplier",
+      "loginAs": "eval-admin@vira-eval.local",
+      "question": "Berapa PO EVAL per pemasok bulan ini (atau semua EVAL-PO)?",
+      "expectedTools": [
+        "list_entities",
+        "aggregate_entity"
+      ],
+      "facts": {
+        "entity": "purchase_order",
+        "supplierCode": "EVAL-SUP-01",
+        "poCount": 3,
+        "byStatus": {
+          "PARTIAL": 1,
+          "SUBMITTED": 1,
+          "CLOSED": 1
+        },
+        "docNumbers": [
+          "EVAL-PO-PARTIAL-01",
+          "EVAL-PO-OVERDUE-01",
+          "EVAL-PO-CLOSED-01"
+        ]
+      }
+    },
+    {
+      "id": "generic-item-stock-across-locations",
+      "loginAs": "eval-staff@vira-eval.local",
+      "question": "Stok EVAL-SKU-01 di gudang utama dan toko konsi?",
+      "expectedTools": [
+        "query_entity"
+      ],
+      "facts": {
+        "sku": "EVAL-SKU-01",
+        "itemId": "eval_item_01",
+        "mainQty": 40,
+        "storeCode": "EVAL-ST-STOCK",
+        "storeQty": 8,
+        "entities": [
+          "inventory_value",
+          "store_stock"
+        ]
+      }
+    },
+    {
+      "id": "generic-receivables-total-per-store",
+      "loginAs": "eval-admin@vira-eval.local",
+      "question": "Jumlah outstanding piutang EVAL per toko?",
+      "expectedTools": [
+        "aggregate_entity"
+      ],
+      "facts": {
+        "entity": "receivable",
+        "totalsByStoreCode": {
+          "EVAL-ST-OVER": 5000000,
+          "EVAL-ST-HOLD": 2900000,
+          "EVAL-ST-ODUE": 450000,
+          "EVAL-ST-CP1": 100000
+        }
+      }
+    },
+    {
+      "id": "generic-open-work-orders-by-status",
+      "loginAs": "eval-admin@vira-eval.local",
+      "question": "Dari SPK EVAL-WO, ada berapa yang masih terbuka per status?",
+      "expectedTools": [
+        "aggregate_entity",
+        "list_entities"
+      ],
+      "facts": {
+        "entity": "work_order",
+        "openByStatus": {
+          "ISSUED": 1,
+          "IN_PRODUCTION": 2
+        },
+        "openCount": 3,
+        "docNumbers": [
+          "EVAL-WO-01",
+          "EVAL-WO-02",
+          "EVAL-WO-03"
+        ]
+      }
+    },
+    {
+      "id": "generic-tax-invoices-not-sent",
+      "loginAs": "eval-admin@vira-eval.local",
+      "question": "Faktur pajak EVAL mana yang belum dikirim ke toko?",
+      "expectedTools": [
+        "query_entity"
+      ],
+      "facts": {
+        "entity": "tax_invoice",
+        "status": "CREATED",
+        "invoiceNo": "EVAL-FAKTUR-CREATED",
+        "notSentCount": 1,
+        "alreadySent": "EVAL-FAKTUR-SENT"
+      }
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { getRequiredPermission, hasPermission, PERMISSIONS, requirePermission } from "@/lib/rbac";
 import { gateAllows, type ViraGate } from "../akses";
 import { VIRA_WRITE_PERMISSION } from "../config";
+import { VIRA_ENTITIES } from "../entities";
 import { VIRA_PARITY_CASES, VIRA_TOOLS, VIRA_WRITE_TOOLS } from "./index";
 import type { ParityCase, ViraTool, ViraWriteTool } from "./types";
 
@@ -25,6 +26,9 @@ const tulisParitas = vi.hoisted(() => ({
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: "parity-user", permissions: sesi.permissions } })),
 }));
+
+// A timed-out case keeps running and its module mocks leak into the next one, as a false gate mismatch.
+vi.setConfig({ testTimeout: 30_000 });
 
 const WEB_ROOT = path.resolve(__dirname, "../../..");
 const KODE_IZIN = /^[a-z0-9_]+(:[a-z0-9_]+)+$/;
@@ -230,9 +234,17 @@ async function periksaParitas(
   return masalah;
 }
 
+/** Tools with no UI twin (whoami + generic layer — entity gates checked separately). */
+const TANPA_PARITAS_UI = new Set([
+  "whoami",
+  "list_entities",
+  "query_entity",
+  "aggregate_entity",
+]);
+
 function cakupan(tools: readonly ViraTool[], cases: readonly ParityCase[]): string[] {
   return tools
-    .filter((t) => t.name !== "whoami")
+    .filter((t) => !TANPA_PARITAS_UI.has(t.name))
     .flatMap((t) => {
       const n = cases.filter((c) => c.tool === t.name).length;
       return n === 1 ? [] : [`${t.name}: ${n === 0 ? "no parity case" : `${n} parity cases (expected exactly 1)`}`];
@@ -281,9 +293,9 @@ async function periksaParitasWrite(
 }
 
 describe("VIRA tool parity — real registry", () => {
-  const nyata = VIRA_TOOLS.filter((t) => t.name !== "whoami");
+  const nyata = VIRA_TOOLS.filter((t) => !TANPA_PARITAS_UI.has(t.name));
 
-  it("every tool except whoami has exactly one parity case", () => {
+  it("every tool with a UI twin has exactly one parity case", () => {
     expect(cakupan(VIRA_TOOLS, VIRA_PARITY_CASES)).toEqual([]);
   });
 
@@ -297,6 +309,32 @@ describe("VIRA tool parity — real registry", () => {
     expect(kasus, `${tool.name} has no parity case`).toBeDefined();
     expect(await periksaParitas(tool, kasus!)).toEqual([]);
   });
+});
+
+describe("VIRA entity policy parity", () => {
+  it.each(VIRA_ENTITIES.map((e) => [e.name, e] as const))(
+    "entity %s gate equals its page/route/predicate",
+    async (_nama, entity) => {
+      const fakeTool = { name: `entity:${entity.name}`, gate: entity.gate };
+      const kasus: ParityCase =
+        entity.parity.kind === "route"
+          ? { tool: fakeTool.name, kind: "route", path: entity.parity.path }
+          : entity.parity.kind === "pageCode"
+            ? {
+                tool: fakeTool.name,
+                kind: "pageCode",
+                pageFile: entity.parity.pageFile,
+                codes: entity.parity.codes,
+              }
+            : {
+                tool: fakeTool.name,
+                kind: "predicate",
+                module: entity.parity.module,
+                exportName: entity.parity.exportName,
+              };
+      expect(await periksaParitas(fakeTool, kasus)).toEqual([]);
+    },
+  );
 });
 
 describe("VIRA write-tool parity — real registry", () => {

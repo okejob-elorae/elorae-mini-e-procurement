@@ -16,9 +16,13 @@ import {
 } from "@/lib/field-sales/errors";
 import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";
 import { approveFieldSalesOrder, rejectFieldSalesOrder } from "@/lib/field-sales/writer";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { masukLewatJatuhTempo, nilaiLewatJatuhTempo } from "@/lib/receivables/jatuh-tempo";
+import { daftarPiutang } from "@/lib/receivables/queries";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { batasKreditBerlaku, lewatBatasNilai } from "@/lib/salesman/kredit";
 import { bacaAturanKreditDb } from "@/lib/salesman/tagihan-toko";
+import { fsoShowsMoney } from "../entities";
 import { ViraInputError, ViraNotFoundError } from "../errors";
 import { listInputShape, recordUrl, toPage } from "../output";
 import {
@@ -109,7 +113,7 @@ function header(o: FieldSalesOrderListItem, storeId?: string) {
  * the total at 0), so the list shows "—" and the detail hides every money column. Money is null then.
  */
 function showMoney(o: { orderType: string; status: string }): boolean {
-  return o.orderType !== "KONSI" || o.status === "APPROVED";
+  return fsoShowsMoney(o);
 }
 
 function formatRp(n: number): string {
@@ -122,7 +126,8 @@ function formatRp(n: number): string {
  * (`computeStoreCreditExposure`, `batasKreditBerlaku`, `bacaAturanKreditDb`, `lewatBatasNilai`).
  * `muatPanelKredit` uses a different shape, so we mirror the page formula here.
  */
-async function creditCheckForApprove(
+/** Shared with get_field_sales_order_credit — same formula as the order detail page. */
+export async function creditCheckForApprove(
   order: FieldSalesOrderDetail,
 ): Promise<{ exposure: number; limit: number; overLimit: boolean } | null> {
   const orderRow = await prisma.fieldSalesOrder.findUnique({
@@ -425,6 +430,113 @@ async function mapRejectExecute(
   };
 }
 
+const creditTool = defineTool({
+  name: "get_field_sales_order_credit",
+  title: "Salesman order credit check",
+  description:
+    "Credit picture for one field-sales order: store limit, current exposure, order total, overLimit, kreditDitahan, overdue receivables, and bermasalah with reasons. A null value means it could not be read or this user may not see it (listed in unknown): never report null or unknown as no problem; say it cannot be confirmed. Give id or docNo (orderNo).",
+  gate: { kind: "code", code: "field_sales_orders:view" },
+  inputShape: detailShape,
+  handler: async (raw, ctx) => {
+    const parsed = getFieldSalesOrderInput.safeParse(raw);
+    if (!parsed.success) throw new ViraInputError(parsed.error.issues[0]?.message ?? EXACTLY_ONE);
+    let order: FieldSalesOrderDetail | null = null;
+    if (parsed.data.id !== undefined) {
+      order = await getFieldSalesOrderById(parsed.data.id);
+    } else {
+      order = await lookupByExactDocNo(parsed.data.docNo!);
+    }
+    if (!order) throw new ViraNotFoundError("Order not found");
+
+    const row = await prisma.fieldSalesOrder.findUnique({
+      where: { id: order.id },
+      select: {
+        storeId: true,
+        kreditDitahan: true,
+        total: true,
+        orderType: true,
+        store: { select: { creditLimit: true, noCreditLimit: true, name: true, code: true } },
+      },
+    });
+    if (!row) throw new ViraNotFoundError("Order not found");
+
+    // Same visibility as the order page: limit preview for approvers of a pending order;
+    // bills panel is PUTUS-only (`muatPanelKredit`).
+    const maySeeLimit =
+      order.status === "PENDING_APPROVAL" &&
+      hasPermission(ctx.actor.permissions, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE);
+    const maySeeBills = order.orderType === "PUTUS";
+
+    let credit: Awaited<ReturnType<typeof creditCheckForApprove>> = null;
+    let limitKnown = maySeeLimit;
+    if (maySeeLimit) {
+      try {
+        credit = await creditCheckForApprove(order);
+      } catch (error) {
+        limitKnown = false;
+        console.error("[vira] field-sales-order credit check failed", { orderId: order.id, error });
+      }
+    }
+
+    // Same "lewat jatuh tempo" as list_receivables / piutang (P46): not a raw
+    // dueDate < today. Klaim and in-tolerance bills stay out; tertahan free share counts.
+    let overdueRows: Awaited<ReturnType<typeof daftarPiutang>> | null = null;
+    let billsKnown = maySeeBills;
+    if (maySeeBills) {
+      try {
+        overdueRows = (await daftarPiutang({ storeId: row.storeId })).filter(masukLewatJatuhTempo);
+      } catch (error) {
+        billsKnown = false;
+        console.error("[vira] field-sales-order overdue bills failed", { orderId: order.id, error });
+      }
+    }
+    const orderTotal = showMoney(order) ? Number(order.total) : null;
+    // No credit row means the store has no limit to exceed.
+    const overLimit = limitKnown ? (credit?.overLimit ?? false) : null;
+    const kreditDitahan = row.kreditDitahan;
+    const hasOverdue = !billsKnown || overdueRows === null ? null : overdueRows.length > 0;
+    const unknown: string[] = [];
+    // Limit preview only applies while pending (approve card). Otherwise N/A — not "unknown".
+    if (order.status === "PENDING_APPROVAL" && overLimit === null) unknown.push("over_credit_limit");
+    // Bills are only in-scope for PUTUS (order page); otherwise N/A, not unknown.
+    if (maySeeBills && hasOverdue === null) unknown.push("overdue_receivables");
+    const reasons: string[] = [];
+    if (overLimit) reasons.push("over_credit_limit");
+    if (kreditDitahan) reasons.push("kredit_ditahan");
+    if (hasOverdue) reasons.push("overdue_receivables");
+
+    return {
+      id: order.id,
+      docNo: order.orderNo,
+      orderType: order.orderType,
+      store: {
+        code: row.store.code,
+        name: row.store.name,
+        creditLimit:
+          !maySeeLimit || row.store.creditLimit === null ? null : Number(row.store.creditLimit),
+        noCreditLimit: maySeeLimit ? row.store.noCreditLimit : null,
+      },
+      exposure: credit?.exposure ?? null,
+      limit: credit?.limit ?? null,
+      orderTotal,
+      overLimit,
+      kreditDitahan,
+      overdueReceivables: overdueRows && {
+        count: overdueRows.length,
+        total: overdueRows.reduce((s, r) => s + (nilaiLewatJatuhTempo(r) ?? 0), 0),
+        // BarisPiutang.dueDate is already an ISO string.
+        oldestDueDate:
+          [...overdueRows].sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]?.dueDate ?? null,
+      },
+      // A word, not null: the model read null as "no problem".
+      bermasalah: reasons.length > 0 ? true : unknown.length > 0 ? "unknown" : false,
+      reasons,
+      unknown,
+      url: recordUrl(ctx.baseUrl, `/backoffice/field-sales-orders/${order.id}`),
+    };
+  },
+});
+
 export const tools: ViraTool[] = [
   defineTool({
     name: "list_field_sales_orders",
@@ -493,6 +605,7 @@ export const tools: ViraTool[] = [
       };
     },
   }),
+  creditTool,
 ];
 
 export const writeTools: ViraWriteTool[] = [approveFieldSalesOrderTool, rejectFieldSalesOrderTool];
@@ -506,6 +619,7 @@ export const __sampleInput = {
 export const parityCases: ParityCase[] = [
   { tool: "list_field_sales_orders", kind: "route", path: "/backoffice/field-sales-orders" },
   { tool: "get_field_sales_order", kind: "route", path: "/backoffice/field-sales-orders" },
+  { tool: "get_field_sales_order_credit", kind: "route", path: "/backoffice/field-sales-orders" },
   {
     tool: "approve_field_sales_order",
     kind: "writeAction",
