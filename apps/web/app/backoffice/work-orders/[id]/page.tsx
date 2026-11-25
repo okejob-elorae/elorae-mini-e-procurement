@@ -80,6 +80,7 @@ import { hariTerlambatWo } from '@/lib/production/terlambat';
 import { DialogBatalWo } from '../DialogBatalWo';
 import { DialogTerbitWo } from '../DialogTerbitWo';
 import { KartuBahanWo } from './KartuBahanWo';
+import { DialogRequestItemWo } from './DialogRequestItemWo';
 import { LABEL_NOTA_CMT } from '../label-nota-cmt';
 import { angkaSetoranWo } from '@/lib/production/setoran-wo';
 import { CatatanTanpaDokumen, RingkasSetoran } from '../RingkasSetoran';
@@ -145,6 +146,7 @@ export default function WorkOrderDetailPage() {
   // undefined while loading, null when the check failed (the server still refuses a short Issue).
   const [shortageInfo, setShortageInfo] = useState<Awaited<ReturnType<typeof getWorkOrderShortages>> | null | undefined>(undefined);
   const [requestBusy, setRequestBusy] = useState(false);
+  const [requestDialogOpen, setRequestDialogOpen] = useState(false);
   const woStatus = wo?.status;
 
   const refreshShortages = useCallback(() => {
@@ -161,16 +163,17 @@ export default function WorkOrderDetailPage() {
     return () => window.removeEventListener('focus', refreshShortages);
   }, [woStatus, refreshShortages]);
 
-  const handleCreateRequest = async () => {
+  const handleConfirmRequest = async (lines: Array<{ itemId: string; qty: number }>) => {
     if (!session?.user?.id) return;
     setRequestBusy(true);
     try {
-      const res = await createItemRequestFromWo(id, session.user.id);
+      const res = await createItemRequestFromWo(id, session.user.id, lines);
       if (!res.ok) {
         toast.error(res.error);
         return;
       }
       toast.success(tIR(res.created ? 'woRequestCreated' : 'woRequestUpdated', { docNumber: res.docNumber }));
+      setRequestDialogOpen(false);
       setShortageInfo(await getWorkOrderShortages(id));
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : tIR('actionFailed'));
@@ -583,7 +586,11 @@ export default function WorkOrderDetailPage() {
                 </Link>
               )}
               {canCreateRequest && shortageInfo.requestAction && (
-                <Button size="sm" onClick={handleCreateRequest} disabled={requestBusy}>
+                <Button
+                  size="sm"
+                  onClick={() => setRequestDialogOpen(true)}
+                  disabled={requestBusy || (shortageInfo.uncovered?.length ?? 0) === 0}
+                >
                   {tIR(shortageInfo.requestAction === 'update' ? 'woUpdateRequest' : 'woCreateRequest')}
                 </Button>
               )}
@@ -591,6 +598,17 @@ export default function WorkOrderDetailPage() {
           </AlertDescription>
         </Alert>
       )}
+
+      {canCreateRequest && shortageInfo?.requestAction ? (
+        <DialogRequestItemWo
+          open={requestDialogOpen}
+          onOpenChange={setRequestDialogOpen}
+          mode={shortageInfo.requestAction}
+          lines={shortageInfo.uncovered ?? shortageInfo.shortages}
+          busy={requestBusy}
+          onConfirm={handleConfirmRequest}
+        />
+      ) : null}
 
       {Array.isArray((wo as { chainSnapshot?: unknown }).chainSnapshot) &&
         ((wo as { chainSnapshot: unknown[] }).chainSnapshot?.length ?? 0) > 0 &&

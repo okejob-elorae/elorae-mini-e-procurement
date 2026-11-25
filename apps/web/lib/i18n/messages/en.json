@@ -13872,7 +13872,16 @@
     "woUpdateRequest": "Update Item Request",
     "woRequestUpdated": "{docNumber} updated",
     "woIssueBlocked": "Stock is not enough yet",
-    "woSavedShort": "Saved as DRAFT: {count} material(s) short"
+    "woSavedShort": "Saved as DRAFT: {count} material(s) short",
+    "woRequestDialogCreateTitle": "Create Item Request",
+    "woRequestDialogUpdateTitle": "Update Item Request",
+    "woRequestDialogBody": "Review the quantities before saving. Untick a line to leave it out, or edit the qty.",
+    "woRequestDialogEmpty": "Nothing left to request for this WO.",
+    "woRequestDialogInclude": "Include",
+    "woRequestDialogSuggested": "Suggested",
+    "woRequestDialogCancel": "Cancel",
+    "woRequestDialogConfirmCreate": "Create request",
+    "woRequestDialogConfirmUpdate": "Update request"
   },
   "vendorBills": {
     "title": "Vendor Bills",

@@ -13872,7 +13872,16 @@
     "woUpdateRequest": "Perbarui Request Item",
     "woRequestUpdated": "{docNumber} diperbarui",
     "woIssueBlocked": "Stok belum cukup",
-    "woSavedShort": "Disimpan sebagai DRAFT: {count} bahan kurang"
+    "woSavedShort": "Disimpan sebagai DRAFT: {count} bahan kurang",
+    "woRequestDialogCreateTitle": "Buat Request Item",
+    "woRequestDialogUpdateTitle": "Perbarui Request Item",
+    "woRequestDialogBody": "Periksa qty sebelum disimpan. Hapus centang untuk melewatkan baris, atau ubah qty-nya.",
+    "woRequestDialogEmpty": "Tidak ada bahan yang masih perlu diminta untuk WO ini.",
+    "woRequestDialogInclude": "Sertakan",
+    "woRequestDialogSuggested": "Saran",
+    "woRequestDialogCancel": "Batal",
+    "woRequestDialogConfirmCreate": "Buat request",
+    "woRequestDialogConfirmUpdate": "Perbarui request"
   },
   "vendorBills": {
     "title": "Vendor Billing",
