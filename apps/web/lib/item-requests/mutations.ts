@@ -155,11 +155,45 @@ async function releaseLines(tx: Prisma.TransactionClient, where: Prisma.ItemRequ
   for (const woId of woIds) await normalizeWoRequests(tx, woId);
 }
 
+export type RequestLineOverride = { itemId: string; qty: number };
+
+/**
+ * Turns optional qty edits into the gap rows that will be written. Every override must name an
+ * uncovered shortage item; qty must be > 0 and is capped at that item's uncovered shortage.
+ * No overrides → the full uncovered gap.
+ */
+function resolveRequestGap(gap: WoShortage[], overrides: RequestLineOverride[] | undefined): WoShortage[] {
+  if (overrides == null) return gap;
+  if (overrides.length === 0) throw new ItemRequestError("Pilih minimal satu bahan untuk diminta");
+  const byItem = new Map(gap.map((g) => [g.itemId, g]));
+  const out: WoShortage[] = [];
+  const seen = new Set<string>();
+  for (const o of overrides) {
+    if (seen.has(o.itemId)) continue;
+    seen.add(o.itemId);
+    const g = byItem.get(o.itemId);
+    if (!g) throw new ItemRequestError("Bahan itu tidak termasuk kekurangan yang belum dipesan");
+    if (!(o.qty > 0) || !Number.isFinite(o.qty)) {
+      throw new ItemRequestError(`Qty ${g.itemName} harus lebih dari 0`);
+    }
+    const qty = Math.min(Math.round(o.qty * 100) / 100, g.shortage);
+    if (!(qty > 0)) throw new ItemRequestError(`Qty ${g.itemName} harus lebih dari 0`);
+    out.push({ ...g, shortage: qty });
+  }
+  if (out.length === 0) throw new ItemRequestError("Pilih minimal satu bahan untuk diminta");
+  return out;
+}
+
 /**
  * One request per DRAFT WO with a BOM shortage, a line per short material not already on order.
  * Idempotent: an OPEN request for the WO is brought up to date and returned instead of a second one.
+ * Optional `lines` let the WO dialog trim qtys (capped at the uncovered gap) before save.
  */
-export async function createRequestFromWo(woId: string, userId: string) {
+export async function createRequestFromWo(
+  woId: string,
+  userId: string,
+  lines?: RequestLineOverride[],
+) {
   return prisma.$transaction(async (tx) => {
     // Serializes a double click: the second caller sees the first one's request.
     await lockWo(tx, woId);
@@ -168,15 +202,16 @@ export async function createRequestFromWo(woId: string, userId: string) {
     if (wo.status !== "DRAFT") throw new ItemRequestError("Request Item hanya bisa dibuat dari WO berstatus DRAFT");
 
     const gap = await getUncoveredShortages(tx, woId, await getWoShortages(wo));
+    const wanted = resolveRequestGap(gap, lines);
     const existing = await tx.itemRequest.findFirst({
       where: { sourceWoId: woId, status: "OPEN" },
       select: { id: true, docNumber: true },
     });
     if (existing) {
-      await syncOpenLines(tx, existing.id, gap);
+      await syncOpenLines(tx, existing.id, wanted);
       return { ...existing, created: false };
     }
-    if (gap.length === 0) throw new ItemRequestError("Tidak ada kekurangan bahan yang belum dipesan untuk WO ini");
+    if (wanted.length === 0) throw new ItemRequestError("Tidak ada kekurangan bahan yang belum dipesan untuk WO ini");
 
     const docNumber = await generateDocNumber("ITEMREQ", tx);
     const request = await tx.itemRequest.create({
@@ -186,7 +221,7 @@ export async function createRequestFromWo(woId: string, userId: string) {
         neededBy: wo.targetDate,
         notes: `Kekurangan bahan ${wo.docNumber}`,
         createdById: userId,
-        lines: { create: gap.map((s) => ({ itemId: s.itemId, qty: s.shortage, uomId: s.uomId })) },
+        lines: { create: wanted.map((s) => ({ itemId: s.itemId, qty: s.shortage, uomId: s.uomId })) },
       },
       select: { id: true, docNumber: true },
     });

@@ -247,8 +247,9 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Satu perintah kerja: kemajuan setoran, alokasi kain per roll, bahan (rencana, keluar, kembali, masih di CMT), pengeluaran bahan, dan penerimaan barang jadi. Rekonsiliasi pemakaian dibuka dari tombol Rekonsiliasi di atas. Di tab Pengeluaran bahan, centang beberapa dokumen lalu Cetak Surat Jalan untuk menggabungkan kain dan aksesoris dalam satu surat jalan ke vendor.",
       "Angka setoran di kartu Kemajuan, di layar Terima barang jadi, di rekonsiliasi, dan di daftar perintah kerja dihitung dengan cara yang sama dari dokumen penerimaan: disetor (termasuk cacat), cacat, masuk stok (lolos QC), dan kurang = target − masuk stok. Bila catatan setoran lama tidak cocok dengan dokumennya, selisihnya disebut di bawah kartu.",
-      "Kartu Jasa menampilkan jenis jasa dan harga per pcs. Tombol Buat tagihan vendor membuka formulir tagihan dengan sisa qty jasa yang sudah bisa ditagih (setelah terima barang jadi); bila ada beberapa pemasok, pilih dulu pemasoknya.",
+      "Kartu Jasa menampilkan jenis jasa dan harga per pcs. Tombol Buat tagihan vendor membuka formulir tagihan dengan sisa qty jasa yang sudah bisa ditagih (setelah terima barang jadi); bila ada beberapa pemasok, pilih dulu pemasoknya. Kartu Tagihan vendor di bawahnya menampilkan nomor tagihan, nomor invoice vendor, nama vendor, tanggal, item/langkah, dan statusnya (Ditagih / Dibayar sebagian / Lunas) — tanpa qty, nilai, atau tombol Bayar; klik nomor tagihan untuk membuka rinciannya. Sisa yang belum ditagih tetap terlihat di tombol Buat tagihan.",
       "Perintah kerja draf bisa diubah, diterbitkan, atau dibatalkan dari sini. Setelah terbit, bahan dikeluarkan lewat Keluarkan bahan dan hasil jadi diterima lewat Terima barang jadi. Perintah kerja yang sudah selesai tidak bisa mengeluarkan bahan atau menerima barang jadi lagi.",
+      "Bila stok bahan kurang, WO tetap DRAFT: banner merah menampilkan kekurangannya. Buat / Perbarui Request Item membuka dialog dulu (boleh ubah qty atau melewatkan baris) sebelum request disimpan; sesudah ada request, tombol Lihat membuka rinciannya.",
       "Pembatalan butuh alasan dan hanya bisa selama belum ada penerimaan barang jadi dan tidak ada bahan yang masih di CMT. Bila masih ada, penolakannya menyebut bahan dan jumlahnya; kembalikan dulu lewat Kembalikan bahan.",
       { kunci: "workOrders.detail.additionalDesc" },
     ],
@@ -312,7 +313,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Mengeluarkan kain dan/atau aksesoris dari gudang ke vendor untuk satu perintah kerja di satu formulir. Menyimpan tetap membuat dokumen pengeluaran terpisah per jenis (kain / aksesoris) supaya HPP dan register nota tetap benar. Kain diterbitkan per roll utuh; total roll yang dialokasikan minimal sama dengan qty kain yang diterbitkan.",
       "Bila simpan gagal (mis. sambungan putus), tekan Simpan lagi tanpa mengubah isian: pengeluaran yang sudah tercatat tidak dikeluarkan dua kali.",
-      "Nilai bahan yang dicatat adalah nilai yang benar-benar keluar dari stok (jumlah × biaya rata-rata gudang saat itu), sama dengan kartu stok. Harga yang diketik di baris tetap disimpan bersama pengeluaran, tetapi tidak lagi menentukan nilai bahan yang masuk HPP.",
+      "Nilai bahan yang dicatat adalah nilai yang benar-benar keluar dari stok (jumlah × biaya rata-rata gudang saat itu), sama dengan kartu stok. Surat jalan ke CMT hanya memuat qty — tidak ada harga di formulir maupun di cetakan.",
     ],
     kartu: [
       { judul: { kunci: "workOrders.form.materialPlanTitle" }, isi: { kunci: "workOrders.plannedVsIssued" } },

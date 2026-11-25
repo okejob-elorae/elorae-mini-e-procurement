@@ -176,7 +176,12 @@ export function NewVendorBillClient({
       <Card>
         <CardContent className="grid gap-4 pt-6 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-2">
-            <Label>{t("supplier")}</Label>
+            <Label>
+              {t("supplier")}
+              <span className="ml-1 text-destructive" aria-hidden>
+                *
+              </span>
+            </Label>
             <SearchableCombobox
               options={suppliers.map((s) => ({ value: s.id, label: `${s.name} (${s.code})` }))}
               value={supplierId}
@@ -186,20 +191,36 @@ export function NewVendorBillClient({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="vb-inv">{t("vendorInvoiceNo")}</Label>
-            <Input id="vb-inv" maxLength={64} value={vendorInvoiceNo} onChange={(e) => setVendorInvoiceNo(e.target.value)} />
+            <Label htmlFor="vb-inv">
+              {t("vendorInvoiceNo")}
+              <span className="ml-1 text-destructive" aria-hidden>
+                *
+              </span>
+            </Label>
+            <Input id="vb-inv" maxLength={64} value={vendorInvoiceNo} onChange={(e) => setVendorInvoiceNo(e.target.value)} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="vb-date">{t("billDate")}</Label>
-            <TanggalInput id="vb-date" value={billDate} onChange={(e) => setBillDate(e.target.value)} />
+            <Label htmlFor="vb-date">
+              {t("billDate")}
+              <span className="ml-1 text-destructive" aria-hidden>
+                *
+              </span>
+            </Label>
+            <TanggalInput id="vb-date" value={billDate} onChange={(e) => setBillDate(e.target.value)} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="vb-due">{t("dueDate")}</Label>
+            <Label htmlFor="vb-due">
+              {t("dueDate")}
+              <span className="ml-1 font-normal text-muted-foreground">({t("fieldOptional")})</span>
+            </Label>
             <TanggalInput id="vb-due" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             <p className="text-xs text-muted-foreground">{t("dueDateHint")}</p>
           </div>
           <div className="space-y-2 sm:col-span-2 lg:col-span-4">
-            <Label htmlFor="vb-notes">{t("notes")}</Label>
+            <Label htmlFor="vb-notes">
+              {t("notes")}
+              <span className="ml-1 font-normal text-muted-foreground">({t("fieldOptional")})</span>
+            </Label>
             <Textarea id="vb-notes" rows={2} maxLength={2000} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
         </CardContent>
@@ -216,7 +237,9 @@ export function NewVendorBillClient({
           <Card>
             <CardHeader>
               <CardTitle>{tGrn("judul")}</CardTitle>
-              <CardDescription>{tGrn("subjudul")}</CardDescription>
+              <CardDescription>
+                {tGrn("subjudul")} {t("linesRequiredHint")}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {sources.grnItems.length === 0 ? (
@@ -230,8 +253,18 @@ export function NewVendorBillClient({
                       <TableHead>{t("colItem")}</TableHead>
                       <TableHead className="text-right">{t("colReceived")}</TableHead>
                       <TableHead className="text-right">{t("colBilled")}</TableHead>
-                      <TableHead className="w-[130px]">{t("colQty")}</TableHead>
-                      <TableHead className="w-[160px]">{t("colPrice")}</TableHead>
+                      <TableHead className="w-[130px]">
+                        {t("colQty")}
+                        <span className="ml-0.5 text-destructive" aria-hidden>
+                          *
+                        </span>
+                      </TableHead>
+                      <TableHead className="w-[160px]">
+                        {t("colPrice")}
+                        <span className="ml-0.5 text-destructive" aria-hidden>
+                          *
+                        </span>
+                      </TableHead>
                       <TableHead className="text-right">{t("colAmount")}</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -317,7 +350,9 @@ export function NewVendorBillClient({
           <Card>
             <CardHeader>
               <CardTitle>{t("woSourcesTitle")}</CardTitle>
-              <CardDescription>{t("woSourcesSubtitle")}</CardDescription>
+              <CardDescription>
+                {t("woSourcesSubtitle")} {t("linesRequiredHint")}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {woStepsTampil.length === 0 ? (
@@ -331,8 +366,18 @@ export function NewVendorBillClient({
                       <TableHead>{t("colStep")}</TableHead>
                       <TableHead className="text-right">{t("colStepQty")}</TableHead>
                       <TableHead className="text-right">{t("colBilled")}</TableHead>
-                      <TableHead className="w-[130px]">{t("colQty")}</TableHead>
-                      <TableHead className="w-[160px]">{t("colPrice")}</TableHead>
+                      <TableHead className="w-[130px]">
+                        {t("colQty")}
+                        <span className="ml-0.5 text-destructive" aria-hidden>
+                          *
+                        </span>
+                      </TableHead>
+                      <TableHead className="w-[160px]">
+                        {t("colPrice")}
+                        <span className="ml-0.5 text-destructive" aria-hidden>
+                          *
+                        </span>
+                      </TableHead>
                       <TableHead className="text-right">{t("colAmount")}</TableHead>
                     </TableRow>
                   </TableHeader>

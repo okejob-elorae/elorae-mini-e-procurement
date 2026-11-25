@@ -52,9 +52,21 @@ export async function getLastPricesForSupplier(itemIds: string[], supplierId: st
   return getLastPurchasePrices(z.array(z.string().min(1)).max(500).parse(itemIds), z.string().min(1).parse(supplierId));
 }
 
-export async function createItemRequestFromWo(woId: string, userId: string) {
+const requestLineOverrideSchema = z.object({
+  itemId: z.string().min(1),
+  qty: z.number().positive(),
+});
+
+export async function createItemRequestFromWo(
+  woId: string,
+  userId: string,
+  lines?: Array<{ itemId: string; qty: number }>,
+) {
   const s = await session(PERMISSIONS.ITEM_REQUESTS_MANAGE, userId);
-  const res = await guard(() => createRequestFromWo(z.string().min(1).parse(woId), s.user.id));
+  const parsedWo = z.string().min(1).parse(woId);
+  const parsedLines =
+    lines === undefined ? undefined : z.array(requestLineOverrideSchema).min(1).max(500).parse(lines);
+  const res = await guard(() => createRequestFromWo(parsedWo, s.user.id, parsedLines));
   if (res.ok && res.created) {
     await logAudit({ userId: s.user.id, action: "CREATE", entityType: "ItemRequest", entityId: res.id, changes: { after: { docNumber: res.docNumber, sourceWoId: woId } } });
   }

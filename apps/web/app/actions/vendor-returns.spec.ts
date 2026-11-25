@@ -10,6 +10,8 @@ const {
   mockTxVrFindUnique,
   mockGrnFindUnique,
   mockRollFindMany,
+  mockItemFindMany,
+  mockRejectFindMany,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockFindFirst: vi.fn(),
@@ -20,6 +22,8 @@ const {
   mockTxVrFindUnique: vi.fn(),
   mockGrnFindUnique: vi.fn(),
   mockRollFindMany: vi.fn(),
+  mockItemFindMany: vi.fn(),
+  mockRejectFindMany: vi.fn(),
 }));
 
 const tx = {
@@ -39,6 +43,9 @@ vi.mock("@elorae/db", () => ({
     vendorReturn: { findUnique: mockVrFindUnique },
     gRN: { findUnique: mockGrnFindUnique },
     fabricRoll: { findMany: mockRollFindMany },
+    // `wajibVarianBarisRetur` / reject-qty checks run on the root client, outside the tx.
+    item: { findMany: mockItemFindMany },
+    rejectedGoodsLedger: { findMany: mockRejectFindMany },
   },
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -82,6 +89,11 @@ describe("vendor return line valuation on a null-spelled variantless inventory r
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
     mockFindUnique.mockResolvedValue(null);
     tx.item.findUnique.mockResolvedValue({ nameId: "Button" });
+    // Variantless catalog rows: empty `variantSku` is the only stockable key.
+    mockItemFindMany.mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) =>
+      (where.id.in ?? []).map((id) => ({ id, nameId: "Button", variants: null })),
+    );
+    mockRejectFindMany.mockResolvedValue([]);
     mockVrCreate.mockResolvedValue({ id: "r1", docNumber: "RET-1" });
     mockVrUpdate.mockResolvedValue({ id: "r1", docNumber: "RET-1" });
     mockVrFindUnique.mockResolvedValue({ id: "r1", status: "DRAFT", docNumber: "RET-1" });
@@ -126,6 +138,10 @@ describe("vendor return against a GRN without a PO (P51a)", () => {
     vi.clearAllMocks();
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
     tx.item.findUnique.mockResolvedValue({ nameId: "Button" });
+    mockItemFindMany.mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) =>
+      (where.id.in ?? []).map((id) => ({ id, nameId: "Button", variants: null })),
+    );
+    mockRejectFindMany.mockResolvedValue([]);
     mockFindFirst.mockResolvedValue(null);
     mockVrCreate.mockResolvedValue({ id: "r1", docNumber: "RET-1" });
     mockVrUpdate.mockResolvedValue({ id: "r1", docNumber: "RET-1" });

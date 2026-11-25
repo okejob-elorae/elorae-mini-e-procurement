@@ -43,6 +43,7 @@ import { grnBolehDiretur } from "../pilihan-grn";
 import { labelPemasok, urutPemasok } from '@/lib/suppliers/label-pemasok';
 import type { VendorReturnLineInput } from '@/app/actions/vendor-returns';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { parseItemVariants, variantSelectOptions } from '@/lib/items/variants';
 
 interface Supplier {
   id: string;
@@ -70,6 +71,7 @@ interface ItemOption {
   nameId: string;
   nameEn: string;
   type?: ItemTypeOption;
+  variants?: unknown;
 }
 
 type LineType = 'FABRIC' | 'ACCESSORIES' | 'FG_REJECT';
@@ -78,6 +80,7 @@ type Condition = 'GOOD' | 'DAMAGED' | 'DEFECTIVE';
 interface FormLine {
   type: LineType;
   itemId: string;
+  variantSku: string;
   /** For FABRIC: selected roll IDs (multiple). Qty derived from sum of roll lengths. */
   rollIds?: string[];
   qty: string;
@@ -86,14 +89,18 @@ interface FormLine {
   referenceIssueId?: string;
 }
 
+/** Line type is inferred from the item — the Type column is no longer shown. */
+function lineTypeFromItem(type: ItemTypeOption | undefined): LineType | null {
+  if (type === 'FABRIC') return 'FABRIC';
+  if (type === 'ACCESSORIES') return 'ACCESSORIES';
+  if (type === 'FINISHED_GOOD') return 'FG_REJECT';
+  return null;
+}
+
 export default function NewVendorReturnPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const t = useTranslations('vendorReturn');
-  const lineTypeLabel = (type: string) =>
-    type === 'FABRIC' || type === 'ACCESSORIES' || type === 'FG_REJECT'
-      ? t(`lineType.${type}`)
-      : type;
   const conditionLabel = (condition: string) =>
     condition === 'GOOD' || condition === 'DAMAGED' || condition === 'DEFECTIVE'
       ? t(`condition.${condition}`)
@@ -109,7 +116,7 @@ export default function NewVendorReturnPage() {
   const [grnId, setGrnId] = useState<string>('__none__');
   const [vendorId, setVendorId] = useState<string>('');
   const [lines, setLines] = useState<FormLine[]>([
-    { type: 'FABRIC', itemId: '', rollIds: [], qty: '', reason: '', condition: 'GOOD' }
+    { type: 'FABRIC', itemId: '', variantSku: '', rollIds: [], qty: '', reason: '', condition: 'GOOD' },
   ]);
   const [evidenceUrls, setEvidenceUrls] = useState<string>('');
   // `?grnId=` dari tombol "Retur ke pemasok" di rincian GRN: GRN, pemasok, dan barangnya terisi.
@@ -160,13 +167,13 @@ export default function NewVendorReturnPage() {
         const itemList: ItemOption[] = Array.isArray(raw)
           ? raw
               .filter(
-                (i): i is Record<'id' | 'sku' | 'nameId' | 'nameEn' | 'type', string> =>
+                (i): i is Record<string, unknown> & { id: string; sku: string; nameId: string; nameEn: string } =>
                   typeof i === 'object' &&
                   i !== null &&
-                  'id' in i &&
-                  'sku' in i &&
-                  'nameId' in i &&
-                  'nameEn' in i
+                  typeof (i as { id?: unknown }).id === 'string' &&
+                  typeof (i as { sku?: unknown }).sku === 'string' &&
+                  typeof (i as { nameId?: unknown }).nameId === 'string' &&
+                  typeof (i as { nameEn?: unknown }).nameEn === 'string',
               )
               .map((i) => ({
                 id: i.id,
@@ -174,6 +181,7 @@ export default function NewVendorReturnPage() {
                 nameId: i.nameId,
                 nameEn: i.nameEn,
                 type: (i.type as ItemTypeOption) || undefined,
+                variants: i.variants,
               }))
           : [];
         setItems(itemList);
@@ -187,17 +195,26 @@ export default function NewVendorReturnPage() {
           const rincian = await getRincianGRN(grnAwal.id).catch(() => null);
           const jenisBarang = new Map(itemList.map((it) => [it.id, it.type]));
           const baris: FormLine[] = (rincian?.baris ?? []).flatMap((b): FormLine[] => {
-            const jenis = jenisBarang.get(b.itemId);
-            if (jenis === 'FABRIC') return [{ type: 'FABRIC', itemId: b.itemId, rollIds: [], qty: '', reason: '', condition: 'GOOD' }];
-            if (jenis === 'ACCESSORIES') return [{ type: 'ACCESSORIES', itemId: b.itemId, qty: '', reason: '', condition: 'GOOD' }];
-            return [];
+            const jenis = lineTypeFromItem(jenisBarang.get(b.itemId));
+            if (!jenis || jenis === 'FG_REJECT') return [];
+            return [
+              {
+                type: jenis,
+                itemId: b.itemId,
+                variantSku: b.varianSku ?? '',
+                rollIds: jenis === 'FABRIC' ? [] : undefined,
+                qty: '',
+                reason: '',
+                condition: 'GOOD',
+              },
+            ];
           });
           if (baris.length > 0) {
             setLines(baris);
             // Roll kain yang bisa diretur untuk setiap baris kain (sama dengan memilih barangnya).
             const kain = [...new Set(baris.filter((b) => b.type === 'FABRIC').map((b) => b.itemId))];
             const rollPerBarang = await Promise.all(
-              kain.map(async (itemId) => [itemId, await getReturnableFabricRolls(itemId).catch(() => [])] as const)
+              kain.map(async (itemId) => [itemId, await getReturnableFabricRolls(itemId).catch(() => [])] as const),
             );
             setFabricRollOptions((prev) => {
               const baru = { ...prev };
@@ -226,7 +243,7 @@ export default function NewVendorReturnPage() {
   const addLine = () => {
     setLines((prev) => [
       ...prev,
-      { type: 'FABRIC', itemId: '', rollIds: [], qty: '', reason: '', condition: 'GOOD' }
+      { type: 'FABRIC', itemId: '', variantSku: '', rollIds: [], qty: '', reason: '', condition: 'GOOD' },
     ]);
   };
 
@@ -238,25 +255,15 @@ export default function NewVendorReturnPage() {
     setLines((prev) =>
       prev.map((line, i) => {
         if (i !== index) return line;
-        const updated = { ...line, [field]: value };
-        if (field === 'type') {
-          updated.itemId = '';
-          updated.rollIds = [];
-          updated.qty = '';
-        }
-        return updated;
-      })
+        return { ...line, [field]: value };
+      }),
     );
   };
 
-
-  /** Filter items by line type: FABRIC → fabric items, ACCESSORIES → accessories, FG_REJECT → finished goods. */
-  const itemOptionsForLineType = (lineType: LineType): ItemOption[] => {
-    if (lineType === 'FABRIC') return items.filter((it) => it.type === 'FABRIC');
-    if (lineType === 'ACCESSORIES') return items.filter((it) => it.type === 'ACCESSORIES');
-    if (lineType === 'FG_REJECT') return items.filter((it) => it.type === 'FINISHED_GOOD');
-    return items;
-  };
+  /** Returnable catalog: fabric, accessories, and finished goods (as FG reject). */
+  const returnableItems = items.filter(
+    (it) => it.type === 'FABRIC' || it.type === 'ACCESSORIES' || it.type === 'FINISHED_GOOD',
+  );
 
   const loadFabricRollsForItem = async (itemId: string) => {
     if (!itemId) return;
@@ -275,6 +282,26 @@ export default function NewVendorReturnPage() {
     }
   };
 
+  const pilihBarang = (index: number, itemId: string) => {
+    const it = items.find((x) => x.id === itemId);
+    const type = lineTypeFromItem(it?.type) ?? 'FABRIC';
+    setLines((prev) =>
+      prev.map((l, idx) =>
+        idx === index
+          ? {
+              ...l,
+              itemId,
+              type,
+              variantSku: '',
+              rollIds: type === 'FABRIC' ? [] : undefined,
+              qty: type === 'FABRIC' ? '' : l.qty,
+            }
+          : l,
+      ),
+    );
+    if (type === 'FABRIC' && itemId) void loadFabricRollsForItem(itemId);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session?.user?.id) return;
@@ -287,6 +314,12 @@ export default function NewVendorReturnPage() {
         toast.error(t('form.lineItemReasonRequired', { line: i + 1 }));
         return;
       }
+      const variantOpts = variantSelectOptions(parseItemVariants(items.find((it) => it.id === l.itemId)?.variants));
+      if (variantOpts.length > 0 && !l.variantSku.trim()) {
+        toast.error(t('lineNeedsVariant', { line: i + 1 }));
+        return;
+      }
+      const variantSku = l.variantSku.trim() || undefined;
       if (l.type === 'FABRIC') {
         const rollIds = l.rollIds ?? [];
         if (rollIds.length === 0) {
@@ -301,6 +334,7 @@ export default function NewVendorReturnPage() {
           parsedLines.push({
             type: 'FABRIC',
             itemId: l.itemId,
+            variantSku,
             qty,
             reason: l.reason.trim(),
             condition: l.condition as Condition,
@@ -317,7 +351,7 @@ export default function NewVendorReturnPage() {
       }
       if (l.type === 'FG_REJECT') {
         try {
-          const available = await getAvailableRejectQtyByItem(l.itemId);
+          const available = await getAvailableRejectQtyByItem(l.itemId, variantSku);
           if (qty > available) {
             toast.error(t('form.lineRejectExceeds', { line: i + 1, max: available }));
             return;
@@ -330,6 +364,7 @@ export default function NewVendorReturnPage() {
       parsedLines.push({
         type: l.type,
         itemId: l.itemId,
+        variantSku,
         qty,
         reason: l.reason.trim(),
         condition: l.condition as Condition,
@@ -472,8 +507,8 @@ export default function NewVendorReturnPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{t('colType')}</TableHead>
                     <TableHead>{t('colItem')}</TableHead>
+                    <TableHead>{t('colVariant')}</TableHead>
                     <TableHead className="w-24">{t('colQty')}</TableHead>
                     <TableHead>{t('colCondition')}</TableHead>
                     <TableHead>{t('colReason')}</TableHead>
@@ -483,45 +518,39 @@ export default function NewVendorReturnPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {lines.map((line, i) => (
+                  {lines.map((line, i) => {
+                    const variantOpts = variantSelectOptions(
+                      parseItemVariants(items.find((it) => it.id === line.itemId)?.variants),
+                    );
+                    return (
                     <Fragment key={i}>
                       <TableRow>
                         <TableCell>
-                          <Select
-                            value={line.type}
-                            onValueChange={(v) => updateLine(i, 'type', v)}
-                          >
-                            <SelectTrigger className="w-[150px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="FABRIC">{lineTypeLabel('FABRIC')}</SelectItem>
-                              <SelectItem value="ACCESSORIES">{lineTypeLabel('ACCESSORIES')}</SelectItem>
-                              <SelectItem value="FG_REJECT">{lineTypeLabel('FG_REJECT')}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell>
                           <SearchableCombobox
-                            options={itemOptionsForLineType(line.type).map((it) => ({
+                            options={returnableItems.map((it) => ({
                               value: it.id,
                               label: `${it.sku} – ${it.nameId || it.nameEn}`,
                             }))}
                             value={line.itemId}
-                            onValueChange={(v) => {
-                              setLines((prev) =>
-                                prev.map((l, idx) =>
-                                  idx === i
-                                    ? { ...l, itemId: v, ...(l.type === 'FABRIC' ? { rollIds: [], qty: '' } : {}) }
-                                    : l
-                                )
-                              );
-                              if (lines[i].type === 'FABRIC' && v) void loadFabricRollsForItem(v);
-                            }}
+                            onValueChange={(v) => pilihBarang(i, v)}
                             placeholder={t('form.selectItem')}
                             searchPlaceholder={t('form.cariBarang')}
                             triggerClassName="min-w-[180px]"
                           />
+                        </TableCell>
+                        <TableCell>
+                          {variantOpts.length === 0 ? (
+                            <span className="text-sm text-muted-foreground">{t('noVariant')}</span>
+                          ) : (
+                            <SearchableCombobox
+                              options={variantOpts.map((o) => ({ value: o.sku, label: o.label }))}
+                              value={line.variantSku}
+                              onValueChange={(v) => updateLine(i, 'variantSku', v)}
+                              placeholder={t('selectVariant')}
+                              searchPlaceholder={t('selectVariant')}
+                              triggerClassName="min-w-[160px]"
+                            />
+                          )}
                         </TableCell>
                         <TableCell>
                           {line.type === 'FABRIC' ? (
@@ -640,7 +669,8 @@ export default function NewVendorReturnPage() {
                         </TableRow>
                       )}
                     </Fragment>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

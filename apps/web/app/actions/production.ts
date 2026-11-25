@@ -768,6 +768,8 @@ export async function issueWorkOrder(id: string, claimedUserId?: string) {
  */
 export async function getWorkOrderShortages(woId: string): Promise<{
   shortages: WoShortage[];
+  /** Uncovered gap the Create/Update dialog prefills (BOM short less inbound PO). */
+  uncovered: WoShortage[];
   request: { id: string; docNumber: string; status: string } | null;
   requestAction: 'create' | 'update' | null;
 }> {
@@ -779,7 +781,9 @@ export async function getWorkOrderShortages(woId: string): Promise<{
     where: { id: woId },
     select: { status: true, finishedGoodId: true, plannedQty: true, outputMode: true, skuBreakdown: true },
   });
-  if (!wo || wo.status !== 'DRAFT') return { shortages: [], request: null, requestAction: null };
+  if (!wo || wo.status !== 'DRAFT') {
+    return { shortages: [], uncovered: [], request: null, requestAction: null };
+  }
 
   const [shortages, requests] = await Promise.all([
     getWoShortages(wo),
@@ -798,7 +802,9 @@ export async function getWorkOrderShortages(woId: string): Promise<{
   const open = requests.find((r) => r.status === 'OPEN');
   const shown = open ?? requests[0] ?? null;
   const request = shown ? { id: shown.id, docNumber: shown.docNumber, status: shown.status } : null;
-  if (!open) return { shortages, request, requestAction: uncovered.length > 0 ? 'create' : null };
+  if (!open) {
+    return { shortages, uncovered, request, requestAction: uncovered.length > 0 ? 'create' : null };
+  }
 
   // Same rule as the sync: a material purchasing cancelled on this request is not wanted back.
   const cancelled = new Set(open.lines.filter((l) => l.status === 'CANCELLED').map((l) => l.itemId));
@@ -806,7 +812,7 @@ export async function getWorkOrderShortages(woId: string): Promise<{
   const want = new Map(uncovered.filter((u) => !cancelled.has(u.itemId)).map((u) => [u.itemId, u.shortage]));
   const inSync =
     openLines.length === want.size && openLines.every((l) => want.get(l.itemId) === Number(l.qty));
-  return { shortages, request, requestAction: inSync ? null : 'update' };
+  return { shortages, uncovered, request, requestAction: inSync ? null : 'update' };
 }
 
 /**
@@ -1092,7 +1098,10 @@ export async function issueMaterials(data: IssueFormData, claimedUserId?: string
       }
       totalCost = totalCost.plus(nilaiKeluarBaris);
 
-      // Harga ketik di layar (bila ada) tetap tersimpan untuk nota CMT, tetapi bukan nilai bahan.
+      // Opsional: dulu layar keluarkan bahan bisa kirim harga ketik (tersimpan
+      // sebagai sellingPrice). Layar itu sudah dihapus kolomnya — nilai bahan
+      // selalu dari avgCost gudang; surat jalan CMT juga qty-only. Tetap diterima
+      // bila pemanggil lama masih mengirim unitPrice.
       const sellingPrice = item.unitPrice != null && item.unitPrice > 0 ? item.unitPrice : undefined;
       const totalSellingPrice = sellingPrice != null ? sellingPrice * item.qty : undefined;
       issueItemsForJson.push({

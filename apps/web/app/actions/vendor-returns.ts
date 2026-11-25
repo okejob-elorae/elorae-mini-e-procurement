@@ -20,6 +20,7 @@ import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { kaitReturPemasok } from "@/lib/finance/operasional/kait";
 import { parseVendorReturnLines } from "@/lib/vendor-returns/baris-retur";
 import { grnBelumDiproses } from "@/lib/grn/grn-tanpa-po";
+import { isStockableVariantKey } from "@/lib/items/variants";
 
 async function requireSession() {
   const session = await auth();
@@ -189,19 +190,53 @@ export async function getReturnableFabricRolls(itemId: string) {
   }));
 }
 
-/** Sum of RejectedGoodsLedger rows for an item — internal, callers guard themselves. */
-async function hitungRejectTersedia(itemId: string): Promise<number> {
+/**
+ * Sum of RejectedGoodsLedger for an item (and variant when given). Variantless items
+ * use the pooled null/"" bucket — same as field-return writers.
+ */
+async function hitungRejectTersedia(itemId: string, variantSku?: string | null): Promise<number> {
+  const key = (variantSku ?? "").trim();
   const rows = await prisma.rejectedGoodsLedger.findMany({
-    where: { itemId },
+    where: {
+      itemId,
+      ...(key
+        ? { variantSku: key }
+        : { OR: [{ variantSku: null }, { variantSku: "" }] }),
+    },
     select: { qty: true },
   });
   return rows.reduce((s, r) => s + Number(r.qty), 0);
 }
 
-/** Available reject qty for an item (sum of RejectedGoodsLedger rows for that itemId). */
-export async function getAvailableRejectQtyByItem(itemId: string): Promise<number> {
+/** Available reject qty for an item (+ optional variant SKU). */
+export async function getAvailableRejectQtyByItem(
+  itemId: string,
+  variantSku?: string | null,
+): Promise<number> {
   await wajibSalahSatuIzin(PERMISSIONS.VENDOR_RETURNS_VIEW, PERMISSIONS.INVENTORY_VIEW);
-  return hitungRejectTersedia(itemId);
+  return hitungRejectTersedia(itemId, variantSku);
+}
+
+/** Refuse forged/missing variant SKUs the same way PO/konsi writers do. */
+async function wajibVarianBarisRetur(lines: VendorReturnLineInput[]) {
+  const ids = [...new Set(lines.map((l) => l.itemId))];
+  const items = await prisma.item.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, nameId: true, variants: true },
+  });
+  const byId = new Map(items.map((i) => [i.id, i]));
+  for (const line of lines) {
+    const item = byId.get(line.itemId);
+    if (!item) throw new Error(`Item not found: ${line.itemId}`);
+    const sku = (line.variantSku ?? "").trim();
+    if (!isStockableVariantKey(item.variants, sku)) {
+      throw new Error(
+        sku
+          ? `Variant "${sku}" is not valid for ${item.nameId}.`
+          : `Select a variant for ${item.nameId}.`,
+      );
+    }
+  }
 }
 
 export async function createVendorReturn(
@@ -215,10 +250,11 @@ export async function createVendorReturn(
   const userId = session.user.id;
 
   returnSchema.parse(data);
+  await wajibVarianBarisRetur(data.lines);
 
   for (const line of data.lines) {
     if (line.type === 'FG_REJECT') {
-      const available = await hitungRejectTersedia(line.itemId);
+      const available = await hitungRejectTersedia(line.itemId, line.variantSku);
       if (line.qty > available) {
         throw new Error(
           `Reject qty for item exceeds available rejects (max ${available}). Reduce qty or check reject ledger.`
@@ -325,10 +361,11 @@ export async function updateVendorReturn(
   requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_MANAGE);
 
   returnSchema.parse(data);
+  await wajibVarianBarisRetur(data.lines);
 
   for (const line of data.lines) {
     if (line.type === 'FG_REJECT') {
-      const available = await hitungRejectTersedia(line.itemId);
+      const available = await hitungRejectTersedia(line.itemId, line.variantSku);
       if (line.qty > available) {
         throw new Error(
           `Reject qty for item exceeds available rejects (max ${available}). Reduce qty or check reject ledger.`
