@@ -72,10 +72,6 @@ export default function VendorReturnDetailPage() {
     : status === 'PROCESSED' ? tList('statusProcessed')
     : status === 'COMPLETED' ? tList('statusCompleted')
     : status;
-  const lineTypeLabel = (type: string) =>
-    type === 'FABRIC' || type === 'ACCESSORIES' || type === 'FG_REJECT'
-      ? t(`lineType.${type}`)
-      : type;
   const conditionLabel = (condition: string) =>
     condition === 'GOOD' || condition === 'DAMAGED' || condition === 'DEFECTIVE'
       ? t(`condition.${condition}`)
@@ -251,6 +247,7 @@ export default function VendorReturnDetailPage() {
     type: string;
     itemId: string;
     itemName?: string;
+    variantSku?: string | null;
     rollRef?: string;
     qty: number;
     reason: string;
@@ -468,8 +465,8 @@ export default function VendorReturnDetailPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{t('colType')}</TableHead>
                     <TableHead>{t('colItem')}</TableHead>
+                    <TableHead>{t('colVariant')}</TableHead>
                     <TableHead className="text-right">{t('colQty')}</TableHead>
                     <TableHead>{t('colCondition')}</TableHead>
                     <TableHead>{t('colReason')}</TableHead>
@@ -479,13 +476,15 @@ export default function VendorReturnDetailPage() {
                 <TableBody>
                   {lines.map((line, i) => (
                     <TableRow key={i}>
-                      <TableCell>{lineTypeLabel(line.type)}</TableCell>
                       <TableCell className="min-w-[200px] whitespace-normal">
                         {line.type === 'FABRIC' && line.rollRef
                           ? `${line.itemName ?? line.itemId} – ${line.rollRef} (${line.qty})`
                           : line.type === 'FG_REJECT'
                             ? t('sourceReject', { name: line.itemName ?? line.itemId })
                             : line.itemName ?? line.itemId}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {(line.variantSku ?? '').trim() || t('noVariant')}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {Number(line.qty).toLocaleString('id-ID', { maximumFractionDigits: 2 })}

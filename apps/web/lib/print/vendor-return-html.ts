@@ -21,7 +21,6 @@ function waktuCetak(d: Date | string | null | undefined): string {
   }).format(x);
 }
 
-const JENIS_RETUR: Record<string, string> = { FABRIC: 'Kain', ACCESSORIES: 'Aksesoris', FG_REJECT: 'Barang jadi reject' };
 const KONDISI_RETUR: Record<string, string> = { GOOD: 'Baik', DAMAGED: 'Rusak', DEFECTIVE: 'Cacat' };
 const STATUS_RETUR: Record<string, string> = { DRAFT: 'Draf', PROCESSED: 'Diproses', COMPLETED: 'Selesai' };
 
@@ -29,6 +28,7 @@ export type VendorReturnPrintLine = {
   type: string;
   itemId: string;
   itemName?: string;
+  variantSku?: string | null;
   rollRef?: string;
   qty: number;
   reason: string;
@@ -61,8 +61,10 @@ export type LabelCetakRetur = {
     processed: string;
     completed: string;
     tracking: string;
-    type: string;
+    /** @deprecated Type column removed; kept optional for older callers. */
+    type?: string;
     item: string;
+    variant: string;
     qty: string;
     condition: string;
     reason: string;
@@ -82,8 +84,8 @@ export const LABEL_CETAK_RETUR: LabelCetakRetur = {
   processed: 'Diproses',
   completed: 'Selesai',
   tracking: 'Resi',
-  type: 'Jenis',
   item: 'Barang',
+  variant: 'Varian',
   qty: 'Qty',
   condition: 'Kondisi',
   reason: 'Alasan',
@@ -125,8 +127,8 @@ export function buildVendorReturnPrintHtml(
     .map(
       (line) =>
         `<tr>
-          <td class="uom">${esc(JENIS_RETUR[line.type] ?? line.type)}</td>
           <td class="col-desc"><div class="line-name">${esc(itemDisplay(line))}</div></td>
+          <td>${esc((line.variantSku ?? '').trim() || '—')}</td>
           <td class="right">${Number(line.qty).toLocaleString('id-ID')}</td>
           <td>${esc(KONDISI_RETUR[line.condition] ?? line.condition)}</td>
           <td>${esc(line.reason)}</td>
@@ -208,8 +210,8 @@ ${printPagePortrait}
   <table class="data">
     <thead>
       <tr>
-        <th>${esc(labels.type)}</th>
         <th>${esc(labels.item)}</th>
+        <th>${esc(labels.variant)}</th>
         <th class="right">${esc(labels.qty)}</th>
         <th>${esc(labels.condition)}</th>
         <th>${esc(labels.reason)}</th>
