@@ -187,8 +187,8 @@ export default function EditVendorReturnPage() {
 
         const rawLines = normalizeReturnLines(ret.lines);
         if (rawLines.length > 0) {
-          const fabricKey = (itemId: string, reason: string, condition: string) =>
-            `${itemId}\0${reason}\0${condition}`;
+          const fabricKey = (itemId: string, variantSku: string, reason: string, condition: string) =>
+            `${itemId}\0${variantSku}\0${reason}\0${condition}`;
           const fabricGroups = new Map<string, FormLine>();
           const formLines: FormLine[] = [];
 
@@ -200,7 +200,7 @@ export default function EditVendorReturnPage() {
             const condition = (l.condition as Condition) ?? 'GOOD';
 
             if (type === 'FABRIC' && l.rollId) {
-              const key = fabricKey(itemId, reason, condition);
+              const key = fabricKey(itemId, variantSku, reason, condition);
               let fl = fabricGroups.get(key);
               if (!fl) {
                 fl = {
@@ -465,7 +465,7 @@ export default function EditVendorReturnPage() {
       }
       if (l.type === 'FG_REJECT') {
         try {
-          const available = await getAvailableRejectQtyByItem(l.itemId);
+          const available = await getAvailableRejectQtyByItem(l.itemId, variantSku);
           if (qty > available) {
             toast.error(t('form.lineRejectExceeds', { line: i + 1, max: available }));
             return;

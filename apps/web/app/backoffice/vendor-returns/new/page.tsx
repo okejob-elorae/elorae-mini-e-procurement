@@ -351,7 +351,7 @@ export default function NewVendorReturnPage() {
       }
       if (l.type === 'FG_REJECT') {
         try {
-          const available = await getAvailableRejectQtyByItem(l.itemId);
+          const available = await getAvailableRejectQtyByItem(l.itemId, variantSku);
           if (qty > available) {
             toast.error(t('form.lineRejectExceeds', { line: i + 1, max: available }));
             return;

@@ -159,7 +159,8 @@ export type RequestLineOverride = { itemId: string; qty: number };
 
 /**
  * Turns optional qty edits into the gap rows that will be written. Every override must name an
- * uncovered shortage item; qty must be > 0. No overrides → the full uncovered gap.
+ * uncovered shortage item; qty must be > 0 and is capped at that item's uncovered shortage.
+ * No overrides → the full uncovered gap.
  */
 function resolveRequestGap(gap: WoShortage[], overrides: RequestLineOverride[] | undefined): WoShortage[] {
   if (overrides == null) return gap;
@@ -175,7 +176,9 @@ function resolveRequestGap(gap: WoShortage[], overrides: RequestLineOverride[] |
     if (!(o.qty > 0) || !Number.isFinite(o.qty)) {
       throw new ItemRequestError(`Qty ${g.itemName} harus lebih dari 0`);
     }
-    out.push({ ...g, shortage: Math.round(o.qty * 100) / 100 });
+    const qty = Math.min(Math.round(o.qty * 100) / 100, g.shortage);
+    if (!(qty > 0)) throw new ItemRequestError(`Qty ${g.itemName} harus lebih dari 0`);
+    out.push({ ...g, shortage: qty });
   }
   if (out.length === 0) throw new ItemRequestError("Pilih minimal satu bahan untuk diminta");
   return out;
@@ -184,7 +187,7 @@ function resolveRequestGap(gap: WoShortage[], overrides: RequestLineOverride[] |
 /**
  * One request per DRAFT WO with a BOM shortage, a line per short material not already on order.
  * Idempotent: an OPEN request for the WO is brought up to date and returned instead of a second one.
- * Optional `lines` let the WO dialog trim or bump qtys before save.
+ * Optional `lines` let the WO dialog trim qtys (capped at the uncovered gap) before save.
  */
 export async function createRequestFromWo(
   woId: string,

@@ -112,6 +112,7 @@ export function DialogRequestItemWo({
                     <Input
                       type="number"
                       min={0}
+                      max={row.suggested}
                       step="any"
                       disabled={busy || !row.included}
                       value={row.qty === 0 ? "" : row.qty}
@@ -121,7 +122,13 @@ export function DialogRequestItemWo({
                         setDraft((prev) =>
                           prev.map((d) =>
                             d.itemId === row.itemId
-                              ? { ...d, qty: Number.isFinite(n) && n >= 0 ? n : d.qty }
+                              ? {
+                                  ...d,
+                                  qty:
+                                    Number.isFinite(n) && n >= 0
+                                      ? Math.min(n, row.suggested)
+                                      : d.qty,
+                                }
                               : d,
                           ),
                         );
