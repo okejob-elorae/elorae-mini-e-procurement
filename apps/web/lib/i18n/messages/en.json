@@ -13944,6 +13944,12 @@
     "voidedOn": "Voided on {date}",
     "linkedTitle": "Vendor bills",
     "linkedBayar": "Pay",
+    "linkedWoStatus": {
+      "BILLED": "Billed",
+      "PARTIALLY_PAID": "Partially Paid",
+      "PAID": "Paid",
+      "VOID": "Void"
+    },
     "hargaJasaWajib": "Service price must be greater than Rp 0",
     "paidSupplier": "Through Supplier payments",
     "paidVendor": "Through vendor bill payments",

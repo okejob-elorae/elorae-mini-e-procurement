@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from "@elorae/db";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
 import type { VendorBillStatus } from "./status";
 import { withSupplierPaid } from "./supplier-paid";
 import { penerimaanLebihBayarJikaDibatalkan } from "./void-guard";
@@ -249,8 +250,11 @@ export type LinkedBillLine = {
   billId: string;
   billDocNumber: string;
   vendorInvoiceNo: string;
+  /** Bill date (calendar day); ISO date-only string for the UI. */
+  billDate: string;
   status: VendorBillStatus;
   supplierId: string;
+  supplierName: string;
   label: string;
   qty: number;
   price: number;
@@ -271,10 +275,12 @@ const linkedSelect = {
       id: true,
       docNumber: true,
       vendorInvoiceNo: true,
+      billDate: true,
       status: true,
       total: true,
       paidAmount: true,
       supplierId: true,
+      supplier: { select: { name: true } },
     },
   },
   itemId: true,
@@ -292,10 +298,12 @@ type LinkedRecord = {
     id: string;
     docNumber: string;
     vendorInvoiceNo: string;
+    billDate: Date;
     status: VendorBillStatus;
     total: { toString(): string };
     paidAmount: { toString(): string };
     supplierId: string;
+    supplier: { name: string };
   };
   itemId: string | null;
   grn: { docNumber: string; poId: string | null } | null;
@@ -313,8 +321,10 @@ function toLinked(l: LinkedRecord, status: Map<string, VendorBillStatus>, itemNa
     billId: l.bill.id,
     billDocNumber: l.bill.docNumber,
     vendorInvoiceNo: l.bill.vendorInvoiceNo,
+    billDate: formatDateOnlyJakarta(l.bill.billDate),
     status: status.get(l.bill.id) ?? l.bill.status,
     supplierId: l.bill.supplierId,
+    supplierName: l.bill.supplier.name,
     label: l.poItem
       ? l.poItem.item.nameId
       : l.itemId

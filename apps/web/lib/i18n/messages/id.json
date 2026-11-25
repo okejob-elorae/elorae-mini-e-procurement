@@ -13944,6 +13944,12 @@
     "voidedOn": "Dibatalkan {date}",
     "linkedTitle": "Tagihan vendor",
     "linkedBayar": "Bayar",
+    "linkedWoStatus": {
+      "BILLED": "Ditagih",
+      "PARTIALLY_PAID": "Dibayar sebagian",
+      "PAID": "Lunas",
+      "VOID": "Batal"
+    },
     "hargaJasaWajib": "Harga jasa harus lebih dari Rp 0",
     "paidSupplier": "Lewat Pembayaran pemasok",
     "paidVendor": "Lewat Pembayaran Vendor Billing",

@@ -183,7 +183,6 @@ export default function WorkOrderDetailPage() {
   const [completeLoading, setCompleteLoading] = useState(false);
   const bolehKelola = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.WORK_ORDERS_MANAGE);
   const bolehTagihan = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.VENDOR_BILLS_MANAGE);
-  const bolehBayar = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.SUPPLIER_PAYMENTS_CREATE);
   const [pemasokTagihan, setPemasokTagihan] = useState<
     Array<{
       supplierId: string;
@@ -844,7 +843,7 @@ export default function WorkOrderDetailPage() {
               </CardContent>
             </Card>
           )}
-          <LinkedBillLines woId={id} canPay={bolehBayar} />
+          <LinkedBillLines woId={id} />
           <Dialog open={dialogTagihan} onOpenChange={setDialogTagihan}>
             <DialogContent>
               <DialogHeader>
