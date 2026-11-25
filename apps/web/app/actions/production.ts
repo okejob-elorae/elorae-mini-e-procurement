@@ -1092,7 +1092,10 @@ export async function issueMaterials(data: IssueFormData, claimedUserId?: string
       }
       totalCost = totalCost.plus(nilaiKeluarBaris);
 
-      // Harga ketik di layar (bila ada) tetap tersimpan untuk nota CMT, tetapi bukan nilai bahan.
+      // Opsional: dulu layar keluarkan bahan bisa kirim harga ketik (tersimpan
+      // sebagai sellingPrice). Layar itu sudah dihapus kolomnya — nilai bahan
+      // selalu dari avgCost gudang; surat jalan CMT juga qty-only. Tetap diterima
+      // bila pemanggil lama masih mengirim unitPrice.
       const sellingPrice = item.unitPrice != null && item.unitPrice > 0 ? item.unitPrice : undefined;
       const totalSellingPrice = sellingPrice != null ? sellingPrice * item.qty : undefined;
       issueItemsForJson.push({

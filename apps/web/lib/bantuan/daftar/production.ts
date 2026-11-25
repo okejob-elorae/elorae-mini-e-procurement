@@ -312,7 +312,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Mengeluarkan kain dan/atau aksesoris dari gudang ke vendor untuk satu perintah kerja di satu formulir. Menyimpan tetap membuat dokumen pengeluaran terpisah per jenis (kain / aksesoris) supaya HPP dan register nota tetap benar. Kain diterbitkan per roll utuh; total roll yang dialokasikan minimal sama dengan qty kain yang diterbitkan.",
       "Bila simpan gagal (mis. sambungan putus), tekan Simpan lagi tanpa mengubah isian: pengeluaran yang sudah tercatat tidak dikeluarkan dua kali.",
-      "Nilai bahan yang dicatat adalah nilai yang benar-benar keluar dari stok (jumlah × biaya rata-rata gudang saat itu), sama dengan kartu stok. Harga yang diketik di baris tetap disimpan bersama pengeluaran, tetapi tidak lagi menentukan nilai bahan yang masuk HPP.",
+      "Nilai bahan yang dicatat adalah nilai yang benar-benar keluar dari stok (jumlah × biaya rata-rata gudang saat itu), sama dengan kartu stok. Surat jalan ke CMT hanya memuat qty — tidak ada harga di formulir maupun di cetakan.",
     ],
     kartu: [
       { judul: { kunci: "workOrders.form.materialPlanTitle" }, isi: { kunci: "workOrders.plannedVsIssued" } },

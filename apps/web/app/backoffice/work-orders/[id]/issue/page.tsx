@@ -49,7 +49,6 @@ import {
   type IssueLineType,
 } from '@/lib/production/partition-issue-lines';
 import { getItemsByType } from '@/app/actions/items';
-import { getItemAvgCosts } from '@/app/actions/inventory';
 import { ItemType } from '@/lib/constants/enums';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { newLocalId } from '@/lib/pwa/id-lokal';
@@ -74,7 +73,6 @@ interface IssueLine {
   uomId: string;
   qty: number;
   maxQty: number;
-  unitPrice?: number;
 }
 
 /** The WO's planned rolls that still have length left, each at what remains on it (#437: per material). */
@@ -117,7 +115,6 @@ export default function WorkOrderIssuePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
-  const [itemAvgCosts, setItemAvgCosts] = useState<Record<string, number>>({});
   const [rollBreakdown, setRollBreakdown] = useState<MaterialRollEntry[]>([]);
   const prefilledWoIdRef = useRef<string | null>(null);
   // Kunci idempotensi per isian: simpan ulang sesudah galat (mis. jawaban hilang) tidak mengeluarkan bahan dua kali.
@@ -132,17 +129,6 @@ export default function WorkOrderIssuePage() {
       .then(([woData, fabricItems]) => {
         setWO(woData);
         setMaterials((fabricItems as any) || []);
-        const plan = (woData?.consumptionPlan as any[]) || [];
-        const ids = [
-          ...new Set(
-            (plan as { itemId?: string }[])
-              .map((p) => p.itemId)
-              .filter((id): id is string => typeof id === 'string')
-          )
-        ];
-        if (ids.length > 0) {
-          getItemAvgCosts(ids).then(setItemAvgCosts);
-        }
       })
       .catch(() => {
         toast.error(t('failedToLoadData'));
@@ -202,7 +188,6 @@ export default function WorkOrderIssuePage() {
     const existing = lines.find((l) => l.itemId === p.itemId);
     if (existing) return;
     const remaining = p.plannedQty - p.issuedQty;
-    const defaultPrice = itemAvgCosts[p.itemId];
     setLines((prev) => [
       ...prev,
       {
@@ -211,7 +196,6 @@ export default function WorkOrderIssuePage() {
         uomId: p.uomId,
         qty: remaining > 0 ? Math.min(1, remaining) : 0,
         maxQty: remaining,
-        unitPrice: defaultPrice != null && defaultPrice > 0 ? Math.round(defaultPrice * 100) / 100 : undefined,
       },
     ]);
   };
@@ -230,18 +214,6 @@ export default function WorkOrderIssuePage() {
     setLines((prev) => prev.filter((l) => l.itemId !== itemId));
   };
 
-  const round2 = (n: number) => Math.round(n * 100) / 100;
-
-  const updateLinePrice = (itemId: string, unitPrice: number | '') => {
-    setLines((prev) =>
-      prev.map((l) =>
-        l.itemId === itemId
-          ? { ...l, unitPrice: unitPrice === '' ? undefined : round2(unitPrice) }
-          : l
-      )
-    );
-  };
-
   const autoFillRemaining = () => {
     const withRemaining = planWithRemaining.filter((p) => p.plannedQty - p.issuedQty > 0);
     if (withRemaining.length === 0) {
@@ -251,14 +223,12 @@ export default function WorkOrderIssuePage() {
     setLines(
       withRemaining.map((p) => {
         const remaining = p.plannedQty - p.issuedQty;
-        const defaultPrice = itemAvgCosts[p.itemId];
         return {
           itemId: p.itemId,
           itemName: p.itemName,
           uomId: p.uomId,
           qty: remaining,
           maxQty: remaining,
-          unitPrice: defaultPrice != null && defaultPrice > 0 ? Math.round(defaultPrice * 100) / 100 : undefined,
         };
       })
     );
@@ -338,7 +308,6 @@ export default function WorkOrderIssuePage() {
             itemId: l.itemId,
             qty: l.qty,
             uomId: l.uomId,
-            ...(l.unitPrice != null && l.unitPrice > 0 ? { unitPrice: l.unitPrice } : {}),
           })),
           // Always explicit: empty list means no rolls for this type.
           rollBreakdown: rollsForType,
@@ -518,7 +487,6 @@ export default function WorkOrderIssuePage() {
                     <TableRow>
                       <TableHead>{tWO('material')}</TableHead>
                       <TableHead className="text-right">{tWO('qty')}</TableHead>
-                      <TableHead className="text-right">{tI('kolomHargaSatuan')}</TableHead>
                       <TableHead className="w-12">
                         <span className="sr-only">{tWO('detail.colActions')}</span>
                       </TableHead>
@@ -540,20 +508,6 @@ export default function WorkOrderIssuePage() {
                             }}
                             className="w-24 text-right"
                             placeholder={l.maxQty > 0 ? tI('maxQty', { max: fmt(l.maxQty) }) : tI('overIssueOk')}
-                          />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            placeholder={itemAvgCosts[l.itemId] != null ? Number(itemAvgCosts[l.itemId]).toFixed(2) : tI('avgCost')}
-                            value={l.unitPrice != null ? l.unitPrice.toFixed(2) : ''}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              updateLinePrice(l.itemId, v === '' ? '' : Number(v));
-                            }}
-                            className="w-28 text-right"
                           />
                         </TableCell>
                         <TableCell>
